@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BASE_APP="${HOPE_REACT18_BASE_APP:-$PROJECT_DIR/dist/Hope-Electron43.app}"
+OUTPUT_APP="${HOPE_REACT18_OUTPUT_APP:-$PROJECT_DIR/dist/Hope-Electron43-React18.app}"
+ASAR_BIN="$PROJECT_DIR/frontend/node_modules/.bin/asar"
+TEMP_DIR="$(mktemp -d /private/tmp/hope-react18-build.XXXXXX)"
+
+cleanup() {
+  if [[ -n "$TEMP_DIR" && "$TEMP_DIR" == /private/tmp/hope-react18-build.* ]]; then
+    rm -rf "$TEMP_DIR"
+  fi
+}
+trap cleanup EXIT
+
+if [[ ! -d "$BASE_APP" ]]; then
+  echo "Missing Electron 43 base app: $BASE_APP" >&2
+  exit 1
+fi
+if [[ ! -x "$ASAR_BIN" ]]; then
+  echo "Missing ASAR packer. Run npm install in frontend/ first." >&2
+  exit 1
+fi
+if [[ -e "$OUTPUT_APP" ]]; then
+  echo "Output already exists: $OUTPUT_APP" >&2
+  echo "Move it aside before rebuilding." >&2
+  exit 1
+fi
+
+(
+  cd "$PROJECT_DIR/frontend"
+  node --openssl-legacy-provider node_modules/react-scripts/scripts/build.js
+)
+
+cp -cR "$PROJECT_DIR/extracted/asar" "$TEMP_DIR/app"
+mv "$TEMP_DIR/app/build" "$TEMP_DIR/app/build-react16-original"
+cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
+
+node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+  pkg.dependencies.react = "18.3.1";
+  pkg.dependencies["react-dom"] = "18.3.1";
+  fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+' "$TEMP_DIR/app/package.json"
+
+"$ASAR_BIN" pack "$TEMP_DIR/app" "$TEMP_DIR/app-original.asar" \
+  --unpack-dir node_modules/node-notifier
+
+cp -cR "$BASE_APP" "$OUTPUT_APP"
+RESOURCES="$OUTPUT_APP/Contents/Resources"
+mv "$RESOURCES/app-original.asar" "$RESOURCES/app-react16-original.asar"
+mv "$RESOURCES/app-original.asar.unpacked" "$RESOURCES/app-react16-original.asar.unpacked"
+cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
+cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"
+
+PLIST="$OUTPUT_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :HopeReactVersion string 18.3.1' "$PLIST"
+codesign --force --deep --sign - "$OUTPUT_APP"
+
+echo "$OUTPUT_APP"

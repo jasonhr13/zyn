@@ -1,0 +1,29 @@
+# macOS and editor metadata
+.DS_Store
+*.swp
+*.swo
+*.tmp
+*.log
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# JavaScript dependencies and generated frontend output
+frontend/node_modules/
+frontend/build/
+
+# Packaged applications, installers, downloaded runtimes, and staging output
+/dist/
+/staging/
+/vendor/
+/archive/
+/Hope-Setup*.exe
+/updates/*/
+
+# Recovered installer/application working trees contain bundled binaries,
+# third-party dependencies, and embedded production credentials. R0 will
+# import the required main-process sources into a clean, sanitized source tree.
+/extracted/
+

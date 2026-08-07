@@ -1,0 +1,7 @@
+{
+  "name": "hope-macos-launcher",
+  "productName": "Hope",
+  "version": "1.6.74",
+  "private": true,
+  "main": "bootstrap.js"
+}
