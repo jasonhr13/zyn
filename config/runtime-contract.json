@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R0",
+  "controlPlaneRelease": "R1",
+  "features": {
+    "designShell": true,
+    "taskGroups": false,
+    "licenseObserve": false,
+    "licenseEnforce": false,
+    "apiModuleAccess": false,
+    "cloudBackup": false,
+    "taskScheduling": false,
+    "isolatedRenderer": false
+  },
   "product": {
     "name": "Hope",
     "version": "1.6.74",
@@ -26,6 +36,7 @@
     "Contents/Resources/app-original.asar",
     "Contents/Resources/app/bootstrap.js",
     "Contents/Resources/app/feature-flags.js",
+    "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/wine/bin/wineserver"
   ],
   "symlinks": [

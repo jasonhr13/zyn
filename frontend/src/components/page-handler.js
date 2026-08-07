@@ -6,6 +6,7 @@ import Sidebar from './sidebar';
 import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
+import Modules from './pages/modules';
 import Tasks from './pages/tasks';
 import Pbandai from './pages/pbandai';
 import Round1 from './pages/round1';
@@ -219,7 +220,7 @@ class PageHandler extends Component {
             {license
               ? <LicenseGate status={license} onActivated={l => this.setState({ license: l })} />
               : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 12, color: '#6b7280' }}>Checking license…</div>}
+                              fontSize: 12, color: 'var(--muted)' }}>Checking license…</div>}
           </div>
         </>
       );
@@ -236,6 +237,7 @@ class PageHandler extends Component {
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
+                <Route path="/modules" component={Modules} />
                 <Route path="/tasks" component={Tasks} />
                 <Route path="/generate" component={Generate} />
                 <Route path="/pbandai" component={Pbandai} />
@@ -248,7 +250,7 @@ class PageHandler extends Component {
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />
                 <Route path="/settings" component={Settings} />
-                <Redirect from="/" to="/pbandai" />
+                <Redirect from="/" to="/modules" />
               </Switch>
             </ErrorBoundary>
           </div>

@@ -109,6 +109,21 @@ node ./scripts/snapshot-user-data.js
 
 Use `--source <directory>` or `--output-root <directory>` when the data is stored elsewhere.
 
+## Control-plane R1 design shell
+
+R1 ports the repository's complete light/dark token palette, local SVG icon system, title bar, and
+consolidated navigation without replacing React Router or any module implementation. The new Tasks
+hub links to the existing Bandai, Target, Secret Lair, and Round1 routes; old bookmarks remain valid.
+The wrapper also restores and atomically persists validated window dimensions.
+
+```sh
+./scripts/build-r1.sh
+node ./scripts/window-size-state-smoke-test.js
+```
+
+The output is `dist/Hope-ControlPlane-R1.app`. R0 remains available from the
+`control-plane-r0` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

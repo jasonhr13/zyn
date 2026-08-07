@@ -41,6 +41,7 @@ const frontendPackage = JSON.parse(fs.readFileSync(
   path.join(projectDir, 'frontend', 'package.json'),
   'utf8',
 ));
+const { FEATURES } = require(path.join(projectDir, 'launcher', 'feature-flags.js'));
 const resources = path.join(appPath, 'Contents', 'Resources');
 const receipt = {
   schemaVersion: 1,
@@ -57,6 +58,7 @@ const receipt = {
     electron: plistValue('HopeElectronVersion'),
     react: frontendPackage.dependencies.react,
   },
+  features: FEATURES,
   runtime: {
     backendSha256: sha256(path.join(resources, 'engine', 'backend.exe')),
     windowsNodeSha256: sha256(path.join(resources, 'vendor', 'node.exe')),

@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, dialog } = require('electron');
 const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
+const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -109,6 +110,48 @@ function preserveMacHardwareAcceleration() {
   // acceleration by neutralizing the call before the original main process is
   // loaded. Chromium can still choose software rendering itself if necessary.
   app.disableHardwareAcceleration = () => {};
+}
+
+function installWindowSizePersistence() {
+  if (!FEATURES.designShell) return;
+  let attached = false;
+
+  // The original main process still owns BrowserWindow construction. Its main window starts hidden,
+  // so this event can restore validated dimensions before the first paint without replacing or
+  // patching Electron's constructor. Only the first top-level window is the Hope control plane.
+  app.on('browser-window-created', (_event, window) => {
+    if (attached || window.getParentWindow()) return;
+    attached = true;
+
+    try {
+      const { screen } = require('electron');
+      const statePath = path.join(app.getPath('userData'), 'window-size.json');
+      const display = screen.getDisplayMatching(window.getBounds());
+      const size = loadWindowSize(statePath, display && display.workAreaSize);
+      window.setMinimumSize(MIN_WINDOW_SIZE.width, MIN_WINDOW_SIZE.height);
+      window.setSize(size.width, size.height, false);
+
+      let saveTimer = null;
+      const persist = () => {
+        if (window.isDestroyed()) return;
+        saveWindowSize(statePath, window.getNormalBounds());
+      };
+      window.on('resize', () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveTimer = null;
+          try { persist(); } catch (error) { console.error(`Could not save Hope window size: ${error.message}`); }
+        }, 250);
+      });
+      window.once('close', () => {
+        clearTimeout(saveTimer);
+        try { persist(); } catch (error) { console.error(`Could not save Hope window size: ${error.message}`); }
+      });
+      window.once('closed', () => clearTimeout(saveTimer));
+    } catch (error) {
+      console.error(`Could not restore Hope window size: ${error.message}`);
+    }
+  });
 }
 
 function enableLocalDeveloperLicense() {
@@ -241,6 +284,7 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   // if a mismatched artifact appeared, could replace this custom wrapper.
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();
+  installWindowSizePersistence();
   disableWindowsOnlyUpdater();
   enableLocalDeveloperLicense();
   require(path.join(originalAsar, 'public', 'electron.js'));

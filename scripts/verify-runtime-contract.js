@@ -74,7 +74,7 @@ check('feature flags', () => {
   const flagsPath = path.join(appPath, 'Contents', 'Resources', 'app', 'feature-flags.js');
   const { CONTROL_PLANE_RELEASE, FEATURES } = require(flagsPath);
   assert.equal(CONTROL_PLANE_RELEASE, contract.controlPlaneRelease);
-  assert.equal(Object.values(FEATURES).every(value => value === false), true, 'R0 flags are not all disabled');
+  assert.deepEqual(FEATURES, contract.features, 'packaged feature flags do not match the release contract');
 });
 
 check('build receipt', () => {
@@ -85,6 +85,7 @@ check('build receipt', () => {
   assert.equal(receipt.release, contract.controlPlaneRelease);
   assert.equal(receipt.product.bundleIdentifier, product.bundleIdentifier);
   assert.equal(receipt.runtime.backendSha256, contract.immutableResources[0].sha256);
+  assert.deepEqual(receipt.features, contract.features);
 });
 
 if (failures.length) {

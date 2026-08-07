@@ -59,6 +59,7 @@ cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
 cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"
 cp "$PROJECT_DIR/launcher/bootstrap.js" "$RESOURCES/app/bootstrap.js"
 cp "$PROJECT_DIR/launcher/feature-flags.js" "$RESOURCES/app/feature-flags.js"
+cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-state.js"
 
 PLIST="$OUTPUT_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Delete :HopeReactVersion' "$PLIST" 2>/dev/null || true

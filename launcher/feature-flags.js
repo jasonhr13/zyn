@@ -1,12 +1,11 @@
 'use strict';
 
-// Control-plane work is introduced behind explicit release flags. R0 intentionally keeps every
-// flag off, making this module observable build metadata rather than a behavior change. Later
-// releases enable one independently testable slice at a time.
-const CONTROL_PLANE_RELEASE = 'R0';
+// Control-plane work is introduced behind explicit release flags. Each release enables one
+// independently testable slice while every later phase remains dormant.
+const CONTROL_PLANE_RELEASE = 'R1';
 
 const FEATURES = Object.freeze({
-  designShell: false,
+  designShell: true,
   taskGroups: false,
   licenseObserve: false,
   licenseEnforce: false,

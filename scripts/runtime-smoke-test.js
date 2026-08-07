@@ -93,7 +93,7 @@ async function main() {
       const electron = window.require('electron');
       const ipc = electron.ipcRenderer;
       const routePaths = [
-        '/tasks', '/generate', '/pbandai', '/round1', '/riotgames',
+        '/modules', '/tasks', '/generate', '/pbandai', '/round1', '/riotgames',
         '/pokemoncenter', '/target', '/walmart', '/profiles', '/accounts',
         '/proxies', '/settings'
       ];
@@ -110,6 +110,18 @@ async function main() {
           title: (document.querySelector('.page-title')?.textContent || '').trim().slice(0, 80)
         });
       }
+
+      location.hash = '#/modules';
+      await waitForPaint();
+      const shell = {
+        brand: (document.querySelector('.title-bar-name')?.textContent || '').trim(),
+        navigation: [...document.querySelectorAll('.sidebar-label')]
+          .map(element => element.textContent.trim()),
+        moduleCards: [...document.querySelectorAll('.module-card-copy strong')]
+          .map(element => element.textContent.trim()),
+        activeNavigation: (document.querySelector('.sidebar-link.active .sidebar-label')?.textContent || '').trim(),
+        theme: document.body.classList.contains('theme-night') ? 'night' : 'day'
+      };
 
       const safeLength = (channel) => {
         try {
@@ -188,6 +200,7 @@ async function main() {
           proxies: safeLength('getProxies'),
           settings: safeLength('getSettings')
         },
+        shell,
         routes,
         layout: {
           viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
@@ -211,12 +224,17 @@ async function main() {
     throw new Error(evaluated.exceptionDetails.text || 'Renderer evaluation failed');
   }
 
+  await send('Runtime.evaluate', {
+    awaitPromise: true,
+    expression: `(async () => {
+      document.querySelector('.modal-close')?.click();
+      location.hash = '#/modules';
+      await new Promise(resolve => setTimeout(resolve, 350));
+    })()`,
+  });
+
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
-
-  await send('Runtime.evaluate', {
-    expression: "document.querySelector('.modal-close')?.click()",
-  });
 
   const report = {
     ...evaluated.result.value,
@@ -229,7 +247,15 @@ async function main() {
 
   const routeFailed = report.routes.some((route) => !route.rendered || route.errorBoundary);
   const bridgeFailed = Object.values(report.electronBridge).some((value) => !value);
-  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed) {
+  const shellFailed = report.shell.brand !== 'Hope'
+    || report.shell.activeNavigation !== 'Tasks'
+    || JSON.stringify(report.shell.navigation) !== JSON.stringify([
+      'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Generate', 'Settings'
+    ])
+    || JSON.stringify(report.shell.moduleCards) !== JSON.stringify([
+      'Bandai', 'Target', 'Secret Lair', 'Round1'
+    ]);
+  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed) {
     process.exitCode = 1;
   }
 }
