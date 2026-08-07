@@ -6,23 +6,11 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
-// IMAP host presets — same list the Generate tab uses. All standard IMAPS hosts run on port 993.
-const IMAP_PROVIDERS = [
-  { value: 'imap.gmail.com', label: 'Gmail' },
-  { value: 'outlook.office365.com', label: 'Outlook / Hotmail' },
-  { value: 'imap.mail.yahoo.com', label: 'Yahoo' },
-  { value: 'imap.mail.me.com', label: 'iCloud' },
-];
-const IMAP_HOSTS = IMAP_PROVIDERS.map(p => p.value);
-
 class Settings extends Component {
   constructor(props) {
     super(props);
     this.state = {
       discordWebhook: '', lucaApiKey: '', hyperApiKey: '',
-      // IMAP: a provider dropdown, port fixed at 993, and per-host credentials so each mailbox keeps
-      // its own user/pass (switching Gmail↔iCloud shows that host's own login).
-      imapSel: 'imap.gmail.com', imapHostCustom: '', imapUser: '', imapPass: '', imapByHost: {}, showImapPass: false,
       aycdApiKey: '', showAycdKey: false,
       // Target: the engine has always read these five, but no control ever shipped for them, so the
       // harvest ran on hardcoded defaults with no way to change it short of a rebuild.
@@ -37,23 +25,9 @@ class Settings extends Component {
   }
 
   syncFromProps(s) {
-    // Fall back to the Generate tab's email-auth-code config so an existing setup is pre-filled here
-    // (and picked up by the Target OTP login). Saving migrates it to the top-level settings.
     const g = s.generate || {};
-    const by = { ...(s.imapByHost || {}) };
-    // Migrate the flat top-level / Generate-tab config into the per-host map on first load.
-    const flatHost = s.imapHost || g.imapHostCustom || g.imapHost || '';
-    const flatUser = s.imapUser || g.imapUser || '';
-    const flatPass = s.imapPass || g.imapPass || '';
-    const isPreset = IMAP_HOSTS.includes(flatHost);
-    const sel = flatHost ? (isPreset ? flatHost : 'custom') : 'imap.gmail.com';
-    if (flatHost && flatUser && !by[sel]) by[sel] = { user: flatUser, pass: flatPass };
-    const cur = by[sel] || {};
     this.setState({
       discordWebhook: s.discordWebhook || '', lucaApiKey: s.lucaApiKey || '', hyperApiKey: s.hyperApiKey || '',
-      imapSel: sel, imapHostCustom: isPreset ? '' : (flatHost || ''),
-      imapUser: cur.user || flatUser || '', imapPass: cur.pass || flatPass || '',
-      imapByHost: by, showImapPass: false,
       aycdApiKey: s.aycdApiKey || g.aycdApiKey || '',
       // Blank means "use the engine default" — the placeholders show what that default is, so an empty
       // box is never ambiguous. targetAtcHarvestTcin (singular) is the legacy key for the same setting.
@@ -69,12 +43,6 @@ class Settings extends Component {
     });
   }
 
-  // Stash the current host's creds, switch, and load the target host's own saved creds.
-  changeImapHost = (sel) => this.setState(prev => {
-    const by = { ...prev.imapByHost, [prev.imapSel]: { user: prev.imapUser, pass: prev.imapPass } };
-    const next = by[sel] || {};
-    return { imapSel: sel, imapByHost: by, imapUser: next.user || '', imapPass: next.pass || '', saved: false };
-  });
   applyLicenseStatus = (eventOrStatus, pushedStatus) => {
     const status = pushedStatus || eventOrStatus;
     if (!status || typeof status !== 'object') return;
@@ -117,19 +85,11 @@ class Settings extends Component {
 
   save = () => {
     // Preserve any other stored settings; this screen manages the webhook + antibot solver keys.
-    const sel = this.state.imapSel;
-    const by = { ...this.state.imapByHost, [sel]: { user: this.state.imapUser.trim(), pass: this.state.imapPass } };
-    const effHost = sel === 'custom' ? this.state.imapHostCustom.trim() : sel;
     const settings = {
       ...(this.props.settings || {}),
       discordWebhook: this.state.discordWebhook,
       lucaApiKey: this.state.lucaApiKey.trim(),
       hyperApiKey: this.state.hyperApiKey.trim(),
-      imapByHost: by,
-      imapHost: effHost,     // active mailbox — Target/Walmart OTP read this
-      imapPort: 993,         // every provider here uses 993; never editable
-      imapUser: this.state.imapUser.trim(),   // flat active creds, for engine compatibility
-      imapPass: this.state.imapPass,
       aycdApiKey: this.state.aycdApiKey.trim(),
       autoBuy: {
         group: this.state.autoBuyGroup,
@@ -167,7 +127,7 @@ class Settings extends Component {
 
   exportData = async () => {
     if (!window.confirm(
-      'The exported file will contain your CARD DETAILS, SITE PASSWORDS, and DISCORD TOKEN in plain text.\n\n' +
+      'The exported file will contain your CARD DETAILS, SITE PASSWORDS, MAILBOX PASSWORDS, and DISCORD TOKEN in plain text.\n\n' +
       'Anyone who opens the file can read them. Only save it somewhere you trust. Continue?'
     )) return;
     try {
@@ -217,7 +177,7 @@ class Settings extends Component {
   }
 
   render() {
-    const { discordWebhook, lucaApiKey, hyperApiKey, imapSel, imapHostCustom, imapUser, imapPass, showImapPass, aycdApiKey, showAycdKey, saved,
+    const { discordWebhook, lucaApiKey, hyperApiKey, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
       targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
       licenseEmail, licenseOffline, licenseTaskTypes, signingOut } = this.state;
@@ -486,72 +446,10 @@ class Settings extends Component {
           </>)}
 
           <div className="settings-section">
-            <div className="settings-section-title">Email / OTP (IMAP)</div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">IMAP Host</label>
-                <select
-                  className="form-select"
-                  value={imapSel}
-                  onChange={e => this.changeImapHost(e.target.value)}
-                >
-                  {IMAP_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  <option value="custom">Custom…</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ flex: 0.4 }}>
-                <label className="form-label">Port</label>
-                <input className="form-input monospace" value="993" disabled readOnly title="Fixed — all IMAPS providers use 993" />
-              </div>
-            </div>
-            {imapSel === 'custom' && (
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">Custom Host</label>
-                  <input
-                    className="form-input monospace"
-                    placeholder="imap.example.com"
-                    value={imapHostCustom}
-                    onChange={e => this.set('imapHostCustom', e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Mailbox User</label>
-                <input
-                  className="form-input monospace"
-                  placeholder="catch-all@yourdomain.com"
-                  value={imapUser}
-                  onChange={e => this.set('imapUser', e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Mailbox Password (app password)</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    className="form-input monospace"
-                    style={{ paddingRight: 30 }}
-                    type={showImapPass ? 'text' : 'password'}
-                    placeholder="app-specific password"
-                    value={imapPass}
-                    onChange={e => this.set('imapPass', e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => this.setState(s => ({ showImapPass: !s.showImapPass }))}
-                    title={showImapPass ? 'Hide' : 'Show'}
-                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 14, padding: 4, lineHeight: 1 }}
-                  >
-                    {showImapPass ? '🙈' : '👁️'}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <div className="settings-section-title">Email / OTP</div>
             <div className="form-row" style={{ marginTop: 6 }}>
               <div className="form-group">
-                <label className="form-label">AYCD Inbox API Key <span style={{ color: 'var(--accent)', fontWeight: 400 }}>— preferred, tried before IMAP</span></label>
+                <label className="form-label">AYCD Inbox API Key <span style={{ color: 'var(--accent)', fontWeight: 400 }}>— global first-choice source</span></label>
                 <div style={{ position: 'relative' }}>
                   <input
                     className="form-input monospace"
@@ -573,7 +471,8 @@ class Settings extends Component {
               </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              Target &amp; Walmart pull each account’s OTP / 2FA code here, filtered by the account’s own email as the To:. <strong>AYCD Inbox</strong> (set the key above) is tried first — that’s where Target codes come from if your mailboxes are AYCD-connected. The <strong>IMAP</strong> mailbox is the fallback; Gmail/iCloud need an app-specific password.
+              AYCD Inbox remains a global first-choice source. IMAP credentials now belong to each profile:
+              open <strong>Profiles → Edit → Email OTP Mailbox</strong> to give different accounts different mailboxes.
             </div>
           </div>
 
@@ -596,7 +495,7 @@ class Settings extends Component {
               </label>
             </div>
             <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 8 }}>
-              ⚠ The export is plain text — it holds your card details, site passwords, and Discord token. Store it somewhere safe.
+              ⚠ The export is plain text — it holds your card details, site passwords, mailbox passwords, and Discord token. Store it somewhere safe.
             </div>
             {this.state.ioMsg
               ? <div style={{ fontSize: 11, color: this.state.ioColor, marginTop: 6 }}>{this.state.ioMsg}</div>

@@ -1,7 +1,23 @@
 import React, { Component } from 'react';
 
+const { ipcRenderer } = window.require('electron');
+
+const IMAP_PROVIDERS = [
+  { value: 'imap.gmail.com', label: 'Gmail' },
+  { value: 'outlook.office365.com', label: 'Outlook / Hotmail' },
+  { value: 'imap.mail.yahoo.com', label: 'Yahoo' },
+  { value: 'imap.mail.me.com', label: 'iCloud' },
+];
+
+// Matches the upstream helper used in main. Ordinary spaces in app passwords are preserved.
+const sanitizeImapPassword = (value) => String(value ?? '')
+  .replace(/[^\S ]/gu, ' ')
+  .replace(/[\p{Cc}\p{Cf}\u034F]/gu, '');
+
 const BLANK = {
   profileName: '', email: '', phone: '',
+  imapProvider: '', imapHostCustom: '', imapUser: '', imapPass: '', showImapPass: false,
+  imapTesting: false, imapTestResult: null,
   firstName: '', lastName: '',
   address: '', address2: '', city: '', state: '', zipcode: '', country: 'US',
   cardName: '', cardNumber: '', cardMonth: '', cardYear: '', cardCvv: '',
@@ -10,19 +26,80 @@ const BLANK = {
 class CreateProfileModal extends Component {
   constructor(props) {
     super(props);
-    this.state = { ...BLANK, ...(props.initial || {}) };
+    this.state = { ...BLANK, ...(props.initial || {}), imapPass: sanitizeImapPassword(props.initial?.imapPass || '') };
+    this.imapTestSequence = 0;
   }
 
-  set = (field, value) => this.setState({ [field]: value });
+  componentWillUnmount() {
+    this.imapTestSequence += 1;
+  }
+
+  set = (field, value) => {
+    const testingField = ['imapProvider', 'imapHostCustom', 'imapUser', 'imapPass'].includes(field);
+    if (testingField) this.imapTestSequence += 1;
+    this.setState({
+      [field]: field === 'imapPass' ? sanitizeImapPassword(value) : value,
+      ...(testingField ? { imapTesting: false, imapTestResult: null } : {}),
+    });
+  };
+
+  resolvedImapHost = () => (this.state.imapProvider === 'custom'
+    ? this.state.imapHostCustom.trim()
+    : this.state.imapProvider);
+
+  testImap = async () => {
+    const host = this.resolvedImapHost();
+    const user = this.state.imapUser.trim();
+    const password = this.state.imapPass;
+    if (!host || !user || !password) {
+      this.setState({
+        imapTestResult: { ok: false, message: 'Complete the IMAP server, mailbox user, and app password first.' },
+      });
+      return;
+    }
+
+    const sequence = ++this.imapTestSequence;
+    this.setState({ imapTesting: true, imapTestResult: null });
+    try {
+      const result = await ipcRenderer.invoke('testProfileImap', { host, port: 993, user, password });
+      if (sequence === this.imapTestSequence) {
+        this.setState({
+          imapTesting: false,
+          imapTestResult: result?.message
+            ? result
+            : { ok: false, message: 'Could not verify this mailbox. Try again.' },
+        });
+      }
+    } catch {
+      if (sequence === this.imapTestSequence) {
+        this.setState({
+          imapTesting: false,
+          imapTestResult: { ok: false, message: 'Could not run the mailbox test. Try again.' },
+        });
+      }
+    }
+  };
 
   handleSubmit = () => {
     const { profileName, email, firstName, lastName, address, city, state, zipcode, cardNumber, cardMonth, cardYear, cardCvv } = this.state;
     if (!profileName || !email || !firstName || !lastName || !address || !city || !state || !zipcode || !cardNumber || !cardMonth || !cardYear || !cardCvv) return;
 
+    const imapHost = this.resolvedImapHost();
+    if (this.state.imapProvider && (!imapHost || !this.state.imapUser.trim() || !this.state.imapPass)) {
+      window.alert('Complete the IMAP host, mailbox user, and app password, or select “No automatic mailbox”.');
+      return;
+    }
+
     const profile = {
       profileName: this.state.profileName,
       email: this.state.email,
       phone: this.state.phone,
+      imap: this.state.imapProvider ? {
+        host: imapHost,
+        port: 993,
+        user: this.state.imapUser.trim(),
+        password: this.state.imapPass,
+      } : null,
       shipping: {
         firstName: this.state.firstName,
         lastName: this.state.lastName,
@@ -84,6 +161,80 @@ class CreateProfileModal extends Component {
               <label className="form-label">Phone</label>
               {this.input('phone', '5551234567')}
             </div>
+
+            <hr className="form-divider" />
+
+            {/* Ported from Hope's profile-owned IMAP form. */}
+            <div className="form-section-title">Email OTP Mailbox</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
+              Optional. Target and Walmart use this profile’s mailbox when this profile’s account requests a login code.
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Mailbox Provider</label>
+                <select className="form-select" value={this.state.imapProvider} onChange={e => this.set('imapProvider', e.target.value)}>
+                  <option value="">No automatic mailbox</option>
+                  {IMAP_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  <option value="custom">Custom…</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 0.35 }}>
+                <label className="form-label">Port</label>
+                <input className="form-input monospace" value="993" disabled readOnly />
+              </div>
+            </div>
+            {this.state.imapProvider === 'custom' && (
+              <div className="form-group">
+                <label className="form-label">Custom IMAP Host</label>
+                {this.input('imapHostCustom', 'imap.example.com', { className: 'form-input monospace' })}
+              </div>
+            )}
+            {!!this.state.imapProvider && (
+              <>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Mailbox User</label>
+                    {this.input('imapUser', 'mailbox@example.com', { type: 'email', className: 'form-input monospace' })}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Mailbox App Password</label>
+                    <div style={{ position: 'relative' }}>
+                      {this.input('imapPass', 'App-specific password', {
+                        type: this.state.showImapPass ? 'text' : 'password',
+                        className: 'form-input monospace',
+                        style: { paddingRight: 34 },
+                      })}
+                      <button
+                        type="button"
+                        title={this.state.showImapPass ? 'Hide password' : 'Show password'}
+                        onClick={() => this.setState(s => ({ showImapPass: !s.showImapPass }))}
+                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 2 }}
+                      >
+                        {this.state.showImapPass ? '🙈' : '👁️'}
+                      </button>
+                    </div>
+                    <small style={{ color: 'var(--muted)' }}>Spaces are preserved; invisible paste formatting is removed automatically.</small>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 30, margin: '-2px 0 4px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={this.testImap}
+                    disabled={this.state.imapTesting}
+                  >
+                    {this.state.imapTesting ? 'Testing…' : 'Test IMAP Connection'}
+                  </button>
+                  <span
+                    aria-live="polite"
+                    className={this.state.imapTestResult?.ok ? 'text-success' : 'text-danger'}
+                    style={{ fontSize: 11 }}
+                  >
+                    {this.state.imapTestResult?.message || ''}
+                  </span>
+                </div>
+              </>
+            )}
 
             <hr className="form-divider" />
 

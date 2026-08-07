@@ -38,6 +38,7 @@ fi
 cp -cR "$PROJECT_DIR/extracted/asar" "$TEMP_DIR/app"
 mv "$TEMP_DIR/app/build" "$TEMP_DIR/app/build-react16-original"
 cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
+node "$PROJECT_DIR/scripts/patch-profile-imap-engines.js" "$TEMP_DIR/app/public/helpers"
 
 node -e '
   const fs = require("fs");
@@ -66,6 +67,10 @@ cp "$PROJECT_DIR/launcher/task-type-access.js" "$RESOURCES/app/task-type-access.
 cp "$PROJECT_DIR/launcher/task-type-ipc-guard.js" "$RESOURCES/app/task-type-ipc-guard.js"
 cp "$PROJECT_DIR/launcher/task-group-store.js" "$RESOURCES/app/task-group-store.js"
 cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-state.js"
+cp "$PROJECT_DIR/launcher/imap-password.js" "$RESOURCES/app/imap-password.js"
+cp "$PROJECT_DIR/launcher/imap-connection.js" "$RESOURCES/app/imap-connection.js"
+cp "$PROJECT_DIR/launcher/profile-imap-control.js" "$RESOURCES/app/profile-imap-control.js"
+cp -R "$PROJECT_DIR/launcher/node_modules" "$RESOURCES/app/node_modules"
 
 PLIST="$OUTPUT_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Delete :HopeReactVersion' "$PLIST" 2>/dev/null || true

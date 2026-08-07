@@ -2,6 +2,8 @@
   "source": "https://github.com/jasonhr13/hope",
   "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
   "files": {
+    "launcher/imap-password.js": "7cc0e6c8f1f682cfe816776c788166c6ad182f9bf57dbc64488df889753fbf48",
+    "launcher/imap-connection.js": "0484052bafd1e3b53ed30abd57a05439a647e25cb57f9b31d754b1fd7c0e76b3",
     "launcher/license-client.js": "97aedd013bbfb06498e1e4e770ab4f19ebbfc8fff76dba7d1f5a21957a53585b",
     "launcher/task-type-access.js": "d99a3a24f8e88a419194c909fd97f72bd834718e972aa0da34bfde1306975529",
     "cloudflare/license/README.md": "213779a9e1f8ddc3a165e77b63e1d92f4e0c83162b2380fd05ac207b35816297",

@@ -14,6 +14,8 @@ const { createTaskGroupStore } = require('./task-group-store');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
+const { createProfileImapControl } = require('./profile-imap-control');
+const { testImapConnection } = require('./imap-connection');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -178,6 +180,36 @@ function installTaskGroupControlPlane() {
       console.error(`Could not save Hope task groups: ${error.message}`);
       try { event.returnValue = store.load(); } catch { event.returnValue = []; }
     }
+  });
+}
+
+function installProfileImapControlPlane() {
+  if (!FEATURES.profileImap) return null;
+  try {
+    const { safeStorage } = require('electron');
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    return createProfileImapControl({
+      dataDirectory: app.getPath('userData'),
+      safeStorage,
+      dataManager,
+      logger: console,
+    });
+  } catch (error) {
+    console.error(`Could not install profile mailbox storage: ${error.message}`);
+    return null;
+  }
+}
+
+function installProfileImapIpc(authority) {
+  if (!FEATURES.profileImap) return;
+  const { ipcMain } = require('electron');
+  ipcMain.removeHandler('testProfileImap');
+  ipcMain.handle('testProfileImap', async (_event, config = {}) => {
+    if (authority && authority.cached().ok !== true) {
+      pushLicenseStatus(authority.cached());
+      return { ok: false, message: 'Sign in to rCart before testing a mailbox.' };
+    }
+    return testImapConnection(config);
   });
 }
 
@@ -477,7 +509,9 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroupControlPlane();
+  installProfileImapControlPlane();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement() : null;
+  installProfileImapIpc(licenseAuthority);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();

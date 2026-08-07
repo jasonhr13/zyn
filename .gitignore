@@ -14,6 +14,7 @@
 # JavaScript dependencies and generated frontend output
 frontend/node_modules/
 frontend/build/
+launcher/node_modules/
 
 # Packaged applications, installers, downloaded runtimes, and staging output
 /dist/

@@ -3,5 +3,8 @@
   "productName": "Hope",
   "version": "1.6.74",
   "private": true,
-  "main": "bootstrap.js"
+  "main": "bootstrap.js",
+  "dependencies": {
+    "imapflow": "1.6.5"
+  }
 }

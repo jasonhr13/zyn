@@ -13,10 +13,16 @@ function maskCard(num) {
 
 // Flatten a stored profile into the flat shape the Create/Edit modal expects.
 function flatten(p) {
+  const knownImapHosts = new Set(['imap.gmail.com', 'outlook.office365.com', 'imap.mail.yahoo.com', 'imap.mail.me.com']);
+  const imapHost = p.imap?.host || '';
   return {
     profileName: p.profileName || '',
     email: p.email || '',
     phone: p.phone || '',
+    imapProvider: imapHost ? (knownImapHosts.has(imapHost) ? imapHost : 'custom') : '',
+    imapHostCustom: imapHost && !knownImapHosts.has(imapHost) ? imapHost : '',
+    imapUser: p.imap?.user || '',
+    imapPass: p.imap?.password || '',
     firstName: p.shipping?.firstName || p.firstName || '',
     lastName: p.shipping?.lastName || p.lastName || '',
     address: p.shipping?.address || p.address || '',
@@ -308,6 +314,10 @@ class Profiles extends Component {
                       {addr}{city ? `, ${city}` : ''}{state ? `, ${state}` : ''}
                     </div>
                     <div className="profile-card-card">{maskCard(cardNum)}</div>
+                    <div style={{ fontSize: 10, color: p.imap?.user ? '#34d399' : 'var(--muted)', marginTop: 4 }}>
+                      <i className="ion-md-mail" style={{ marginRight: 5 }} />
+                      {p.imap?.user ? `OTP: ${p.imap.user}` : 'OTP mailbox not configured'}
+                    </div>
                     <div className="profile-card-actions">
                       <button
                         className="btn btn-sm btn-secondary btn-icon"

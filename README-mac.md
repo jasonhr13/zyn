@@ -231,6 +231,37 @@ node ./scripts/module-access-runtime-smoke-test.js <port> /tmp/hope-r5-module-ac
 The independently installable output is `dist/Hope-ControlPlane-R5.app`. R4 remains available from
 the `control-plane-r4` Git tag and its previously built application bundle.
 
+## Control-plane R6 per-profile IMAP
+
+R6 ports Hope's per-profile IMAP model and connection tester from the same pinned upstream commit.
+Each checkout profile can select Gmail, Outlook, Yahoo, iCloud, or a custom IMAP host and verify its
+app password before saving. The password sanitizer and connection helper are preserved byte-for-byte
+in `launcher/imap-password.js` and `launcher/imap-connection.js`; their hashes are pinned in
+`config/upstream-license.json`.
+
+Mailbox passwords are encrypted at rest with Electron `safeStorage`. A one-time migration copies an
+existing global mailbox onto existing profiles that do not already own one, creates owner-only R5
+rollback backups, and then removes the retired global keys. Target and Walmart resolve IMAP from the
+profile selected for that task. A hash-gated build patch limits the engine changes to this routing;
+`backend.exe`, Windows Node, and Wine remain frozen by the runtime contract.
+
+Manual backup exports intentionally decrypt profile mailbox passwords in memory, alongside the other
+portable credentials, so the upcoming encrypted cloud-backup phase can wrap the complete profile.
+Import encrypts them for the destination Mac. The existing plaintext-export warning now names mailbox
+passwords explicitly. Cloud upload itself remains disabled in R6.
+
+```sh
+./scripts/build-r6.sh
+node ./scripts/verify-upstream-license.js
+node ./scripts/profile-imap-control-smoke-test.js
+node ./scripts/imap-connection-smoke-test.js
+node ./scripts/profile-imap-engine-patch-smoke-test.js
+node ./scripts/profile-imap-runtime-smoke-test.js <port> /tmp/hope-r6-profile-imap.png <isolated-user-data-dir>
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R6.app`. R5 remains available from
+the `control-plane-r5` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

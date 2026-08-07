@@ -3,10 +3,16 @@ import CreateProfileModal from './create-modal';
 
 // Edit modal reuses Create modal, pre-populating from the flat profile
 function EditProfileModal({ profile, onSave, onClose }) {
+  const knownImapHosts = new Set(['imap.gmail.com', 'outlook.office365.com', 'imap.mail.yahoo.com', 'imap.mail.me.com']);
+  const imapHost = profile.imap?.host || '';
   const initial = {
     profileName: profile.profileName || '',
     email: profile.email || '',
     phone: profile.phone || '',
+    imapProvider: imapHost ? (knownImapHosts.has(imapHost) ? imapHost : 'custom') : '',
+    imapHostCustom: imapHost && !knownImapHosts.has(imapHost) ? imapHost : '',
+    imapUser: profile.imap?.user || '',
+    imapPass: profile.imap?.password || '',
     firstName: profile.shipping?.firstName || profile.firstName || '',
     lastName: profile.shipping?.lastName || profile.lastName || '',
     address: profile.shipping?.address || profile.address || '',
