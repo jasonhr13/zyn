@@ -9,6 +9,7 @@
 .env
 .env.*
 !.env.example
+/.local/
 
 # JavaScript dependencies and generated frontend output
 frontend/node_modules/
@@ -26,4 +27,3 @@ frontend/build/
 # third-party dependencies, and embedded production credentials. R0 will
 # import the required main-process sources into a clean, sanitized source tree.
 /extracted/
-

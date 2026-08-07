@@ -37,6 +37,7 @@ mv "$CONTENTS/MacOS/Electron" "$CONTENTS/MacOS/Hope"
 mkdir -p "$RESOURCES/app"
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
 cp "$PROJECT_DIR/launcher/bootstrap.js" "$RESOURCES/app/bootstrap.js"
+cp "$PROJECT_DIR/launcher/feature-flags.js" "$RESOURCES/app/feature-flags.js"
 
 cp "$SOURCE_APP/resources/app.asar" "$RESOURCES/app-original.asar"
 if [[ -d "$SOURCE_APP/resources/app.asar.unpacked" ]]; then

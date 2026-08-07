@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "controlPlaneRelease": "R0",
+  "product": {
+    "name": "Hope",
+    "version": "1.6.74",
+    "bundleIdentifier": "com.hope.macos",
+    "electronVersion": "43.3.0",
+    "reactVersion": "18.3.1"
+  },
+  "immutableResources": [
+    {
+      "path": "Contents/Resources/engine/backend.exe",
+      "sha256": "6c381523e02af2c7e2e49be01243d65d4e95ae22c2d45a32eb23ef1b00d57ce2"
+    },
+    {
+      "path": "Contents/Resources/vendor/node.exe",
+      "sha256": "35b7c95a379beb606f5798ed83081690df13190077630b234163c6607aa4cc94"
+    },
+    {
+      "path": "Contents/Resources/wine/bin/wine",
+      "sha256": "bad3b6126b6612680e26302c0e0b7e56d6c7036eac9bf6313878bdd9039b003f"
+    }
+  ],
+  "requiredResources": [
+    "Contents/Resources/app-original.asar",
+    "Contents/Resources/app/bootstrap.js",
+    "Contents/Resources/app/feature-flags.js",
+    "Contents/Resources/wine/bin/wineserver"
+  ],
+  "symlinks": [
+    {
+      "path": "Contents/Resources/engine/backend",
+      "target": "backend.exe"
+    },
+    {
+      "path": "Contents/Resources/vendor/node",
+      "target": "node.exe"
+    }
+  ],
+  "windowsLaunchers": [
+    "Contents/Resources/engine/backend",
+    "Contents/Resources/engine/backend.exe",
+    "Contents/Resources/vendor/node",
+    "Contents/Resources/vendor/node.exe"
+  ]
+}

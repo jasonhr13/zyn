@@ -79,6 +79,36 @@ The 1.6.74 update also carries the newer Go backend (source revision
 `d01b552ad3a202686f9fd9a9ac95d24cbba35e45`) and the refreshed encrypted Target
 and proxy resource pools from the August 7 installer.
 
+## Control-plane R0 baseline
+
+R0 is the frozen Electron 43 + React 18 integration baseline for the control-plane roadmap. Every
+control-plane feature flag is disabled, and the packaged backend, Windows Node runtime, Wine binary,
+bundle identifier, application version, and launcher symlinks are checked against
+`config/runtime-contract.json` during the build.
+
+Build the independently installable R0 artifact:
+
+```sh
+./scripts/build-r0.sh
+```
+
+The output is `dist/Hope-ControlPlane-R0.app`. Its `Contents/Resources/hope-build.json` receipt
+records the source commit, dirty state, framework versions, build time, and immutable runtime
+hashes. Verify an existing artifact without rebuilding it:
+
+```sh
+node ./scripts/verify-runtime-contract.js ./dist/Hope-ControlPlane-R0.app
+```
+
+Before a phase that changes persisted UI data, create a private, ignored snapshot of Hope's
+top-level JSON data. The snapshot directory and every copied file are owner-only:
+
+```sh
+node ./scripts/snapshot-user-data.js
+```
+
+Use `--source <directory>` or `--output-root <directory>` when the data is stored elsewhere.
+
 To rebuild after moving the old output aside:
 
 ```sh

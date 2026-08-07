@@ -8,6 +8,16 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { app, dialog } = require('electron');
+const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
+
+// Main-process-only release metadata. The original app does not consume it in R0; future phases
+// can query the same frozen object without smuggling configuration through renderer globals.
+Object.defineProperty(global, '__hopeControlPlane', {
+  value: Object.freeze({ release: CONTROL_PLANE_RELEASE, features: FEATURES }),
+  enumerable: false,
+  configurable: false,
+  writable: false,
+});
 
 const resources = process.resourcesPath;
 const wine = path.join(resources, 'wine', 'bin', 'wine');
