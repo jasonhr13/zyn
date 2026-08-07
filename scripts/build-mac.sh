@@ -38,6 +38,7 @@ mkdir -p "$RESOURCES/app"
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
 cp "$PROJECT_DIR/launcher/bootstrap.js" "$RESOURCES/app/bootstrap.js"
 cp "$PROJECT_DIR/launcher/feature-flags.js" "$RESOURCES/app/feature-flags.js"
+cp "$PROJECT_DIR/launcher/task-group-store.js" "$RESOURCES/app/task-group-store.js"
 cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-state.js"
 
 cp "$SOURCE_APP/resources/app.asar" "$RESOURCES/app-original.asar"

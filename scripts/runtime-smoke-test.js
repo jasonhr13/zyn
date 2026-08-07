@@ -93,7 +93,7 @@ async function main() {
       const electron = window.require('electron');
       const ipc = electron.ipcRenderer;
       const routePaths = [
-        '/modules', '/tasks', '/generate', '/pbandai', '/round1', '/riotgames',
+        '/modules', '/task-groups', '/tasks', '/generate', '/pbandai', '/round1', '/riotgames',
         '/pokemoncenter', '/target', '/walmart', '/profiles', '/accounts',
         '/proxies', '/settings'
       ];
@@ -195,6 +195,7 @@ async function main() {
         },
         storedDataReads: {
           tasks: safeLength('getTasks'),
+          taskGroups: safeLength('getTaskGroups'),
           profiles: safeLength('getProfiles'),
           accounts: safeLength('getAccounts'),
           proxies: safeLength('getProxies'),
@@ -253,7 +254,7 @@ async function main() {
       'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Generate', 'Settings'
     ])
     || JSON.stringify(report.shell.moduleCards) !== JSON.stringify([
-      'Bandai', 'Target', 'Secret Lair', 'Round1'
+      'Task Groups', 'Bandai', 'Secret Lair', 'Round1'
     ]);
   if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed) {
     process.exitCode = 1;

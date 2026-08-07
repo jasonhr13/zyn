@@ -10,6 +10,7 @@ const path = require('path');
 const { app, dialog } = require('electron');
 const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
+const { createTaskGroupStore } = require('./task-group-store');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -154,6 +155,29 @@ function installWindowSizePersistence() {
   });
 }
 
+function installTaskGroupControlPlane() {
+  if (!FEATURES.taskGroups) return;
+  const { ipcMain } = require('electron');
+  const store = createTaskGroupStore(app.getPath('userData'));
+
+  ipcMain.on('getTaskGroups', (event) => {
+    try {
+      event.returnValue = store.load();
+    } catch (error) {
+      console.error(`Could not load Hope task groups: ${error.message}`);
+      event.returnValue = [];
+    }
+  });
+  ipcMain.on('saveTaskGroups', (event, groups) => {
+    try {
+      event.returnValue = store.save(groups);
+    } catch (error) {
+      console.error(`Could not save Hope task groups: ${error.message}`);
+      try { event.returnValue = store.load(); } catch { event.returnValue = []; }
+    }
+  });
+}
+
 function enableLocalDeveloperLicense() {
   const now = () => Date.now();
   const verdict = () => ({
@@ -285,6 +309,7 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
+  installTaskGroupControlPlane();
   disableWindowsOnlyUpdater();
   enableLocalDeveloperLicense();
   require(path.join(originalAsar, 'public', 'electron.js'));

@@ -124,6 +124,28 @@ node ./scripts/window-size-state-smoke-test.js
 The output is `dist/Hope-ControlPlane-R1.app`. R0 remains available from the
 `control-plane-r0` Git tag and its previously built application bundle.
 
+## Control-plane R2 task groups
+
+R2 adds a persistent Target task-group control plane without replacing or modifying the Target
+engine. Each group owns a shared SKU watch list, quantity, default proxy selection, and account task
+membership. Starting a group resolves the same account-to-profile email match and sends the same
+`startTarget` payload used by the legacy Target page. Task Groups becomes the visible Target entry
+in the Tasks hub; the original `/target` route remains valid for bookmarks and rollback checks.
+
+On first use, R2 copies an existing `target-tasks.json` workspace into a `Recovered Target Tasks`
+group. The legacy file is never changed, so R1 remains a data-safe rollback. R2 writes the new
+`task-groups.json` atomically with owner-only permissions and rotating backups. Task scheduling and
+API-controlled module visibility remain disabled behind later release flags.
+
+```sh
+./scripts/build-r2.sh
+node ./scripts/task-group-store-smoke-test.js
+node ./scripts/task-group-crud-smoke-test.js <port> /tmp/hope-r2-task-groups.png <isolated-user-data-dir>
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R2.app`. R1 remains available from
+the `control-plane-r1` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

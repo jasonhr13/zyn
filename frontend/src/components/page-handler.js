@@ -7,6 +7,7 @@ import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
 import Modules from './pages/modules';
+import TaskGroups from './pages/task-groups';
 import Tasks from './pages/tasks';
 import Pbandai from './pages/pbandai';
 import Round1 from './pages/round1';
@@ -238,6 +239,7 @@ class PageHandler extends Component {
             <ErrorBoundary>
               <Switch>
                 <Route path="/modules" component={Modules} />
+                <Route path="/task-groups" component={TaskGroups} />
                 <Route path="/tasks" component={Tasks} />
                 <Route path="/generate" component={Generate} />
                 <Route path="/pbandai" component={Pbandai} />

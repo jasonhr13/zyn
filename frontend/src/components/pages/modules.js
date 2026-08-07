@@ -4,16 +4,16 @@ import Icon from '../icon';
 
 const MODULES = [
   {
+    path: '/task-groups',
+    name: 'Task Groups',
+    icon: 'layers',
+    description: 'Organize Target watch lists and account tasks into independently managed workspaces.',
+  },
+  {
     path: '/pbandai',
     name: 'Bandai',
     icon: 'ticket',
     description: 'Product monitoring, account sessions, coupon checks, and checkout tasks.',
-  },
-  {
-    path: '/target',
-    name: 'Target',
-    icon: 'target',
-    description: 'Manage Target accounts, product monitoring, cookie capacity, and active tasks.',
   },
   {
     path: '/tasks',

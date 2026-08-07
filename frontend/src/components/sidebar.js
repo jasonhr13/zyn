@@ -8,7 +8,7 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
-const MODULE_ROUTES = ['/modules', '/pbandai', '/target', '/tasks', '/round1', '/riotgames', '/pokemoncenter', '/walmart'];
+const MODULE_ROUTES = ['/modules', '/task-groups', '/pbandai', '/target', '/tasks', '/round1', '/riotgames', '/pokemoncenter', '/walmart'];
 const NAV_ITEMS = [
   { to: '/modules', icon: 'layers', label: 'Tasks', section: null, modules: true },
   { to: '/profiles', icon: 'user', label: 'Profiles', section: 'Workspace' },
@@ -75,7 +75,7 @@ class Sidebar extends Component {
         </nav>
         <div className="sidebar-bottom">
           {this.renderUpdate()}
-          <div className="sidebar-version">{APP_VERSION ? `v${APP_VERSION} · control plane R1` : 'control plane R1'}</div>
+          <div className="sidebar-version">{APP_VERSION ? `v${APP_VERSION} · control plane R2` : 'control plane R2'}</div>
         </div>
       </div>
     );

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R1",
+  "controlPlaneRelease": "R2",
   "features": {
     "designShell": true,
-    "taskGroups": false,
+    "taskGroups": true,
     "licenseObserve": false,
     "licenseEnforce": false,
     "apiModuleAccess": false,
@@ -36,6 +36,7 @@
     "Contents/Resources/app-original.asar",
     "Contents/Resources/app/bootstrap.js",
     "Contents/Resources/app/feature-flags.js",
+    "Contents/Resources/app/task-group-store.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/wine/bin/wineserver"
   ],
