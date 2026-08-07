@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R4",
+  "controlPlaneRelease": "R5",
   "features": {
     "designShell": true,
     "taskGroups": true,
     "licenseObserve": true,
     "licenseEnforce": true,
-    "apiModuleAccess": false,
+    "apiModuleAccess": true,
     "cloudBackup": false,
     "taskScheduling": false,
     "isolatedRenderer": false
@@ -39,6 +39,8 @@
     "Contents/Resources/app/license-client.js",
     "Contents/Resources/app/license-authority.js",
     "Contents/Resources/app/license-observer.js",
+    "Contents/Resources/app/task-type-access.js",
+    "Contents/Resources/app/task-type-ipc-guard.js",
     "Contents/Resources/app/task-group-store.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/wine/bin/wineserver"

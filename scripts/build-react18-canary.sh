@@ -62,6 +62,8 @@ cp "$PROJECT_DIR/launcher/feature-flags.js" "$RESOURCES/app/feature-flags.js"
 cp "$PROJECT_DIR/launcher/license-client.js" "$RESOURCES/app/license-client.js"
 cp "$PROJECT_DIR/launcher/license-authority.js" "$RESOURCES/app/license-authority.js"
 cp "$PROJECT_DIR/launcher/license-observer.js" "$RESOURCES/app/license-observer.js"
+cp "$PROJECT_DIR/launcher/task-type-access.js" "$RESOURCES/app/task-type-access.js"
+cp "$PROJECT_DIR/launcher/task-type-ipc-guard.js" "$RESOURCES/app/task-type-ipc-guard.js"
 cp "$PROJECT_DIR/launcher/task-group-store.js" "$RESOURCES/app/task-group-store.js"
 cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-state.js"
 

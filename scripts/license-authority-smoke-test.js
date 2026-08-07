@@ -36,6 +36,7 @@ const silentLogger = { warn() {} };
     let intervalCallback = null;
     let intervalDelay = 0;
     let canceledTimer = null;
+    const entitlementChanges = [];
     const api = {
       async login(email, password) {
         calls.push({ method: 'login', email, password });
@@ -67,6 +68,7 @@ const silentLogger = { warn() {} };
       now: () => now,
       onStatus: status => statuses.push(status),
       onLock: () => { lockCount += 1; },
+      onEntitlementsChanged: change => entitlementChanges.push(change),
       scheduleInterval: (callback, delay) => { intervalCallback = callback; intervalDelay = delay; return 44; },
       cancelInterval: id => { canceledTimer = id; },
       logger: silentLogger,
@@ -88,6 +90,13 @@ const silentLogger = { warn() {} };
     assert.equal(stored.includes('account-password'), false, 'password was persisted');
     assert.equal(stored.includes('proxy-secret'), false, 'managed proxy credential was persisted');
     assert.equal(fs.statSync(authority.sessionPath).mode & 0o777, 0o600);
+    const refreshed = await authority.validate();
+    assert.deepEqual(refreshed.taskTypes, { pokemoncenter: false, round1: true });
+    assert.deepEqual(entitlementChanges, [{
+      removed: ['pokemoncenter'],
+      previous: { pokemoncenter: true, round1: false },
+      next: { pokemoncenter: false, round1: true },
+    }]);
     authority.start();
     authority.start();
     assert.equal(intervalDelay, LICENSE_CHECK_MS);
@@ -207,6 +216,7 @@ const silentLogger = { warn() {} };
       validationIntervalMs: LICENSE_CHECK_MS,
       offlineGraceMs: LICENSE_OFFLINE_GRACE_MS,
       revokedSessionLocked: invalidLocks === 1,
+      removedEntitlementStopped: entitlementChanges[0].removed[0],
       observerSessionMigrated: true,
       logoutLocked: logoutLocks === 1,
     }, null, 2));

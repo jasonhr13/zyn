@@ -13,6 +13,7 @@ const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-si
 const { createTaskGroupStore } = require('./task-group-store');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
+const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -222,11 +223,30 @@ function stopAllRunningForLicense() {
   } catch {}
 }
 
+function stopRemovedTaskTypes({ removed = [] } = {}) {
+  let taskHandler = null;
+  try { taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js')); } catch {}
+  for (const taskType of removed) {
+    if (taskType === 'round1') {
+      console.warn('[license] Round1 access removed; stopping its running tasks');
+      try { taskHandler?.stopAllRound1?.(); } catch {}
+    }
+    if (taskType === 'pokemoncenter') {
+      console.warn('[license] Pokémon Center access removed; stopping its running tasks');
+      try { taskHandler?.stopAllPokemonCenter?.(); } catch {}
+    }
+  }
+}
+
 function guardTaskHelpers(authority) {
   const allowed = () => authority.cached().ok === true;
-  const blocked = name => {
+  const TASK_TYPE_METHODS = Object.freeze({ startRound1: 'round1', startPokemonCenter: 'pokemoncenter' });
+  const entitled = taskType => authority.cached().taskTypes?.[taskType] === true;
+  const blocked = (name, taskType = '') => {
     const status = authority.cached();
-    console.warn(`Blocked ${name} — license: ${status.reason || 'not active'}`);
+    console.warn(taskType
+      ? `Blocked ${name} — optional task type ${taskType} is not enabled for this account`
+      : `Blocked ${name} — license: ${status.reason || 'not active'}`);
     pushLicenseStatus(status);
   };
 
@@ -237,6 +257,8 @@ function guardTaskHelpers(authority) {
       const original = taskHandler[name].bind(taskHandler);
       taskHandler[name] = (...args) => {
         if (!allowed()) { blocked(name); return undefined; }
+        const taskType = TASK_TYPE_METHODS[name];
+        if (taskType && !entitled(taskType)) { blocked(name, taskType); return undefined; }
         return original(...args);
       };
     }
@@ -277,6 +299,7 @@ function installReplacementLicenseEnforcement() {
     safeStorage,
     onStatus: pushLicenseStatus,
     onLock: stopAllRunningForLicense,
+    onEntitlementsChanged: stopRemovedTaskTypes,
     logger: console,
   });
 
@@ -461,6 +484,17 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   }
   disableWindowsOnlyUpdater();
   configureDeveloperReporting();
-  require(path.join(originalAsar, 'public', 'electron.js'));
+  const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
+    ? installTaskTypeIpcGuard({
+        ipcMain: require('electron').ipcMain,
+        authority: licenseAuthority,
+        onBlocked: ({ channel, taskType, status }) => {
+          console.warn(`Blocked ${channel} — optional task type ${taskType} is not enabled for this account`);
+          pushLicenseStatus(status);
+        },
+      })
+    : () => {};
+  try { require(path.join(originalAsar, 'public', 'electron.js')); }
+  finally { restoreTaskTypeIpc(); }
   if (licenseAuthority) replaceRetiredLicenseIpc(licenseAuthority);
 }

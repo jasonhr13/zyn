@@ -227,6 +227,8 @@ class PageHandler extends Component {
       );
     }
 
+    const taskTypes = license.taskTypes || {};
+
     return (
       <HashRouter>
         <TitleBar />
@@ -238,14 +240,16 @@ class PageHandler extends Component {
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
-                <Route path="/modules" component={Modules} />
+                <Route path="/modules" render={props => <Modules {...props} taskTypes={taskTypes} />} />
                 <Route path="/task-groups" component={TaskGroups} />
                 <Route path="/tasks" component={Tasks} />
                 <Route path="/generate" component={Generate} />
                 <Route path="/pbandai" component={Pbandai} />
-                <Route path="/round1" component={Round1} />
+                <Route path="/round1" render={props => taskTypes.round1 === true
+                  ? <Round1 {...props} /> : <Redirect to="/modules" />} />
                 <Route path="/riotgames" component={RiotGames} />
-                <Route path="/pokemoncenter" component={PokemonCenter} />
+                <Route path="/pokemoncenter" render={props => taskTypes.pokemoncenter === true
+                  ? <PokemonCenter {...props} /> : <Redirect to="/modules" />} />
                 <Route path="/target" component={Target} />
                 <Route path="/walmart" component={Walmart} />
                 <Route path="/profiles" component={Profiles} />

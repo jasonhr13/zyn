@@ -1347,6 +1347,7 @@ body.theme-night .form-select {
 .module-card-copy strong { color: var(--text); font-size: 12.5px; font-weight: 720; }
 .module-card-copy small { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .module-card-action { display: inline-flex; align-items: center; gap: 5px; align-self: end; color: var(--accent); font-size: 9.5px; font-weight: 700; }
+.module-entitlement-note { color: var(--dim); font-size: 9.5px; line-height: 1.5; text-align: right; }
 
 /* The current Profiles renderer still uses cards. Keep those established semantics while adopting
    the new palette; the upstream repository moved this page to rows in a later data phase. */
@@ -1430,3 +1431,20 @@ body.theme-night .form-select {
 .license-gate-acknowledge input { margin-top: 2px; accent-color: var(--accent); }
 .license-gate-error { color: var(--danger); font-size: 10.5px; line-height: 1.45; text-align: center; }
 .license-gate-footnote { margin-top: 2px; color: var(--dim); font-size: 9.5px; line-height: 1.5; text-align: center; }
+
+/* ── R5 API-controlled module access ─────────────────────────────────────── */
+.license-module-access {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto;
+  gap: 7px 16px;
+  max-width: 360px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--muted);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--field);
+  font-size: 10px;
+}
+.license-module-access strong { color: var(--ok); font-weight: 700; text-align: right; }
+.license-module-access strong.disabled { color: var(--dim); }

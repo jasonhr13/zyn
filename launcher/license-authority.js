@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createClient, DEFAULT_API_BASE } = require('./license-client');
+const { normalizeTaskTypeAccess, removedTaskTypes } = require('./task-type-access');
 
 const SESSION_FILE = 'license-session.json';
 const OBSERVER_SESSION_FILE = 'license-observer-session.json';
@@ -18,13 +19,7 @@ const IPC = Object.freeze({
   logout: 'logoutLicense',
 });
 
-function normalizeTaskTypes(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value)
-    .slice(0, 50)
-    .map(([key, enabled]) => [String(key).trim().toLowerCase().slice(0, 64), enabled === true])
-    .filter(([key]) => key));
-}
+const normalizeTaskTypes = normalizeTaskTypeAccess;
 
 function cleanEmail(value) {
   return String(value || '').trim().toLowerCase().slice(0, 254);
@@ -53,13 +48,14 @@ function createLicenseAuthority({
   cancelInterval = clearInterval,
   onStatus = () => {},
   onLock = () => {},
+  onEntitlementsChanged = () => {},
   logger = console,
 } = {}) {
   if (!dataDirectory) throw new Error('license authority dataDirectory is required');
   const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE });
   const sessionPath = path.join(dataDirectory, SESSION_FILE);
   const observerSessionPath = path.join(dataDirectory, OBSERVER_SESSION_FILE);
-  let licenseState = { ok: false, reason: 'Sign in to continue.', taskTypes: {} };
+  let licenseState = { ok: false, reason: 'Sign in to continue.', taskTypes: normalizeTaskTypes() };
   let licenseToken = '';
   let licenseValidatedAt = 0;
   let pendingResetToken = '';
@@ -114,7 +110,7 @@ function createLicenseAuthority({
         migratedFromObserver: filePath === observerSessionPath,
       };
     }
-    return { email: '', token: '', validatedAt: 0, taskTypes: {}, migratedFromObserver: false };
+    return { email: '', token: '', validatedAt: 0, taskTypes: normalizeTaskTypes(), migratedFromObserver: false };
   };
 
   const loadSession = () => {
@@ -177,6 +173,9 @@ function createLicenseAuthority({
   };
 
   const acceptLicense = (result, token, validatedAt = now()) => {
+    const wasActive = licenseState.ok === true;
+    const previousTaskTypes = normalizeTaskTypes(licenseState.taskTypes);
+    const nextTaskTypes = normalizeTaskTypes(result.taskTypes);
     licenseToken = String(token || licenseToken || '');
     licenseValidatedAt = Number(validatedAt) || now();
     pendingResetToken = '';
@@ -190,11 +189,16 @@ function createLicenseAuthority({
       managedProxyCount: Number.isFinite(Number(result.proxyListCount))
         ? Math.max(0, Number(result.proxyListCount))
         : (Array.isArray(result.managedProxyLists) ? result.managedProxyLists.length : 0),
-      taskTypes: normalizeTaskTypes(result.taskTypes),
+      taskTypes: nextTaskTypes,
       requiresPasswordReset: false,
       storage: 'memory',
     };
     licenseState.storage = saveSession() ? 'encrypted' : 'memory';
+    const removed = wasActive ? removedTaskTypes(previousTaskTypes, nextTaskTypes) : [];
+    if (removed.length) {
+      try { onEntitlementsChanged({ removed, previous: previousTaskTypes, next: nextTaskTypes }); }
+      catch (error) { logger.warn?.(`[license] entitlement hook: ${error.message}`); }
+    }
     return push();
   };
 
@@ -204,7 +208,7 @@ function createLicenseAuthority({
       ok: false,
       reason: String(reason || 'Your license is no longer valid.').slice(0, 240),
       email: clear ? '' : cleanEmail(licenseState.email),
-      taskTypes: {},
+      taskTypes: normalizeTaskTypes(),
       proxyAccess: false,
       managedProxyCount: 0,
       requiresPasswordReset: false,
@@ -328,13 +332,14 @@ function createLicenseAuthority({
   });
 }
 
-function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_API_BASE, onStatus, onLock, logger } = {}) {
+function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_API_BASE, onStatus, onLock, onEntitlementsChanged, logger } = {}) {
   const authority = createLicenseAuthority({
     dataDirectory: app.getPath('userData'),
     safeStorage,
     api: createClient({ apiBase }),
     onStatus,
     onLock,
+    onEntitlementsChanged,
     logger,
   });
   ipcMain.handle(IPC.login, (_event, credentials) => authority.login(credentials));

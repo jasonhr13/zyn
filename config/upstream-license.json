@@ -3,6 +3,7 @@
   "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
   "files": {
     "launcher/license-client.js": "97aedd013bbfb06498e1e4e770ab4f19ebbfc8fff76dba7d1f5a21957a53585b",
+    "launcher/task-type-access.js": "d99a3a24f8e88a419194c909fd97f72bd834718e972aa0da34bfde1306975529",
     "cloudflare/license/README.md": "213779a9e1f8ddc3a165e77b63e1d92f4e0c83162b2380fd05ac207b35816297",
     "cloudflare/license/migrations/0001_initial.sql": "93ef14a63d7f85882485398ebdf4008641bebbd0a93e6a7f9298506bb0f82972",
     "cloudflare/license/migrations/0002_managed_proxies.sql": "a5ec51ed2be0358462717c8e7786c292e7389893fc931e7afda988e8eb32ccf3",

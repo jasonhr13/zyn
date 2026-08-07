@@ -26,10 +26,19 @@ const MODULES = [
     name: 'Round1',
     icon: 'game',
     description: 'Configure campaign signups, pickup stores, proxies, and registration runs.',
+    taskType: 'round1',
+  },
+  {
+    path: '/pokemoncenter',
+    name: 'Pokémon Center',
+    icon: 'ticket',
+    description: 'Monitor the queue, select products, and run account-backed checkout sessions.',
+    taskType: 'pokemoncenter',
   },
 ];
 
-export default function Modules() {
+export default function Modules({ taskTypes = {} }) {
+  const availableModules = MODULES.filter(module => !module.taskType || taskTypes[module.taskType] === true);
   return (
     <>
       <div className="page-header">
@@ -40,12 +49,12 @@ export default function Modules() {
           <span className="module-hero-mark"><Icon name="layers" size={22} /></span>
           <div>
             <h1>Choose a task workspace</h1>
-            <p>The task engines and their controls are unchanged. This page only consolidates navigation.</p>
+            <p>Available workspaces are synced with your rCart account. Task engines and their controls are unchanged.</p>
           </div>
         </section>
         <div className="module-grid">
-          {MODULES.map(module => (
-            <Link className="module-card" to={module.path} key={module.path}>
+          {availableModules.map(module => (
+            <Link className="module-card" data-module={module.taskType || 'base'} to={module.path} key={module.path}>
               <span className="module-card-icon"><Icon name={module.icon} size={22} /></span>
               <span className="module-card-copy">
                 <strong>{module.name}</strong>
@@ -55,6 +64,7 @@ export default function Modules() {
             </Link>
           ))}
         </div>
+        <div className="module-entitlement-note">Optional workspaces are managed by your rCart account.</div>
       </div>
     </>
   );

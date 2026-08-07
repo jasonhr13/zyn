@@ -30,7 +30,8 @@ class Settings extends Component {
       targetVerboseLogs: false, shapeMethod: 'In Bot',
       // Auto Buy: who runs when a BUY NOW button on a monitor embed is clicked.
       autoBuyGroup: '', autoBuyMax: '5', autoBuyConnection: 'inhouse1',
-      licenseEmail: '', licenseOffline: false, signingOut: false,
+      licenseEmail: '', licenseOffline: false,
+      licenseTaskTypes: { pokemoncenter: false, round1: false }, signingOut: false,
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
     };
   }
@@ -77,7 +78,14 @@ class Settings extends Component {
   applyLicenseStatus = (eventOrStatus, pushedStatus) => {
     const status = pushedStatus || eventOrStatus;
     if (!status || typeof status !== 'object') return;
-    this.setState({ licenseEmail: status.email || '', licenseOffline: status.offline === true });
+    this.setState({
+      licenseEmail: status.email || '',
+      licenseOffline: status.offline === true,
+      licenseTaskTypes: {
+        pokemoncenter: status.taskTypes?.pokemoncenter === true,
+        round1: status.taskTypes?.round1 === true,
+      },
+    });
   };
 
   componentDidMount() {
@@ -212,7 +220,7 @@ class Settings extends Component {
     const { discordWebhook, lucaApiKey, hyperApiKey, imapSel, imapHostCustom, imapUser, imapPass, showImapPass, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
       targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
-      licenseEmail, licenseOffline, signingOut } = this.state;
+      licenseEmail, licenseOffline, licenseTaskTypes, signingOut } = this.state;
 
     // Groups come from the profiles themselves, so the list can never drift from what exists.
     const allProfiles = this.props.profiles || [];
@@ -256,8 +264,17 @@ class Settings extends Component {
                 {signingOut ? 'Signing out…' : 'Sign out'}
               </button>
             </div>
+            <div className="license-module-access" data-license-module-access="active">
+              <span>Base workspaces</span><strong>Enabled</strong>
+              <span>Pokémon Center</span><strong className={licenseTaskTypes.pokemoncenter ? 'enabled' : 'disabled'}>
+                {licenseTaskTypes.pokemoncenter ? 'Enabled' : 'Not included'}
+              </strong>
+              <span>Round1</span><strong className={licenseTaskTypes.round1 ? 'enabled' : 'disabled'}>
+                {licenseTaskTypes.round1 ? 'Enabled' : 'Not included'}
+              </strong>
+            </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Module entitlements and managed proxy access remain disabled until the next control-plane release.
+              Module access updates automatically. Managed proxy access remains disabled in this release.
             </div>
           </div>
 

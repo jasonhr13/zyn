@@ -206,6 +206,31 @@ node ./scripts/license-enforcement-runtime-smoke-test.js <port> /tmp/hope-r4-lic
 The independently installable output is `dist/Hope-ControlPlane-R4.app`. R3 remains available from
 the `control-plane-r3` Git tag and its previously built application bundle.
 
+## Control-plane R5 API module access
+
+R5 enables the task-type entitlements already returned by the imported Cloudflare license Worker.
+Its optional-module registry is copied byte-for-byte from the Hope repository and pinned alongside
+the Worker and license client in `config/upstream-license.json`. Target, Bandai, and Secret Lair stay
+available to every licensed account. Pokémon Center and Round1 are denied unless the signed session
+explicitly enables their `pokemoncenter` or `round1` task type.
+
+The Tasks hub hides unavailable optional modules, stale direct links return to the hub, and Settings
+shows the account's current access. These renderer checks are only navigation: the main process also
+guards both optional start IPC channels and the underlying task helpers. If periodic validation
+removes access, running work for that module is stopped immediately. A forged renderer status cannot
+authorize main. Managed proxy catalogs, cloud backup, and scheduling remain disabled.
+
+```sh
+./scripts/build-r5.sh
+node ./scripts/verify-upstream-license.js
+node ./scripts/task-type-access-smoke-test.js
+node ./scripts/license-authority-smoke-test.js
+node ./scripts/module-access-runtime-smoke-test.js <port> /tmp/hope-r5-module-access.png
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R5.app`. R4 remains available from
+the `control-plane-r4` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh
