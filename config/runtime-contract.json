@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R2",
+  "controlPlaneRelease": "R3",
   "features": {
     "designShell": true,
     "taskGroups": true,
-    "licenseObserve": false,
+    "licenseObserve": true,
     "licenseEnforce": false,
     "apiModuleAccess": false,
     "cloudBackup": false,
@@ -36,6 +36,8 @@
     "Contents/Resources/app-original.asar",
     "Contents/Resources/app/bootstrap.js",
     "Contents/Resources/app/feature-flags.js",
+    "Contents/Resources/app/license-client.js",
+    "Contents/Resources/app/license-observer.js",
     "Contents/Resources/app/task-group-store.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/wine/bin/wineserver"

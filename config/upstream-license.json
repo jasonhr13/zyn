@@ -1,0 +1,19 @@
+{
+  "source": "https://github.com/jasonhr13/hope",
+  "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
+  "files": {
+    "launcher/license-client.js": "97aedd013bbfb06498e1e4e770ab4f19ebbfc8fff76dba7d1f5a21957a53585b",
+    "cloudflare/license/README.md": "213779a9e1f8ddc3a165e77b63e1d92f4e0c83162b2380fd05ac207b35816297",
+    "cloudflare/license/migrations/0001_initial.sql": "93ef14a63d7f85882485398ebdf4008641bebbd0a93e6a7f9298506bb0f82972",
+    "cloudflare/license/migrations/0002_managed_proxies.sql": "a5ec51ed2be0358462717c8e7786c292e7389893fc931e7afda988e8eb32ccf3",
+    "cloudflare/license/migrations/0003_task_type_entitlements.sql": "1581da1cd5b0342c7246730543f25cdb6550aef3d55ffb00743b02507cd80e0d",
+    "cloudflare/license/migrations/0004_download_access.sql": "1da3dfbfd2b358497f248aada071f17619a0d4acf5a303a69f131de97cc678ce",
+    "cloudflare/license/migrations/0005_waitlist.sql": "9f3e5745d7f88b0010fbf676d16ac9b395ad3ce736391055f3e914910d3e9b54",
+    "cloudflare/license/migrations/0006_encrypted_backups.sql": "dfec70965085064b996d62cba3c684b33a345d4791e3304d826eb6ec95bdf75e",
+    "cloudflare/license/public/admin.css": "9fd4a064563ed4b8d25249ac4eb8adcdeebc8c2e97d3f2da056dc1af5f2d3f9e",
+    "cloudflare/license/public/admin.js": "3c24486a7d95b759daf6c89893017fee99102a375219f4ea7710dd32c9c4f4d3",
+    "cloudflare/license/public/admin/index.html": "f78f0913f7fe11aac2c96c35469a9a22425be886c4fa9e3625876aa700ee0bb6",
+    "cloudflare/license/src/index.js": "32e6f6db82fc943fd87eb3bf366d1dffa39706448d24d2ae8f4e175b0b3cec5f",
+    "cloudflare/license/wrangler.jsonc": "491a293793dec20beb86445c5f3bec8a834dabf240e928d1ed374dd6e034b2a7"
+  }
+}

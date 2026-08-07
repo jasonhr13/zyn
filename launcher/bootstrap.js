@@ -11,6 +11,7 @@ const { app, dialog } = require('electron');
 const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
+const { installLicenseObservation } = require('./license-observer');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -178,6 +179,18 @@ function installTaskGroupControlPlane() {
   });
 }
 
+function installReplacementLicensePreview() {
+  if (!FEATURES.licenseObserve || FEATURES.licenseEnforce) return;
+  try {
+    const { ipcMain, safeStorage } = require('electron');
+    installLicenseObservation({ app, ipcMain, safeStorage, logger: console });
+  } catch (error) {
+    // R3 is deliberately observe-only. A preview initialization failure must never change the
+    // existing local developer session, task launches, module access, or reporter identity.
+    console.error(`Could not install the replacement license preview: ${error.message}`);
+  }
+}
+
 function enableLocalDeveloperLicense() {
   const now = () => Date.now();
   const verdict = () => ({
@@ -310,6 +323,7 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroupControlPlane();
+  installReplacementLicensePreview();
   disableWindowsOnlyUpdater();
   enableLocalDeveloperLicense();
   require(path.join(originalAsar, 'public', 'electron.js'));

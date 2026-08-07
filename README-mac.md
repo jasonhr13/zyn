@@ -146,6 +146,37 @@ node ./scripts/task-group-crud-smoke-test.js <port> /tmp/hope-r2-task-groups.png
 The independently installable output is `dist/Hope-ControlPlane-R2.app`. R1 remains available from
 the `control-plane-r1` Git tag and its previously built application bundle.
 
+## Control-plane R3 replacement-license observation
+
+R3 brings the replacement licensing stack directly from
+[`jasonhr13/hope`](https://github.com/jasonhr13/hope) commit
+`423d13260bee6b6f9ba01d175c948c0afd86da9a`. The complete `cloudflare/license` Worker, migrations,
+admin UI, and `public/helpers/license-client.js` are preserved byte-for-byte here. Their source
+hashes are pinned in `config/upstream-license.json` and verified with:
+
+```sh
+node ./scripts/verify-upstream-license.js
+```
+
+`launcher/license-observer.js` is a wrapper-only adapter around that unchanged client. It stores the
+bearer token with Electron `safeStorage`, keeps passwords, bearer tokens, reset tokens, hardware IDs,
+and managed proxy credentials out of the renderer, and exposes a replacement-license status panel
+in Settings. If OS-backed encryption is unavailable the token remains in memory and is never written.
+
+R3 is observe-only. Its status does not replace the existing local developer session, gate the UI,
+block task launches, hide modules, apply managed proxy lists, or change the `seaniepokie` reporter
+identity. Signing in is nevertheless a live service action: the imported Cloudflare Worker revokes
+the account's prior active license before minting the new device-bound session, so the panel requires
+an explicit acknowledgement first.
+
+```sh
+./scripts/build-r3.sh
+node ./scripts/license-observer-smoke-test.js
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R3.app`. R2 remains available from
+the `control-plane-r2` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

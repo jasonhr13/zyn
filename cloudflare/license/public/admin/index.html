@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>rCart License Admin</title>
+    <link rel="stylesheet" href="/admin.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <p class="eyebrow">Cloudflare license service</p>
+          <h1>rCart users</h1>
+          <p class="subtitle">Manage accounts, licenses, task modules, and shared proxy access.</p>
+        </div>
+        <button id="logout" class="secondary hidden">Sign out</button>
+      </header>
+
+      <section id="login-card" class="card login-card">
+        <h2>Admin sign in</h2>
+        <p>Use the admin password stored in your Mac Keychain.</p>
+        <form id="login-form">
+          <label for="admin-password">Admin password</label>
+          <div class="row">
+            <input id="admin-password" type="password" autocomplete="current-password" required>
+            <button type="submit">Sign in</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="admin" class="hidden">
+        <div class="stats">
+          <article><span>Users</span><strong id="user-count">0</strong></article>
+          <article><span>Active licenses</span><strong id="license-count">0</strong></article>
+          <article><span>Waiting for reset</span><strong id="reset-count">0</strong></article>
+          <article><span>Waiting list</span><strong id="waitlist-count">0</strong></article>
+          <article><span>Proxy lists</span><strong id="proxy-count">0</strong></article>
+        </div>
+
+        <section class="card add-card">
+          <div>
+            <h2>Add user</h2>
+            <p>A random temporary password is generated and shown once.</p>
+          </div>
+          <form id="add-form" class="row">
+            <input id="new-email" type="email" autocomplete="off" placeholder="user@example.com" required>
+            <button type="submit">Add user</button>
+          </form>
+        </section>
+
+        <section class="card waitlist-card">
+          <div class="table-heading">
+            <div>
+              <h2>Waiting list</h2>
+              <p>Invite a person to create their account and generate a private download link in one step.</p>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Email</th><th>Joined</th><th>Status</th><th></th></tr></thead>
+              <tbody id="waitlist"></tbody>
+            </table>
+          </div>
+          <p id="waitlist-empty" class="empty">No one is waiting yet.</p>
+        </section>
+
+        <section class="card task-types-card">
+          <div class="table-heading">
+            <div>
+              <h2>Task type access</h2>
+              <p>Optional modules default off. Enabling globally turns one on for everyone; account overrides can then disable individual users.</p>
+            </div>
+          </div>
+          <div id="task-types" class="task-type-grid"></div>
+        </section>
+
+        <section class="card proxy-card">
+          <div class="table-heading">
+            <div>
+              <h2>Managed proxy lists</h2>
+              <p>Users with proxy access receive every list. Up to 50,000 proxies per list; contents are compressed and encrypted before D1 storage.</p>
+            </div>
+          </div>
+          <form id="proxy-form" class="proxy-form">
+            <input id="proxy-id" type="hidden">
+            <label for="proxy-name">List name</label>
+            <input id="proxy-name" maxlength="80" autocomplete="off" placeholder="Target Residential" required>
+            <label for="proxy-raw">Proxies</label>
+            <textarea id="proxy-raw" spellcheck="false" placeholder="host:port:user:pass&#10;host:port:user:pass" required></textarea>
+            <div class="proxy-form-footer">
+              <span id="proxy-line-count">0 proxies</span>
+              <div class="row compact-row">
+                <button id="cancel-proxy" type="button" class="secondary hidden">Cancel</button>
+                <button id="save-proxy" type="submit">Create proxy list</button>
+              </div>
+            </div>
+          </form>
+          <div id="proxy-lists" class="managed-lists"></div>
+          <p id="proxy-empty" class="empty">No managed proxy lists yet.</p>
+        </section>
+
+        <section class="card table-card">
+          <div class="table-heading">
+            <div><h2>Accounts</h2><p id="updated-at">Not loaded</p></div>
+            <button id="refresh" class="secondary">Refresh</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>User</th><th>Status</th><th>Task types</th><th>Proxy access</th><th>License</th><th>Last seen</th><th></th></tr></thead>
+              <tbody id="users"></tbody>
+            </table>
+          </div>
+          <p id="empty" class="empty hidden">No users yet.</p>
+        </section>
+      </section>
+    </main>
+
+    <div id="credential-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="credential-title">
+      <div class="modal-card">
+        <p id="credential-eyebrow" class="eyebrow">Shown once</p>
+        <h2 id="credential-title">Temporary password</h2>
+        <p id="credential-description">Send this to the user securely. They must replace it on first login.</p>
+        <div class="credential"><code id="credential-value"></code><button id="copy-credential" class="secondary">Copy</button></div>
+        <button id="close-modal">Done</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/admin.js" defer></script>
+  </body>
+</html>

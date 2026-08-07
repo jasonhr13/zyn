@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import LicenseObserverPanel from '../license-observer-panel';
 const { ipcRenderer } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -248,6 +249,8 @@ class Settings extends Component {
               <span style={{ fontSize: 11, color: line.color }}>{line.text}</span>
             </div>
           </div>
+
+          <LicenseObserverPanel />
 
           <div className="settings-section">
             <div className="settings-section-title">Discord</div>

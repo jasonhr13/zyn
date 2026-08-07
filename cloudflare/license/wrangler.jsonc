@@ -1,0 +1,35 @@
+{
+  "name": "hope-license-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-02",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "license.rcart.app",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hope-license",
+      "database_id": "a6aa8a05-ca0c-4d7d-beca-ba1ba0f906f8",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUPS",
+      "bucket_name": "rcart-encrypted-backups"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
