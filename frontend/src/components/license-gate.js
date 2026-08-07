@@ -1,59 +1,139 @@
 import React, { Component } from 'react';
 const { ipcRenderer } = window.require('electron');
 
-// Shown instead of the app while the key is missing / deactivated / expired. This screen is only
-// the friendly face of the gate — the real enforcement is in the main process, which refuses to
-// spawn any bot without a valid key.
+// Ported from the Hope repository's replacement license gate. Main owns the bearer/reset tokens
+// and every checkout spawn is enforced there; this component only handles credentials and status.
 class LicenseGate extends Component {
-  state = { key: '', busy: false, err: '' };
-
-  activate = async () => {
-    const key = this.state.key.trim();
-    if (!key) return;
-    this.setState({ busy: true, err: '' });
-    const s = await ipcRenderer.invoke('activateLicense', key);
-    if (s.ok) this.props.onActivated(s);
-    else this.setState({ busy: false, err: s.reason || 'invalid key' });
+  state = {
+    mode: 'login',
+    email: '',
+    password: '',
+    newPassword: '',
+    confirmPassword: '',
+    acknowledged: false,
+    busy: false,
+    err: '',
   };
 
+  signIn = async (event) => {
+    if (event) event.preventDefault();
+    const email = this.state.email.trim();
+    const password = this.state.password;
+    if (!email || !password || !this.state.acknowledged || this.state.busy) return;
+    this.setState({ busy: true, err: '' });
+    try {
+      const status = await ipcRenderer.invoke('loginLicense', { email, password });
+      if (status.ok) {
+        this.setState({ password: '' });
+        this.props.onActivated(status);
+        return;
+      }
+      if (status.requiresPasswordReset) {
+        this.setState({
+          mode: 'reset',
+          email: status.email || email,
+          password: '',
+          busy: false,
+          err: '',
+        });
+        return;
+      }
+      this.setState({ busy: false, password: '', err: status.reason || 'Unable to sign in.' });
+    } catch {
+      this.setState({ busy: false, password: '', err: 'Unable to sign in. Try again.' });
+    }
+  };
+
+  resetPassword = async (event) => {
+    if (event) event.preventDefault();
+    const { newPassword, confirmPassword, busy } = this.state;
+    if (busy) return;
+    if (newPassword.length < 10) {
+      this.setState({ err: 'Use a password of at least 10 characters.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      this.setState({ err: 'The new passwords do not match.' });
+      return;
+    }
+    this.setState({ busy: true, err: '' });
+    try {
+      const status = await ipcRenderer.invoke('resetLicensePassword', { newPassword });
+      if (status.ok) {
+        this.setState({ newPassword: '', confirmPassword: '' });
+        this.props.onActivated(status);
+        return;
+      }
+      this.setState({ busy: false, newPassword: '', confirmPassword: '', err: status.reason || 'Unable to reset password.' });
+    } catch {
+      this.setState({ busy: false, err: 'Unable to reset password. Try signing in again.' });
+    }
+  };
+
+  backToLogin = () => this.setState({
+    mode: 'login',
+    password: '',
+    newPassword: '',
+    confirmPassword: '',
+    busy: false,
+    err: '',
+  });
+
   render() {
-    const { key, busy, err } = this.state;
-    const status = this.props.status || {};
-    // "no key entered" on first run isn't an error worth shouting about.
-    const priorReason = status.reason && status.reason !== 'no key entered' && status.reason !== 'unchecked'
-      ? status.reason : '';
+    const { mode, email, password, newPassword, confirmPassword, acknowledged, busy, err } = this.state;
+    const priorReason = this.props.status?.reason;
+    const displayError = err || (priorReason && priorReason !== 'Sign in to continue.' ? priorReason : '');
+    const inputStyle = { width: '100%' };
 
     return (
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexDirection: 'column', gap: 14, padding: 24,
-      }}>
-        <div className="table-empty-icon" style={{ fontSize: 34 }}><i className="ion-md-key" /></div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: '#d1d5db' }}>Enter your license key</div>
-        <div style={{ fontSize: 11, color: '#6b7280', textAlign: 'center', maxWidth: 380 }}>
-          This build is a private beta. Your key is checked against the license server on launch
-          and periodically while running.
-        </div>
+      <div className="license-gate-r4">
+        <form onSubmit={mode === 'login' ? this.signIn : this.resetPassword} className="license-gate-card">
+          <div className="license-gate-mark"><i className={mode === 'login' ? 'ion-md-lock' : 'ion-md-key'} /></div>
+          <div className="license-gate-badge">CONTROL PLANE R4</div>
+          <div className="license-gate-title">{mode === 'login' ? 'Sign in to rCart' : 'Choose a new password'}</div>
+          <div className="license-gate-copy">
+            {mode === 'login'
+              ? 'Use the credentials provided with your rCart account.'
+              : `This is the first sign-in for ${email}. Replace the temporary password to continue.`}
+          </div>
 
-        <div style={{ display: 'flex', gap: 8, width: 320 }}>
-          <input
-            className="form-input"
-            style={{ flex: 1, textAlign: 'center', letterSpacing: 1 }}
-            placeholder="LICENSE KEY"
-            value={key}
-            onChange={e => this.setState({ key: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Enter') this.activate(); }}
-            spellCheck={false}
-            autoFocus
-          />
-          <button className="btn btn-primary btn-sm" onClick={this.activate} disabled={busy || !key.trim()}>
-            {busy ? 'Checking…' : 'Activate'}
+          {mode === 'login' ? (
+            <>
+              <input className="form-input" style={inputStyle} type="email" autoComplete="username"
+                placeholder="Email" value={email} onChange={event => this.setState({ email: event.target.value })}
+                disabled={busy} autoFocus />
+              <input className="form-input" style={inputStyle} type="password" autoComplete="current-password"
+                placeholder="Password" value={password} onChange={event => this.setState({ password: event.target.value })}
+                disabled={busy} />
+              <label className="license-gate-acknowledge">
+                <input type="checkbox" checked={acknowledged}
+                  onChange={event => this.setState({ acknowledged: event.target.checked })} disabled={busy} />
+                <span>I understand that signing in replaces this account&apos;s active device session.</span>
+              </label>
+            </>
+          ) : (
+            <>
+              <input className="form-input" style={inputStyle} type="password" autoComplete="new-password"
+                placeholder="New password (10+ characters)" value={newPassword}
+                onChange={event => this.setState({ newPassword: event.target.value })} disabled={busy} autoFocus />
+              <input className="form-input" style={inputStyle} type="password" autoComplete="new-password"
+                placeholder="Confirm new password" value={confirmPassword}
+                onChange={event => this.setState({ confirmPassword: event.target.value })} disabled={busy} />
+            </>
+          )}
+
+          {displayError && <div className="license-gate-error">{displayError}</div>}
+          <button type="submit" className="btn btn-primary"
+            disabled={busy || (mode === 'login' ? !email.trim() || !password || !acknowledged : !newPassword || !confirmPassword)}>
+            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Save password & continue'}
           </button>
-        </div>
-
-        {(err || priorReason) && (
-          <div style={{ fontSize: 11, color: '#f87171' }}>{err || priorReason}</div>
-        )}
+          {mode === 'reset' && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={this.backToLogin} disabled={busy}>Back to sign in</button>
+          )}
+          <div className="license-gate-footnote">
+            rCart validates every five minutes. A revoked or disabled session stops running tasks and returns here.
+          </div>
+        </form>
       </div>
     );
   }

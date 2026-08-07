@@ -75,7 +75,7 @@ class Sidebar extends Component {
         </nav>
         <div className="sidebar-bottom">
           {this.renderUpdate()}
-          <div className="sidebar-version">{APP_VERSION ? `v${APP_VERSION} · control plane R3` : 'control plane R3'}</div>
+          <div className="sidebar-version">{APP_VERSION ? `v${APP_VERSION} · control plane R4` : 'control plane R4'}</div>
         </div>
       </div>
     );

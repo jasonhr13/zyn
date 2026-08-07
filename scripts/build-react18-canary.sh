@@ -60,6 +60,7 @@ cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpac
 cp "$PROJECT_DIR/launcher/bootstrap.js" "$RESOURCES/app/bootstrap.js"
 cp "$PROJECT_DIR/launcher/feature-flags.js" "$RESOURCES/app/feature-flags.js"
 cp "$PROJECT_DIR/launcher/license-client.js" "$RESOURCES/app/license-client.js"
+cp "$PROJECT_DIR/launcher/license-authority.js" "$RESOURCES/app/license-authority.js"
 cp "$PROJECT_DIR/launcher/license-observer.js" "$RESOURCES/app/license-observer.js"
 cp "$PROJECT_DIR/launcher/task-group-store.js" "$RESOURCES/app/task-group-store.js"
 cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-state.js"

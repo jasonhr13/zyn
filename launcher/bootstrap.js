@@ -12,6 +12,7 @@ const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
 const { installLicenseObservation } = require('./license-observer');
+const { installLicenseAuthority } = require('./license-authority');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -191,6 +192,133 @@ function installReplacementLicensePreview() {
   }
 }
 
+function pushLicenseStatus(status) {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('licenseStatus', status);
+      }
+    }
+  } catch {}
+}
+
+function stopAllRunningForLicense() {
+  // Use recoverable stop methods here. Engine shutdown() is reserved for app quit and sets a
+  // one-way latch that would prevent a freshly signed-in user from starting again this run.
+  try {
+    const taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
+    for (const name of ['stopAllTasks', 'stopAllBotScripts', 'stopAllPbandai', 'stopAllRound1', 'stopAllPokemonCenter']) {
+      try { taskHandler[name]?.(); } catch {}
+    }
+  } catch {}
+  try { require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopTarget(); } catch {}
+  try { require(path.join(originalAsar, 'public', 'helpers', 'walmart-engine.js')).stopWalmart(); } catch {}
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) { window.show(); window.focus(); }
+    }
+  } catch {}
+}
+
+function guardTaskHelpers(authority) {
+  const allowed = () => authority.cached().ok === true;
+  const blocked = name => {
+    const status = authority.cached();
+    console.warn(`Blocked ${name} — license: ${status.reason || 'not active'}`);
+    pushLicenseStatus(status);
+  };
+
+  try {
+    const taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
+    for (const name of ['startTask', 'startPbandai', 'forcePbandai', 'startRound1', 'startPokemonCenter']) {
+      if (typeof taskHandler[name] !== 'function') continue;
+      const original = taskHandler[name].bind(taskHandler);
+      taskHandler[name] = (...args) => {
+        if (!allowed()) { blocked(name); return undefined; }
+        return original(...args);
+      };
+    }
+    if (typeof taskHandler.runBotScript === 'function') {
+      const runBotScript = taskHandler.runBotScript.bind(taskHandler);
+      taskHandler.runBotScript = (...args) => {
+        if (!allowed()) {
+          blocked('runBotScript');
+          return Promise.resolve({ success: false, error: 'Sign in to continue.' });
+        }
+        return runBotScript(...args);
+      };
+    }
+  } catch (error) {
+    console.error(`Could not guard task helpers with the replacement license: ${error.message}`);
+  }
+
+  for (const [file, method] of [['target-engine.js', 'startTarget'], ['walmart-engine.js', 'startWalmart']]) {
+    try {
+      const engine = require(path.join(originalAsar, 'public', 'helpers', file));
+      const original = engine[method].bind(engine);
+      engine[method] = (...args) => {
+        if (!allowed()) { blocked(method); return undefined; }
+        return original(...args);
+      };
+    } catch (error) {
+      console.error(`Could not guard ${method} with the replacement license: ${error.message}`);
+    }
+  }
+}
+
+function installReplacementLicenseEnforcement() {
+  if (!FEATURES.licenseEnforce) return null;
+  const { ipcMain, safeStorage } = require('electron');
+  const authority = installLicenseAuthority({
+    app,
+    ipcMain,
+    safeStorage,
+    onStatus: pushLicenseStatus,
+    onLock: stopAllRunningForLicense,
+    logger: console,
+  });
+
+  // The original main process already checks license.js before every checkout launcher. Replace
+  // only that verdict source so those mature launch boundaries now enforce the Cloudflare session.
+  const legacyLicense = require(path.join(originalAsar, 'public', 'helpers', 'license.js'));
+  legacyLicense.verifyLicense = (_key, options = {}) => authority.status({ force: options.force === true });
+  legacyLicense.cached = () => authority.cached();
+  legacyLicense.invalidate = reason => authority.invalidate(reason);
+
+  // Remove the retired key from settings during the authority migration. The original status IPC
+  // appends this field to its response, so leaving it in place would unnecessarily expose an
+  // obsolete credential to the renderer even though Cloudflare no longer uses it.
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const settings = dataManager.getSettings() || {};
+    if (settings.licenseKey) dataManager.saveSettings({ ...settings, licenseKey: '' });
+  } catch (error) {
+    console.error(`Could not clear the retired license key: ${error.message}`);
+  }
+
+  // Retire the old dashboard claim/heartbeat without touching its surrounding main-process code.
+  // The Cloudflare client owns device binding and session revocation now.
+  const legacyClient = require(path.join(originalAsar, 'public', 'helpers', 'license-client.js'));
+  legacyClient.startLicense = () => ({
+    token: '', hwid: '', start: async () => 'skip', stop: () => {}, release: async () => {}, isActive: () => false,
+  });
+
+  guardTaskHelpers(authority);
+  return authority;
+}
+
+function replaceRetiredLicenseIpc(authority) {
+  const { ipcMain } = require('electron');
+  // The legacy status handler appends the retired key from settings. Replace the whole handler so
+  // renderer state contains only the Cloudflare authority's safe status object.
+  ipcMain.removeHandler('licenseStatus');
+  ipcMain.handle('licenseStatus', (_event, options = {}) => authority.status({ force: options.force === true }));
+  ipcMain.removeHandler('activateLicense');
+  ipcMain.handle('activateLicense', () => ({ ok: false, reason: 'License keys have been replaced by rCart account sign-in.' }));
+}
+
 function enableLocalDeveloperLicense() {
   const now = () => Date.now();
   const verdict = () => ({
@@ -236,8 +364,11 @@ function enableLocalDeveloperLicense() {
     console.error(`Could not install the local license session: ${error.message}`);
   }
 
-  // Central Target/Walmart reporting. Always discard credentials belonging to
-  // the retired license service and use the requested development identity.
+}
+
+function configureDeveloperReporting() {
+  // Central Target/Walmart reporting. Always discard credentials belonging to the retired license
+  // service and preserve the requested development identity independently of license authority.
   try {
     const reporter = require(path.join(originalAsar, 'public', 'helpers', 'checkout-reporter.js'));
     const configureReporter = reporter.configure.bind(reporter);
@@ -253,8 +384,8 @@ function enableLocalDeveloperLicense() {
     console.error(`Could not configure the local reporter identity: ${error.message}`);
   }
 
-  // P-Bandai reports from its Windows Node child instead of checkout-reporter,
-  // so enforce the same identity at that process boundary as well.
+  // P-Bandai reports from its Windows Node child instead of checkout-reporter, so enforce the same
+  // identity at that process boundary as well.
   try {
     const taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
     const startPbandai = taskHandler.startPbandai.bind(taskHandler);
@@ -323,8 +454,13 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroupControlPlane();
-  installReplacementLicensePreview();
+  const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement() : null;
+  if (!FEATURES.licenseEnforce) {
+    installReplacementLicensePreview();
+    enableLocalDeveloperLicense();
+  }
   disableWindowsOnlyUpdater();
-  enableLocalDeveloperLicense();
+  configureDeveloperReporting();
   require(path.join(originalAsar, 'public', 'electron.js'));
+  if (licenseAuthority) replaceRetiredLicenseIpc(licenseAuthority);
 }

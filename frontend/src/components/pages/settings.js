@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
-import LicenseObserverPanel from '../license-observer-panel';
 const { ipcRenderer } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -31,6 +30,7 @@ class Settings extends Component {
       targetVerboseLogs: false, shapeMethod: 'In Bot',
       // Auto Buy: who runs when a BUY NOW button on a monitor embed is clicked.
       autoBuyGroup: '', autoBuyMax: '5', autoBuyConnection: 'inhouse1',
+      licenseEmail: '', licenseOffline: false, signingOut: false,
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
     };
   }
@@ -74,7 +74,18 @@ class Settings extends Component {
     const next = by[sel] || {};
     return { imapSel: sel, imapByHost: by, imapUser: next.user || '', imapPass: next.pass || '', saved: false };
   });
-  componentDidMount() { this.syncFromProps(this.props.settings || {}); }
+  applyLicenseStatus = (eventOrStatus, pushedStatus) => {
+    const status = pushedStatus || eventOrStatus;
+    if (!status || typeof status !== 'object') return;
+    this.setState({ licenseEmail: status.email || '', licenseOffline: status.offline === true });
+  };
+
+  componentDidMount() {
+    this.syncFromProps(this.props.settings || {});
+    ipcRenderer.on('licenseStatus', this.applyLicenseStatus);
+    ipcRenderer.invoke('licenseStatus').then(this.applyLicenseStatus).catch(() => {});
+  }
+  componentWillUnmount() { ipcRenderer.removeListener('licenseStatus', this.applyLicenseStatus); }
   componentDidUpdate(prev) {
     if (prev.settings !== this.props.settings) this.syncFromProps(this.props.settings || {});
   }
@@ -139,6 +150,13 @@ class Settings extends Component {
   checkUpdates = () => { try { ipcRenderer.send('checkForUpdates'); } catch {} };
   installUpdate = () => { try { ipcRenderer.send('installUpdate'); } catch {} };
 
+  signOut = async () => {
+    if (!window.confirm('Sign out of rCart and stop every running task?')) return;
+    this.setState({ signingOut: true });
+    try { await ipcRenderer.invoke('logoutLicense'); }
+    catch { this.setState({ signingOut: false }); }
+  };
+
   exportData = async () => {
     if (!window.confirm(
       'The exported file will contain your CARD DETAILS, SITE PASSWORDS, and DISCORD TOKEN in plain text.\n\n' +
@@ -193,7 +211,8 @@ class Settings extends Component {
   render() {
     const { discordWebhook, lucaApiKey, hyperApiKey, imapSel, imapHostCustom, imapUser, imapPass, showImapPass, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
-      targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection } = this.state;
+      targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
+      licenseEmail, licenseOffline, signingOut } = this.state;
 
     // Groups come from the profiles themselves, so the list can never drift from what exists.
     const allProfiles = this.props.profiles || [];
@@ -227,6 +246,22 @@ class Settings extends Component {
 
         <div className="page-content">
           <div className="settings-section">
+            <div className="settings-section-title">rCart Account</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                Signed in as <strong style={{ color: 'var(--text)' }}>{licenseEmail || 'your licensed account'}</strong>
+              </span>
+              {licenseOffline && <span style={{ fontSize: 11, color: 'var(--run)' }}>Offline grace · reconnecting</span>}
+              <button className="btn btn-secondary btn-sm" onClick={this.signOut} disabled={signingOut}>
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </div>
+            <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
+              Module entitlements and managed proxy access remain disabled until the next control-plane release.
+            </div>
+          </div>
+
+          <div className="settings-section">
             <div className="settings-section-title">Updates</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button
@@ -249,8 +284,6 @@ class Settings extends Component {
               <span style={{ fontSize: 11, color: line.color }}>{line.text}</span>
             </div>
           </div>
-
-          <LicenseObserverPanel />
 
           <div className="settings-section">
             <div className="settings-section-title">Discord</div>

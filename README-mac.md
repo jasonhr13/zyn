@@ -177,6 +177,35 @@ node ./scripts/license-observer-smoke-test.js
 The independently installable output is `dist/Hope-ControlPlane-R3.app`. R2 remains available from
 the `control-plane-r2` Git tag and its previously built application bundle.
 
+## Control-plane R4 license enforcement
+
+R4 promotes the same imported Cloudflare client from observation to the authoritative application
+license. The email/password gate and main-process lifecycle follow the Hope repository's replacement
+license flow: device-bound login, first-login password replacement, encrypted bearer persistence,
+validation every five minutes, a 15-minute offline grace window, server-side revoke/disable handling,
+and explicit logout. The first successful R4 launch migrates an encrypted R3 observer session into
+the authoritative `license-session.json`; invalidation and logout clear both copies.
+
+The original app's mature launch checks now read this authority instead of the retired key service.
+An additional helper/engine guard blocks internal retry timers and direct renderer IPC from spawning
+work after a license loss. A revoke, disable, grace expiry, or logout stops running tasks and returns
+the window to the account gate. The retired key is removed from settings and its activation IPC can
+no longer authorize the app.
+
+R4 does not apply task-type entitlements, managed proxy catalogs, cloud backup, or scheduling; those
+remain behind later release flags. Checkout reporting continues to use the requested `seaniepokie`
+identity. The imported Cloudflare Worker and API client remain byte-for-byte pinned to the same Hope
+commit documented above.
+
+```sh
+./scripts/build-r4.sh
+node ./scripts/license-authority-smoke-test.js
+node ./scripts/license-enforcement-runtime-smoke-test.js <port> /tmp/hope-r4-license-gate.png
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R4.app`. R3 remains available from
+the `control-plane-r3` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

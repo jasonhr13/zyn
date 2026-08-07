@@ -2,13 +2,13 @@
 
 // Control-plane work is introduced behind explicit release flags. Each release enables one
 // independently testable slice while every later phase remains dormant.
-const CONTROL_PLANE_RELEASE = 'R3';
+const CONTROL_PLANE_RELEASE = 'R4';
 
 const FEATURES = Object.freeze({
   designShell: true,
   taskGroups: true,
   licenseObserve: true,
-  licenseEnforce: false,
+  licenseEnforce: true,
   apiModuleAccess: false,
   cloudBackup: false,
   taskScheduling: false,

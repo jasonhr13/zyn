@@ -1419,35 +1419,14 @@ body.theme-night .form-select {
   .group-config-strip-r2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ── R3 replacement-license observation ─────────────────────────────────────
-   This panel can talk to the imported Cloudflare service, but it is intentionally disconnected
-   from module visibility and task execution until the enforcement release is tested separately. */
-.license-observer { border-color: var(--accent-border); background: linear-gradient(145deg, var(--accent-soft), var(--panel) 55%); }
-.license-observer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
-.license-observer-heading .settings-section-title { flex: 1; margin-bottom: 4px; }
-.license-observer-subtitle { color: var(--muted); font-size: 10.5px; }
-.license-observer-badge { flex: 0 0 auto; padding: 5px 8px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 999px; background: var(--panel-raised); font-size: 8.5px; font-weight: 800; letter-spacing: .65px; }
-.license-observer-warning { margin-bottom: 12px; padding: 10px 12px; color: var(--run); border: 1px solid rgba(245,183,85,.2); border-radius: 9px; background: var(--run-soft); font-size: 10.5px; line-height: 1.55; }
-.license-observer-status { padding: 12px; border: 1px solid var(--panel-border); border-radius: 10px; background: var(--surface-tint); }
-.license-observer-status-row { display: flex; align-items: center; gap: 9px; }
-.license-observer-status-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
-.license-observer-actions { display: flex; gap: 7px; margin-left: auto; }
-.license-observer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.license-observer-grid > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 8px 9px; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--panel-bg-alt); }
-.license-observer-grid span { color: var(--dim); font-size: 8.5px; font-weight: 700; letter-spacing: .45px; text-transform: uppercase; }
-.license-observer-grid strong { overflow: hidden; color: var(--text2); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.license-observer-entitlements { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.license-observer-entitlements span { padding: 4px 7px; color: var(--muted); border: 1px solid var(--panel-border); border-radius: 999px; font-size: 9px; }
-.license-observer-entitlements span.enabled { color: var(--ok); border-color: rgba(101,214,166,.22); background: var(--ok-soft); }
-.license-observer-reason { margin-top: 9px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
-.license-observer-form { margin-top: 12px; padding: 12px; border: 1px solid var(--panel-border); border-radius: 10px; background: var(--panel-bg-alt); }
-.license-observer-form .form-row { margin-bottom: 8px; }
-.license-observer-form .form-group { margin-bottom: 0; }
-.license-observer-acknowledge { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 10px; color: var(--muted); font-size: 10.5px; line-height: 1.45; cursor: pointer; }
-.license-observer-acknowledge input { margin-top: 2px; accent-color: var(--accent); }
-.license-observer-reset-note { margin-bottom: 10px; color: var(--text2); font-size: 10.5px; }
-.license-observer-error { margin-top: 9px; color: var(--danger); font-size: 10.5px; }
-
-@media (max-width: 880px) {
-  .license-observer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+/* ── R4 authoritative replacement-license gate ────────────────────────────── */
+.license-gate-r4 { flex: 1; display: grid; place-items: center; padding: 28px; background: radial-gradient(circle at 50% 15%, var(--accent-soft), transparent 48%); }
+.license-gate-card { width: min(390px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 26px; border: 1px solid var(--accent-border); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-panel); }
+.license-gate-mark { width: 48px; height: 48px; display: grid; place-items: center; align-self: center; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 14px; background: var(--accent-soft); font-size: 24px; }
+.license-gate-badge { align-self: center; padding: 4px 7px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 999px; background: var(--panel-raised); font-size: 8px; font-weight: 800; letter-spacing: .7px; }
+.license-gate-title { color: var(--text); font-size: 17px; font-weight: 700; text-align: center; }
+.license-gate-copy { margin-bottom: 2px; color: var(--muted); font-size: 11px; line-height: 1.5; text-align: center; }
+.license-gate-acknowledge { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; cursor: pointer; }
+.license-gate-acknowledge input { margin-top: 2px; accent-color: var(--accent); }
+.license-gate-error { color: var(--danger); font-size: 10.5px; line-height: 1.45; text-align: center; }
+.license-gate-footnote { margin-top: 2px; color: var(--dim); font-size: 9.5px; line-height: 1.5; text-align: center; }
