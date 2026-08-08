@@ -10,6 +10,13 @@ export function isQueuedTargetProxyStatus(value) {
   return /\(applies after carting\)$/i.test(String(value || '').trim());
 }
 
+// The engine emits this while it applies or exercises a proxy. It is connection-layer chatter,
+// not an operational task step, and some engine paths never re-emit "Watching for restock"
+// afterwards. Only suppress it while the store has a live-proxy edit guard for that task.
+export function isTargetProxyRotationStatus(value) {
+  return /^Rotating Proxy$/i.test(String(value || '').trim());
+}
+
 export function isTargetProxyStatusForGroup(value, group) {
   const text = String(value || '').trim().toLowerCase();
   const expected = String(group || '').trim().toLowerCase() || 'local';

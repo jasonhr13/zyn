@@ -24,16 +24,16 @@ function releaseStore(entries = {}) {
 
 test('routes each Mac download to its own architecture feed', async () => {
   const env = { RELEASES: releaseStore({
-    'mac/arm64/latest-mac.yml': 'files:\n  - url: Zyn-1.6.76-arm64.dmg\n',
-    'mac/x64/latest-mac.yml': 'files:\n  - url: Zyn-1.6.76-x64.dmg\n',
+    'mac/arm64/latest-mac.yml': 'files:\n  - url: Zyn-1.6.77-arm64.dmg\n',
+    'mac/x64/latest-mac.yml': 'files:\n  - url: Zyn-1.6.77-x64.dmg\n',
   }) };
 
   const arm = await worker.fetch(new Request('https://updates.rcart.app/download/mac/arm64'), env);
   const intel = await worker.fetch(new Request('https://updates.rcart.app/download/mac/x64'), env);
   assert.equal(arm.status, 302);
   assert.equal(intel.status, 302);
-  assert.equal(arm.headers.get('location'), 'https://updates.rcart.app/mac/arm64/Zyn-1.6.76-arm64.dmg');
-  assert.equal(intel.headers.get('location'), 'https://updates.rcart.app/mac/x64/Zyn-1.6.76-x64.dmg');
+  assert.equal(arm.headers.get('location'), 'https://updates.rcart.app/mac/arm64/Zyn-1.6.77-arm64.dmg');
+  assert.equal(intel.headers.get('location'), 'https://updates.rcart.app/mac/x64/Zyn-1.6.77-x64.dmg');
 });
 
 test('keeps the legacy Mac download on Apple silicon', async () => {
@@ -47,7 +47,7 @@ test('keeps the legacy Mac download on Apple silicon', async () => {
 
 test('serves architecture metadata and rejects unknown architectures', async () => {
   const env = { RELEASES: releaseStore({
-    'mac/x64/latest-mac.yml': 'version: 1.6.76\n',
+    'mac/x64/latest-mac.yml': 'version: 1.6.77\n',
   }) };
   const valid = await worker.fetch(new Request('https://updates.rcart.app/mac/x64/latest-mac.yml'), env);
   const invalid = await worker.fetch(new Request('https://updates.rcart.app/mac/universal/latest-mac.yml'), env);
@@ -61,7 +61,7 @@ test('returns a no-artifact current-version feed before a signed release is publ
     const response = await worker.fetch(new Request(`https://updates.rcart.app/mac/${arch}/latest-mac.yml`), env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.match(await response.text(), /^version: 1\.6\.76\nfiles: \[\]/);
+    assert.match(await response.text(), /^version: 1\.6\.77\nfiles: \[\]/);
   }
 });
 

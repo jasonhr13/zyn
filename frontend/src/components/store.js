@@ -1,5 +1,9 @@
 import { createStore } from 'redux';
-import { isQueuedTargetProxyStatus, isTargetProxyStatusForGroup } from './target-proxy-status';
+import {
+  isQueuedTargetProxyStatus,
+  isTargetProxyRotationStatus,
+  isTargetProxyStatusForGroup,
+} from './target-proxy-status';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
 // task must never re-enter the pool — even when a Discord reconnect ('ready') or a refreshQueuePasses
@@ -313,6 +317,9 @@ export function reducer(state = defaultState, action) {
       // it while a selector command is actually outstanding; that avoids mistaking an unrelated
       // engine phrase such as "Switched To Out of Stock" for proxy feedback.
       const proxyEdit = state.target.proxyStatus[action.taskId];
+      if (proxyEdit && isTargetProxyRotationStatus(entry.label)) {
+        return state;
+      }
       if (proxyEdit && proxyEdit.pending && isTargetProxyStatusForGroup(entry.label, proxyEdit.group)) {
         return { ...state, target: { ...state.target,
           proxyStatus: { ...state.target.proxyStatus, [action.taskId]: {
@@ -327,21 +334,25 @@ export function reducer(state = defaultState, action) {
       const prev = state.target.taskStatus[action.taskId];
       if (prev && entry.taskState === undefined) entry.taskState = prev.taskState;
       if (prev && entry.running === undefined) entry.running = prev.running;
+      const proxyStatus = { ...state.target.proxyStatus };
+      // A completed edit remains hidden as a narrow guard against late "Rotating Proxy" chatter.
+      // The first genuine task step proves the engine has moved on and retires that guard.
+      if (proxyEdit && !proxyEdit.pending) delete proxyStatus[action.taskId];
       return { ...state, target: { ...state.target,
-        taskStatus: { ...state.target.taskStatus, [action.taskId]: entry } } };
+        taskStatus: { ...state.target.taskStatus, [action.taskId]: entry }, proxyStatus } };
     }
 
     case 'targetOtp':
       return { ...state, target: { ...state.target, otpPending: action.pending || [] } };
 
     // Queued edits stay armed after their notice fades because the engine will send a second status
-    // when the Shape-pinned step ends. Completed/failed edits are removed after the same timeout.
+    // when the Shape-pinned step ends. Completed/failed edits stay hidden as a guard against the
+    // engine's late "Rotating Proxy" chatter, then retire on the next genuine task step.
     case 'targetProxyStatusClear': {
       const current = state.target.proxyStatus[action.taskId];
       if (!current || current.at !== action.at) return state;
       const proxyStatus = { ...state.target.proxyStatus };
-      if (current.pending) proxyStatus[action.taskId] = { ...current, hidden: true };
-      else delete proxyStatus[action.taskId];
+      proxyStatus[action.taskId] = { ...current, hidden: true };
       return { ...state, target: { ...state.target, proxyStatus } };
     }
 

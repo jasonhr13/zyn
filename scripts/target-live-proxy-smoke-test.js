@@ -15,7 +15,10 @@ const store = source('frontend/src/components/store.js');
 const runtimePatcher = source('scripts/patch-profile-imap-engines.js');
 const electron = source('extracted/asar/public/electron.js');
 const bridge = source('extracted/asar/public/helpers/target-engine.js');
-const engine = fs.readFileSync(path.join(root, 'dist/Zyn.app/Contents/Resources/engine/backend.exe'));
+const engine = fs.readFileSync(path.join(
+  root,
+  'dist/Zyn-Runtime-Base.app/Contents/Resources/engine/backend.exe',
+));
 
 assert.match(ui, /ipcRenderer\.sendSync\('setTargetTaskProxy', id, proxyListName\)/,
   'running-task selector must invoke the synchronous live proxy IPC channel');
@@ -31,6 +34,8 @@ assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,
   'only an outstanding live proxy edit may be separated from task status');
+assert.match(store, /proxyEdit && isTargetProxyRotationStatus/,
+  'late Rotating Proxy chatter must not replace the operational task status after a live edit');
 assert.match(runtimePatcher, /Object\.assign\(sentConfigs\.proxies, buildProxyMap\(group\)\)/,
   'live edits must load or refresh the selected proxy group before asking the engine to switch');
 assert.match(electron, /ipcMain\.on\('setTargetTaskProxy'/,
