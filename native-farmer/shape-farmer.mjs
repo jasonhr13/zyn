@@ -944,14 +944,22 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
         // the same structured Target-block/captcha outcome.
         if (/something went wrong|access denied|request rejected/i.test(`${title} ${bodyText}`)) blockedPage = true;
         const captchaPage = /captcha|verify (that )?you are human/i.test(`${url} ${title} ${bodyText}`);
-        if (blockedPage) failureCategory = classifyHarvestPageEvidence({ confirmedBlock: true });
+        // A Chromium network-error document does not preserve the failed tunnel code in page.url(),
+        // so the earlier bounce check can only call it navigation. The rendered error text does
+        // preserve it. Feed that evidence through the shared classifier so the failed managed route
+        // is cooled and rotated instead of recycling a healthy browser against the same dead tunnel.
+        const visibleFailureCategory = classifyHarvestFailure(`${url} ${title} ${bodyText}`);
+        const proxyErrorPage = visibleFailureCategory === 'proxy';
+        if (proxyErrorPage) failureCategory = 'proxy';
+        else if (blockedPage) failureCategory = classifyHarvestPageEvidence({ confirmedBlock: true });
         else if (captchaPage) failureCategory = classifyHarvestPageEvidence({ confirmedCaptcha: true });
         else if (queuedOut) failureCategory = classifyHarvestPageEvidence({ queued: true });
         const dir = path.join(os.tmpdir(), 'shape-debug');
         fs.mkdirSync(dir, { recursive: true });
         const shot = path.join(dir, `fail-${type}-${Date.now()}.png`);
         await page.screenshot({ path: shot }).catch(() => {});
-        const why = blockedPage ? 'BOT-BLOCKED by Target (page says "Something went wrong")'
+        const why = proxyErrorPage ? 'PROXY TUNNEL FAILED — rotating this route'
+                  : blockedPage ? 'BOT-BLOCKED by Target (page says "Something went wrong")'
                   : captchaPage ? 'CAPTCHA challenge blocked the harvest'
                   : queuedOut ? "QUEUED — Target's waiting room never cleared"
                   : (atcNote || 'no capture');

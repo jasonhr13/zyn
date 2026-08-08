@@ -125,12 +125,26 @@ export async function detectShapeBrowsers(
   const detected = [];
   for (const candidate of shapeBrowserCandidates(selection)) {
     let probe = null;
+    let context = null;
     try {
       probe = await launch(shapeBrowserLaunchOptions(candidate, { headless: true }, findInstalledExecutable));
+      // Launch success alone is not enough. Some installed Chromium-family builds accept the
+      // Playwright connection and then crash as soon as the first renderer page is created. Prove
+      // the exact capability a worker needs before advertising or scheduling this browser.
+      context = await probe.newContext();
+      const page = await context.newPage();
+      await page.evaluate(() => document.readyState);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      if (typeof probe.isConnected === 'function' && !probe.isConnected()) {
+        throw new Error(`${candidate.label} disconnected during its page stability check`);
+      }
+      await context.close();
+      context = null;
       await probe.close();
       probe = null;
       detected.push(candidate);
     } catch (error) {
+      if (context) await context.close().catch(() => {});
       if (probe) await probe.close().catch(() => {});
       onUnavailable(candidate, error);
     }

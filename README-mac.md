@@ -307,8 +307,12 @@ detected browser when proxy capacity permits. The existing bridge still launches
 through bundled Wine, preserving the frozen checkout engine while removing Wine's cold-start from
 the cookie broker/farmer. New Headless remains explicit, and the upstream health, scheduling,
 browser reuse, multi-capture, bandwidth, and cold-login coordination paths stay intact. The one
-documented source adaptation retains this app's existing font block alongside upstream's image/media
-filter, so the already-released proxy-bandwidth toggle does not regress.
+documented bandwidth adaptation retains this app's existing font block alongside upstream's
+image/media filter, so the already-released proxy-bandwidth toggle does not regress. Two runtime
+health adaptations keep New Headless explicit: browser detection opens and holds a real page before
+scheduling a channel, and Chromium tunnel-error pages cool and rotate the failed proxy route. These
+prevent crash-on-page browsers and dead managed tunnels from entering silent retry loops; they do
+not fall back to headed or off-screen browsing.
 
 The Target cookie-bank card also surfaces the upstream health counters directly: farmed/delivered
 output, work in flight, waiting engine requests, recent error evidence, cooling proxy-route count,
@@ -321,6 +325,7 @@ Prepare the ignored, architecture-specific Chromium payload once before packagin
 ```sh
 node ./scripts/prepare-native-farmer-runtime.js
 node ./scripts/verify-native-farmer-upstream.js
+node ./scripts/target-farmer-runtime-health-smoke-test.mjs
 ```
 
 To rebuild after moving the old output aside:

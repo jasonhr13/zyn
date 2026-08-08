@@ -9,9 +9,17 @@
       "sha256": "7b706d784bbdfbb01391b38e379dd211a73048a45e340e22fac7648395b2fcbc",
       "adaptation": "Retain the existing image/media/font bandwidth toggle while adopting the upstream native farmer."
     },
-    "shape-browser-pool.mjs": "b8cb1d5353f472513609ba9eea6349361d5c1e2069efc4d9e4fd098ecc3f981b",
+    "shape-browser-pool.mjs": {
+      "upstreamSha256": "b8cb1d5353f472513609ba9eea6349361d5c1e2069efc4d9e4fd098ecc3f981b",
+      "sha256": "46bc3ba90d70d9ae1fe00eeefc7501e00c3dc91b975fec9fb5aa1ab0bd4e65b9",
+      "adaptation": "Keep New Headless, but require each browser to open and hold a real page before adding it to the worker pool so crash-on-page builds cannot enter a relaunch loop."
+    },
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
-    "shape-farmer.mjs": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
+    "shape-farmer.mjs": {
+      "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
+      "sha256": "6a2087806984cb6108830f4d5cb31aec69db5d7a332bc8ce4a0ca80e57f2074d",
+      "adaptation": "Classify Chromium ERR_TUNNEL_CONNECTION_FAILED pages as proxy-route failures so managed routes are cooled and rotated instead of being retried as browser/navigation failures."
+    },
     "shape-harvest-coordinator.mjs": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
     "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
     "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
