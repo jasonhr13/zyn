@@ -8,8 +8,8 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-farmer-controls-'));
-for (const filename of ['target-engine.js', 'walmart-engine.js']) {
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-farmer-controls-'));
+for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
   fs.copyFileSync(
     path.join(project, 'extracted', 'asar', 'public', 'helpers', filename),
     path.join(directory, filename),

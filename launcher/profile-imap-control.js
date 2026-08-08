@@ -1,6 +1,6 @@
 'use strict';
 
-// Integration adapter for the Hope repository's profile-owned IMAP schema. The normalization,
+// Integration adapter for the profile-owned IMAP schema. The normalization,
 // migration, secret encoding, and lookup rules below follow its data-manager implementation while
 // leaving the archived R5 data manager and every unrelated record type untouched.
 const crypto = require('crypto');

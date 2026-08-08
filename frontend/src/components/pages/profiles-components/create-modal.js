@@ -164,7 +164,7 @@ class CreateProfileModal extends Component {
 
             <hr className="form-divider" />
 
-            {/* Ported from Hope's profile-owned IMAP form. */}
+            {/* Profile-owned IMAP configuration. */}
             <div className="form-section-title">Email OTP Mailbox</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
               Optional. Target uses this profile’s mailbox when its matching account requests a login code.

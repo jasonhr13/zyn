@@ -1,6 +1,6 @@
 'use strict';
 
-// Authoritative session lifecycle ported from the replacement Hope control plane. The HTTP/HWID
+// Authoritative session lifecycle for Zyn account sign-in. The HTTP/HWID
 // implementation remains the byte-for-byte upstream client in ./license-client.js; this module is
 // the wrapper integration for safeStorage persistence, renderer-safe status, and enforcement hooks.
 

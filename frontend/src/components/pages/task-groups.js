@@ -171,6 +171,10 @@ class TaskGroups extends Component {
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
+  proxyStatusFor = task => {
+    const status = (this.props.target.proxyStatus || {})[task.id];
+    return status && !status.hidden ? status : null;
+  };
   accountFor = task => (this.props.accounts || []).find(account => String(account.id) === String(task.accountId));
 
   profileForAccount = (accountId) => {
@@ -315,7 +319,14 @@ class TaskGroups extends Component {
       updatedAt: Date.now(),
     } : item);
     this.persist(groups);
-    try { ipcRenderer.sendSync('setTargetTaskProxy', task.id, proxyListName); } catch {}
+    try {
+      if (ipcRenderer.sendSync('setTargetTaskProxy', task.id, proxyListName)) {
+        this.props.dispatch({
+          type: 'targetProxyEditSent', taskId: task.id, at: Date.now(),
+          group: String(proxyListName || '').trim() || 'Local',
+        });
+      }
+    } catch {}
   };
 
   deleteTask = (group, task) => {
@@ -722,6 +733,7 @@ class TaskGroups extends Component {
     const account = this.accountFor(task);
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
+    const displayStatus = this.proxyStatusFor(task) || status;
     const running = statusKind(status) === 'running';
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
@@ -744,7 +756,7 @@ class TaskGroups extends Component {
           <option value="">Local</option>
           {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
         </select>
-        <StatusBadge status={status} />
+        <StatusBadge status={displayStatus} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
         <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
           {running ? (
@@ -762,6 +774,7 @@ class TaskGroups extends Component {
     const account = this.accountFor(task);
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
+    const displayStatus = this.proxyStatusFor(task) || status;
     const kind = statusKind(status);
     const running = kind === 'running';
     const logs = ((((this.props.target || {}).taskLogs) || {})[task.id]) || [];
@@ -770,8 +783,8 @@ class TaskGroups extends Component {
     const profileName = profile
       ? profile.name || profile.email || profile.id
       : 'Missing matching profile';
-    const statusLabel = (status && (status.label || status.state)) || STATUS_LABELS[kind];
-    const statusDetail = (status && status.detail) || (running
+    const statusLabel = (displayStatus && (displayStatus.label || displayStatus.state)) || STATUS_LABELS[kind];
+    const statusDetail = (displayStatus && displayStatus.detail) || (running
       ? 'This task is running through the existing Target checkout engine.'
       : 'Start this task to see its checkout steps and diagnostic output here.');
 
@@ -801,7 +814,7 @@ class TaskGroups extends Component {
           <section className={`task-status-hero task-status-hero-${kind}`}>
             <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
-            <StatusBadge status={status} />
+            <StatusBadge status={displayStatus} />
           </section>
 
           {this.renderCookieBank()}

@@ -6,6 +6,8 @@ import Sidebar from './sidebar';
 import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
+import RuntimeBanner from './runtime-banner';
+import { isTargetProxyStatus } from './target-proxy-status';
 import TaskGroups from './pages/task-groups';
 import Target from './pages/target';
 import Profiles from './pages/profiles';
@@ -16,11 +18,18 @@ const { ipcRenderer } = window.require('electron');
 
 class PageHandler extends Component {
   state = { license: null };   // null = still checking
+  targetProxyTimers = {};
 
   componentDidMount() {
     // License: check on mount, and accept pushes from main (periodic re-check / revoke).
     ipcRenderer.invoke('licenseStatus').then(license => this.setState({ license })).catch(() => {});
     ipcRenderer.on('licenseStatus', (e, license) => this.setState({ license }));
+    ipcRenderer.on('runtimeStatus', (e, runtime) => {
+      this.props.dispatch({ type: 'update', obj: { runtime } });
+    });
+    ipcRenderer.invoke('runtimeStatus')
+      .then(runtime => this.props.dispatch({ type: 'update', obj: { runtime } }))
+      .catch(() => {});
     ipcRenderer.on('proxiesUpdated', (e, proxies) => {
       this.props.dispatch({ type: 'update', obj: { proxies } });
     });
@@ -52,7 +61,15 @@ class PageHandler extends Component {
       this.props.dispatch({ type: 'targetLog', line, lines, taskId });
     });
     ipcRenderer.on('targetStatus', (e, { state, label, color, detail, taskId, taskState, running }) => {
-      this.props.dispatch({ type: 'targetStatus', state, label, color, detail, taskId, taskState, running });
+      const receivedAt = Date.now();
+      this.props.dispatch({ type: 'targetStatus', state, label, color, detail, taskId, taskState, running, receivedAt });
+      if (taskId && isTargetProxyStatus(label || state)) {
+        clearTimeout(this.targetProxyTimers[taskId]);
+        this.targetProxyTimers[taskId] = setTimeout(() => {
+          this.props.dispatch({ type: 'targetProxyStatusClear', taskId, at: receivedAt });
+          delete this.targetProxyTimers[taskId];
+        }, 4000);
+      }
     });
     ipcRenderer.on('targetDone', (e, { taskId } = {}) => {
       this.props.dispatch({ type: 'targetDone', taskId });
@@ -72,8 +89,11 @@ class PageHandler extends Component {
   }
 
   componentWillUnmount() {
+    Object.values(this.targetProxyTimers).forEach(clearTimeout);
+    this.targetProxyTimers = {};
     ipcRenderer.removeAllListeners('discordStatus');
     ipcRenderer.removeAllListeners('licenseStatus');
+    ipcRenderer.removeAllListeners('runtimeStatus');
     ipcRenderer.removeAllListeners('proxiesUpdated');
     ipcRenderer.removeAllListeners('managedProxyError');
     ipcRenderer.removeAllListeners('targetLog');
@@ -108,6 +128,7 @@ class PageHandler extends Component {
         {/* Outside the router on purpose: a login code blocks a task no matter which page is open,
             and the one place it must never be is only on the page you happen not to be looking at. */}
         <OtpBanner />
+        <RuntimeBanner />
         <div className="body-wrapper">
           <Sidebar />
           <div className="page-area">

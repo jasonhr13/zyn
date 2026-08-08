@@ -99,7 +99,7 @@ class Groups extends Component {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '7px 10px', marginBottom: 4, borderRadius: 8, cursor: 'pointer',
-                  background: selected === g ? '#4f46e5' : 'transparent',
+                  background: selected === g ? 'var(--accent-fill)' : 'transparent',
                   color: selected === g ? '#fff' : 'inherit',
                   border: '1px solid var(--field-border)',
                 }}
@@ -150,7 +150,7 @@ class Groups extends Component {
                       style={{
                         display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', marginBottom: 3,
                         borderRadius: 8, cursor: 'pointer', border: '1px solid var(--field-border)',
-                        background: on ? 'rgba(79,70,229,0.14)' : 'transparent',
+                        background: on ? 'var(--accent-soft)' : 'transparent',
                       }}
                     >
                       <input type="checkbox" checked={on} onChange={e => this.writeMembers([p.id], e.target.checked)} />

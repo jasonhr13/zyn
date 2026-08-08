@@ -943,7 +943,7 @@ async function joinWaitlist(request, env) {
   `).bind(crypto.randomUUID(), email, now, now).run();
   // Always return the same response for new and existing addresses so this public endpoint cannot
   // be used to enumerate the waiting list.
-  return json({ ok: true, message: 'You are on the rCart waiting list.' }, 202);
+  return json({ ok: true, message: 'You are on the Zyn waiting list.' }, 202);
 }
 
 async function adminWaitlist(env) {
@@ -1285,7 +1285,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === '/health') return json({ service: 'hope-license-api', status: 'ok' });
+      if (url.pathname === '/health') return json({ service: 'zyn-license-api', status: 'ok' });
       if (url.pathname.startsWith('/api/')) return await api(request, env, url);
       if (url.pathname === '/' || url.pathname === '/admin') {
         return Response.redirect(`${url.origin}/admin/`, 302);

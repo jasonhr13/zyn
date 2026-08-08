@@ -23,6 +23,11 @@ launcher/node_modules/
 /archive/
 /Hope-Setup*.exe
 /updates/*/
+/.wrangler/
+/release/dist/
+/release/work/
+/release/runtime-artifacts/
+/release/runtime-staging/
 
 # Recovered installer/application working trees contain bundled binaries,
 # third-party dependencies, and embedded production credentials. R0 will

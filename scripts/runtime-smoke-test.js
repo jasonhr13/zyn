@@ -35,7 +35,7 @@ function getJson(url) {
 async function main() {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find((entry) => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
 
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
@@ -298,7 +298,7 @@ async function main() {
 
   const routeFailed = report.routes.some((route) => !route.rendered || route.errorBoundary);
   const bridgeFailed = Object.values(report.electronBridge).some((value) => !value);
-  const shellFailed = report.shell.brand !== 'Hope'
+  const shellFailed = report.shell.brand !== 'Zyn'
     || report.shell.activeNavigation !== 'Tasks'
     || JSON.stringify(report.shell.navigation) !== JSON.stringify([
       'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Settings'

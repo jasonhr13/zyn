@@ -152,7 +152,7 @@ class Proxies extends Component {
                     {activeData?.managed ? (
                       <div className="table-empty" style={{ margin: 'auto' }}>
                         <div className="table-empty-icon"><i className="ion-md-lock" /></div>
-                        <div className="table-empty-text">Managed by rCart</div>
+                        <div className="table-empty-text">Managed by Zyn</div>
                         <div className="table-empty-sub">
                           This shared list is synchronized with your account and available in proxy selectors.
                         </div>

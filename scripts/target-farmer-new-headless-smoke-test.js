@@ -29,14 +29,14 @@ assert.match(farmer, /farmerBrowsers = detected\.map/);
 assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/);
 assert.match(runtimePaths, /return process\.execPath/);
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-native-engine-'));
-for (const filename of ['target-engine.js', 'walmart-engine.js']) {
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-native-engine-'));
+for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
   fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', filename), path.join(directory, filename));
 }
 fs.copyFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), path.join(directory, 'runtime-paths.js'));
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
 const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
-assert.match(engine, /'--headless=true'/, 'control plane does not request New Headless');
+assert.match(engine, /'--headless=true'/, 'Zyn does not request New Headless');
 assert.doesNotMatch(engine, /'--headless=false'/);
 assert.match(engine, /const findNodeExe = nodeExecutable/);
 assert.match(engine, /nodeEnvironment\(\{ FORCE_COLOR/);
@@ -44,7 +44,7 @@ assert.match(engine, /`--browsers=auto`/);
 
 console.log(JSON.stringify({
   ok: true,
-  source: 'jasonhr13/hope@423d132',
+  source: 'pinned native farmer @423d132',
   runtime: 'native-electron-node',
   displayMode: 'new-headless',
   browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium'],

@@ -1,4 +1,4 @@
-# rCart license service
+# Zyn license service
 
 The production service is deployed at:
 
@@ -20,7 +20,7 @@ The admin page can:
 
 - review waiting-list signups and invite them with a complete ready-to-copy message;
 - create a user and generate a one-time temporary password;
-- generate a seven-day, single-use link to the private rCart download page;
+- generate a seven-day, single-use link to the private Zyn download page;
 - create and edit encrypted managed proxy lists;
 - grant or remove a user's access to all managed proxy lists;
 - enable optional task types globally or override Pokémon Center/Round1 access per user;
@@ -40,18 +40,18 @@ account invalidates that session.
 
 The public website accepts waiting-list email addresses at <https://rcart.app/join>. Submissions are
 normalized and deduplicated in D1, and the public response does not reveal whether an address was
-already present. Inviting an entry in Admin creates its rCart account when needed, generates a
+already present. Inviting an entry in Admin creates its Zyn account when needed, generates a
 seven-day single-use download link, marks the waiting-list entry invited, and shows one copyable
 invitation. New-account invitations include the one-time temporary password; existing accounts keep
-their current password. Removing a waiting-list entry does not delete its rCart account.
+their current password. Removing a waiting-list entry does not delete its Zyn account.
 
 ## User flow
 
 1. The admin creates the user's email and shares the generated temporary password.
-2. The user signs into rCart.
+2. The user signs into Zyn.
 3. The first login requires a new password of at least 10 characters.
 4. The API mints one active license for that user and device, revoking any earlier active license.
-5. rCart validates the license every five minutes. A definite revoke or disable immediately returns
+5. Zyn validates the license every five minutes. A definite revoke or disable immediately returns
    the app to its sign-in gate and stops running tasks. Transient network failures have a bounded
    15-minute grace period.
 
@@ -108,7 +108,7 @@ npm run license:verify
 - `license:verify` creates a disposable waiting-list entry, invites it, and tests the website form,
   single-use download access, account-disable invalidation, first-login reset, minting, validation,
   encrypted proxy delivery/removal, revocation, rejection, and cleanup using the same API client
-  embedded in rCart.
+  embedded in Zyn.
 
 For a schema change, add a new numbered SQL file under `migrations/`; do not edit an already-applied
 migration.

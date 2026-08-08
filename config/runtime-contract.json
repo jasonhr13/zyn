@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R7",
+  "appRelease": "R8.2",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -14,11 +14,12 @@
     "isolatedRenderer": false
   },
   "product": {
-    "name": "Hope",
-    "version": "1.6.74",
-    "bundleIdentifier": "com.hope.macos",
+    "name": "Zyn",
+    "version": "1.6.76",
+    "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
-    "reactVersion": "18.3.1"
+    "reactVersion": "18.3.1",
+    "supportedArchitectures": ["arm64", "x64"]
   },
   "immutableResources": [
     {
@@ -35,8 +36,12 @@
     }
   ],
   "requiredResources": [
+    "Contents/MacOS/Zyn",
+    "Contents/Resources/Zyn.icns",
+    "Contents/Resources/zyn-build.json",
     "Contents/Resources/app-original.asar",
     "Contents/Resources/app/bootstrap.js",
+    "Contents/Resources/app/package.json",
     "Contents/Resources/app/feature-flags.js",
     "Contents/Resources/app/license-client.js",
     "Contents/Resources/app/license-authority.js",
@@ -50,6 +55,7 @@
     "Contents/Resources/app/profile-imap-control.js",
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
+    "Contents/Resources/app/runtime-manager.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
     "Contents/Resources/bot/shape-farmer.mjs",
     "Contents/Resources/bot/shape-browser-pool.mjs",
@@ -57,7 +63,7 @@
     "Contents/Resources/bot/shape-worker-scaler.mjs",
     "Contents/Resources/node_modules/playwright-core/browsers.json",
     "Contents/Resources/vendor/ms-playwright/chromium-1228/chrome-win64/chrome.exe",
-    "Contents/Resources/vendor/ms-playwright-mac-arm64",
+    "Contents/Resources/vendor/ms-playwright-mac",
     "Contents/Resources/wine/bin/wineserver"
   ],
   "symlinks": [
@@ -75,5 +81,16 @@
     "Contents/Resources/engine/backend.exe",
     "Contents/Resources/vendor/node",
     "Contents/Resources/vendor/node.exe"
-  ]
+  ],
+  "remoteRuntime": {
+    "manifest": "https://updates.rcart.app/runtimes/zyn-manifest-v1.json",
+    "excludedResourceRoots": [
+      "Contents/Resources/engine",
+      "Contents/Resources/wine",
+      "Contents/Resources/vendor/ms-playwright",
+      "Contents/Resources/vendor/ms-playwright-mac",
+      "Contents/Resources/vendor/node",
+      "Contents/Resources/vendor/node.exe"
+    ]
+  }
 }

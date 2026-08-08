@@ -27,7 +27,7 @@ assert.deepEqual(
   { width: 1024, height: 769 },
 );
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-window-size-'));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-window-size-'));
 const statePath = path.join(tempDir, 'window-size.json');
 try {
   assert.deepEqual(loadWindowSize(statePath, { width: 1600, height: 1000 }), DEFAULT_WINDOW_SIZE);

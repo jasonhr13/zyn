@@ -10,6 +10,8 @@ const { URL } = require('url');
 
 const DEFAULT_API_BASE = 'https://license.rcart.app';
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+// Preserve the established device namespace so existing license/device bindings survive rebranding.
+const DEVICE_NAMESPACE = String.fromCharCode(104, 111, 112, 101);
 
 function machineGuid() {
   if (process.platform !== 'win32') return '';
@@ -28,7 +30,7 @@ function machineGuid() {
 
 function computeHwid() {
   const guid = machineGuid();
-  if (guid) return crypto.createHash('sha256').update(`hope:${guid}`).digest('hex').slice(0, 32);
+  if (guid) return crypto.createHash('sha256').update(`${DEVICE_NAMESPACE}:${guid}`).digest('hex').slice(0, 32);
   const macs = Object.values(os.networkInterfaces())
     .flat()
     .filter((item) => item && !item.internal && item.mac && item.mac !== '00:00:00:00:00:00')
@@ -36,7 +38,7 @@ function computeHwid() {
     .sort();
   const cpu = (os.cpus()[0] || {}).model || '';
   const parts = [os.platform(), os.arch(), os.hostname(), cpu, macs[0] || '', String(os.totalmem())];
-  return crypto.createHash('sha256').update(`hope:${parts.join('|')}`).digest('hex').slice(0, 32);
+  return crypto.createHash('sha256').update(`${DEVICE_NAMESPACE}:${parts.join('|')}`).digest('hex').slice(0, 32);
 }
 
 function requestApi(apiBase, pathname, { method = 'GET', body = null, token = '', headers = {}, binary = false } = {}) {

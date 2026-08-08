@@ -2,7 +2,7 @@
 'use strict';
 
 // R6 keeps the recovered R5 engines as the source of truth. These narrow replacements route OTP
-// reads through the profile-owned mailbox API ported from jasonhr13/hope and opt the Target farmer
+// reads through the profile-owned mailbox API and opt the Target farmer
 // into New Headless. Refuse unknown inputs so a future engine update cannot be silently rewritten
 // with stale assumptions.
 const crypto = require('crypto');
@@ -18,6 +18,7 @@ if (!helperDirectory || !fs.existsSync(helperDirectory)) {
 const SOURCES = Object.freeze({
   'target-engine.js': 'f43ff08d23fa8f4db55f8b1d2f12b76017f671eb5c33a785dc7110c9a075426d',
   'walmart-engine.js': '2fe7f711b28f97317ca5de6940f045c8255b0ada383e32d991274c388672429e',
+  'plain-log.js': '519f4e8034889a6887e31272ed14cb01dd5ae752075e675cd2a22582970c43fd',
 });
 
 function sha256(buffer) {
@@ -47,6 +48,15 @@ function replaceCount(source, before, after, expected, label) {
   return source.split(before).join(after);
 }
 
+function replaceSection(source, start, end, replacement, label) {
+  const first = source.indexOf(start);
+  if (first === -1) throw new Error(`Could not find start of ${label}`);
+  const last = source.indexOf(end, first + start.length);
+  if (last === -1) throw new Error(`Could not find end of ${label}`);
+  if (source.indexOf(start, first + start.length) !== -1) throw new Error(`Found start of ${label} more than once`);
+  return source.slice(0, first) + replacement + source.slice(last);
+}
+
 function saveSource(opened) {
   const output = opened.newline === '\r\n' ? opened.source.replace(/\n/g, '\r\n') : opened.source;
   fs.writeFileSync(opened.file, output, 'utf8');
@@ -56,14 +66,26 @@ function patchTarget() {
   const opened = openSource('target-engine.js');
   let source = opened.source;
 
-  // The packaged farmer defaults to New Headless too, but pass it explicitly from the control plane
+  // The packaged farmer defaults to New Headless too, but pass it explicitly from Zyn
   // so the selected display mode is unambiguous in the spawned process command line.
   source = replaceOnce(source, `'--headless=false'`, `'--headless=true'`, 'Target farmer New Headless mode');
 
   source = replaceOnce(source, `const plat = require('./platform');`, `const plat = require('./platform');
-// Imported unchanged from jasonhr13/hope: packaged bot scripts reuse Electron as native Node.
-// backend.exe still resolves through platform/launcher and therefore remains under bundled Wine.
+// Packaged bot scripts reuse Electron as native Node.
+// backend.exe resolves through the launcher, including the verified on-demand runtime path.
 const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
+
+  source = replaceOnce(source, `function enginePath() {
+  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
+  if (packed && fs.existsSync(packed)) return packed;
+  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+}`, `function enginePath() {
+  const downloaded = process.env.ZYN_ENGINE_PATH;
+  if (downloaded && fs.existsSync(downloaded)) return downloaded;
+  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
+  if (packed && fs.existsSync(packed)) return packed;
+  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+}`, 'Target downloaded engine path');
 
   source = replaceOnce(source, `function findNodeExe() {
   if (isPackaged()) {
@@ -86,7 +108,7 @@ const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Targe
 
   source = replaceOnce(source, `  let workers = 0;
   // How long a banked Shape cookie stays usable.`, `  let workers = 0;
-  // Ported from jasonhr13/hope: collect conservatively by default, but let operators amortise a
+  // Collect conservatively by default, but let operators amortise a
   // Chromium launch across fresh contexts and opt into multiple signatures from one page.
   let capturesPerLoad = 1;
   let loadsPerBrowser = 3;
@@ -149,7 +171,7 @@ function getCookieBank() {`, 'Target last bank success timestamp');
             lastBankedAt: latestBankedAt(),
           });`, 'Target broker health passthrough');
 
-  source = replaceOnce(source, `// Two acceptable proofs. \`app\` is the explicit marker current builds send; the legacy branch`, `// Ported from jasonhr13/hope: a cold account initially farms login with one safe lane. Once the
+  source = replaceOnce(source, `// Two acceptable proofs. \`app\` is the explicit marker current builds send; the legacy branch`, `// A cold account initially farms login with one safe lane. Once the
 // engine persists its new account session, unlock the staggered ATC lanes in the native farmer.
 function signalFarmerSessionReady() {
   const req = http.request({
@@ -169,7 +191,7 @@ function signalFarmerSessionReady() {
             signalFarmerSessionReady();
           } catch (e) { log('[session] save failed: ' + e.message); }`, 'Target farmer session-ready handoff');
 
-  source = replaceOnce(source, `    if (!plat.isNodeImage(image)) {                 // the farmer runs as node, packaged or not`, `    if (!plat.isNodeImage(image) && image !== 'hope') { // native packaged farmer reuses Hope in Node mode`, 'Target native broker owner recognition');
+  source = replaceOnce(source, `    if (!plat.isNodeImage(image)) {                 // the farmer runs as node, packaged or not`, `    if (!plat.isNodeImage(image) && image !== 'zyn') { // native packaged farmer reuses Zyn in Node mode`, 'Target native broker owner recognition');
 
   source = replaceOnce(source, `// IMAP config for OTP login. Prefer the top-level Settings → Email / OTP fields, but fall back to the
 // Generate tab's config (settings.generate.*) so an existing email-auth-code setup works for Target
@@ -219,6 +241,51 @@ const taskProfileById = new Map();`, 'Target task/profile map declaration');
     if (!c.host || !c.user || !c.password) { if (!aycdKey) log('[otp] no OTP source configured — set an AYCD key or IMAP mailbox in Settings → Email / OTP'); return; }`, `    if (!c.host || !c.user || !c.password) { if (!aycdKey) log('[otp] no OTP source configured — add an AYCD key or configure the selected profile mailbox'); return; }`, 'Target profile mailbox requirement');
   source = replaceOnce(source, `    log('[otp] fetching Target login code via IMAP for ' + addr + ' — polling mailbox ' + c.user + ' …');`, `    log('[otp] fetching Target login code via IMAP for ' + addr + ' — polling profile mailbox ' + c.user + ' …');`, 'Target mailbox log');
 
+  // Hope's current mailbox flow replaces the older server-side IMAP SEARCH implementation. Keep
+  // the reviewed bridge as a fragment so it can be tested on its own and copied without escaping a
+  // large JavaScript program inside another JavaScript template literal.
+  const otpBridge = fs.readFileSync(path.join(__dirname, 'target-otp-bridge.fragment.js'), 'utf8').trimEnd();
+  source = replaceSection(
+    source,
+    '// Engine emits `request-code {email}` and blocks in WaitForCode until we send `received-code`.',
+    '// ── Log verbosity',
+    `${otpBridge}\n\n`,
+    'Target OTP bridge',
+  );
+
+  source = replaceOnce(source, `  // A code fetch runs for up to 240s. Without clearing this, restarting inside that window makes the
+  // new run's request-code hit the in-flight guard and get dropped silently — the task then waits for
+  // a code that nobody is fetching. A new run always gets a fresh fetch (and fresh IMAP settings).
+  otpInFlight.clear();`, `  // A restarted task gets a fresh mailbox fetch, while additive starts must not cancel OTP polling
+  // for sibling tasks that are already running.
+  for (const t of (config.tasks || [])) cancelOtpForTask(t.id, 'Target task restarted');`, 'Target OTP restart cancellation');
+
+  source = replaceOnce(source, `  taskActive = false;
+  otpInFlight.clear();
+  // The engine that asked for these is being killed, so a lingering prompt would deliver a code
+  // nobody is waiting for.
+  otpPending.clear();
+  emitOtpPending();`, `  taskActive = false;
+  // The engine that asked for these is being killed. Abort the actual mailbox operations as well as
+  // clearing the prompt so neither a socket timeout nor a late code can leak into a future run.
+  cancelAllOtpFetches();`, 'Target full OTP cancellation');
+
+  // A live selector can name a group no task used at launch. The engine replaces its proxy map on
+  // send-configs, so load/refresh the chosen list before asking SwapProxy to use it; otherwise the
+  // edit reaches the task correctly but fails with "Could Not Switch To …" / "invalid group".
+  source = replaceOnce(source, `  const group = String(proxyListName || '').trim() || 'Local';
+  return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group }] });`, `  const group = String(proxyListName || '').trim() || 'Local';
+  if (group !== 'Local') {
+    Object.assign(sentConfigs.proxies, buildProxyMap(group));
+    sendConfigs();
+  }
+  return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group }] });`, 'Target live proxy config refresh');
+
+  source = replaceOnce(source, `      taskActive = false;
+      // The engine dying takes every task with it, so clear them all rather than a single id.`, `      taskActive = false;
+      cancelAllOtpFetches('Target engine exited');
+      // The engine dying takes every task with it, so clear them all rather than a single id.`, 'Target engine-exit OTP cancellation');
+
   source = replaceOnce(source, `  let hasSession = false;
   try {
     const creds = config.accountId ? dm.getAccountCreds(config.accountId) : null;
@@ -260,6 +327,7 @@ const taskProfileById = new Map();`, 'Target task/profile map declaration');
   source = replaceOnce(source, `    runningTaskIds.delete(taskId);
     toRenderer('targetDone'`, `    runningTaskIds.delete(taskId);
     taskProfileById.delete(taskId);
+    cancelOtpForTask(taskId);
     toRenderer('targetDone'`, 'Target stopped task cleanup');
   source = replaceOnce(source, `  runningTaskIds.clear();
   toRenderer('targetDone'`, `  runningTaskIds.clear();
@@ -313,9 +381,25 @@ let activeConfig = null;`, 'Walmart active profile state');
   saveSource(opened);
 }
 
+function patchPlainLog() {
+  const opened = openSource('plain-log.js');
+  opened.source = replaceOnce(opened.source, `  [/bank: login=\\d+ atc=(\\d+)/i, (m) => \`Security cookies ready: \${m[1]}\`],
+  [/signing in|logging in|login success/i, () => 'Signing in'],`, `  [/bank: login=\\d+ atc=(\\d+)/i, (m) => \`Security cookies ready: \${m[1]}\`],
+  [/\\[IMAP\\] Connected/i, () => 'Mailbox connected — waiting for the email code'],
+  [/\\[IMAP\\] Ignoring stale/i, () => 'Ignoring an older email — waiting for the new code'],
+  [/checking the selected profile mailbox/i, () => 'Checking the profile mailbox'],
+  [/checking AYCD Inbox/i, () => 'Checking AYCD Inbox for the email code'],
+  [/code found .*submitting/i, () => 'Email code found — submitting'],
+  [/mailbox fetch failed|Auth code not found|no new Target code/i, () => 'Could not find the new email code — enter it manually'],
+  [/no OTP source configured|mailbox reader is missing/i, () => 'Automatic email codes are unavailable — enter it manually'],
+  [/signing in|logging in|login success/i, () => 'Signing in'],`, 'Target OTP plain-log rules');
+  saveSource(opened);
+}
+
 try {
   patchTarget();
   patchWalmart();
+  patchPlainLog();
   console.log(`Patched profile-owned IMAP routing in ${helperDirectory}`);
 } catch (error) {
   console.error(`Profile IMAP engine patch failed: ${error.message}`);

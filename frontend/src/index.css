@@ -4,127 +4,134 @@
   box-sizing: border-box;
 }
 
-/* ── rCart design tokens ─────────────────────────────────────────────────────
+/* ── Zyn design tokens ───────────────────────────────────────────────────────
    The unqualified palette is the real light theme. `theme-night` replaces the complete palette,
    rather than nudging a few values, so every shared surface and native form control switches as a
    coherent theme. Keep component CSS on these tokens instead of baking in a dark background. */
 :root {
   color-scheme: light;
-  --body-bg: #edf3f1;
+  --zyn-deep-crimson: #450a0a;
+  --zyn-dark-red: #7f1d1d;
+  --zyn-rose: #be123c;
+  --zyn-bright-rose: #e11d48;
+  --zyn-orange: #f97316;
+  --zyn-soft-gold: #fbbf24;
+  --body-bg: #fff7ed;
   --app-bg:
-    radial-gradient(circle at 16% -14%, rgba(18, 165, 139, 0.12), transparent 32%),
-    radial-gradient(circle at 94% 5%, rgba(65, 123, 180, 0.08), transparent 27%),
-    linear-gradient(145deg, #f8fbfa 0%, #f1f6f4 54%, #ebf1ef 100%);
-  --titlebar: rgba(255, 255, 255, 0.94);
-  --sidebar: rgba(248, 251, 250, 0.92);
-  --panel: rgba(255, 255, 255, 0.9);
-  --panel-solid: #ffffff;
-  --panel-hover: rgba(17, 76, 66, 0.06);
-  --panel-raised: #ffffff;
-  --panel-bg-alt: rgba(17, 76, 66, 0.045);
-  --panel-border: rgba(34, 76, 68, 0.14);
-  --panel-border-strong: rgba(34, 76, 68, 0.24);
-  --modal-bg: rgba(255, 255, 255, 0.985);
+    radial-gradient(circle at 15% -12%, rgba(225, 29, 72, 0.13), transparent 34%),
+    radial-gradient(circle at 94% 7%, rgba(251, 191, 36, 0.14), transparent 28%),
+    linear-gradient(145deg, #fffaf5 0%, #fff7ed 54%, #fff1e6 100%);
+  --titlebar: rgba(255, 250, 245, 0.95);
+  --sidebar: rgba(255, 248, 241, 0.93);
+  --panel: rgba(255, 252, 248, 0.92);
+  --panel-solid: #fffdf9;
+  --panel-hover: rgba(127, 29, 29, 0.06);
+  --panel-raised: #fffdf9;
+  --panel-bg-alt: rgba(127, 29, 29, 0.045);
+  --panel-border: rgba(127, 29, 29, 0.14);
+  --panel-border-strong: rgba(127, 29, 29, 0.24);
+  --modal-bg: rgba(255, 250, 245, 0.985);
   --blur: blur(12px);
-  --field: rgba(255, 255, 255, 0.96);
+  --field: rgba(255, 253, 249, 0.97);
   --field-hover: #ffffff;
-  --field-border: rgba(34, 76, 68, 0.19);
-  --text: #142622;
-  --text2: #344e49;
-  --muted: #617a75;
-  --dim: #829690;
-  --accent: #087d69;
-  --accent-strong: #066653;
-  --accent-soft: rgba(8, 125, 105, 0.1);
-  --accent-border: rgba(8, 125, 105, 0.25);
-  --accent-fill: #159d84;
-  --accent-on: #ffffff;
-  --run: #956000;
-  --run-soft: rgba(174, 111, 0, 0.1);
-  --ok: #14795d;
-  --ok-soft: rgba(20, 121, 93, 0.1);
-  --danger: #bd3747;
-  --danger-soft: rgba(189, 55, 71, 0.1);
-  --info: #2d68aa;
-  --info-soft: rgba(45, 104, 170, 0.1);
-  --purple: #684ab0;
-  --idle-soft: rgba(54, 83, 76, 0.07);
-  --btn: rgba(255, 255, 255, 0.7);
-  --btn-border: rgba(34, 76, 68, 0.17);
-  --overlay: rgba(22, 42, 37, 0.38);
-  --page-header: rgba(255, 255, 255, 0.38);
-  --surface-tint: rgba(17, 76, 66, 0.025);
-  --runtime-bg: linear-gradient(90deg, rgba(204, 242, 232, 0.94), rgba(244, 250, 248, 0.97));
-  --runtime-error-bg: rgba(255, 241, 242, 0.98);
-  --progress-track: rgba(28, 66, 58, 0.1);
-  --log-bg: #f2f6f5;
-  --primary-hover: #0d8b74;
-  --primary-border: rgba(6, 102, 83, 0.25);
-  --primary-shadow: 0 8px 18px rgba(21, 119, 99, 0.15);
+  --field-border: rgba(127, 29, 29, 0.19);
+  --text: #2b0d12;
+  --text2: #5f2831;
+  --muted: #87565e;
+  --dim: #ab7b80;
+  --accent: #be123c;
+  --accent-strong: #7f1d1d;
+  --accent-soft: rgba(225, 29, 72, 0.1);
+  --accent-border: rgba(190, 18, 60, 0.25);
+  --accent-fill: #e11d48;
+  --accent-on: #fffaf5;
+  --run: #d8560c;
+  --run-soft: rgba(249, 115, 22, 0.11);
+  --ok: #a26800;
+  --ok-soft: rgba(251, 191, 36, 0.14);
+  --danger: #be123c;
+  --danger-soft: rgba(190, 18, 60, 0.1);
+  --info: #7f1d1d;
+  --info-soft: rgba(127, 29, 29, 0.1);
+  --purple: #be123c;
+  --idle-soft: rgba(127, 29, 29, 0.07);
+  --btn: rgba(255, 253, 249, 0.74);
+  --btn-border: rgba(127, 29, 29, 0.17);
+  --overlay: rgba(69, 10, 10, 0.4);
+  --page-header: rgba(255, 250, 245, 0.42);
+  --surface-tint: rgba(127, 29, 29, 0.025);
+  --runtime-bg: linear-gradient(90deg, rgba(255, 228, 230, 0.95), rgba(255, 248, 241, 0.98));
+  --runtime-error-bg: rgba(255, 235, 238, 0.98);
+  --progress-track: rgba(127, 29, 29, 0.1);
+  --log-bg: #fff5ef;
+  --primary-hover: #be123c;
+  --primary-border: rgba(127, 29, 29, 0.28);
+  --primary-shadow: 0 8px 18px rgba(190, 18, 60, 0.18);
   --radius: 12px;
   --radius-sm: 8px;
-  --shadow-panel: 0 12px 30px rgba(32, 65, 58, 0.08), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  --shadow-modal: 0 28px 80px rgba(28, 55, 49, 0.2), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
-  --shadow-focus: 0 0 0 3px rgba(8, 125, 105, 0.13);
-  --scroll: rgba(56, 88, 81, 0.28);
+  --shadow-panel: 0 12px 30px rgba(69, 10, 10, 0.08), 0 1px 0 rgba(255, 255, 255, 0.82) inset;
+  --shadow-modal: 0 28px 80px rgba(69, 10, 10, 0.2), 0 1px 0 rgba(255, 255, 255, 0.86) inset;
+  --shadow-focus: 0 0 0 3px rgba(225, 29, 72, 0.13);
+  --scroll: rgba(127, 29, 29, 0.28);
   --scroll-track: transparent;
 }
 
 body.theme-night {
   color-scheme: dark;
-  --body-bg: #080d12;
+  --body-bg: #0f1012;
   --app-bg:
-    radial-gradient(circle at 20% -15%, rgba(26, 142, 128, 0.08), transparent 30%),
-    linear-gradient(145deg, #070b10 0%, #080d12 54%, #060a0f 100%);
-  --titlebar: rgba(5, 9, 13, 0.96);
-  --sidebar: rgba(7, 12, 17, 0.92);
-  --panel: rgba(14, 21, 28, 0.88);
-  --panel-solid: #0e151c;
-  --panel-hover: rgba(255, 255, 255, 0.045);
-  --panel-raised: rgba(18, 27, 35, 0.94);
-  --panel-bg-alt: rgba(5, 10, 15, 0.34);
-  --panel-border: rgba(151, 174, 195, 0.12);
-  --panel-border-strong: rgba(151, 174, 195, 0.2);
-  --modal-bg: rgba(9, 15, 20, 0.98);
-  --field: rgba(7, 13, 18, 0.72);
-  --field-hover: rgba(12, 20, 27, 0.82);
-  --field-border: rgba(151, 174, 195, 0.15);
-  --text: #e7f0ef;
-  --text2: #adbfbc;
-  --muted: #6d807d;
-  --dim: #455452;
-  --accent: #4de0c1;
-  --accent-strong: #20bfa2;
-  --accent-soft: rgba(77, 224, 193, 0.11);
-  --accent-border: rgba(77, 224, 193, 0.24);
-  --accent-fill: #20b89d;
-  --accent-on: #04130f;
-  --run: #f5c96b;
-  --run-soft: rgba(245, 201, 107, 0.11);
-  --ok: #65d6a6;
-  --ok-soft: rgba(101, 214, 166, 0.11);
-  --danger: #ff7b83;
-  --danger-soft: rgba(255, 123, 131, 0.11);
-  --info: #77aef7;
-  --info-soft: rgba(119, 174, 247, 0.11);
-  --purple: #a78bfa;
-  --idle-soft: rgba(151, 174, 195, 0.08);
-  --btn: rgba(151, 174, 195, 0.065);
-  --btn-border: rgba(151, 174, 195, 0.15);
-  --overlay: rgba(2, 6, 9, 0.76);
-  --page-header: rgba(8, 13, 18, 0.18);
-  --surface-tint: rgba(255, 255, 255, 0.015);
-  --runtime-bg: linear-gradient(90deg, rgba(18, 105, 91, 0.22), rgba(10, 23, 29, 0.96));
-  --runtime-error-bg: rgba(72, 26, 31, 0.36);
-  --progress-track: rgba(255, 255, 255, 0.07);
-  --log-bg: #0b0d10;
-  --primary-hover: #2bc8ab;
-  --primary-border: rgba(104, 255, 221, 0.22);
-  --primary-shadow: 0 8px 18px rgba(17, 141, 120, 0.18);
-  --shadow-panel: 0 14px 34px rgba(0, 0, 0, 0.19), 0 1px 0 rgba(255, 255, 255, 0.025) inset;
-  --shadow-modal: 0 28px 80px rgba(0, 0, 0, 0.56), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
-  --shadow-focus: 0 0 0 3px rgba(77, 224, 193, 0.11);
-  --scroll: rgba(151, 174, 195, 0.24);
+    radial-gradient(circle at 15% -12%, rgba(225, 29, 72, 0.1), transparent 34%),
+    radial-gradient(circle at 96% 108%, rgba(249, 115, 22, 0.045), transparent 36%),
+    linear-gradient(145deg, #17191c 0%, #121417 56%, #0e1013 100%);
+  --titlebar: rgba(13, 14, 16, 0.97);
+  --sidebar: rgba(15, 16, 19, 0.95);
+  --panel: rgba(27, 29, 33, 0.92);
+  --panel-solid: #1b1d21;
+  --panel-hover: rgba(225, 29, 72, 0.07);
+  --panel-raised: rgba(35, 38, 43, 0.96);
+  --panel-bg-alt: rgba(255, 255, 255, 0.025);
+  --panel-border: rgba(255, 255, 255, 0.085);
+  --panel-border-strong: rgba(225, 29, 72, 0.24);
+  --modal-bg: rgba(28, 30, 34, 0.985);
+  --field: rgba(20, 22, 26, 0.9);
+  --field-hover: rgba(32, 35, 40, 0.96);
+  --field-border: rgba(255, 255, 255, 0.1);
+  --text: #f5f5f6;
+  --text2: #c3c5ca;
+  --muted: #8b8f96;
+  --dim: #5e6269;
+  --accent: #e11d48;
+  --accent-strong: #be123c;
+  --accent-soft: rgba(225, 29, 72, 0.13);
+  --accent-border: rgba(225, 29, 72, 0.3);
+  --accent-fill: #e11d48;
+  --accent-on: #fff7ed;
+  --run: #f97316;
+  --run-soft: rgba(249, 115, 22, 0.13);
+  --ok: #fbbf24;
+  --ok-soft: rgba(251, 191, 36, 0.12);
+  --danger: #e11d48;
+  --danger-soft: rgba(225, 29, 72, 0.13);
+  --info: #be123c;
+  --info-soft: rgba(190, 18, 60, 0.13);
+  --purple: #be123c;
+  --idle-soft: rgba(255, 255, 255, 0.045);
+  --btn: rgba(255, 255, 255, 0.035);
+  --btn-border: rgba(255, 255, 255, 0.09);
+  --overlay: rgba(4, 5, 7, 0.78);
+  --page-header: rgba(18, 19, 22, 0.72);
+  --surface-tint: rgba(255, 255, 255, 0.025);
+  --runtime-bg: linear-gradient(90deg, rgba(225, 29, 72, 0.1), rgba(28, 30, 34, 0.97));
+  --runtime-error-bg: rgba(69, 10, 10, 0.42);
+  --progress-track: rgba(255, 255, 255, 0.1);
+  --log-bg: #111316;
+  --primary-hover: #be123c;
+  --primary-border: rgba(225, 29, 72, 0.34);
+  --primary-shadow: 0 8px 20px rgba(225, 29, 72, 0.23);
+  --shadow-panel: 0 14px 34px rgba(0, 0, 0, 0.16), 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+  --shadow-modal: 0 28px 80px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.055) inset;
+  --shadow-focus: 0 0 0 3px rgba(225, 29, 72, 0.15);
+  --scroll: rgba(251, 191, 36, 0.22);
 }
 
 html, body, #root {
@@ -148,7 +155,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   box-shadow: var(--shadow-focus);
 }
 
-::selection { background: rgba(77, 224, 193, 0.24); color: var(--text); }
+::selection { background: rgba(225, 29, 72, 0.28); color: var(--text); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--scroll-track); }
 ::-webkit-scrollbar-thumb {

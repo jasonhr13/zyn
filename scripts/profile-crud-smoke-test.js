@@ -22,7 +22,7 @@ http.get(`http://127.0.0.1:${port}/json`, (response) => {
   response.on('data', (chunk) => { body += chunk; });
   response.on('end', () => {
     const target = JSON.parse(body).find((entry) => entry.type === 'page');
-    if (!target) throw new Error('Hope renderer target was not found');
+    if (!target) throw new Error('Zyn renderer target was not found');
     const socket = new WebSocket(target.webSocketDebuggerUrl);
 
     socket.on('open', () => {

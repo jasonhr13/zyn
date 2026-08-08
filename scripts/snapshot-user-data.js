@@ -14,7 +14,7 @@ function option(name, fallback) {
 }
 const source = path.resolve(option(
   '--source',
-  process.env.HOPE_USER_DATA_DIR
+  process.env.ZYN_USER_DATA_DIR
     || path.join(os.homedir(), 'Library', 'Application Support', 'secret-lair-bot'),
 ));
 const outputRoot = path.resolve(option(
@@ -23,7 +23,7 @@ const outputRoot = path.resolve(option(
 ));
 
 if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
-  console.error(`Hope user-data directory not found: ${source}`);
+  console.error(`Zyn user-data directory not found: ${source}`);
   process.exit(2);
 }
 if (outputRoot === source || outputRoot.startsWith(`${source}${path.sep}`)) {
@@ -50,7 +50,7 @@ function copyStable(sourceFile, targetFile) {
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 fs.mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
 fs.chmodSync(outputRoot, 0o700);
-const finalPath = path.join(outputRoot, `Hope-user-data-${stamp}`);
+const finalPath = path.join(outputRoot, `Zyn-user-data-${stamp}`);
 const partialPath = `${finalPath}.${process.pid}.partial`;
 fs.mkdirSync(partialPath, { mode: 0o700 });
 

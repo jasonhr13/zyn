@@ -260,7 +260,7 @@ async function loadUsers() {
 
 function invitationText(result) {
   const lines = [
-    'You’re invited to rCart.',
+    'You’re invited to Zyn.',
     '',
     `Download: ${result.downloadUrl}`,
     `Email: ${result.user.email}`,
@@ -268,7 +268,7 @@ function invitationText(result) {
   if (result.temporaryPassword) lines.push(`Temporary password: ${result.temporaryPassword}`);
   lines.push('', result.temporaryPassword
     ? 'You’ll choose a new password the first time you sign in.'
-    : 'Sign in with your existing rCart password.');
+    : 'Sign in with your existing Zyn password.');
   return lines.join('\n');
 }
 
@@ -301,10 +301,10 @@ function waitlistRow(entry) {
         const result = await request(`/api/admin/waitlist/${entry.id}/invite`, { method: 'POST' });
         showCredential({
           eyebrow: 'Invitation ready',
-          title: result.accountCreated ? 'New rCart account' : 'rCart invitation',
+          title: result.accountCreated ? 'New Zyn account' : 'Zyn invitation',
           description: result.accountCreated
             ? 'Copy and send this complete invitation. The temporary password is shown only here.'
-            : 'Copy and send this invitation. This email already has an rCart account.',
+            : 'Copy and send this invitation. This email already has a Zyn account.',
           value: invitationText(result),
           copiedMessage: 'Invitation copied.',
         });
@@ -313,7 +313,7 @@ function waitlistRow(entry) {
       } catch (error) { toast(error.message, true); }
     }),
     button('Remove', 'danger', async () => {
-      if (!confirm(`Remove ${entry.email} from the waiting list? Their rCart account, if any, will not be deleted.`)) return;
+      if (!confirm(`Remove ${entry.email} from the waiting list? Their Zyn account, if any, will not be deleted.`)) return;
       try {
         await request(`/api/admin/waitlist/${entry.id}`, { method: 'DELETE' });
         toast(`${entry.email} removed from the waiting list.`);

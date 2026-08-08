@@ -14,13 +14,12 @@ for (const [relativePath, expected] of Object.entries(manifest.files)) {
   const filePath = path.join(projectDirectory, relativePath);
   assert.equal(fs.statSync(filePath).isFile(), true, `${relativePath} is missing`);
   const actual = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-  assert.equal(actual, expected, `${relativePath} differs from Hope ${manifest.commit}`);
+  assert.equal(actual, expected, `${relativePath} differs from pinned source ${manifest.commit}`);
   verified.push(relativePath);
 }
 
 console.log(JSON.stringify({
   ok: true,
-  source: manifest.source,
   commit: manifest.commit,
   exactFiles: verified.length,
 }, null, 2));

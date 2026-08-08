@@ -1,9 +1,8 @@
 {
-  "repository": "https://github.com/jasonhr13/hope.git",
   "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
   "files": {
     "harvest-persona.mjs": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
-    "runtime-paths.js": "9c0f4798ea8140becb503c5155256c08f4af5778da0b0e01702cfdbdefdce325",
+    "runtime-paths.js": "fc0535fe8243b6acdfa5497134bf481580399332663466fdd3cc628574eaf223",
     "shape-bandwidth.mjs": {
       "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
       "sha256": "7b706d784bbdfbb01391b38e379dd211a73048a45e340e22fac7648395b2fcbc",

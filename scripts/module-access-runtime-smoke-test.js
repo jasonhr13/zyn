@@ -26,7 +26,7 @@ function getJson(url) {
 async function main() {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 1;
@@ -172,7 +172,7 @@ async function main() {
   const compactSettingsAccess = report.settingsAccess.replace(/\s+/g, '');
   if (report.authoritative.ok !== false
     || !exact(report.authoritative.taskTypes, { pokemoncenter: false, round1: false })
-    || report.gateBadge !== 'CONTROL PLANE R7'
+    || report.gateBadge !== 'ZYN'
     || !exact(report.deniedCards, expectedCards)
     || !report.deniedRound1Route.hash.endsWith('/task-groups')
     || !report.deniedPokemonRoute.hash.endsWith('/task-groups')

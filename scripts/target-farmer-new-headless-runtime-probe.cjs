@@ -20,13 +20,13 @@ const { chromium } = require(playwrightModule);
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     const page = await browser.newPage();
-    await page.setContent('<title>Hope New Headless</title><main>ready</main>');
+    await page.setContent('<title>Zyn New Headless</title><main>ready</main>');
     const result = await page.evaluate(() => ({
       title: document.title,
       text: document.querySelector('main')?.textContent,
       userAgent: navigator.userAgent,
     }));
-    assert.equal(result.title, 'Hope New Headless');
+    assert.equal(result.title, 'Zyn New Headless');
     assert.equal(result.text, 'ready');
     console.log(JSON.stringify({ ok: true, browserVersion: browser.version(), ...result }, null, 2));
   } finally {

@@ -9,8 +9,8 @@ const WebSocket = require(path.join(__dirname, '..', 'extracted', 'asar', 'node_
 const port = Number(process.argv[2]);
 const screenshotPath = process.argv[3];
 const dataDirectory = process.argv[4] && path.resolve(process.argv[4]);
-if (!port || !screenshotPath || !dataDirectory || !dataDirectory.startsWith('/private/tmp/hope-r2-')) {
-  console.error('Usage: node scripts/task-group-crud-smoke-test.js <debug-port> <screenshot-path> <isolated-/private/tmp/hope-r2-...-user-data-dir>');
+if (!port || !screenshotPath || !dataDirectory || !dataDirectory.startsWith('/private/tmp/zyn-r2-')) {
+  console.error('Usage: node scripts/task-group-crud-smoke-test.js <debug-port> <screenshot-path> <isolated-/private/tmp/zyn-r2-...-user-data-dir>');
   process.exit(2);
 }
 
@@ -76,7 +76,7 @@ async function main() {
   seedIsolatedData();
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
 
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();

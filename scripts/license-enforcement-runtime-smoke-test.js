@@ -26,7 +26,7 @@ function getJson(url) {
 async function main() {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 1;
@@ -132,8 +132,8 @@ async function main() {
   const sensitiveStatus = report.license.rendererKeys.some(key => /token|password|device|hwid|reset|key/i.test(key));
   if (report.license.ok !== false
     || !report.gate.present
-    || report.gate.badge !== 'CONTROL PLANE R4'
-    || report.gate.title !== 'Sign in to rCart'
+    || report.gate.badge !== 'ZYN'
+    || report.gate.title !== 'Sign in to Zyn'
     || report.gate.acknowledgementPresent
     || report.gate.legacyKeyCopyPresent
     || !report.gate.submitInitiallyDisabled

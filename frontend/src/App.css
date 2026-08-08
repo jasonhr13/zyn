@@ -29,19 +29,19 @@
 .title-bar-left { display: flex; align-items: center; gap: 9px; }
 
 .title-bar-mark {
-  width: 27px;
-  height: 27px;
+  width: 29px;
+  height: 29px;
   display: grid;
   place-items: center;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
 }
 
 .title-bar-logo {
-  width: 22px;
-  height: 22px;
+  width: 29px;
+  height: 29px;
   display: block;
   object-fit: contain;
   user-select: none;
@@ -212,7 +212,7 @@
 }
 .sidebar-link:hover { background: var(--panel-hover); color: var(--text2); transform: translateX(1px); }
 .sidebar-link.active {
-  background: linear-gradient(90deg, var(--accent-soft), rgba(77, 224, 193, 0.045));
+  background: linear-gradient(90deg, var(--accent-soft), rgba(249, 115, 22, 0.045));
   border-color: var(--accent-border);
   color: var(--accent);
   font-weight: 650;
@@ -230,7 +230,7 @@
   transition: color 100ms, background 100ms;
 }
 .sidebar-link:hover .sidebar-icon { color: var(--text2); }
-.sidebar-link.active .sidebar-icon { color: var(--accent); background: rgba(77, 224, 193, 0.08); }
+.sidebar-link.active .sidebar-icon { color: var(--accent); background: rgba(225, 29, 72, 0.1); }
 
 .sidebar-label { font-size: 11.5px; font-weight: 580; letter-spacing: 0.05px; }
 
@@ -260,7 +260,7 @@
   gap: 8px;
 }
 
-.page-title-dot { width: 3px; height: 17px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 14px rgba(77,224,193,.35); }
+.page-title-dot { width: 3px; height: 17px; border-radius: 999px; background: linear-gradient(180deg, #e11d48, #f97316, #fbbf24); box-shadow: 0 0 14px rgba(225,29,72,.35); }
 .page-title-icon { color: var(--accent); }
 .page-actions { display: flex; gap: 8px; align-items: center; }
 .page-content { flex: 1; overflow-y: auto; padding: 20px 24px 24px; }
@@ -289,8 +289,8 @@
 .btn:active:not(:disabled) { transform: translateY(0); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn-primary { background: var(--accent-fill); color: var(--accent-on); border-color: var(--primary-border); box-shadow: var(--primary-shadow); }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--accent-border); box-shadow: var(--primary-shadow); }
+.btn-primary { background: linear-gradient(135deg, #be123c, #e11d48 56%, #f97316); color: var(--accent-on); border-color: var(--primary-border); box-shadow: var(--primary-shadow); }
+.btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #7f1d1d, #be123c 54%, #e11d48); border-color: var(--accent-border); box-shadow: var(--primary-shadow); }
 .btn-secondary { background: var(--btn); color: var(--text2); }
 .btn-danger { background: var(--danger-soft); color: var(--danger); border-color: rgba(255,123,131,.16); }
 .btn-success { background: var(--btn); color: var(--ok); }
@@ -351,7 +351,7 @@ input[type="checkbox"]::before {
 input[type="checkbox"]:checked {
   background: var(--accent-fill);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(77,224,193,.07);
+  box-shadow: 0 0 0 3px rgba(225,29,72,.08);
 }
 input[type="checkbox"]:checked::before { transform: rotate(-45deg) scale(1); }
 
@@ -822,7 +822,7 @@ body.theme-night .form-select {
   color: var(--text2);
   font-size: 8px;
 }
-.task-group-filter-chip.active span { background: rgba(77,224,193,.12); color: var(--accent); }
+.task-group-filter-chip.active span { background: rgba(225,29,72,.13); color: var(--accent); }
 
 .task-group-list { display: flex; flex-direction: column; gap: 9px; }
 .task-group-row {
@@ -841,7 +841,7 @@ body.theme-night .form-select {
   transition: border-color 100ms, background 100ms, box-shadow 100ms;
 }
 .task-group-row:hover,
-.task-group-row:focus-visible { border-color: var(--accent-border); background: var(--panel-raised); box-shadow: var(--shadow-panel), 0 0 0 1px rgba(77,224,193,.035) inset; outline: none; }
+.task-group-row:focus-visible { border-color: var(--accent-border); background: var(--panel-raised); box-shadow: var(--shadow-panel), 0 0 0 1px rgba(225,29,72,.04) inset; outline: none; }
 .task-group-row-identity { grid-area: identity; min-width: 0; display: flex; align-items: center; gap: 12px; }
 .task-group-row-identity > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .task-group-row-identity h3 { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
@@ -962,7 +962,7 @@ body.theme-night .form-select {
 .first-run-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease; }
 .first-run-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .first-run-step { min-height: 210px; display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--panel-border); border-radius: 11px; background: var(--panel-bg-alt); }
-.first-run-step.current { border-color: var(--accent-border); background: linear-gradient(145deg, var(--accent-soft), var(--panel-bg-alt) 70%); box-shadow: 0 0 0 1px rgba(77,224,193,.035) inset; }
+.first-run-step.current { border-color: var(--accent-border); background: linear-gradient(145deg, var(--accent-soft), var(--panel-bg-alt) 70%); box-shadow: 0 0 0 1px rgba(225,29,72,.04) inset; }
 .first-run-step.complete { border-color: rgba(101,214,166,.18); }
 .first-run-step-top { display: flex; align-items: center; gap: 8px; }
 .first-run-step-number { width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 26px; color: var(--text2); border: 1px solid var(--panel-border-strong); border-radius: 8px; background: var(--idle-soft); font-size: 9.5px; font-weight: 800; }
@@ -1097,7 +1097,7 @@ body.theme-night .form-select {
 .task-log-empty span { color: var(--muted); font-size: 10.5px; margin-top: 8px; }
 .task-log-empty small { color: var(--dim); font-size: 9px; margin-top: 3px; max-width: 360px; text-align: center; line-height: 1.45; }
 
-/* Target group start/stop schedule (main-process timers; rCart must stay open). */
+/* Target group start/stop schedule (main-process timers; Zyn must stay open). */
 .group-schedule-chip {
   display: inline-flex; align-items: center; gap: 5px; margin-top: 4px;
   padding: 2px 8px; border-radius: 999px;
@@ -1401,7 +1401,7 @@ body.theme-night .form-select {
 }
 
 /* ── R2 task-group boundary ──────────────────────────────────────────────────
-   Target groups are a UI control plane over the existing Target IPC contract. Scheduling and
+   Target groups organize the existing Target IPC contract. Scheduling and
    additional site adapters deliberately remain outside this release. */
 .task-group-r2-row {
   grid-template-columns: minmax(235px, 1.05fr) minmax(190px, .75fr) minmax(205px, .8fr) auto;

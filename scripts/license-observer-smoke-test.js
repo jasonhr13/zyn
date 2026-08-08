@@ -9,7 +9,7 @@ const { createLicenseObserver } = require('../launcher/license-observer');
 
 const roots = [];
 const temporary = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-license-observer-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-license-observer-'));
   roots.push(root);
   return root;
 };

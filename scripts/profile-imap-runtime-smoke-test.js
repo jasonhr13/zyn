@@ -28,7 +28,7 @@ function getJson(url) {
 async function main() {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 1;
@@ -168,7 +168,7 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 
   assert.equal(result.authoritativeOk, false);
-  assert.equal(result.gateBadge, 'CONTROL PLANE R6');
+  assert.equal(result.gateBadge, 'ZYN');
   assert.equal(result.deniedTest.ok, false);
   assert.match(result.deniedTest.message, /Sign in/i);
   assert.equal(result.providerCount, 6);

@@ -1,7 +1,7 @@
 'use strict';
 
-// R3 integrates the existing Hope Cloudflare license client without making it authoritative yet.
-// The API client in ./license-client.js is copied byte-for-byte from the upstream Hope repository;
+// The observer integrates the existing Cloudflare license client without making it authoritative.
+// The API client in ./license-client.js stays pinned to its reviewed upstream implementation;
 // this adapter only owns renderer-safe state, safeStorage persistence, and isolated IPC names.
 
 const fs = require('fs');
@@ -290,8 +290,8 @@ function createLicenseObserver({ dataDirectory, safeStorage, api, now = () => Da
 }
 
 function installLicenseObservation({ app, ipcMain, safeStorage, logger = console } = {}) {
-  const apiBase = !app.isPackaged && process.env.HOPE_LICENSE_API_URL
-    ? process.env.HOPE_LICENSE_API_URL
+  const apiBase = !app.isPackaged && process.env.ZYN_LICENSE_API_URL
+    ? process.env.ZYN_LICENSE_API_URL
     : DEFAULT_API_BASE;
   const observer = createLicenseObserver({
     dataDirectory: app.getPath('userData'),

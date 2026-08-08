@@ -54,7 +54,7 @@ function nodeExecutable() {
 function nodeEnvironment(extra = {}) {
   const env = { ...process.env, ...extra };
   if (isPackaged()) {
-    env.PLAYWRIGHT_BROWSERS_PATH = process.env.HOPE_PLAYWRIGHT_BROWSERS_PATH
+    env.PLAYWRIGHT_BROWSERS_PATH = process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH
       || path.join(process.resourcesPath, 'vendor', 'ms-playwright');
     env.ELECTRON_RUN_AS_NODE = '1';
   }

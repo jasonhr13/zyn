@@ -1,6 +1,6 @@
 'use strict';
 
-// Port of Hope's license-managed proxy catalog. Remote credentials are deliberately held only in
+// Remote managed-proxy credentials are deliberately held only in
 // this main-process closure. Renderer-facing catalogs contain a stable ref, label, and count but
 // never the raw proxy lines, and the archived data manager continues to persist local lists only.
 
@@ -70,7 +70,7 @@ function createManagedProxyControl({
     const managed = managedProxyLists.find(list => list.ref === wanted);
     if (managed) return managed.raw.split('\n').map(line => line.trim()).filter(Boolean);
     if (wanted.startsWith(MANAGED_PREFIX)) {
-      const error = new Error('This managed proxy list is no longer available. Ask the rCart administrator to restore access or choose another proxy list.');
+      const error = new Error('This managed proxy list is no longer available. Ask the Zyn administrator to restore access or choose another proxy list.');
       error.code = 'MANAGED_PROXY_UNAVAILABLE';
       throw error;
     }

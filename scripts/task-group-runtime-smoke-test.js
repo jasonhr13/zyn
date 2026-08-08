@@ -27,7 +27,7 @@ const getJson = url => new Promise((resolve, reject) => {
 (async () => {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  assert.ok(target, 'Hope renderer target was not found');
+  assert.ok(target, 'Zyn renderer target was not found');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 1;

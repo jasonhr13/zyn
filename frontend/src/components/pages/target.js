@@ -161,7 +161,8 @@ class Target extends Component {
     // tasks and it should not silently inherit whichever one sorts first.
     harvesterProxyList: '',
     expanded: null, filter: '', bank: null, copied: null,
-    // { id, at } for the last live proxy switch that actually reached the engine.
+    // { id, at } for the last live proxy edit accepted by the engine bridge. The backend may queue
+    // it through a Shape-bound step, so this is intentionally not presented as final confirmation.
     proxySwitched: null,
     // Where a carted task goes when Target throttles its checkout. Always active — the selector is
     // the whole setting. Local (the home IP) is the default destination.
@@ -239,9 +240,20 @@ class Target extends Component {
       // pool still exists and the choice was theirs. Only the two hardcoded names are rewritten.
       let migrated = false;
       const tasks = rawTasks.map(t => {
-        if (t.proxyListName !== INHOUSE_TARGET && t.proxyListName !== INHOUSE_TARGET_2) return t;
-        migrated = true;
-        return { ...t, proxyListName: '' };
+        let next = t;
+        if (t.proxyListName === INHOUSE_TARGET || t.proxyListName === INHOUSE_TARGET_2) {
+          next = { ...next, proxyListName: '' };
+          migrated = true;
+        }
+        // Older tasks only stored the account and reconstructed the profile at Start. Persist the
+        // resolved profile now so request-code can always choose its mailbox by ID; email matching
+        // remains a compatibility fallback for aliases and old backend messages.
+        const profile = this.profileForAccount(t.accountId);
+        if (profile && String(next.profileId || '') !== String(profile.id)) {
+          next = { ...next, profileId: profile.id };
+          migrated = true;
+        }
+        return next;
       });
       const cleaned = stripSkuNames(saved.skus || '');
       const skus = cleaned === null ? (saved.skus || '') : cleaned;
@@ -347,11 +359,15 @@ class Target extends Component {
     if (!draft.accountIds.length) return;
     // One task per selected account. That IS the bulk-create: pick ten accounts, get ten tasks,
     // each already bound to its own account and matched profile.
-    const tasks = draft.accountIds.map(accountId => ({
-      id: uid(),
-      accountId,
-      proxyListName: draft.proxyListName,
-    }));
+    const tasks = draft.accountIds.map(accountId => {
+      const profile = this.profileForAccount(accountId);
+      return {
+        id: uid(),
+        accountId,
+        profileId: profile ? profile.id : '',
+        proxyListName: draft.proxyListName,
+      };
+    });
     this.props.dispatch({ type: 'targetTasksAdd', tasks });
     this.persist({ tasks: [...this.props.target.tasks, ...tasks] });
     this.setState({ draft: { ...draft, accountIds: [] } });
@@ -413,6 +429,10 @@ class Target extends Component {
     // Only surfaced for a live task. For a stopped one the stored value IS the whole effect, and a
     // "queued" note there would imply something is pending when nothing is.
     if (sent) {
+      this.props.dispatch({
+        type: 'targetProxyEditSent', taskId: id, at: Date.now(),
+        group: String(proxyListName || '').trim() || 'Local',
+      });
       this.setState({ proxySwitched: { id, at: Date.now() } });
       clearTimeout(this.proxyNoteTimer);
       this.proxyNoteTimer = setTimeout(() => this.setState({ proxySwitched: null }), 5000);
@@ -630,7 +650,15 @@ class Target extends Component {
     let sentAny = false;
     for (const t of list) {
       this.props.dispatch({ type: 'targetTaskUpdate', id: t.id, obj: { proxyListName: name } });
-      try { if (ipcRenderer.sendSync('setTargetTaskProxy', t.id, name)) sentAny = true; } catch {}
+      try {
+        if (ipcRenderer.sendSync('setTargetTaskProxy', t.id, name)) {
+          sentAny = true;
+          this.props.dispatch({
+            type: 'targetProxyEditSent', taskId: t.id, at: Date.now(),
+            group: String(name || '').trim() || 'Local',
+          });
+        }
+      } catch {}
     }
     this.persist({
       tasks: (this.props.target.tasks || []).map(t =>
@@ -685,7 +713,7 @@ class Target extends Component {
 
   render() {
     const { target = {}, accounts = [], proxies = {} } = this.props;
-    const { tasks = [], taskStatus = {}, taskLogs = {}, logs = [], monitorStatus } = target;
+    const { tasks = [], taskStatus = {}, proxyStatus = {}, taskLogs = {}, logs = [], monitorStatus } = target;
     const { draft, expanded, filter, harvesterProxyList, throttleFallbackGroup, selected, skuTitles, skuHover, hoverSku, cookieBank, cookieDrain, menu } = this.state;
 
     const proxyLists = (proxies && proxies.lists) || [];
@@ -830,11 +858,11 @@ class Target extends Component {
                 {bank ? (
                   <>
                     <span title="login cookies pooled">
-                      <b style={{ color: bank.login > 0 ? '#34d399' : '#ff8a5a' }}>{bank.login}</b>
+                      <b style={{ color: bank.login > 0 ? 'var(--ok)' : 'var(--run)' }}>{bank.login}</b>
                       <span style={{ color: 'var(--muted)' }}> login</span>
                     </span>
                     <span title="add-to-cart cookies pooled">
-                      <b style={{ color: bank.atc > 0 ? '#34d399' : '#ff8a5a' }}>{bank.atc}</b>
+                      <b style={{ color: bank.atc > 0 ? 'var(--ok)' : 'var(--run)' }}>{bank.atc}</b>
                       <span style={{ color: 'var(--muted)' }}> atc</span>
                     </span>
                   </>
@@ -928,7 +956,7 @@ class Target extends Component {
                           style={{
                             display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px',
                             borderRadius: 4, cursor: 'pointer', fontSize: 12,
-                            background: on ? 'var(--accent-soft, rgba(99,102,241,.15))' : 'transparent',
+                            background: on ? 'var(--accent-soft)' : 'transparent',
                           }}
                         >
                           <input type="checkbox" readOnly checked={on} style={{ pointerEvents: 'none' }} />
@@ -1305,12 +1333,15 @@ class Target extends Component {
                       <option value="">Local (no proxy)</option>
                       {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
                     </select>
-                    {/* Only for a switch that actually reached a running task. The engine's own
-                        status line says whether it took hold now or waits until after carting. */}
+                    {/* This confirms delivery to the live engine socket, not completion. The
+                        engine's status line says whether it switched now or waits until the current
+                        Shape-bound step is complete. */}
                     {this.state.proxySwitched && this.state.proxySwitched.id === t.id && (
-                      <span style={{ fontSize: 10, color: '#4ade80', whiteSpace: 'nowrap' }}>switched ✓</span>
+                      <span style={{ fontSize: 10, color: '#4ade80', whiteSpace: 'nowrap' }}>change sent ✓</span>
                     )}
-                    <div style={{ flex: '0 0 150px' }}><StatusPill st={st} /></div>
+                    <div style={{ flex: '0 0 150px' }}>
+                      <StatusPill st={(proxyStatus[t.id] && !proxyStatus[t.id].hidden) ? proxyStatus[t.id] : st} />
+                    </div>
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={e => { e.stopPropagation(); this.startTask(t); }}

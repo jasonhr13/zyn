@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { createProfileImapControl } = require('../launcher/profile-imap-control');
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-profile-imap-'));
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-profile-imap-'));
 const write = (name, value) => fs.writeFileSync(path.join(directory, name), `${JSON.stringify(value, null, 2)}\n`);
 const read = name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
 

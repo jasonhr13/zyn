@@ -27,7 +27,7 @@ function getJson(url) {
 async function main() {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
   const target = targets.find(entry => entry.type === 'page');
-  if (!target) throw new Error('Hope renderer target was not found');
+  if (!target) throw new Error('Zyn renderer target was not found');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const pending = new Map();
   let nextId = 1;
@@ -107,7 +107,7 @@ async function main() {
       const proxyPageText = document.body.textContent.replace(/\\s+/g, ' ');
       const managedChecks = {
         rowFound: Boolean(managedRow),
-        lockCopy: proxyPageText.includes('Managed by rCart'),
+        lockCopy: proxyPageText.includes('Managed by Zyn'),
         managedLabel: proxyPageText.includes('Admin Residential · Managed'),
         proxyCount: proxyPageText.includes('2 proxies'),
         rowHasDelete: Boolean(managedRow?.querySelector('button')),
@@ -172,7 +172,7 @@ async function main() {
   const result = { ...evaluated.result.value, rendererExceptions, rendererErrors, screenshotPath };
   console.log(JSON.stringify(result, null, 2));
   assert.equal(result.authoritativeOk, false);
-  assert.equal(result.gateBadge, 'CONTROL PLANE R7');
+  assert.equal(result.gateBadge, 'ZYN');
   assert.equal(result.forgedManagedPersisted, false);
   assert.equal(result.persistedCatalogSafe, true);
   assert.equal(result.managedReadOnly, true);

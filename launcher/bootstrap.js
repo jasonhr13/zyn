@@ -7,8 +7,8 @@
 const childProcess = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { app, dialog } = require('electron');
-const { CONTROL_PLANE_RELEASE, FEATURES } = require('./feature-flags');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
 const { installLicenseObservation } = require('./license-observer');
@@ -18,28 +18,124 @@ const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
+const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
-// Main-process-only release metadata. The original app does not consume it in R0; future phases
-// can query the same frozen object without smuggling configuration through renderer globals.
-Object.defineProperty(global, '__hopeControlPlane', {
-  value: Object.freeze({ release: CONTROL_PLANE_RELEASE, features: FEATURES }),
+// Main-process-only release metadata, intentionally unavailable to renderer globals.
+Object.defineProperty(global, '__zynApp', {
+  value: Object.freeze({ release: APP_RELEASE, features: FEATURES }),
   enumerable: false,
   configurable: false,
   writable: false,
 });
 
 const resources = process.resourcesPath;
-const wine = path.join(resources, 'wine', 'bin', 'wine');
-const wineserver = path.join(resources, 'wine', 'bin', 'wineserver');
+const bundledWine = path.join(resources, 'wine', 'bin', 'wine');
 const originalAsar = path.join(resources, 'app-original.asar');
 const originalSpawn = childProcess.spawn.bind(childProcess);
 const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
 const developerIdentity = 'seaniepokie';
-const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac-arm64');
+const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac');
 if (fs.existsSync(nativePlaywrightBrowsers)) {
   // The native farmer reuses this signed Electron executable as Node. Point Playwright at the
   // matching macOS Chromium bundle; the original Windows runtime remains available to backend.exe.
-  process.env.HOPE_PLAYWRIGHT_BROWSERS_PATH = nativePlaywrightBrowsers;
+  process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH = nativePlaywrightBrowsers;
+}
+
+function configureZynUserData() {
+  if (process.env.ZYN_USER_DATA_DIR) {
+    const testDirectory = path.resolve(process.env.ZYN_USER_DATA_DIR);
+    fs.mkdirSync(testDirectory, { recursive: true });
+    app.setPath('userData', testDirectory);
+    return;
+  }
+  const applicationSupport = app.getPath('appData');
+  const currentDirectory = path.join(applicationSupport, 'Zyn');
+  // Copy the previous release's data once so profiles, settings, licenses, cookies, and the Wine
+  // prefix survive the product rename. Keep the old directory as a recoverable rollback copy.
+  const previousName = String.fromCharCode(72, 111, 112, 101);
+  const previousDirectory = path.join(applicationSupport, previousName);
+  if (!fs.existsSync(currentDirectory) && fs.existsSync(previousDirectory)) {
+    try {
+      fs.cpSync(previousDirectory, currentDirectory, { recursive: true, errorOnExist: false });
+    } catch (error) {
+      console.error(`Could not migrate Zyn application data: ${error.message}`);
+    }
+  }
+  fs.mkdirSync(currentDirectory, { recursive: true });
+  app.setPath('userData', currentDirectory);
+}
+
+configureZynUserData();
+
+function packagedRuntimeMode() {
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(resources, 'zyn-build.json'), 'utf8'));
+    return receipt.runtime && receipt.runtime.delivery === 'remote' ? 'remote' : 'bundled';
+  } catch {
+    return fs.existsSync(bundledWine) ? 'bundled' : 'remote';
+  }
+}
+
+const runtimeMode = packagedRuntimeMode();
+let runtimeBootstrapStarted = false;
+const runtimeOrigin = !app.isPackaged && process.env.ZYN_RUNTIME_ORIGIN
+  ? process.env.ZYN_RUNTIME_ORIGIN
+  : DEFAULT_RUNTIME_ORIGIN;
+const runtimeManager = new RuntimeManager({
+  app,
+  enabled: app.isPackaged && runtimeMode === 'remote',
+  origin: runtimeOrigin,
+  log: console,
+  onStatus: pushRuntimeStatus,
+});
+const runtimeInitialization = runtimeManager.initialize();
+
+function pushRuntimeStatus(status) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('runtimeStatus', status || runtimeManager.getStatus());
+      }
+    }
+  } catch {}
+}
+
+function beginRuntimeBootstrap({ force = false } = {}) {
+  if (!runtimeManager.enabled || (!force && runtimeBootstrapStarted)) return;
+  runtimeBootstrapStarted = true;
+  runtimeInitialization
+    .then(() => runtimeManager.ensureAll({ force }))
+    .catch((error) => console.error(`[runtime] background setup: ${error.message}`));
+}
+
+async function waitForRuntime(names) {
+  if (!runtimeManager.enabled) return true;
+  try {
+    await runtimeInitialization;
+    runtimeBootstrapStarted = true;
+    await runtimeManager.waitFor(names);
+    return true;
+  } catch (error) {
+    console.error(`[runtime] task launch blocked: ${error.message}`);
+    return false;
+  }
+}
+
+ipcMain.removeHandler('runtimeStatus');
+ipcMain.handle('runtimeStatus', () => runtimeManager.getStatus());
+ipcMain.removeHandler('retryRuntimeSetup');
+ipcMain.handle('retryRuntimeSetup', async () => {
+  await runtimeInitialization;
+  runtimeBootstrapStarted = true;
+  return runtimeManager.ensureAll({ force: true });
+});
+
+function winePath() {
+  return process.env.ZYN_WINE_PATH || bundledWine;
+}
+
+function wineserverPath() {
+  return path.join(path.dirname(winePath()), 'wineserver');
 }
 
 const windowsLaunchers = new Set([
@@ -64,14 +160,18 @@ function wineEnvironment(environment) {
     WINEDEBUG: '-all',
     WINEDLLOVERRIDES: 'winemenubuilder.exe=d',
     // Wine's Vulkan bridge is very chatty by default. The backend and Node do
-    // not need those diagnostics, and they otherwise flood Hope's task logs.
+    // not need those diagnostics, and they otherwise flood Zyn's task logs.
     MVK_CONFIG_LOG_LEVEL: '0',
   };
 }
 
 function shouldUseWine(command) {
   if (typeof command !== 'string') return false;
-  return windowsLaunchers.has(path.normalize(path.resolve(command)));
+  const normalized = path.normalize(path.resolve(command));
+  const remoteEngine = process.env.ZYN_ENGINE_PATH
+    ? path.normalize(path.resolve(process.env.ZYN_ENGINE_PATH))
+    : '';
+  return windowsLaunchers.has(normalized) || (remoteEngine && normalized === remoteEngine);
 }
 
 childProcess.spawn = function spawnWithBundledWine(command, args, options) {
@@ -82,22 +182,23 @@ childProcess.spawn = function spawnWithBundledWine(command, args, options) {
     ...(options || {}),
     env: wineEnvironment(options && options.env),
   };
-  return originalSpawn(wine, launchArgs, launchOptions);
+  return originalSpawn(winePath(), launchArgs, launchOptions);
 };
 
-function disableWindowsOnlyUpdater() {
+function configureMacUpdater() {
   try {
     const { autoUpdater } = require(path.join(
       originalAsar,
       'node_modules',
       'electron-updater',
     ));
-    autoUpdater.checkForUpdates = function checkForMacWrapperUpdates() {
-      setImmediate(() => this.emit('update-not-available', { version: app.getVersion() }));
-      return Promise.resolve(null);
-    };
-    autoUpdater.quitAndInstall = () => {};
-  } catch {}
+    const updateArch = process.arch === 'x64' ? 'x64' : 'arm64';
+    const updateUrl = `https://updates.rcart.app/mac/${updateArch}`;
+    autoUpdater.setFeedURL({ provider: 'generic', url: updateUrl });
+    console.info(`Zyn auto-update feed: ${updateUrl}`);
+  } catch (error) {
+    console.error(`Could not configure Zyn auto-update feed: ${error.message}`);
+  }
 }
 
 function isolateModernChromiumStorage() {
@@ -106,7 +207,7 @@ function isolateModernChromiumStorage() {
 
   // Chromium storage formats are not downgrade-compatible: opening Electron
   // 43 against Electron 19's Cookies/cache databases makes the rollback build
-  // reject them as too new. Keep Hope's JSON data and Wine prefix in the same
+  // reject them as too new. Keep Zyn's JSON data and Wine prefix in the same
   // userData directory, but give each modern Electron major its own browser
   // session storage so a canary can never damage the working runtime's state.
   const sessionData = path.join(app.getPath('userData'), `chromium-${electronMajor}`);
@@ -132,7 +233,7 @@ function installWindowSizePersistence() {
 
   // The original main process still owns BrowserWindow construction. Its main window starts hidden,
   // so this event can restore validated dimensions before the first paint without replacing or
-  // patching Electron's constructor. Only the first top-level window is the Hope control plane.
+  // patching Electron's constructor. Only the first top-level window is Zyn's primary window.
   app.on('browser-window-created', (_event, window) => {
     if (attached || window.getParentWindow()) return;
     attached = true;
@@ -154,21 +255,21 @@ function installWindowSizePersistence() {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
           saveTimer = null;
-          try { persist(); } catch (error) { console.error(`Could not save Hope window size: ${error.message}`); }
+          try { persist(); } catch (error) { console.error(`Could not save Zyn window size: ${error.message}`); }
         }, 250);
       });
       window.once('close', () => {
         clearTimeout(saveTimer);
-        try { persist(); } catch (error) { console.error(`Could not save Hope window size: ${error.message}`); }
+        try { persist(); } catch (error) { console.error(`Could not save Zyn window size: ${error.message}`); }
       });
       window.once('closed', () => clearTimeout(saveTimer));
     } catch (error) {
-      console.error(`Could not restore Hope window size: ${error.message}`);
+      console.error(`Could not restore Zyn window size: ${error.message}`);
     }
   });
 }
 
-function installTaskGroupControlPlane() {
+function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
   const { ipcMain } = require('electron');
   const store = createTaskGroupStore(app.getPath('userData'));
@@ -177,7 +278,7 @@ function installTaskGroupControlPlane() {
     try {
       event.returnValue = store.load();
     } catch (error) {
-      console.error(`Could not load Hope task groups: ${error.message}`);
+      console.error(`Could not load Zyn task groups: ${error.message}`);
       event.returnValue = [];
     }
   });
@@ -185,13 +286,13 @@ function installTaskGroupControlPlane() {
     try {
       event.returnValue = store.save(groups);
     } catch (error) {
-      console.error(`Could not save Hope task groups: ${error.message}`);
+      console.error(`Could not save Zyn task groups: ${error.message}`);
       try { event.returnValue = store.load(); } catch { event.returnValue = []; }
     }
   });
 }
 
-function installProfileImapControlPlane() {
+function installProfileImap() {
   if (!FEATURES.profileImap) return null;
   try {
     const { safeStorage } = require('electron');
@@ -215,7 +316,7 @@ function installProfileImapIpc(authority) {
   ipcMain.handle('testProfileImap', async (_event, config = {}) => {
     if (authority && authority.cached().ok !== true) {
       pushLicenseStatus(authority.cached());
-      return { ok: false, message: 'Sign in to rCart before testing a mailbox.' };
+      return { ok: false, message: 'Sign in to Zyn before testing a mailbox.' };
     }
     return testImapConnection(config);
   });
@@ -289,6 +390,54 @@ function stopRemovedTaskTypes({ removed = [] } = {}) {
   }
 }
 
+let pendingTargetRuntimeLaunch = 0;
+
+function targetTaskIds(config = {}) {
+  const tasks = Array.isArray(config.tasks) ? config.tasks : [config];
+  return tasks.map((task) => String(task?.id || task?.taskId || '')).filter(Boolean);
+}
+
+function pushTargetRuntimeState(config, state, color, detail) {
+  const ids = targetTaskIds(config);
+  const payloads = ids.length ? ids : [''];
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+      for (const taskId of payloads) {
+        window.webContents.send('targetStatus', {
+          taskId,
+          state,
+          label: state,
+          color,
+          detail,
+          running: state === 'Preparing Runtime',
+        });
+      }
+    }
+  } catch {}
+}
+
+async function launchTargetAfterRuntime(original, args, authority) {
+  const generation = ++pendingTargetRuntimeLaunch;
+  const config = args[0] || {};
+  const status = runtimeManager.getStatus();
+  if (!status.ready) {
+    pushTargetRuntimeState(
+      config,
+      'Preparing Runtime',
+      '#f5c96b',
+      status.state === 'downloading' ? `Downloading runtime · ${status.percent || 0}%` : 'Preparing Chromium, Wine, and checkout engine…',
+    );
+  }
+  const ready = await waitForRuntime(['chromium', 'wine', 'engine']);
+  if (generation !== pendingTargetRuntimeLaunch || authority.cached().ok !== true) return undefined;
+  if (!ready) {
+    pushTargetRuntimeState(config, 'Runtime Error', '#ff7b83', 'Runtime setup is paused. Use Retry above.');
+    return undefined;
+  }
+  return original(...args);
+}
+
 function guardTaskHelpers(authority) {
   const allowed = () => authority.cached().ok === true;
   const TASK_TYPE_METHODS = Object.freeze({ startRound1: 'round1', startPokemonCenter: 'pokemoncenter' });
@@ -333,15 +482,25 @@ function guardTaskHelpers(authority) {
       const original = engine[method].bind(engine);
       engine[method] = (...args) => {
         if (!allowed()) { blocked(method); return undefined; }
+        if (method === 'startTarget' && runtimeManager.enabled) {
+          return launchTargetAfterRuntime(original, args, authority);
+        }
         return original(...args);
       };
+      if (method === 'startTarget' && typeof engine.stopTarget === 'function') {
+        const stopTarget = engine.stopTarget.bind(engine);
+        engine.stopTarget = (...args) => {
+          pendingTargetRuntimeLaunch += 1;
+          return stopTarget(...args);
+        };
+      }
     } catch (error) {
       console.error(`Could not guard ${method} with the replacement license: ${error.message}`);
     }
   }
 }
 
-function installManagedProxyControlPlane() {
+function installManagedProxies() {
   if (!FEATURES.managedProxies) return null;
   try {
     const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
@@ -364,7 +523,10 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     app,
     ipcMain,
     safeStorage,
-    onStatus: pushLicenseStatus,
+    onStatus: status => {
+      pushLicenseStatus(status);
+      if (status && status.ok === true) beginRuntimeBootstrap();
+    },
     onLock: stopAllRunningForLicense,
     onEntitlementsChanged: stopRemovedTaskTypes,
     onManagedProxies: result => {
@@ -411,7 +573,7 @@ function replaceRetiredLicenseIpc(authority) {
   ipcMain.removeHandler('licenseStatus');
   ipcMain.handle('licenseStatus', (_event, options = {}) => authority.status({ force: options.force === true }));
   ipcMain.removeHandler('activateLicense');
-  ipcMain.handle('activateLicense', () => ({ ok: false, reason: 'License keys have been replaced by rCart account sign-in.' }));
+  ipcMain.handle('activateLicense', () => ({ ok: false, reason: 'License keys have been replaced by Zyn account sign-in.' }));
 }
 
 function enableLocalDeveloperLicense() {
@@ -495,8 +657,18 @@ function configureDeveloperReporting() {
 }
 
 function runWineSelfTest() {
-  app.whenReady().then(() => {
-    const backend = path.join(resources, 'engine', 'backend');
+  app.whenReady().then(async () => {
+    if (runtimeManager.enabled) {
+      try {
+        await runtimeInitialization;
+        await runtimeManager.waitFor(['wine', 'engine']);
+      } catch (error) {
+        console.error(`ZYN_WINE_SELFTEST runtime setup failed: ${error.message}`);
+        app.exit(1);
+        return;
+      }
+    }
+    const backend = process.env.ZYN_ENGINE_PATH || path.join(resources, 'engine', 'backend');
     const child = childProcess.spawn(backend, ['-h'], {
       cwd: path.dirname(backend),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -505,26 +677,27 @@ function runWineSelfTest() {
     child.stdout.on('data', (data) => { output += data; });
     child.stderr.on('data', (data) => { output += data; });
     child.on('error', (error) => {
-      console.error(`HOPE_WINE_SELFTEST failed: ${error.message}`);
+      console.error(`ZYN_WINE_SELFTEST failed: ${error.message}`);
       app.exit(1);
     });
     child.on('exit', (code) => {
       console.log(output.trim());
-      console.log(`HOPE_WINE_SELFTEST exit=${code}`);
+      console.log(`ZYN_WINE_SELFTEST exit=${code}`);
       app.exit(code || 0);
     });
     setTimeout(() => {
       try { child.kill('SIGKILL'); } catch {}
-      console.error('HOPE_WINE_SELFTEST timed out');
+      console.error('ZYN_WINE_SELFTEST timed out');
       app.exit(124);
     }, 30000).unref();
   });
 }
 
-// Wine keeps one server per prefix. Stop that private server after Hope's own
+// Wine keeps one server per prefix. Stop that private server after Zyn's own
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
   const prefix = winePrefix();
+  const wineserver = wineserverPath();
   if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
   try {
     originalSpawnSync(wineserver, ['-k'], {
@@ -535,29 +708,26 @@ app.on('will-quit', () => {
   } catch {}
 });
 
-if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
-  const missing = !fs.existsSync(wine) ? 'bundled Wine runtime' : 'original application archive';
-  dialog.showErrorBox('Hope could not start', `The ${missing} is missing from the app bundle.`);
+if (!fs.existsSync(originalAsar) || (runtimeMode === 'bundled' && !fs.existsSync(bundledWine))) {
+  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'bundled Wine runtime';
+  dialog.showErrorBox('Zyn could not start', `The ${missing} is missing from the app bundle.`);
   app.quit();
-} else if (process.env.HOPE_WINE_SELFTEST === '1') {
+} else if (process.env.ZYN_WINE_SELFTEST === '1') {
   runWineSelfTest();
 } else {
-  // The published update feed contains an NSIS/Windows build and no macOS
-  // artifact. Letting electron-updater poll it produces a 404 every hour and,
-  // if a mismatched artifact appeared, could replace this custom wrapper.
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
-  installTaskGroupControlPlane();
-  installProfileImapControlPlane();
-  const managedProxyControl = installManagedProxyControlPlane();
+  installTaskGroups();
+  installProfileImap();
+  const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   installProfileImapIpc(licenseAuthority);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();
   }
-  disableWindowsOnlyUpdater();
+  configureMacUpdater();
   configureDeveloperReporting();
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
     ? installTaskTypeIpcGuard({

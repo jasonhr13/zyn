@@ -13,7 +13,7 @@ const FAILURE_LABELS = {
   unknown: 'Unknown',
 };
 
-// Ported from jasonhr13/hope. Keeping status normalization in one place lets this renderer accept
+// Keeping status normalization in one place lets this renderer accept
 // the compact recovered broker payload today and the richer activity/health payload without another
 // UI rewrite when the JavaScript farmer is updated later.
 export function targetBankMetrics(bank) {

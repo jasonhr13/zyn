@@ -15,12 +15,11 @@ for (const [filename, entry] of Object.entries(manifest.files)) {
   assert.ok(fs.existsSync(file), `Missing pinned native farmer source: ${filename}`);
   const actual = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const expected = typeof entry === 'string' ? entry : entry.sha256;
-  assert.equal(actual, expected, `${filename} no longer matches ${manifest.repository}@${manifest.commit}`);
+  assert.equal(actual, expected, `${filename} no longer matches pinned source ${manifest.commit}`);
 }
 
 console.log(JSON.stringify({
   ok: true,
-  repository: manifest.repository,
   commit: manifest.commit,
   files: Object.keys(manifest.files).length,
 }, null, 2));

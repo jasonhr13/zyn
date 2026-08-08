@@ -1,8 +1,7 @@
 'use strict';
 
-// Control-plane work is introduced behind explicit release flags. Each release enables one
-// independently testable slice while every later phase remains dormant.
-const CONTROL_PLANE_RELEASE = 'R7';
+// Release capabilities stay explicit so every packaged build can be verified independently.
+const APP_RELEASE = 'R8.2';
 
 const FEATURES = Object.freeze({
   designShell: true,
@@ -17,4 +16,4 @@ const FEATURES = Object.freeze({
   isolatedRenderer: false,
 });
 
-module.exports = { CONTROL_PLANE_RELEASE, FEATURES };
+module.exports = { APP_RELEASE, FEATURES };

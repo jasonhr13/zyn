@@ -10,7 +10,7 @@ const {
   createTaskGroupStore,
 } = require('../launcher/task-group-store');
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-task-groups-'));
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-task-groups-'));
 let sequence = 0;
 const store = createTaskGroupStore(directory, {
   createId: () => `test-${++sequence}`,
@@ -67,7 +67,7 @@ try {
   assert.equal(fs.readdirSync(directory).some(name => name.endsWith('.tmp')), false);
   console.log('Task-group migration, normalization, backup, permissions, and atomic replacement passed.');
 } finally {
-  if (directory.startsWith(os.tmpdir() + path.sep + 'hope-task-groups-')) {
+  if (directory.startsWith(os.tmpdir() + path.sep + 'zyn-task-groups-')) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }

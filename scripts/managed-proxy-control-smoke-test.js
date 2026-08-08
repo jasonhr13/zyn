@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { createManagedProxyControl } = require('../launcher/managed-proxy-control');
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-managed-proxies-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-managed-proxies-'));
 const proxyFile = path.join(root, 'proxies.json');
 const read = () => JSON.parse(fs.readFileSync(proxyFile, 'utf8'));
 const write = value => fs.writeFileSync(proxyFile, `${JSON.stringify(value, null, 2)}\n`);

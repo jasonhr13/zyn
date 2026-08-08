@@ -1,7 +1,7 @@
 {
-  "name": "hope-macos-launcher",
-  "productName": "Hope",
-  "version": "1.6.74",
+  "name": "zyn-macos-launcher",
+  "productName": "Zyn",
+  "version": "1.6.76",
   "private": true,
   "main": "bootstrap.js",
   "dependencies": {

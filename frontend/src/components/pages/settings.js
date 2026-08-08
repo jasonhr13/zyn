@@ -35,7 +35,7 @@ class Settings extends Component {
       discordWebhook: '',
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
-      // from jasonhr13/hope under the same persisted keys used by cloud backup.
+      // from the reviewed upstream implementation under the persisted keys used by cloud backup.
       targetAtcHarvestTcins: '', targetCookieBank: '', targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, shapeMethod: 'In Bot',
@@ -135,7 +135,7 @@ class Settings extends Component {
   installUpdate = () => { try { ipcRenderer.send('installUpdate'); } catch {} };
 
   signOut = async () => {
-    if (!window.confirm('Sign out of rCart and stop every running task?')) return;
+    if (!window.confirm('Sign out of Zyn and stop every running task?')) return;
     this.setState({ signingOut: true });
     try { await ipcRenderer.invoke('logoutLicense'); }
     catch { this.setState({ signingOut: false }); }
@@ -183,9 +183,9 @@ class Settings extends Component {
     const u = this.props.update;
     if (!u) return { text: `You're on v${APP_VERSION}. Click Check for Updates to look for a newer one.`, color: 'var(--muted)' };
     switch (u.state) {
-      case 'checking':    return { text: 'Checking…', color: '#38bdf8' };
+      case 'checking':    return { text: 'Checking…', color: 'var(--run)' };
       case 'current':     return { text: `✓ You're on the latest version (v${APP_VERSION}).`, color: '#4ade80' };
-      case 'downloading': return { text: `Downloading v${u.version || ''} — ${u.percent || 0}%…`, color: '#38bdf8' };
+      case 'downloading': return { text: `Downloading v${u.version || ''} — ${u.percent || 0}%…`, color: 'var(--run)' };
       case 'ready':       return { text: `v${u.version} is ready — click Restart & Update.`, color: '#4ade80' };
       case 'error':       return { text: `Couldn't check: ${u.message || 'unknown error'}`, color: '#f87171' };
       default:            return { text: '', color: 'var(--muted)' };
@@ -211,7 +211,7 @@ class Settings extends Component {
               what is behind it. Persisted, so it survives a restart once you have opened it. */}
           <div className="page-title" onClick={this.bumpOperatorTaps} style={{ cursor: 'default', userSelect: 'none' }}>
             <span className="page-title-dot" /> Settings
-            {operatorMode && <span style={{ fontSize: 11, color: '#e0b050', marginLeft: 10, fontWeight: 400 }}>operator</span>}
+            {operatorMode && <span style={{ fontSize: 11, color: 'var(--ok)', marginLeft: 10, fontWeight: 400 }}>operator</span>}
           </div>
           <div className="page-actions">
             <button className={`btn btn-sm ${saved ? 'btn-success' : 'btn-primary'}`} onClick={this.save}>
@@ -222,7 +222,7 @@ class Settings extends Component {
 
         <div className="page-content">
           <div className="settings-section">
-            <div className="settings-section-title">rCart Account</div>
+            <div className="settings-section-title">Zyn Account</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                 Signed in as <strong style={{ color: 'var(--text)' }}>{licenseEmail || 'your licensed account'}</strong>
@@ -239,7 +239,7 @@ class Settings extends Component {
               </strong>
             </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Target and managed proxy access update automatically from your rCart account.
+              Target and managed proxy access update automatically from your Zyn account.
             </div>
           </div>
 
@@ -258,7 +258,7 @@ class Settings extends Component {
                 <button
                   className="btn btn-sm"
                   onClick={this.installUpdate}
-                  style={{ background: '#34d399', color: '#0b0d10', fontWeight: 700 }}
+                  style={{ background: 'var(--ok)', color: '#450a0a', fontWeight: 700 }}
                 >
                   ⟳ Restart &amp; Update to v{u.version}
                 </button>
@@ -284,10 +284,10 @@ class Settings extends Component {
               the cookie bank and surface much later as unexplained checkout failures. */}
           {operatorMode && (<>
           {/* These settings are applied on the next farmer spawn. Throughput and bandwidth controls
-              use the same persisted keys as jasonhr13/hope so backups remain compatible. */}
+              use the existing persisted keys so backups remain compatible. */}
           <div className="settings-section">
             <div className="settings-section-title">Target — Shape Cookie Harvest</div>
-            <div style={{ fontSize: 11, color: '#e0b050', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--ok)', marginBottom: 10 }}>
               Operator settings — leave these alone unless you know why you are changing them.
             </div>
             <div className="form-group">

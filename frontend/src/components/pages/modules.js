@@ -49,7 +49,7 @@ export default function Modules({ taskTypes = {} }) {
           <span className="module-hero-mark"><Icon name="layers" size={22} /></span>
           <div>
             <h1>Choose a task workspace</h1>
-            <p>Available workspaces are synced with your rCart account. Task engines and their controls are unchanged.</p>
+            <p>Available workspaces are synced with your Zyn account. Task engines and their controls are unchanged.</p>
           </div>
         </section>
         <div className="module-grid">
@@ -64,7 +64,7 @@ export default function Modules({ taskTypes = {} }) {
             </Link>
           ))}
         </div>
-        <div className="module-entitlement-note">Optional workspaces are managed by your rCart account.</div>
+        <div className="module-entitlement-note">Optional workspaces are managed by your Zyn account.</div>
       </div>
     </>
   );

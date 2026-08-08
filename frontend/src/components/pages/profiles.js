@@ -195,7 +195,7 @@ class Profiles extends Component {
                   className="btn btn-sm"
                   onClick={() => this.setState({ tab: t, selected: [] })}
                   style={{
-                    background: tab === t ? '#4f46e5' : 'transparent',
+                    background: tab === t ? 'var(--accent-fill)' : 'transparent',
                     color: tab === t ? '#fff' : 'var(--muted)',
                     border: '1px solid var(--field-border)', textTransform: 'capitalize',
                   }}
@@ -304,7 +304,7 @@ class Profiles extends Component {
                           style={{
                             marginLeft: 6, fontSize: 10, fontWeight: 600, letterSpacing: .3,
                             padding: '1px 6px', borderRadius: 999,
-                            color: '#34d399', border: '1px solid #34d399',
+                            color: 'var(--ok)', border: '1px solid var(--ok)',
                           }}
                         >IN USE</span>
                       )}
@@ -314,7 +314,7 @@ class Profiles extends Component {
                       {addr}{city ? `, ${city}` : ''}{state ? `, ${state}` : ''}
                     </div>
                     <div className="profile-card-card">{maskCard(cardNum)}</div>
-                    <div style={{ fontSize: 10, color: p.imap?.user ? '#34d399' : 'var(--muted)', marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: p.imap?.user ? 'var(--ok)' : 'var(--muted)', marginTop: 4 }}>
                       <i className="ion-md-mail" style={{ marginRight: 5 }} />
                       {p.imap?.user ? `OTP: ${p.imap.user}` : 'OTP mailbox not configured'}
                     </div>

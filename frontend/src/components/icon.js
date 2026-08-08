@@ -4,7 +4,6 @@ import React from 'react';
 // emoji, icon fonts, and network-loaded assets, while currentColor lets every icon inherit the
 // active, muted, success, or danger state of its parent control.
 const PATHS = {
-  hope: <><path d="M6.2 5.4 12 2l5.8 3.4v6.9L12 16l-5.8-3.7Z"/><path d="m8.5 11.2 3.5 2.1 3.5-2.1M12 6v7.3"/></>,
   layers: <><path d="m12 2.8 8 4.4-8 4.4-8-4.4 8-4.4Z"/><path d="m4 12 8 4.4 8-4.4M4 16.8l8 4.4 8-4.4"/></>,
   list: <><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".8" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r=".8" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r=".8" fill="currentColor" stroke="none"/></>,
   cloud: <path d="M7 18.5h10.5a4 4 0 0 0 .4-8A6.2 6.2 0 0 0 6 9.2a4.7 4.7 0 0 0 1 9.3Z"/>,

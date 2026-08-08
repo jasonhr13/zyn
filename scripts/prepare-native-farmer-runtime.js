@@ -5,13 +5,19 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-if (process.platform !== 'darwin' || process.arch !== 'arm64') {
-  console.error(`Native farmer runtime requires darwin-arm64; received ${process.platform}-${process.arch}`);
+if (process.platform !== 'darwin') {
+  console.error(`Native farmer runtime requires macOS; received ${process.platform}-${process.arch}`);
   process.exit(1);
 }
 
 const project = path.resolve(__dirname, '..');
-const browserRoot = path.join(project, 'vendor', 'ms-playwright-mac-arm64');
+const requestedArch = String(process.env.ZYN_ARCH || process.arch).toLowerCase();
+const runtimeArch = requestedArch === 'x86_64' ? 'x64' : requestedArch;
+if (!['arm64', 'x64'].includes(runtimeArch)) {
+  console.error(`Unsupported native farmer architecture: ${runtimeArch}`);
+  process.exit(1);
+}
+const browserRoot = path.join(project, 'vendor', `ms-playwright-mac-${runtimeArch}`);
 const playwrightCli = path.join(project, 'extracted', 'app', 'resources', 'node_modules', 'playwright', 'cli.js');
 if (!fs.existsSync(playwrightCli)) {
   console.error(`Missing recovered Playwright CLI: ${playwrightCli}`);
@@ -19,9 +25,20 @@ if (!fs.existsSync(playwrightCli)) {
 }
 
 fs.mkdirSync(browserRoot, { recursive: true });
-const result = spawnSync(process.execPath, [playwrightCli, 'install', 'chromium'], {
+const x64Electron = path.join(project, 'vendor', 'electron-v43.3.0-darwin-x64', 'Electron.app', 'Contents', 'MacOS', 'Electron');
+const runtimeExecutable = runtimeArch === 'x64' && process.arch !== 'x64' ? x64Electron : process.execPath;
+if (!fs.existsSync(runtimeExecutable)) {
+  console.error(`Missing ${runtimeArch} Node-compatible runtime: ${runtimeExecutable}`);
+  process.exit(1);
+}
+const result = spawnSync(runtimeExecutable, [playwrightCli, 'install', 'chromium'], {
   cwd: project,
-  env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browserRoot },
+  env: {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: runtimeExecutable === x64Electron ? '1' : process.env.ELECTRON_RUN_AS_NODE,
+    PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: runtimeArch === 'x64' ? 'mac26' : process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE,
+    PLAYWRIGHT_BROWSERS_PATH: browserRoot,
+  },
   stdio: 'inherit',
 });
 if (result.status !== 0) process.exit(result.status || 1);
@@ -36,4 +53,4 @@ if (!entries.length) {
 for (const name of fs.readdirSync(browserRoot).filter(entry => entry.startsWith('chromium_headless_shell-'))) {
   fs.rmSync(path.join(browserRoot, name), { recursive: true, force: true });
 }
-console.log(JSON.stringify({ ok: true, browserRoot, chromium: entries, headlessShellBundled: false }, null, 2));
+console.log(JSON.stringify({ ok: true, arch: runtimeArch, browserRoot, chromium: entries, headlessShellBundled: false }, null, 2));

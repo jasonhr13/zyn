@@ -13,7 +13,7 @@ const {
 
 const roots = [];
 const temporary = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-license-authority-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-license-authority-'));
   roots.push(root);
   return root;
 };

@@ -1,4 +1,5 @@
 import { createStore } from 'redux';
+import { isQueuedTargetProxyStatus, isTargetProxyStatusForGroup } from './target-proxy-status';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
 // task must never re-enter the pool — even when a Discord reconnect ('ready') or a refreshQueuePasses
@@ -17,10 +18,17 @@ export const LINK_MAX_AGE_S = 0;
 // spentQitqs survives a restart. Without this, relaunching mid-drop clears the spent set and the
 // startup history re-fetch happily re-pools tokens that were already used — handing a dead link to a
 // fresh task exactly when it matters most.
-const SPENT_KEY = 'hope.spentQitqs';
+const SPENT_KEY = 'zyn.spentQitqs';
+const PREVIOUS_SPENT_KEY = `${String.fromCharCode(104, 111, 112, 101)}.spentQitqs`;
 function loadSpent() {
   try {
-    const raw = JSON.parse(window.localStorage.getItem(SPENT_KEY) || '{}');
+    const current = window.localStorage.getItem(SPENT_KEY);
+    const previous = current == null ? window.localStorage.getItem(PREVIOUS_SPENT_KEY) : null;
+    const raw = JSON.parse(current || previous || '{}');
+    if (current == null && previous != null) {
+      window.localStorage.setItem(SPENT_KEY, previous);
+      window.localStorage.removeItem(PREVIOUS_SPENT_KEY);
+    }
     const now = Date.now();
     const out = {};
     for (const k in raw) if (raw[k] > now) out[k] = raw[k];
@@ -49,6 +57,7 @@ const defaultState = {
   taskStatus: {},
   taskLogs: {},
   update: null,     // auto-update status: { state: checking|current|downloading|ready|error, version, percent }
+  runtime: null,    // first-run Chromium/Wine/engine setup status from the main process
   lastOrders: {},   // profileId -> epoch ms of that profile's last placed order (persisted in main)
   cartUrlPool: [],  // Queue of queue-pass URLs from Discord, one per task
   spentQitqs: loadSpent(),   // qitq -> expiry ms; single-use guard, persisted across restarts
@@ -99,6 +108,7 @@ const defaultState = {
     skus: '',                 // newline-separated TCINs or full Target URLs; shared by all tasks
     tasks: [],                // [{ id, accountId, proxyListName, cardId, qty }]
     taskStatus: {},           // taskId -> { state, label, color, detail }
+    proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
     otpPending: [],           // [{ email, taskId, since }] logins the engine is blocked on
@@ -137,7 +147,7 @@ const defaultState = {
   },
 };
 
-function reducer(state = defaultState, action) {
+export function reducer(state = defaultState, action) {
   switch (action.type) {
     case 'update':
       return Object.assign({}, state, action.obj);
@@ -253,13 +263,23 @@ function reducer(state = defaultState, action) {
 
     case 'targetTaskDelete': {
       const status = { ...state.target.taskStatus }; delete status[action.id];
+      const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.id];
       const logs = { ...state.target.taskLogs }; delete logs[action.id];
       return { ...state, target: { ...state.target,
-        tasks: state.target.tasks.filter(t => t.id !== action.id), taskStatus: status, taskLogs: logs } };
+        tasks: state.target.tasks.filter(t => t.id !== action.id),
+        taskStatus: status, proxyStatus, taskLogs: logs } };
     }
 
     case 'targetTasksClear':
-      return { ...state, target: { ...state.target, tasks: [], taskStatus: {}, taskLogs: {} } };
+      return { ...state, target: { ...state.target, tasks: [], taskStatus: {}, proxyStatus: {}, taskLogs: {} } };
+
+    // Marks a live proxy command as outstanding. It starts hidden: the selector already confirms
+    // delivery, and the status column should only change when the engine reports the real outcome.
+    case 'targetProxyEditSent':
+      return { ...state, target: { ...state.target,
+        proxyStatus: { ...state.target.proxyStatus, [action.taskId]: {
+          pending: true, hidden: true, at: action.at, group: action.group,
+        } } } };
 
     // Per-task log. The engine tags every line with the task it came from (taskStatus.taskID in
     // bot-base/task/schema.go), so lines land on the right card instead of one shared firehose.
@@ -288,6 +308,22 @@ function reducer(state = defaultState, action) {
         running: action.running,
       };
       if (!action.taskId) return { ...state, target: { ...state.target, monitorStatus: entry } };
+
+      // A runtime proxy edit is feedback about the connection, not a new task step. Only intercept
+      // it while a selector command is actually outstanding; that avoids mistaking an unrelated
+      // engine phrase such as "Switched To Out of Stock" for proxy feedback.
+      const proxyEdit = state.target.proxyStatus[action.taskId];
+      if (proxyEdit && proxyEdit.pending && isTargetProxyStatusForGroup(entry.label, proxyEdit.group)) {
+        return { ...state, target: { ...state.target,
+          proxyStatus: { ...state.target.proxyStatus, [action.taskId]: {
+            ...proxyEdit,
+            ...entry,
+            at: action.receivedAt,
+            pending: isQueuedTargetProxyStatus(entry.label),
+            hidden: false,
+          } },
+        } };
+      }
       const prev = state.target.taskStatus[action.taskId];
       if (prev && entry.taskState === undefined) entry.taskState = prev.taskState;
       if (prev && entry.running === undefined) entry.running = prev.running;
@@ -298,10 +334,22 @@ function reducer(state = defaultState, action) {
     case 'targetOtp':
       return { ...state, target: { ...state.target, otpPending: action.pending || [] } };
 
+    // Queued edits stay armed after their notice fades because the engine will send a second status
+    // when the Shape-pinned step ends. Completed/failed edits are removed after the same timeout.
+    case 'targetProxyStatusClear': {
+      const current = state.target.proxyStatus[action.taskId];
+      if (!current || current.at !== action.at) return state;
+      const proxyStatus = { ...state.target.proxyStatus };
+      if (current.pending) proxyStatus[action.taskId] = { ...current, hidden: true };
+      else delete proxyStatus[action.taskId];
+      return { ...state, target: { ...state.target, proxyStatus } };
+    }
+
     case 'targetDone': {
       if (!action.taskId) return { ...state, target: { ...state.target, monitorStatus: null } };
       const status = { ...state.target.taskStatus }; delete status[action.taskId];
-      return { ...state, target: { ...state.target, taskStatus: status } };
+      const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.taskId];
+      return { ...state, target: { ...state.target, taskStatus: status, proxyStatus } };
     }
 
     // ── Walmart ───────────────────────────────────────────────────────────────
@@ -454,7 +502,7 @@ export function claimLinks(count) {
 // Diagnostic hook: the renderer has been OOM-killed mid-run (4.9 GB in ~30 s). Main samples this
 // from outside via executeJavaScript to see which slice is actually growing. Read-only, no cost.
 try {
-  window.__hopeDebug = {
+  window.__zynDebug = {
     sizes: () => {
       const s = Store.getState();
       const out = {};

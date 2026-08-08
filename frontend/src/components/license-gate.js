@@ -1,8 +1,8 @@
 import React, { Component } from 'react';
 const { ipcRenderer } = window.require('electron');
 
-// Ported from the Hope repository's replacement license gate. Main owns the bearer/reset tokens
-// and every checkout spawn is enforced there; this component only handles credentials and status.
+// Main owns the bearer/reset tokens and every checkout spawn is enforced there; this component
+// only handles credentials and renderer-safe status.
 class LicenseGate extends Component {
   state = {
     mode: 'login',
@@ -88,11 +88,11 @@ class LicenseGate extends Component {
       <div className="license-gate-r4">
         <form onSubmit={mode === 'login' ? this.signIn : this.resetPassword} className="license-gate-card">
           <div className="license-gate-mark"><i className={mode === 'login' ? 'ion-md-lock' : 'ion-md-key'} /></div>
-          <div className="license-gate-badge">CONTROL PLANE R7</div>
-          <div className="license-gate-title">{mode === 'login' ? 'Sign in to rCart' : 'Choose a new password'}</div>
+          <div className="license-gate-badge">ZYN</div>
+          <div className="license-gate-title">{mode === 'login' ? 'Sign in to Zyn' : 'Choose a new password'}</div>
           <div className="license-gate-copy">
             {mode === 'login'
-              ? 'Use the credentials provided with your rCart account.'
+              ? 'Use the credentials provided with your Zyn account.'
               : `This is the first sign-in for ${email}. Replace the temporary password to continue.`}
           </div>
 
@@ -125,7 +125,7 @@ class LicenseGate extends Component {
             <button type="button" className="btn btn-secondary btn-sm" onClick={this.backToLogin} disabled={busy}>Back to sign in</button>
           )}
           <div className="license-gate-footnote">
-            rCart validates every five minutes. A revoked or disabled session stops running tasks and returns here.
+            Zyn validates every five minutes. A revoked or disabled session stops running tasks and returns here.
           </div>
         </form>
       </div>

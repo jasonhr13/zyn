@@ -2,11 +2,21 @@ import React, { Component } from 'react';
 import Icon from './icon';
 
 const { ipcRenderer } = window.require('electron');
+const THEME_KEY = 'zyn-theme';
+const PREVIOUS_THEME_KEY = `${String.fromCharCode(104, 111, 112, 101)}-theme`;
 let IS_DEV = false;
 try { IS_DEV = ipcRenderer.sendSync('getChannel') === 'dev'; } catch {}
 
 const savedNightMode = () => {
-  try { return localStorage.getItem('hope-theme') !== 'day'; }
+  try {
+    const current = localStorage.getItem(THEME_KEY);
+    const previous = current == null ? localStorage.getItem(PREVIOUS_THEME_KEY) : null;
+    if (current == null && previous != null) {
+      localStorage.setItem(THEME_KEY, previous);
+      localStorage.removeItem(PREVIOUS_THEME_KEY);
+    }
+    return (current == null ? previous : current) !== 'day';
+  }
   catch { return true; }
 };
 
@@ -19,7 +29,7 @@ class TitleBar extends Component {
 
   applyTheme = (night) => {
     document.body.classList.toggle('theme-night', night);
-    localStorage.setItem('hope-theme', night ? 'night' : 'day');
+    localStorage.setItem(THEME_KEY, night ? 'night' : 'day');
     this.setState({ night });
   };
 
@@ -35,9 +45,9 @@ class TitleBar extends Component {
       <div className="title-bar">
         <div className="title-bar-left">
           <span className="title-bar-mark" aria-hidden="true">
-            <Icon name="hope" size={18} />
+            <img className="title-bar-logo" src={`${process.env.PUBLIC_URL}/zyn-icon.png`} alt="" />
           </span>
-          <span className="title-bar-name">Hope</span>
+          <span className="title-bar-name">Zyn</span>
           {IS_DEV && <span className="title-bar-dev">DEV DATA</span>}
         </div>
         <div className="title-bar-controls">

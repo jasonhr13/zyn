@@ -1,6 +1,6 @@
 {
-  "name": "hope-frontend",
-  "version": "1.6.74",
+  "name": "zyn-frontend",
+  "version": "1.6.76",
   "private": true,
   "homepage": "./",
   "dependencies": {
