@@ -11,8 +11,8 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.3}"
-APP_VERSION="${ZYN_VERSION:-1.6.77}"
+APP_RELEASE="${ZYN_RELEASE:-R8.4}"
+APP_VERSION="${ZYN_VERSION:-1.6.78}"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
   echo "Unsupported Zyn runtime mode: $RUNTIME_MODE (expected remote or bundled)" >&2
@@ -91,6 +91,7 @@ if [[ "$APP_ARCH" == "x64" ]]; then
 fi
 
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
+cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
 mkdir -p "$RESOURCES/bot/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/bot/node_modules/"
 rm -rf "$RESOURCES/vendor/ms-playwright-mac" "$RESOURCES/vendor/ms-playwright-mac-arm64"

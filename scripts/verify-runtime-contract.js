@@ -147,7 +147,7 @@ check('Target farmer New Headless launch contract', () => {
   const browserPool = fs.readFileSync(path.join(resources, 'bot', 'shape-browser-pool.mjs'), 'utf8');
   const upstream = JSON.parse(fs.readFileSync(path.join(projectDir, 'config', 'native-farmer-upstream.json'), 'utf8'));
   for (const [filename, entry] of Object.entries(upstream.files)) {
-    if (!filename.endsWith('.mjs')) continue;
+    if (!filename.endsWith('.mjs') && filename !== 'target-atc-v2.html') continue;
     const expected = typeof entry === 'string' ? entry : entry.sha256;
     assert.equal(sha256(path.join(resources, 'bot', filename)), expected,
       `${filename} no longer matches pinned ${upstream.commit}`);

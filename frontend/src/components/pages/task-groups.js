@@ -16,6 +16,7 @@ const EMPTY_GROUP = Object.freeze({
 const EMPTY_HARVESTER = Object.freeze({
   name: '',
   type: 'atc',
+  atcMode: 'v1',
   browser: 'auto',
   proxyListName: '',
   workers: '1',
@@ -60,6 +61,7 @@ const normalizeHarvester = (raw, index = 0) => {
     id: String((raw && raw.id) || uid('harvester')),
     name: String((raw && raw.name) || `Harvester ${index + 1}`),
     type,
+    atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
     browser: HARVESTER_BROWSERS.some(([value]) => value === (raw && raw.browser)) ? raw.browser : 'auto',
     proxyListName: String((raw && raw.proxyListName) || ''),
     workers: type === 'login' ? 1 : clampInteger(raw && raw.workers, 1, 100, 1),
@@ -193,6 +195,7 @@ class TaskGroups extends Component {
           id: uid('harvester'),
           name: 'Default Harvester',
           type: 'auto',
+          atcMode: 'v1',
           browser: 'auto',
           proxyListName,
           workers,
@@ -918,7 +921,9 @@ class TaskGroups extends Component {
               const state = this.harvesterState(harvester, runtime);
               const produced = (runtime && runtime.produced) || {};
               const browser = (HARVESTER_BROWSERS.find(([value]) => value === harvester.browser) || [null, harvester.browser])[1];
-              const typeLabel = harvester.type === 'atc' ? 'Target ATC' : harvester.type === 'login' ? 'Target Login' : 'Automatic';
+              const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
+              const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
+                : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
               const schedule = harvester.startSchedule || harvester.stopSchedule
                 ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
                 : 'Always';
@@ -1263,6 +1268,16 @@ class TaskGroups extends Component {
                 <div className="form-hint">Automatic distributes workers across every detected browser.</div>
               </div>
             </div>
+            {draft.type !== 'login' && (
+              <div className="form-group">
+                <label className="form-label">ATC mode</label>
+                <select className="form-select" value={draft.atcMode} onChange={event => setDraft({ atcMode: event.target.value })}>
+                  <option value="v1">Standard — Live Target product page</option>
+                  <option value="v2">ATC+ — Synthetic product page (Recommended)</option>
+                </select>
+                <div className="form-hint">ATC+ substitutes the recovered synthetic PDP at the selected product URL, waits for Target SSX, then captures the cart request.</div>
+              </div>
+            )}
             {draft.type !== 'login' && (
               <div className="form-group">
                 <label className="form-label">Harvest products</label>

@@ -42,6 +42,7 @@ import { randomLoadsForBrowser, shapeFarmerThroughputOptions } from './shape-far
 import { createShapeWorkerScaler } from './shape-worker-scaler.mjs';
 import { shapeWorkerRelaunchDelayMs } from './shape-worker-retry.mjs';
 import { dismissTargetHealthDataConsent } from './target-consent-overlay.mjs';
+import { runTargetAtcV2Flow, TARGET_ATC_V2_SOURCE } from './target-atc-v2.mjs';
 import {
   blockHeavyResourcesEnabled, installHeavyResourceBlock,
 } from './shape-bandwidth.mjs';
@@ -73,6 +74,7 @@ const HARVESTER_ID = String(argOf('harvesterId', 'legacy')).replace(/[^a-z0-9_-]
 const HARVESTER_NAME = String(argOf('harvesterName', 'Cookie Harvester')).slice(0, 80);
 const HARVESTER_TYPE = ['login', 'atc', 'auto'].includes(argOf('harvesterType', 'auto'))
   ? argOf('harvesterType', 'auto') : 'auto';
+const HARVESTER_ATC_MODE = argOf('atcMode', 'v1').toLowerCase() === 'v2' ? 'v2' : 'v1';
 const ROUTE_LABEL = String(argOf('routeLabel', 'Local')).slice(0, 100);
 
 // ── proxy list ───────────────────────────────────────────────────────────────────
@@ -247,11 +249,13 @@ function pushCookie(type, headers, proxy, options = {}) {
   const now = Date.now();
   const requestedExpiry = Number(options.expiresAt) || 0;
   const cookie = {
+    type,
     headers: norm,
     proxy: proxy || '',
     at: now,
     expiresAt: requestedExpiry > now ? requestedExpiry : now + COOKIE_TTL_MS,
     harvesterId: String(options.harvesterId || HARVESTER_ID || '').slice(0, 64),
+    source: String(options.source || 'inBot').slice(0, 32),
   };
   if (PRODUCER_MODE) {
     activity.produced[type]++;
@@ -339,6 +343,7 @@ function submitCookieToBroker(type, cookie) {
     proxy: cookie.proxy,
     expiresAt: cookie.expiresAt,
     harvesterId: HARVESTER_ID,
+    source: cookie.source,
   }, (error, response) => {
     if (error) {
       producerBank[type] = Math.max(0, producerBank[type] - 1);
@@ -365,6 +370,7 @@ function producerStatusPayload() {
     id: HARVESTER_ID,
     name: HARVESTER_NAME,
     type: HARVESTER_TYPE,
+    atcMode: HARVESTER_ATC_MODE,
     route: ROUTE_LABEL,
     browser: BROWSER_SELECTION,
     configuredWorkers: startedWorkerCount,
@@ -400,7 +406,14 @@ const server = http.createServer((req, res) => {
     const timeout = parseInt(u.searchParams.get('timeout') || '0', 10);
     takeCookie(type === 'atc' ? 'atc' : 'login', wait ? timeout : 0).then(cookie => {
       if (!cookie) { json({ ok: false, cookie: { headers: {}, proxy: '' } }); return; }
-      json({ ok: true, cookie: { headers: cookie.headers, proxy: cookie.proxy } });
+      json({ ok: true, cookie: {
+        type: cookie.type || type,
+        source: cookie.source || 'inBot',
+        headers: cookie.headers,
+        proxy: cookie.proxy,
+        expiresAt: cookie.expiresAt,
+        harvesterId: cookie.harvesterId || '',
+      } });
     });
     return;
   }
@@ -419,6 +432,7 @@ const server = http.createServer((req, res) => {
           if (pushCookie(type, it.headers || {}, it.proxy || '', {
             expiresAt: Number(it.expiresAt) || 0,
             harvesterId: it.harvesterId,
+            source: it.source,
           })) n++;
         }
         json({ ok: true, saved: n });
@@ -701,6 +715,8 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
       let done = false;
       const bag = [];
       const capturedKeys = new Set();
+      let resolveFirstHeaders;
+      const firstHeadersPromise = new Promise(firstResolve => { resolveFirstHeaders = firstResolve; });
       const finish = () => { if (!done) { done = true; resolve(bag.length ? bag : null); } };
       const deadline = setTimeout(finish, 90000);   // proxies are slow — be patient
 
@@ -775,9 +791,10 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 if (!capturedKeys.has(captureKey)) {
                   capturedKeys.add(captureKey);
                   bag.push(picked);
+                  resolveFirstHeaders(picked);
                 }
                 if (DIAG) log(`  ✓ captured ${bag.length}/${CAPTURES_PER_LOAD} ${req.method()} ${req.url().slice(0, 50)} (stubbed — nonce fresh)`);
-                if (bag.length >= CAPTURES_PER_LOAD) {
+                if (bag.length >= CAPTURES_PER_LOAD && !(type === 'atc' && HARVESTER_ATC_MODE === 'v2')) {
                   clearTimeout(deadline);
                   finish();
                 }
@@ -802,6 +819,23 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
             } catch {}
             try { await route.continue(); } catch {}
           }).catch(() => {});
+          if (type === 'atc' && HARVESTER_ATC_MODE === 'v2') {
+            const url = nextAtcUrl();
+            try {
+              if (DIAG) log(`  step: Target ATC+ synthetic PDP for ${url}`);
+              await runTargetAtcV2Flow({
+                page,
+                human,
+                productLink: url,
+                waitForHeaders: () => firstHeadersPromise,
+              });
+            } catch (error) {
+              if (bestSig) failureCategory = classifyHarvestPageEvidence({ signatureObserved: true });
+              atcNote = String(error && error.message || error).slice(0, 180);
+              if (DIAG) log(`  step: Target ATC+ — ${atcNote}`);
+            }
+            return;
+          }
           // Warm the homepage with mouse/scroll until PerimeterX cookies appear (a cold hit to the
           // auth page gets risk-scored and bounced to the homepage — this is why /login redirected).
           await page.goto('https://www.target.com/', { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
@@ -1121,7 +1155,12 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
         fail = DIAG ? `${why} | url=${url} | title="${title}" | shot=${shot}` : why;
       } catch (e) { fail = 'diag error: ' + e.message; }
     }
-    return { headers: captured, fail, failureCategory };
+    return {
+      headers: captured,
+      fail,
+      failureCategory,
+      source: type === 'atc' && HARVESTER_ATC_MODE === 'v2' ? TARGET_ATC_V2_SOURCE : 'inBot',
+    };
   } finally {
     // A reused browser must not retain pages, cookies, storage, or personas between loads.
     if (context) await context.close().catch(() => {});
@@ -1220,7 +1259,7 @@ async function farmerWorker(id, selectedBrowser) {
       if (browser) {
         loadsLeft -= 1;
         const result = await harvestOnce(type, proxy, selectedBrowser, browser);
-        const { headers, fail } = result;
+        const { headers, fail, source } = result;
         failureCategory = result.failureCategory || '';
         const batch = Array.isArray(headers) ? headers : headers ? [headers] : [];
         for (const captured of batch) {
@@ -1229,7 +1268,7 @@ async function farmerWorker(id, selectedBrowser) {
           // Uncapped banks never short-circuit — TTL prune is the only depth limit.
           const bankDepth = PRODUCER_MODE ? producerBank[type] : pool[type].length;
           if (!UNCAPPED && !waiters[type].length && bankDepth >= TARGET_POOL) break;
-          if (pushCookie(type, captured, proxy ? proxy.raw : '')) banked++;
+          if (pushCookie(type, captured, proxy ? proxy.raw : '', { source })) banked++;
         }
         harvested = banked > 0;
         if (!harvested) failure = fail || (headers ? 'captured signature could not be banked' : 'timeout');

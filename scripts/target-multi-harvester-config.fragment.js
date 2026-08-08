@@ -11,6 +11,7 @@ function managedHarvesterConfigs() {
       id: String((raw && raw.id) || `harvester-${index + 1}`).replace(/[^a-z0-9_-]/gi, '').slice(0, 64),
       name: String((raw && raw.name) || `Harvester ${index + 1}`).slice(0, 80),
       type,
+      atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
       browser: HARVESTER_BROWSERS.has(raw && raw.browser) ? raw.browser : 'auto',
       proxyListName: route,
       // Two home-IP workers are useful; more only duplicates one route and is unnecessarily noisy.

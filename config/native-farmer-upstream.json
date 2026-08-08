@@ -16,8 +16,8 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "b550ddce3f986b620403b89f0663192a7fec35d49ce701b4911243fce5488a70",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry, browser selection, and configurable worker pacing."
+      "sha256": "bc1f8280a85812c2ec7846e9aac49be8e5e90522d7ab92fef541565c57e52320",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry, browser selection, configurable worker pacing, and the selectable Target ATC V2 synthetic-PDP flow."
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
@@ -27,6 +27,14 @@
     "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
     "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
     "shape-worker-scaler.mjs": "00cd453c4289e99efae40e636d9f97746fb0e6dc6d5d5651fbdee1d986e19b9f",
+    "target-atc-v2.html": {
+      "sha256": "935aec9c1ca4139ee674f543422dc05018421e9fe17023c3d09e0824c6290339",
+      "adaptation": "Verbatim synthetic Target PDP recovered from Polar AIO 0.0.45 Target ATC V2 bytecode."
+    },
+    "target-atc-v2.mjs": {
+      "sha256": "e6172335e5e82a409efedaeb0e9b36644ec3d514cebc161cf381dbc6ddc498b9",
+      "adaptation": "Readable Playwright routing and interaction state machine reconstructed from the recovered Target ATC V2 behavior."
+    },
     "target-consent-overlay.mjs": "1d03320ff0c35dae0406a82778cba52a3f3b16ca98618c01af67eab468135827"
   }
 }

@@ -48,6 +48,7 @@ function spawnHarvesterProducer(config) {
     `--harvesterId=${config.id}`,
     `--harvesterName=${config.name}`,
     `--harvesterType=${config.type}`,
+    `--atcMode=${config.atcMode}`,
     `--routeLabel=${config.proxyListName || 'Local'}`,
     `--proxyFile=${proxyFile}`,
     `--atcTcins=${atcTcins}`,
@@ -86,7 +87,8 @@ function spawnHarvesterProducer(config) {
     log(`harvester ${config.name} exited (code ${code})`);
     if (!quitting) setTimeout(ensureHarvesterBroker, 1000);
   });
-  log(`[target] harvester ${config.name} starting — ${config.type}, ${config.workers} worker(s), ${config.proxyListName || 'Local'}`);
+  const mode = config.type === 'login' ? '' : config.atcMode === 'v2' ? ' ATC+' : ' ATC';
+  log(`[target] harvester ${config.name} starting — ${config.type}${mode}, ${config.workers} worker(s), ${config.proxyListName || 'Local'}`);
 }
 
 function syncHarvesterProducers(configs = managedHarvesterConfigs() || []) {

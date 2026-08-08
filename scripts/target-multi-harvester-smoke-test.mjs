@@ -128,12 +128,16 @@ try {
 
   const save = await request(port, 'POST', '/saveCookies', {
     type: 'atc', headers: shapeHeaders, proxy: '127.0.0.1:9000:user:pass',
-    expiresAt: Date.now() + 5000, harvesterId: 'proxy',
+    expiresAt: Date.now() + 5000, harvesterId: 'proxy', source: 'inBotV2',
   });
   assert.equal(save.saved, 1);
   const cookie = await request(port, 'GET', '/cookie?type=atc', null, true);
   assert.equal(cookie.ok, true);
   assert.equal(cookie.cookie.proxy, '127.0.0.1:9000:user:pass');
+  assert.equal(cookie.cookie.type, 'atc');
+  assert.equal(cookie.cookie.source, 'inBotV2');
+  assert.equal(cookie.cookie.harvesterId, 'proxy');
+  assert.ok(cookie.cookie.expiresAt > Date.now());
 
   await request(port, 'POST', '/saveCookies', {
     type: 'login', headers: shapeHeaders, proxy: '', expiresAt: Date.now() + 50, harvesterId: 'home',
