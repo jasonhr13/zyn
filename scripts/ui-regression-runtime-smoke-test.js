@@ -69,14 +69,34 @@ async function main() {
       let savedSettings = null;
       ipc.invoke = (channel, ...args) => channel === 'targetCookieBank'
         ? Promise.resolve({
-          login: 6,
-          atc: 18,
+          login: 0,
+          atc: 0,
           proxies: 1200,
+          harvesters: [{ id: 'ui-stopped-harvester', activeWorkers: 5, configuredWorkers: 5 }],
         })
         : originalInvoke(channel, ...args);
       ipc.sendSync = (channel, ...args) => {
         if (channel === 'getSettings') {
-          return { ...(originalSendSync(channel, ...args) || {}), targetCookieBank: '64', targetHarvestWorkers: '4' };
+          return {
+            ...(originalSendSync(channel, ...args) || {}),
+            targetCookieBank: '64',
+            targetHarvestWorkers: '5',
+            targetHarvesters: [{
+              id: 'ui-stopped-harvester',
+              name: 'Target',
+              type: 'auto',
+              atcMode: 'v2',
+              browser: 'auto',
+              proxyListName: '',
+              workers: 5,
+              input: '',
+              cookieTtlSec: 600,
+              intervalDelaySec: 10,
+              startSchedule: '',
+              stopSchedule: '',
+              enabled: false,
+            }],
+          };
         }
         if (channel === 'saveSettings') {
           savedSettings = args[0];
@@ -129,7 +149,9 @@ async function main() {
       nativeInputSetter.call(bankMaximum, '80');
       bankMaximum.dispatchEvent(new Event('input', { bubbles: true }));
       bankMaximum.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(60);
       bankMaximum.blur();
+      bankMaximum.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
       await wait(100);
       ipc.emit('targetLog', {}, { lines: [
         '[shape] started 3 farmer worker(s): chrome, msedge, chromium',
@@ -145,6 +167,13 @@ async function main() {
       await wait(200);
       const panel = document.querySelector('.engine-log-panel');
       const cookieBank = document.querySelector('.cookie-bank-prominent');
+      const harvesterRail = document.querySelector('.target-harvester-rail');
+      if (!harvesterRail) throw new Error('Collapsed harvester rail was not rendered');
+      const harvesterRailText = harvesterRail.textContent.replace(/\\s+/g, ' ').trim();
+      harvesterRail.click();
+      await wait(180);
+      const harvesterDrawer = document.querySelector('.target-harvester-drawer');
+      const harvesterCard = harvesterDrawer?.querySelector('.target-harvester-card');
       const result = {
         originalGroups,
         electron: process.versions.electron,
@@ -158,6 +187,10 @@ async function main() {
         panelBelowTasks: Boolean(panel && document.querySelector('.group-task-panel')
           && (document.querySelector('.group-task-panel').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)),
         cookieBankText: cookieBank?.textContent.replace(/\\s+/g, ' ').trim() || '',
+        harvesterRailText,
+        harvesterDrawerText: harvesterDrawer?.textContent.replace(/\\s+/g, ' ').trim() || '',
+        harvesterText: harvesterCard?.textContent.replace(/\\s+/g, ' ').trim() || '',
+        harvesterDrawerOpen: Boolean(harvesterDrawer && !document.querySelector('.target-harvester-rail')),
         cookieBankMaximum: bankMaximum.value,
         savedCookieBankMaximum: savedSettings && savedSettings.targetCookieBank,
         cookieBankAboveTasks: Boolean(cookieBank && document.querySelector('.group-task-panel')
@@ -173,12 +206,22 @@ async function main() {
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
   await send('Runtime.evaluate', {
+    awaitPromise: true,
+    expression: `(async () => {
+      document.querySelector('[aria-label="Close Cookie Harvesters"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 180));
+    })()`,
+  });
+  const collapsedScreenshotPath = screenshotPath.replace(/(\.[a-z0-9]+)$/i, '-collapsed$1');
+  const collapsedScreenshot = await send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(collapsedScreenshotPath, Buffer.from(collapsedScreenshot.data, 'base64'));
+  await send('Runtime.evaluate', {
     expression: `window.require('electron').ipcRenderer.sendSync('saveTaskGroups', ${JSON.stringify(result.originalGroups)})`,
   });
   delete result.originalGroups;
   socket.close();
 
-  const report = { ...result, rendererExceptions, rendererErrors, screenshotPath };
+  const report = { ...result, rendererExceptions, rendererErrors, screenshotPath, collapsedScreenshotPath };
   console.log(JSON.stringify(report, null, 2));
   assert.equal(report.gate.badge, 'ZYN');
   assert.equal(report.gate.acknowledgementPresent, false);
@@ -192,10 +235,21 @@ async function main() {
   assert.match(report.monitorChip, /Monitoring products/);
   assert.equal(report.panelBelowTasks, true);
   assert.match(report.cookieBankText, /Cookie Bank/);
-  assert.match(report.cookieBankText, /6\s*Login/);
-  assert.match(report.cookieBankText, /18\s*ATC/);
-  assert.match(report.cookieBankText, /3\/4\s*Workers/);
-  assert.match(report.cookieBankText, /Bank max/);
+  assert.match(report.cookieBankText, /Harvesters stopped/);
+  assert.match(report.cookieBankText, /0\s*Login/);
+  assert.match(report.cookieBankText, /0\s*ATC/);
+  assert.match(report.cookieBankText, /Per-type limit/);
+  assert.match(report.cookieBankText, /Broker online/);
+  assert.doesNotMatch(report.cookieBankText, /Workers|Run output|Cooling routes|Top failure/);
+  assert.equal(report.harvesterDrawerOpen, true);
+  assert.match(report.harvesterRailText, /0\/1/);
+  assert.match(report.harvesterRailText, /0\s*Login/);
+  assert.match(report.harvesterRailText, /0\s*ATC/);
+  assert.match(report.harvesterDrawerText, /Cookie Harvesters/);
+  assert.match(report.harvesterDrawerText, /0\/1\s*Running/);
+  assert.match(report.harvesterDrawerText, /New Harvester/);
+  assert.match(report.harvesterText, /5 configured/);
+  assert.doesNotMatch(report.harvesterText, /5\/5/);
   assert.equal(report.cookieBankMaximum, '80');
   assert.equal(report.savedCookieBankMaximum, '80');
   assert.equal(report.cookieBankAboveTasks, true);

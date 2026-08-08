@@ -97,6 +97,94 @@ export function targetBankMetrics(bank) {
   };
 }
 
+const scheduleState = (harvester, now) => {
+  if (!harvester || !harvester.enabled) return 'stopped';
+  const startsAt = harvester.startSchedule ? Date.parse(harvester.startSchedule) : NaN;
+  const stopsAt = harvester.stopSchedule ? Date.parse(harvester.stopSchedule) : NaN;
+  if (Number.isFinite(startsAt) && now < startsAt) return 'scheduled';
+  if (Number.isFinite(stopsAt) && now >= stopsAt) return 'stopped';
+  return 'running';
+};
+
+// The broker can stay online while every producer is stopped, so broker reachability must not be
+// presented as harvester activity. This view model combines the shared pool with the authoritative
+// harvester configuration and lets a stopped configuration override a briefly stale runtime report.
+export function targetBankPresentation(bank, harvesters = [], options = {}) {
+  const metrics = targetBankMetrics(bank);
+  const now = Number(options.now) || Date.now();
+  const configured = Array.isArray(harvesters) ? harvesters : [];
+  const runtimes = bank && Array.isArray(bank.harvesters) ? bank.harvesters : [];
+  let activeHarvesters = 0;
+  let activeWorkers = 0;
+  let scheduledHarvesters = 0;
+
+  for (const harvester of configured) {
+    const state = scheduleState(harvester, now);
+    if (state === 'scheduled') {
+      scheduledHarvesters += 1;
+      continue;
+    }
+    if (state !== 'running') continue;
+    activeHarvesters += 1;
+    const runtime = runtimes.find(item => String(item && item.id) === String(harvester.id));
+    activeWorkers += count(runtime && runtime.activeWorkers);
+  }
+
+  const bankedCookies = metrics.login + metrics.atc;
+  const requestedAt = count(options.brokerStartRequestedAt);
+  const waitingForBroker = !metrics.online
+    && (activeHarvesters > 0 || options.checkoutRunning === true || requestedAt > 0);
+  const brokerTimedOut = waitingForBroker && requestedAt > 0 && now - requestedAt >= 45000;
+  let state;
+  let label;
+  let description;
+
+  if (!metrics.online) {
+    state = brokerTimedOut ? 'error' : waitingForBroker ? 'starting' : 'offline';
+    label = brokerTimedOut ? 'Broker failed to start' : waitingForBroker ? 'Starting broker' : 'Broker offline';
+    description = brokerTimedOut
+      ? 'The cookie broker did not answer within 45 seconds. Check Engine & Monitor Log for the startup error.'
+      : waitingForBroker
+        ? 'Opening the shared cookie bank for Target tasks and harvesters.'
+        : 'Start a Target task or harvester to open the shared cookie bank.';
+  } else if (bankedCookies > 0) {
+    state = 'ready';
+    label = 'Cookies ready';
+    description = `${metrics.login} login and ${metrics.atc} ATC cookies available from all harvesters. `
+      + (activeHarvesters > 0
+        ? `${activeHarvesters} harvester${activeHarvesters === 1 ? '' : 's'} running.`
+        : 'Harvesters are stopped; banked cookies remain available until they expire.');
+  } else if (activeHarvesters > 0) {
+    state = 'working';
+    label = activeWorkers > 0 ? 'Harvesting' : 'Starting harvesters';
+    description = activeWorkers > 0
+      ? 'The shared bank is empty. Running harvesters will add cookies here as they succeed.'
+      : 'The shared bank is empty. Enabled harvesters are starting or detecting their browsers.';
+  } else if (scheduledHarvesters > 0) {
+    state = 'scheduled';
+    label = 'Waiting for schedule';
+    description = 'The shared bank is empty. No harvester is running yet; the next one is scheduled.';
+  } else {
+    state = 'stopped';
+    label = configured.length ? 'Harvesters stopped' : 'No harvesters';
+    description = configured.length
+      ? 'The shared bank is empty. All harvesters are stopped; open the Harvesters sidebar to start one.'
+      : 'The shared bank is empty. Open the Harvesters sidebar to create one.';
+  }
+
+  return {
+    ...metrics,
+    state,
+    label,
+    description,
+    brokerLabel: metrics.online ? 'Broker online' : state === 'starting' ? 'Broker starting' : 'Broker offline',
+    activeHarvesters,
+    activeWorkers,
+    scheduledHarvesters,
+    bankedCookies,
+  };
+}
+
 export function sameTargetBank(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;

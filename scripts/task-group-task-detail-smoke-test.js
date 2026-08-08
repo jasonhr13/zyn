@@ -11,6 +11,10 @@ const taskGroups = fs.readFileSync(
   'utf8',
 );
 const styles = fs.readFileSync(path.join(project, 'frontend', 'src', 'App.css'), 'utf8');
+const bankMetrics = fs.readFileSync(
+  path.join(project, 'frontend', 'src', 'components', 'target-bank-metrics.mjs'),
+  'utf8',
+);
 
 assert.match(taskGroups, /selectedTaskId: ''/);
 assert.match(taskGroups, /renderTaskDetail\(group, task\)/);
@@ -20,15 +24,19 @@ assert.match(taskGroups, /\(this\.props\.target \|\| \{\}\)\.taskLogs/);
 assert.match(taskGroups, /only this task/);
 assert.match(taskGroups, /Broker, farmer, and monitor startup remain in the shared log below/);
 assert.match(taskGroups, /this\.renderSharedEngineLog\(\)/);
-assert.match(taskGroups, /The native cookie broker is starting/);
+assert.match(taskGroups, /this\.renderHarvesterDrawer\(\)/);
+assert.match(taskGroups, /aria-label="Close Cookie Harvesters"/);
+assert.match(bankMetrics, /Opening the shared cookie bank/);
 assert.doesNotMatch(taskGroups, /Wine, Windows Node, and the cookie broker are starting/);
 assert.doesNotMatch(taskGroups, /\|\| 'Auto'/);
 assert.doesNotMatch(taskGroups, /R2 groups existing Target controls only/);
 assert.match(styles, /\.group-task-row-clickable:focus-visible/);
 assert.match(styles, /\.cookie-bank-starting/);
 assert.match(styles, /\.cookie-bank-error/);
-assert.match(styles, /\.cookie-bank-health/);
-assert.match(styles, /\.cookie-bank-health-warning/);
-assert.match(styles, /\.cookie-bank-health-danger/);
+assert.match(styles, /\.cookie-bank-stopped/);
+assert.match(styles, /\.cookie-bank-broker/);
+assert.doesNotMatch(styles, /\.cookie-bank-health/);
+assert.match(styles, /\.tasks-workspace-with-harvester-dock/);
+assert.match(styles, /\.target-harvester-drawer-layer/);
 
 console.log('Target task-group detail and broker-startup smoke test passed');

@@ -99,13 +99,10 @@ const getJson = url => new Promise((resolve, reject) => {
     throw new Error(evaluated.exceptionDetails.exception?.description || evaluated.exceptionDetails.text);
   }
   const report = { ...evaluated.result.value, rendererErrors, rendererExceptions };
-  assert.match(report.bankText, /6\s*Workers/i, 'cookie bank does not display six resolved workers');
-  for (const label of ['Run output', 'Activity', 'Last success', 'Recent errors', 'Cooling routes', 'Top failure']) {
-    assert.match(report.bankText, new RegExp(label, 'i'), `cookie bank health strip omits ${label}`);
-  }
-  for (const browser of ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium']) {
-    assert.match(report.bankTitle, new RegExp(browser, 'i'), `cookie bank tooltip omits ${browser}`);
-  }
+  assert.match(report.bankText, /Shared Cookie Bank/i);
+  assert.match(report.bankText, /Broker (?:online|offline|starting)/i);
+  assert.doesNotMatch(report.bankText, /Workers|Run output|Recent errors|Cooling routes|Top failure/i,
+    'shared bank should not repeat per-harvester workers or legacy health diagnostics');
   assert.equal(report.staleR2Banner, false);
   assert.equal(report.rowKeyboardAccessible, true);
   assert.match(report.taskLog, /TASK-SMOKE: task-only diagnostic/);

@@ -192,9 +192,14 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');
   assert.match(rendererBundle, /Starting broker/, 'packaged task groups omit broker startup state');
   assert.match(rendererBundle, /only this task/, 'packaged task groups omit per-task logs');
-  for (const label of ['Last success', 'Recent errors', 'Cooling routes', 'Top failure']) {
-    assert.match(rendererBundle, new RegExp(label), `packaged cookie bank omits ${label}`);
-  }
+  assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
+  assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');
+  assert.match(rendererBundle, /Broker online/, 'packaged task groups do not distinguish broker reachability');
+  assert.match(rendererBundle, /Open Cookie Harvesters/, 'packaged task groups omit the collapsed harvester rail');
+  assert.match(rendererBundle, /Close Cookie Harvesters/, 'packaged task groups omit the harvester drawer');
+  assert.match(rendererBundle, /Active workers/, 'packaged harvester drawer omits progress totals');
+  assert.doesNotMatch(rendererBundle, /Run output|Cooling routes|Top failure/,
+    'packaged cookie bank retains obsolete single-farmer diagnostics');
   assert.doesNotMatch(rendererBundle, /R2 groups existing Target controls only/, 'packaged task groups retain the stale R2 boundary');
 
   const browsers = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'browsers.json'), 'utf8'));
