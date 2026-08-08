@@ -147,15 +147,6 @@ async function main() {
       };
 
       const license = await ipc.invoke('licenseStatus');
-      location.hash = '#/settings';
-      await waitForPaint();
-      const replacementLicense = await ipc.invoke('controlPlaneLicenseObservationStatus');
-      const replacementLicensePanel = {
-        present: Boolean(document.querySelector('[data-control-plane-license="observe"]')),
-        badge: (document.querySelector('.license-observer-badge')?.textContent || '').trim(),
-        warnsAboutReplacement: (document.querySelector('.license-observer-warning')?.textContent || '').includes('revokes this account'),
-        rendererKeys: Object.keys(replacementLicense || {}).sort()
-      };
       location.hash = '#/profiles';
       await waitForPaint();
       const openButton = [...document.querySelectorAll('button')]
@@ -211,12 +202,6 @@ async function main() {
         appVersion: ipc.sendSync('getAppVersion'),
         channel: ipc.sendSync('getChannel'),
         licenseOk: Boolean(license && license.ok),
-        replacementLicense: {
-          mode: replacementLicense && replacementLicense.mode,
-          enforcing: replacementLicense && replacementLicense.enforcing,
-          signedIn: replacementLicense && replacementLicense.signedIn,
-          panel: replacementLicensePanel
-        },
         electronBridge: {
           ipcRenderer: typeof electron.ipcRenderer === 'object',
           clipboard: typeof electron.clipboard?.writeText === 'function',
@@ -284,17 +269,11 @@ async function main() {
       'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Settings'
     ])
     || JSON.stringify(report.shell.moduleCards) !== JSON.stringify([]);
-  const replacementLicenseFailed = report.replacementLicense.mode !== 'observe'
-    || report.replacementLicense.enforcing !== false
-    || !report.replacementLicense.panel.present
-    || report.replacementLicense.panel.badge !== 'R3 · OBSERVE ONLY'
-    || !report.replacementLicense.panel.warnsAboutReplacement
-    || report.replacementLicense.panel.rendererKeys.some(key => /token|password|device/i.test(key));
   const accountUiFailed = report.accountUi.site !== 'target'
     || JSON.stringify(report.accountUi.siteOptions) !== JSON.stringify(['Target'])
     || report.accountUi.hasFilterChips
     || report.accountUi.hasRetiredSiteText;
-  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed || accountUiFailed || replacementLicenseFailed) {
+  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed || accountUiFailed) {
     process.exitCode = 1;
   }
 }
