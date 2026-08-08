@@ -19,6 +19,9 @@ const walmart = fs.readFileSync(path.join(directory, 'walmart-engine.js'), 'utf8
 assert.match(target, /dm\.getProfileImap\(profileId, email\)/);
 assert.match(target, /'--headless=true'/);
 assert.doesNotMatch(target, /'--headless=false'/);
+assert.match(target, /`--capturesPerLoad=\$\{capturesPerLoad\}`/);
+assert.match(target, /`--loadsPerBrowser=\$\{loadsPerBrowser\}`/);
+assert.match(target, /`--blockAssets=\$\{blockHeavyResources \? 'image,media,font' : ''\}`/);
 assert.match(target, /taskProfileById\.set\(t\.id, t\.profileId/);
 assert.match(target, /useOtpLogin: otpEnabled\(t\.profileId\)/);
 assert.match(target, /profileId: first\.profileId/);

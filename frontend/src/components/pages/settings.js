@@ -7,15 +7,38 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
+const MAX_SHAPE_CAPTURES_PER_LOAD = 10;
+const MAX_SHAPE_LOADS_PER_BROWSER = 10;
+
+const FieldHelp = ({ children, align = 'left' }) => (
+  <span className={`field-help${align === 'right' ? ' field-help-right' : ''}`}>
+    <button type="button" className="field-help-button" aria-label={children}>i</button>
+    <span className="field-help-tooltip" role="tooltip">{children}</span>
+  </span>
+);
+
+const FieldLabel = ({ children, help, helpAlign = 'left' }) => (
+  <div className="field-label-row">
+    <label className="form-label">{children}</label>
+    {help ? <FieldHelp align={helpAlign}>{help}</FieldHelp> : null}
+  </div>
+);
+
+const normalizeShapeThroughput = (value, maximum, fallback) => {
+  const parsed = Number.parseInt(String(value == null ? '' : value).trim(), 10);
+  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(maximum, parsed)) : fallback);
+};
+
 class Settings extends Component {
   constructor(props) {
     super(props);
     this.state = {
       discordWebhook: '', lucaApiKey: '', hyperApiKey: '',
       aycdApiKey: '', showAycdKey: false,
-      // Target: the engine has always read these five, but no control ever shipped for them, so the
-      // harvest ran on hardcoded defaults with no way to change it short of a rebuild.
+      // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
+      // from jasonhr13/hope under the same persisted keys used by cloud backup.
       targetAtcHarvestTcins: '', targetCookieBank: '', targetHarvestWorkers: '', targetCookieTtlSec: '',
+      targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, shapeMethod: 'In Bot',
       // Auto Buy: who runs when a BUY NOW button on a monitor embed is clicked.
       autoBuyGroup: '', autoBuyMax: '5', autoBuyConnection: 'inhouse1',
@@ -36,6 +59,9 @@ class Settings extends Component {
       targetCookieBank: s.targetCookieBank == null ? '' : String(s.targetCookieBank),
       targetHarvestWorkers: s.targetHarvestWorkers == null ? '' : String(s.targetHarvestWorkers),
       targetCookieTtlSec: s.targetCookieTtlSec == null ? '' : String(s.targetCookieTtlSec),
+      targetCapturesPerLoad: String(s.targetCapturesPerLoad || 1),
+      targetLoadsPerBrowser: String(s.targetLoadsPerBrowser || 3),
+      targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!s.targetVerboseLogs,
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
       autoBuyGroup: (s.autoBuy && s.autoBuy.group) || '',
@@ -109,6 +135,11 @@ class Settings extends Component {
       targetCookieBank: this.state.targetCookieBank.trim(),
       targetHarvestWorkers: this.state.targetHarvestWorkers.trim(),
       targetCookieTtlSec: this.state.targetCookieTtlSec.trim(),
+      targetCapturesPerLoad: normalizeShapeThroughput(
+        this.state.targetCapturesPerLoad, MAX_SHAPE_CAPTURES_PER_LOAD, 1),
+      targetLoadsPerBrowser: normalizeShapeThroughput(
+        this.state.targetLoadsPerBrowser, MAX_SHAPE_LOADS_PER_BROWSER, 3),
+      targetBlockHeavyResources: this.state.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!this.state.targetVerboseLogs,
       shapeMethod: this.state.shapeMethod,
     };
@@ -182,6 +213,7 @@ class Settings extends Component {
   render() {
     const { discordWebhook, lucaApiKey, hyperApiKey, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
+      targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
       licenseEmail, licenseOffline, proxyAccess, managedProxyCount, licenseTaskTypes, signingOut } = this.state;
 
@@ -372,8 +404,8 @@ class Settings extends Component {
             </div>
           </div>
 
-          {/* The Target engine has read all five of these since it shipped; none had a control, so the
-              Shape harvest ran on hardcoded defaults. Every one is applied on the next farmer spawn. */}
+          {/* These settings are applied on the next farmer spawn. Throughput and bandwidth controls
+              use the same persisted keys as jasonhr13/hope so backups remain compatible. */}
           <div className="settings-section">
             <div className="settings-section-title">Target — Shape Cookie Harvest</div>
             <div style={{ fontSize: 11, color: '#e0b050', marginBottom: 10 }}>
@@ -432,6 +464,41 @@ class Settings extends Component {
                   <option value="In Bot">In Bot</option>
                   <option value="Harvester">Harvester (+ extension)</option>
                 </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <FieldLabel help="The maximum number of distinct signatures banked from one page before the farmer moves on. Default 1 because Target commonly emits one usable signature per page.">
+                  Cookies per page load
+                </FieldLabel>
+                <input
+                  className="form-input" type="number" min="1" max={MAX_SHAPE_CAPTURES_PER_LOAD} step="1"
+                  value={targetCapturesPerLoad}
+                  onChange={e => this.set('targetCapturesPerLoad', e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <FieldLabel help={`Randomly reuses each browser process for 1–${targetLoadsPerBrowser || 1} page loads. Every load still receives a clean browser context and persona. Default 3.`} helpAlign="right">
+                  Page loads per browser
+                </FieldLabel>
+                <input
+                  className="form-input" type="number" min="1" max={MAX_SHAPE_LOADS_PER_BROWSER} step="1"
+                  value={targetLoadsPerBrowser}
+                  onChange={e => this.set('targetLoadsPerBrowser', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <div className="checkbox-help-row">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={targetBlockHeavyResources !== false}
+                    onChange={e => this.set('targetBlockHeavyResources', e.target.checked)}
+                  />
+                  Block images, video &amp; fonts while farming
+                </label>
+                <FieldHelp>Stops bulk image, media, and font downloads through the harvest proxy while leaving documents, stylesheets, scripts, XHR, and Shape telemetry available.</FieldHelp>
               </div>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>

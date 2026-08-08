@@ -99,6 +99,19 @@ check('Target farmer New Headless launch contract', () => {
   const targetEngine = asar.extractFile(path.join(resources, 'app-original.asar'), 'public/helpers/target-engine.js').toString('utf8');
   assert.match(targetEngine, /'--headless=true'/, 'control plane does not request headless mode');
   assert.doesNotMatch(targetEngine, /'--headless=false'/, 'control plane still requests headed mode');
+  assert.match(targetEngine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/, 'control plane omits cookies-per-page');
+  assert.match(targetEngine, /`--loadsPerBrowser=\$\{loadsPerBrowser\}`/, 'control plane omits browser reuse');
+  assert.match(targetEngine, /`--blockAssets=\$\{blockHeavyResources \? 'image,media,font' : ''\}`/, 'control plane omits bandwidth control');
+  assert.match(farmer, /bag\.length >= CAPTURES_PER_LOAD/, 'farmer lacks multi-capture');
+  assert.match(farmer, /harvestOnce\(type, proxy, browser, instance, stats\)/, 'farmer lacks browser reuse');
+  assert.match(farmer, /argOf\('blockAssets', 'image,media,font'\)/, 'farmer lacks heavy-resource blocking');
+
+  const manifest = JSON.parse(asar.extractFile(path.join(resources, 'app-original.asar'), 'build/asset-manifest.json').toString('utf8'));
+  const rendererBundlePath = `build/${manifest.files['main.js'].replace(/^\.\//, '')}`;
+  const rendererBundle = asar.extractFile(path.join(resources, 'app-original.asar'), rendererBundlePath).toString('utf8');
+  assert.match(rendererBundle, /Cookies per page load/, 'packaged Settings omits cookies-per-page');
+  assert.match(rendererBundle, /Page loads per browser/, 'packaged Settings omits browser reuse');
+  assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');
 
   const browsers = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'browsers.json'), 'utf8'));
   const chromium = browsers.browsers.find((browser) => browser.name === 'chromium');

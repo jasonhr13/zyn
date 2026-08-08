@@ -54,6 +54,41 @@ function patchTarget() {
   // so the selected display mode is unambiguous in the spawned process command line.
   source = replaceOnce(source, `'--headless=false'`, `'--headless=true'`, 'Target farmer New Headless mode');
 
+  source = replaceOnce(source, `  let workers = 0;
+  // How long a banked Shape cookie stays usable.`, `  let workers = 0;
+  // Ported from jasonhr13/hope: collect conservatively by default, but let operators amortise a
+  // Chromium launch across fresh contexts and opt into multiple signatures from one page.
+  let capturesPerLoad = 1;
+  let loadsPerBrowser = 3;
+  // Abort bulk assets through the harvest proxy. Shape's documents, stylesheets, scripts and XHR
+  // remain available; the UI can disable this immediately if live yield ever regresses.
+  let blockHeavyResources = true;
+  // How long a banked Shape cookie stays usable.`, 'Target farmer control defaults');
+
+  source = replaceOnce(source, `    workers = parseInt(s.targetHarvestWorkers, 10) > 0 ? parseInt(s.targetHarvestWorkers, 10) : workers;
+    cookieTtlSec = parseInt(s.targetCookieTtlSec, 10) > 0 ? parseInt(s.targetCookieTtlSec, 10) : cookieTtlSec;`, `    workers = parseInt(s.targetHarvestWorkers, 10) > 0 ? parseInt(s.targetHarvestWorkers, 10) : workers;
+    cookieTtlSec = parseInt(s.targetCookieTtlSec, 10) > 0 ? parseInt(s.targetCookieTtlSec, 10) : cookieTtlSec;
+    const configuredCaptures = parseInt(s.targetCapturesPerLoad, 10);
+    capturesPerLoad = Number.isFinite(configuredCaptures)
+      ? Math.max(1, Math.min(10, configuredCaptures)) : capturesPerLoad;
+    const configuredLoads = parseInt(s.targetLoadsPerBrowser, 10);
+    loadsPerBrowser = Number.isFinite(configuredLoads)
+      ? Math.max(1, Math.min(10, configuredLoads)) : loadsPerBrowser;
+    if (s.targetBlockHeavyResources === false || s.targetBlockHeavyResources === 'false') {
+      blockHeavyResources = false;
+    } else if (s.targetBlockHeavyResources === true || s.targetBlockHeavyResources === 'true') {
+      blockHeavyResources = true;
+    }`, 'Target farmer saved controls');
+
+  source = replaceOnce(source, `  vlog('[target] cookie bank: ' + (poolSize > 0 ? poolSize + ' per type' : 'uncapped') + ', ' + (workers > 0 ? workers : 'auto')
+    + ' worker(s), ttl ' + cookieTtlSec + 's, harvesting ATC from ' + atcTcins.split(',').length + ' product(s)');`, `  vlog('[target] cookie bank: ' + (poolSize > 0 ? poolSize + ' per type' : 'uncapped') + ', ' + (workers > 0 ? workers : 'auto')
+    + ' worker(s), ttl ' + cookieTtlSec + 's, harvesting ATC from ' + atcTcins.split(',').length + ' product(s)');
+  vlog(\`[target] farmer throughput: up to \${capturesPerLoad} cookie(s) per page load, random 1–\${loadsPerBrowser} page load(s) per browser launch, heavy assets \${blockHeavyResources ? 'blocked (images/media/fonts)' : 'allowed'}\`);`, 'Target farmer control log');
+
+  source = replaceOnce(source, `    \`--atcTcins=\${atcTcins}\`, \`--poolSize=\${poolSize}\`, ...(workers > 0 ? [\`--workers=\${workers}\`] : []),`, `    \`--atcTcins=\${atcTcins}\`, \`--poolSize=\${poolSize}\`, ...(workers > 0 ? [\`--workers=\${workers}\`] : []),
+    \`--capturesPerLoad=\${capturesPerLoad}\`, \`--loadsPerBrowser=\${loadsPerBrowser}\`,
+    \`--blockAssets=\${blockHeavyResources ? 'image,media,font' : ''}\`,`, 'Target farmer control arguments');
+
   source = replaceOnce(source, `// IMAP config for OTP login. Prefer the top-level Settings → Email / OTP fields, but fall back to the
 // Generate tab's config (settings.generate.*) so an existing email-auth-code setup works for Target
 // with no re-entry. Generate's host can be a preset (imapHost) or a custom value (imapHostCustom).
