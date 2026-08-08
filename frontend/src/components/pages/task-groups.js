@@ -54,11 +54,13 @@ function StatusBadge({ status }) {
 
 class TaskGroups extends Component {
   engineLogBox = createRef();
+  taskLogBox = createRef();
 
   state = {
     loaded: false,
     groups: [],
     selectedGroupId: '',
+    selectedTaskId: '',
     groupFilter: '',
     taskFilter: '',
     showGroupModal: false,
@@ -68,7 +70,10 @@ class TaskGroups extends Component {
     selectedAccounts: [],
     taskProxy: '',
     copiedEngine: false,
+    copiedTask: false,
     bank: null,
+    bankCheckedAt: 0,
+    brokerStartRequestedAt: 0,
     cookieBankSize: '',
     harvestWorkers: '',
   };
@@ -84,6 +89,15 @@ class TaskGroups extends Component {
     const current = ((this.props.target && this.props.target.logs) || []).length;
     if (previous !== current && this.engineLogBox.current) {
       const element = this.engineLogBox.current;
+      if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
+        element.scrollTop = element.scrollHeight;
+      }
+    }
+    const taskId = this.state.selectedTaskId;
+    const previousTaskLogs = ((prevProps.target && prevProps.target.taskLogs) || {})[taskId] || [];
+    const currentTaskLogs = ((this.props.target && this.props.target.taskLogs) || {})[taskId] || [];
+    if (previousTaskLogs.length !== currentTaskLogs.length && this.taskLogBox.current) {
+      const element = this.taskLogBox.current;
       if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
         element.scrollTop = element.scrollHeight;
       }
@@ -104,19 +118,25 @@ class TaskGroups extends Component {
       cookieBankSize = normalizeCookieBankSize(settings.targetCookieBank);
       harvestWorkers = normalizeCookieBankSize(settings.targetHarvestWorkers);
     } catch {}
-    this.setState(({ selectedGroupId }) => ({
+    this.setState(({ selectedGroupId, selectedTaskId }) => ({
       groups,
       loaded: true,
       cookieBankSize,
       harvestWorkers,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
+      selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
+        ? selectedTaskId : '',
     }));
   };
 
   pollBank = () => {
     ipcRenderer.invoke('targetCookieBank')
-      .then(bank => this.setState(previous => sameTargetBank(previous.bank, bank) ? null : { bank }))
-      .catch(() => this.setState(previous => previous.bank === null ? null : { bank: null }));
+      .then(bank => this.setState(previous => ({
+        bank: sameTargetBank(previous.bank, bank) ? previous.bank : bank,
+        bankCheckedAt: Date.now(),
+        brokerStartRequestedAt: bank ? 0 : previous.brokerStartRequestedAt,
+      })))
+      .catch(() => this.setState({ bank: null, bankCheckedAt: Date.now() }));
   };
 
   saveCookieBankSize = () => {
@@ -138,6 +158,7 @@ class TaskGroups extends Component {
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
+  selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
   accountFor = task => (this.props.accounts || []).find(account => String(account.id) === String(task.accountId));
 
@@ -233,7 +254,7 @@ class TaskGroups extends Component {
       try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
     }
     this.persist(this.state.groups.filter(item => item.id !== group.id), () => {
-      if (this.state.selectedGroupId === group.id) this.setState({ selectedGroupId: '' });
+      if (this.state.selectedGroupId === group.id) this.setState({ selectedGroupId: '', selectedTaskId: '' });
     });
   };
 
@@ -294,7 +315,9 @@ class TaskGroups extends Component {
       tasks: item.tasks.filter(candidate => candidate.id !== task.id),
       updatedAt: Date.now(),
     } : item);
-    this.persist(groups);
+    this.persist(groups, () => {
+      if (this.state.selectedTaskId === task.id) this.setState({ selectedTaskId: '' });
+    });
   };
 
   accountLabel = task => {
@@ -340,13 +363,19 @@ class TaskGroups extends Component {
       return;
     }
     const config = this.runnableTasks(group, tasks);
-    if (config) ipcRenderer.send('startTarget', config);
+    if (config) {
+      this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
+      ipcRenderer.send('startTarget', config);
+    }
   };
 
   stopTasks = (tasks) => {
+    const runningBefore = this.allStats().running;
+    const stopping = tasks.filter(task => statusKind(this.statusFor(task)) === 'running').length;
     for (const task of tasks) {
       try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
     }
+    if (!runningBefore || stopping >= runningBefore) this.setState({ brokerStartRequestedAt: 0 });
   };
 
   copyEngineLogs = () => {
@@ -362,6 +391,22 @@ class TaskGroups extends Component {
     const logs = (this.props.target && this.props.target.logs) || [];
     if (!logs.length || !window.confirm('Clear the shared engine / monitor log?')) return;
     this.props.dispatch({ type: 'targetSet', obj: { logs: [] } });
+  };
+
+  copyTaskLogs = (task) => {
+    const logs = (((this.props.target || {}).taskLogs || {})[task.id]) || [];
+    if (!logs.length) return;
+    try { clipboard.writeText(logs.join('\n')); } catch {}
+    this.setState({ copiedTask: true }, () => {
+      setTimeout(() => this.setState({ copiedTask: false }), 1200);
+    });
+  };
+
+  clearTaskLogs = (task) => {
+    const taskLogs = (this.props.target && this.props.target.taskLogs) || {};
+    const logs = taskLogs[task.id] || [];
+    if (!logs.length || !window.confirm(`Clear the log for “${this.accountLabel(task)}”?`)) return;
+    this.props.dispatch({ type: 'targetSet', obj: { taskLogs: { ...taskLogs, [task.id]: [] } } });
   };
 
   renderSharedEngineLog() {
@@ -427,18 +472,47 @@ class TaskGroups extends Component {
     const configuredWorkers = Number(this.state.harvestWorkers) || 0;
     const activeWorkers = metrics.activeWorkers || legacyWorkers;
     const workerLimit = metrics.workerLimit || metrics.configuredWorkers || configuredWorkers;
-    const workerValue = activeWorkers && workerLimit
-      ? `${activeWorkers}/${workerLimit}`
-      : activeWorkers || workerLimit || 'Auto';
+    const detectingWorkers = bank && metrics.workerState === 'detecting';
+    const workerValue = detectingWorkers
+      ? '…'
+      : activeWorkers && workerLimit && activeWorkers !== workerLimit
+        ? `${activeWorkers}/${workerLimit}`
+        : activeWorkers || workerLimit || 0;
     const working = metrics.inFlightAtc > 0 || activeWorkers > 0 || metrics.farmedAtc > 0;
-    const state = !bank ? 'offline' : metrics.login > 0 || metrics.atc > 0 ? 'ready' : working ? 'working' : 'warming';
-    const label = state === 'ready' ? 'Ready' : state === 'working' ? 'Farming live' : state === 'warming' ? 'Warming up' : 'Broker offline';
-    const workerDescription = activeWorkers
+    const requestedAt = this.state.brokerStartRequestedAt;
+    const waitingForBroker = !bank && (requestedAt > 0 || this.allStats().running > 0);
+    const brokerTimedOut = waitingForBroker && requestedAt > 0
+      && (this.state.bankCheckedAt || Date.now()) - requestedAt >= 45000;
+    const state = !bank
+      ? brokerTimedOut ? 'error' : waitingForBroker ? 'starting' : 'offline'
+      : metrics.login > 0 || metrics.atc > 0 ? 'ready'
+        : working ? 'working' : 'warming';
+    const label = state === 'ready' ? 'Ready'
+      : state === 'working' ? 'Farming live'
+        : state === 'warming' && detectingWorkers ? 'Detecting browsers'
+          : state === 'warming' ? 'Warming up'
+            : state === 'starting' ? 'Starting broker'
+              : state === 'error' ? 'Broker failed to start'
+                : 'Broker offline';
+    const workerDescription = detectingWorkers
+      ? 'Detecting available browsers and resolving the automatic worker count'
+      : activeWorkers
       ? `${activeWorkers} active worker${activeWorkers === 1 ? '' : 's'}${workerLimit ? ` / ${workerLimit} configured` : ''}`
-      : workerLimit
+        + `${metrics.activeBrowserMix ? ` · ${metrics.activeBrowserMix}` : ''}`
+      : bank && metrics.workerState === 'disabled'
+        ? 'Farmer disabled; broker-only mode is active'
+        : bank && workerLimit
         ? `${workerLimit} configured worker${workerLimit === 1 ? '' : 's'}`
-        : 'Automatic worker count (one per detected browser)';
-    const description = bank
+        : bank
+          ? 'The broker has not reported a worker count yet'
+          : configuredWorkers
+            ? `${configuredWorkers} configured; waiting for the broker to start`
+            : 'Worker count becomes available after browser detection';
+    const description = state === 'starting'
+      ? 'The native cookie broker is starting. Installed-browser detection follows as soon as it is online.'
+      : state === 'error'
+        ? 'The broker did not answer within 45 seconds. Check Engine & Monitor Log below for the startup error.'
+        : bank
       ? `${metrics.login} login and ${metrics.atc} ATC cookies banked · ${workerDescription}.`
       : 'Start a Target task or harvester to bring the cookie broker online.';
 
@@ -472,7 +546,9 @@ class TaskGroups extends Component {
           />
           <small>Next start</small>
         </label>
-        <span className="cookie-bank-live"><i />{state === 'offline' ? 'Offline' : 'Live'}</span>
+        <span className="cookie-bank-live"><i />{
+          state === 'offline' ? 'Offline' : state === 'starting' ? 'Starting' : state === 'error' ? 'Error' : 'Live'
+        }</span>
       </section>
     );
   }
@@ -583,16 +659,28 @@ class TaskGroups extends Component {
     const running = statusKind(status) === 'running';
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
-      <div className="group-task-row" key={task.id}>
+      <div
+        className="group-task-row group-task-row-clickable"
+        key={task.id}
+        tabIndex="0"
+        title="Open this task and its logs"
+        onClick={() => this.setState({ selectedTaskId: task.id, copiedTask: false })}
+        onKeyDown={event => {
+          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            this.setState({ selectedTaskId: task.id, copiedTask: false });
+          }
+        }}
+      >
         <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{this.accountLabel(task)}</strong><small>{task.id}</small></span></span>
         <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
-        <select className="form-select task-proxy-select" value={task.proxyListName || ''} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
+        <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
           <option value="">Local</option>
           {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
         </select>
         <StatusBadge status={status} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
-        <span className="task-row-actions">
+        <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
           {running ? (
             <button className="icon-action icon-action-stop" title="Stop task" onClick={() => this.stopTasks([task])}><Icon name="stop" size={12} /></button>
           ) : (
@@ -600,6 +688,96 @@ class TaskGroups extends Component {
           )}
           <button className="icon-action icon-action-danger" title="Delete task" onClick={() => this.deleteTask(group, task)}><Icon name="trash" size={12} /></button>
         </span>
+      </div>
+    );
+  }
+
+  renderTaskDetail(group, task) {
+    const account = this.accountFor(task);
+    const profile = this.profileForAccount(task.accountId);
+    const status = this.statusFor(task);
+    const kind = statusKind(status);
+    const running = kind === 'running';
+    const logs = ((((this.props.target || {}).taskLogs) || {})[task.id]) || [];
+    const accountName = this.accountLabel(task);
+    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
+    const profileName = profile
+      ? profile.name || profile.email || profile.id
+      : 'Missing matching profile';
+    const statusLabel = (status && (status.label || status.state)) || STATUS_LABELS[kind];
+    const statusDetail = (status && status.detail) || (running
+      ? 'This task is running through the existing Target checkout engine.'
+      : 'Start this task to see its checkout steps and diagnostic output here.');
+
+    return (
+      <div className="tasks-workspace">
+        <div className="page-header task-view-header">
+          <div>
+            <div className="task-breadcrumbs">
+              <button onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}>Task Groups</button>
+              <span>/</span>
+              <button onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>{group.name}</button>
+              <span>/</span>
+              <em>{accountName}</em>
+            </div>
+            <div className="page-title"><span className="page-title-dot" /> {accountName}</div>
+          </div>
+          <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>Back to Group</button>
+            {running ? (
+              <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks([task])}><Icon name="stop" size={12} /> Stop Task</button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={() => this.startTasks(group, [task])}><Icon name="play" size={12} /> Start Task</button>
+            )}
+          </div>
+        </div>
+        <div className="page-content task-detail-content">
+          <section className={`task-status-hero task-status-hero-${kind}`}>
+            <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
+            <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
+            <StatusBadge status={status} />
+          </section>
+
+          {this.renderCookieBank()}
+
+          <div className="task-detail-grid">
+            <section className="panel task-information">
+              <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
+              <dl>
+                <div><dt>Account</dt><dd>{accountName}</dd></div>
+                <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
+                <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
+                <div><dt>Watch list</dt><dd>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
+                <div><dt>Task ID</dt><dd>{task.id}</dd></div>
+              </dl>
+            </section>
+            <section className="panel task-log-panel task-own-log-panel">
+              <div className="detail-panel-heading">
+                <div><h3><Icon name="activity" size={13} /> Task Log</h3><span>{logs.length} line{logs.length === 1 ? '' : 's'} · only this task</span></div>
+                <div className="page-actions">
+                  <button className="btn btn-secondary btn-sm" onClick={() => this.copyTaskLogs(task)} disabled={!logs.length}>
+                    <Icon name="copy" size={11} /> {this.state.copiedTask ? 'Copied' : 'Copy'}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => this.clearTaskLogs(task)} disabled={!logs.length}>Clear</button>
+                </div>
+              </div>
+              <div className="task-log-view" ref={this.taskLogBox}>
+                {!logs.length ? (
+                  <div className="task-log-empty">
+                    <Icon name="activity" size={20} />
+                    <span>No output from this task yet</span>
+                    <small>Checkout steps tagged with this task ID will appear here. Broker, farmer, and monitor startup remain in the shared log below.</small>
+                  </div>
+                ) : logs.map((line, index) => (
+                  <div key={index}><span>{String(index + 1).padStart(3, '0')}</span>{String(line)}</div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          {this.renderSharedEngineLog()}
+        </div>
       </div>
     );
   }
@@ -612,7 +790,7 @@ class TaskGroups extends Component {
       <div className="tasks-workspace">
         <div className="page-header task-view-header">
           <div>
-            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
+            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
             <div className="page-title"><span className="page-title-dot" /> {group.name}</div>
           </div>
           <div className="page-actions">
@@ -651,7 +829,6 @@ class TaskGroups extends Component {
             )}
           </div>
           {this.renderSharedEngineLog()}
-          <div className="task-group-r2-boundary"><Icon name="warning" size={14} /><span>R2 groups existing Target controls only. Scheduling remains disabled until its own release gate.</span></div>
         </div>
         {this.renderGroupModal()}
         {this.renderTaskModal(group)}
@@ -717,7 +894,9 @@ class TaskGroups extends Component {
   render() {
     if (!this.state.loaded) return <div className="task-workspace-loading"><Icon name="activity" size={20} /> Loading task groups…</div>;
     const group = this.selectedGroup();
-    return group ? this.renderGroup(group) : this.renderOverview();
+    if (!group) return this.renderOverview();
+    const task = this.selectedTask(group);
+    return task ? this.renderTaskDetail(group, task) : this.renderGroup(group);
   }
 }
 

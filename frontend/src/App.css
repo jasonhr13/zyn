@@ -893,10 +893,12 @@ body.theme-night .form-select {
   box-shadow: var(--shadow-panel);
 }
 .cookie-bank-ready { border-color: rgba(101,214,166,.22); }
-.cookie-bank-warming, .cookie-bank-working { border-color: rgba(245,183,85,.2); background: linear-gradient(110deg, rgba(245,183,85,.06), var(--panel) 55%); }
+.cookie-bank-warming, .cookie-bank-working, .cookie-bank-starting { border-color: rgba(245,183,85,.2); background: linear-gradient(110deg, rgba(245,183,85,.06), var(--panel) 55%); }
+.cookie-bank-error { border-color: rgba(255,123,131,.24); background: linear-gradient(110deg, rgba(255,123,131,.06), var(--panel) 55%); }
 .cookie-bank-offline { background: var(--panel); }
 .cookie-bank-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 38px; color: var(--ok); background: var(--ok-soft); border: 1px solid rgba(101,214,166,.2); border-radius: 11px; }
-.cookie-bank-warming .cookie-bank-icon, .cookie-bank-working .cookie-bank-icon { color: var(--run); background: var(--run-soft); border-color: rgba(245,183,85,.18); }
+.cookie-bank-warming .cookie-bank-icon, .cookie-bank-working .cookie-bank-icon, .cookie-bank-starting .cookie-bank-icon { color: var(--run); background: var(--run-soft); border-color: rgba(245,183,85,.18); }
+.cookie-bank-error .cookie-bank-icon { color: var(--danger); background: var(--danger-soft); border-color: rgba(255,123,131,.2); }
 .cookie-bank-offline .cookie-bank-icon { color: var(--muted); background: var(--idle-soft); border-color: var(--panel-border); }
 .cookie-bank-copy { min-width: 140px; display: flex; flex-direction: column; gap: 1px; }
 .cookie-bank-copy small { color: var(--muted); font-size: 8.5px; font-weight: 750; letter-spacing: .75px; text-transform: uppercase; }
@@ -915,7 +917,8 @@ body.theme-night .form-select {
 .cookie-bank-live { display: inline-flex; align-items: center; gap: 5px; color: var(--ok); font-size: 8.5px; font-weight: 700; text-transform: uppercase; }
 .cookie-bank-live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
 .cookie-bank-offline .cookie-bank-live { color: var(--muted); }
-.cookie-bank-warming .cookie-bank-live, .cookie-bank-working .cookie-bank-live { color: var(--run); }
+.cookie-bank-warming .cookie-bank-live, .cookie-bank-working .cookie-bank-live, .cookie-bank-starting .cookie-bank-live { color: var(--run); }
+.cookie-bank-error .cookie-bank-live { color: var(--danger); }
 .cookie-bank-compact { gap: 8px; padding: 9px 10px; margin: 13px 0; border-radius: 9px; box-shadow: none; }
 .cookie-bank-compact .cookie-bank-icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: 8px; }
 .cookie-bank-compact .cookie-bank-copy { display: none; }
@@ -1017,6 +1020,7 @@ body.theme-night .form-select {
 }
 .group-task-row:last-child { border-bottom: 0; }
 .group-task-row:not(.group-task-table-head):hover { background: var(--panel-hover); }
+.group-task-row-clickable:focus-visible { outline: 1px solid var(--accent-border); outline-offset: -2px; background: var(--panel-hover); }
 .group-task-table-head { min-height: 36px; background: var(--panel-bg-alt); color: var(--muted); font-size: 8.5px; font-weight: 750; letter-spacing: .7px; text-transform: uppercase; cursor: default; }
 .task-primary { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .task-primary > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -1067,6 +1071,8 @@ body.theme-night .form-select {
 .detail-panel-heading { min-height: 55px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--panel-border); background: var(--surface-tint); }
 .detail-panel-heading h3 { color: var(--text); font-size: 11.5px; }
 .detail-panel-heading span { color: var(--muted); font-size: 9px; }
+.detail-panel-heading h3 { display: inline-flex; align-items: center; gap: 6px; }
+.task-own-log-panel .detail-panel-heading > div:first-child { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
 .task-information dl { padding: 5px 14px 10px; }
 .task-information dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--panel-border); }
 .task-information dl > div:last-child { border-bottom: 0; }

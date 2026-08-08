@@ -57,6 +57,9 @@ export function targetBankMetrics(bank) {
     busyWorkers: count(health.busyWorkers),
     configuredWorkers: count(health.configuredWorkers),
     workerLimit: count(scaling.desiredWorkers || scaling.hardLimit || health.configuredWorkers),
+    workerState: String(health.workerState || (online && bank && bank.health && !count(health.configuredWorkers)
+      && !browsers.length && String((health.browser && health.browser.mode) || '') !== 'broker-only'
+      ? 'detecting' : '')),
     workerPolicy: String(scaling.policy || 'adaptive'),
     failureTotal: count(failures.total),
     quarantinedProxies: count(health.quarantinedProxies),

@@ -6,3 +6,5 @@
 *.md text eol=lf
 *.sh text eol=lf
 
+# Preserve this upstream source byte-for-byte; the pinned GitHub blob uses CRLF.
+native-farmer/harvest-persona.mjs -text

@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/jasonhr13/hope.git",
+  "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
+  "files": {
+    "harvest-persona.mjs": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
+    "runtime-paths.js": "9c0f4798ea8140becb503c5155256c08f4af5778da0b0e01702cfdbdefdce325",
+    "shape-bandwidth.mjs": {
+      "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
+      "sha256": "7b706d784bbdfbb01391b38e379dd211a73048a45e340e22fac7648395b2fcbc",
+      "adaptation": "Retain the existing image/media/font bandwidth toggle while adopting the upstream native farmer."
+    },
+    "shape-browser-pool.mjs": "b8cb1d5353f472513609ba9eea6349361d5c1e2069efc4d9e4fd098ecc3f981b",
+    "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
+    "shape-farmer.mjs": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
+    "shape-harvest-coordinator.mjs": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
+    "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
+    "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
+    "shape-worker-scaler.mjs": "00cd453c4289e99efae40e636d9f97746fb0e6dc6d5d5651fbdee1d986e19b9f",
+    "target-consent-overlay.mjs": "1d03320ff0c35dae0406a82778cba52a3f3b16ca98618c01af67eab468135827"
+  }
+}

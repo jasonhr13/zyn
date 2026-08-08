@@ -41,6 +41,12 @@ function replaceOnce(source, before, after, label) {
   return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
+function replaceCount(source, before, after, expected, label) {
+  const count = source.split(before).length - 1;
+  if (count !== expected) throw new Error(`Expected ${expected} ${label} occurrence(s), found ${count}`);
+  return source.split(before).join(after);
+}
+
 function saveSource(opened) {
   const output = opened.newline === '\r\n' ? opened.source.replace(/\n/g, '\r\n') : opened.source;
   fs.writeFileSync(opened.file, output, 'utf8');
@@ -53,6 +59,30 @@ function patchTarget() {
   // The packaged farmer defaults to New Headless too, but pass it explicitly from the control plane
   // so the selected display mode is unambiguous in the spawned process command line.
   source = replaceOnce(source, `'--headless=false'`, `'--headless=true'`, 'Target farmer New Headless mode');
+
+  source = replaceOnce(source, `const plat = require('./platform');`, `const plat = require('./platform');
+// Imported unchanged from jasonhr13/hope: packaged bot scripts reuse Electron as native Node.
+// backend.exe still resolves through platform/launcher and therefore remains under bundled Wine.
+const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
+
+  source = replaceOnce(source, `function findNodeExe() {
+  if (isPackaged()) {
+    const bundled = path.join(process.resourcesPath, 'vendor', plat.nodeBin());
+    if (fs.existsSync(bundled)) return bundled;
+  }
+  const found = plat.whichNode();
+  if (found && fs.existsSync(found)) return found;
+  return 'node';
+}`, `const findNodeExe = nodeExecutable;`, 'Target native farmer executable');
+
+  source = replaceCount(source, `  const env = { ...process.env, FORCE_COLOR: '0', HOPE_SHAPE_PORT: String(SHAPE_PORT), HOPE_SHAPE_TOKEN: SHAPE_TOKEN,
+    // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
+    // signal that survives a crash or an End Task, neither of which runs a quit handler.
+    HOPE_PARENT_WATCH: '1', HOPE_OWNER_PID: String(process.pid) };
+  if (isPackaged()) env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'vendor', 'ms-playwright');`, `  const env = nodeEnvironment({ FORCE_COLOR: '0', HOPE_SHAPE_PORT: String(SHAPE_PORT), HOPE_SHAPE_TOKEN: SHAPE_TOKEN,
+    // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
+    // signal that survives a crash or an End Task, neither of which runs a quit handler.
+    HOPE_PARENT_WATCH: '1', HOPE_OWNER_PID: String(process.pid) });`, 2, 'Target native farmer environment');
 
   source = replaceOnce(source, `  let workers = 0;
   // How long a banked Shape cookie stays usable.`, `  let workers = 0;
@@ -87,7 +117,40 @@ function patchTarget() {
 
   source = replaceOnce(source, `    \`--atcTcins=\${atcTcins}\`, \`--poolSize=\${poolSize}\`, ...(workers > 0 ? [\`--workers=\${workers}\`] : []),`, `    \`--atcTcins=\${atcTcins}\`, \`--poolSize=\${poolSize}\`, ...(workers > 0 ? [\`--workers=\${workers}\`] : []),
     \`--capturesPerLoad=\${capturesPerLoad}\`, \`--loadsPerBrowser=\${loadsPerBrowser}\`,
-    \`--blockAssets=\${blockHeavyResources ? 'image,media,font' : ''}\`,`, 'Target farmer control arguments');
+    \`--blockHeavyResources=\${blockHeavyResources}\`, \`--browsers=auto\`,
+    \`--sessionReady=\${hasSession}\`,`, 'Target farmer control arguments');
+
+  source = replaceOnce(source, `          resolve({ login: j.pools?.login || 0, atc: j.pools?.atc || 0, proxies: j.proxies || 0 });`, `          resolve({
+            login: j.pools?.login || 0,
+            atc: j.pools?.atc || 0,
+            proxies: j.proxies || 0,
+            sessionReady: j.sessionReady === true,
+            inFlight: j.inFlight || { login: 0, atc: 0 },
+            activity: j.activity || null,
+            health: j.health || null,
+          });`, 'Target broker health passthrough');
+
+  source = replaceOnce(source, `// Two acceptable proofs. \`app\` is the explicit marker current builds send; the legacy branch`, `// Ported from jasonhr13/hope: a cold account initially farms login with one safe lane. Once the
+// engine persists its new account session, unlock the staggered ATC lanes in the native farmer.
+function signalFarmerSessionReady() {
+  const req = http.request({
+    host: '127.0.0.1', port: SHAPE_PORT, path: '/session-ready', method: 'POST', timeout: 1200,
+    headers: { 'x-hope-token': SHAPE_TOKEN },
+  }, (res) => res.resume());
+  req.on('error', (e) => vlog('[target] shape farmer session-ready signal failed: ' + e.message));
+  req.on('timeout', () => req.destroy());
+  req.end();
+}
+
+// Two acceptable proofs. \`app\` is the explicit marker current builds send; the legacy branch`, 'Target farmer session-ready signal');
+
+  source = replaceOnce(source, `          try { dm.setAccountCookie(m.accountId, m.cookie); log('[session] saved account session (' + m.cookie.length + ' chars) — future runs skip login'); } catch (e) { log('[session] save failed: ' + e.message); }`, `          try {
+            dm.setAccountCookie(m.accountId, m.cookie);
+            log('[session] saved account session (' + m.cookie.length + ' chars) — future runs skip login');
+            signalFarmerSessionReady();
+          } catch (e) { log('[session] save failed: ' + e.message); }`, 'Target farmer session-ready handoff');
+
+  source = replaceOnce(source, `    if (!plat.isNodeImage(image)) {                 // the farmer runs as node, packaged or not`, `    if (!plat.isNodeImage(image) && image !== 'hope') { // native packaged farmer reuses Hope in Node mode`, 'Target native broker owner recognition');
 
   source = replaceOnce(source, `// IMAP config for OTP login. Prefer the top-level Settings → Email / OTP fields, but fall back to the
 // Generate tab's config (settings.generate.*) so an existing email-auth-code setup works for Target

@@ -299,6 +299,24 @@ Hope cookie-bank card into Target groups. The card polls the existing broker sta
 cookie totals, reports the active/configured farmer workers, and saves Bank Max to the existing
 `targetCookieBank` setting for the next start. No `backend.exe` or Wine behavior changes.
 
+The native farmer is imported from `jasonhr13/hope` commit
+`423d13260bee6b6f9ba01d175c948c0afd86da9a`; every imported source hash is pinned in
+`config/native-farmer-upstream.json`. It reuses Electron as native Node and detects Chrome, Edge,
+Brave, Vivaldi, Yandex, plus a bundled regular Chromium. Automatic mode starts one worker per
+detected browser when proxy capacity permits. The existing bridge still launches only `backend.exe`
+through bundled Wine, preserving the frozen checkout engine while removing Wine's cold-start from
+the cookie broker/farmer. New Headless remains explicit, and the upstream health, scheduling,
+browser reuse, multi-capture, bandwidth, and cold-login coordination paths stay intact. The one
+documented source adaptation retains this app's existing font block alongside upstream's image/media
+filter, so the already-released proxy-bandwidth toggle does not regress.
+
+Prepare the ignored, architecture-specific Chromium payload once before packaging:
+
+```sh
+node ./scripts/prepare-native-farmer-runtime.js
+node ./scripts/verify-native-farmer-upstream.js
+```
+
 To rebuild after moving the old output aside:
 
 ```sh

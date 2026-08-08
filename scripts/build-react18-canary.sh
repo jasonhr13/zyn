@@ -38,6 +38,8 @@ fi
 cp -cR "$PROJECT_DIR/extracted/asar" "$TEMP_DIR/app"
 mv "$TEMP_DIR/app/build" "$TEMP_DIR/app/build-react16-original"
 cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
+node "$PROJECT_DIR/scripts/verify-native-farmer-upstream.js"
+cp "$PROJECT_DIR/native-farmer/runtime-paths.js" "$TEMP_DIR/app/public/helpers/runtime-paths.js"
 node "$PROJECT_DIR/scripts/patch-profile-imap-engines.js" "$TEMP_DIR/app/public/helpers"
 
 node -e '
@@ -54,7 +56,15 @@ node -e '
 
 cp -cR "$BASE_APP" "$OUTPUT_APP"
 RESOURCES="$OUTPUT_APP/Contents/Resources"
-node "$PROJECT_DIR/scripts/patch-target-farmer-new-headless.js" "$RESOURCES/bot/shape-farmer.mjs"
+NATIVE_BROWSER_RUNTIME="$PROJECT_DIR/vendor/ms-playwright-mac-arm64"
+if [[ ! -d "$NATIVE_BROWSER_RUNTIME" ]]; then
+  echo "Missing native Chromium runtime: $NATIVE_BROWSER_RUNTIME" >&2
+  echo "Run node scripts/prepare-native-farmer-runtime.js first." >&2
+  exit 1
+fi
+cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
+rm -rf "$RESOURCES/vendor/ms-playwright-mac-arm64"
+cp -R "$NATIVE_BROWSER_RUNTIME" "$RESOURCES/vendor/ms-playwright-mac-arm64"
 mv "$RESOURCES/app-original.asar" "$RESOURCES/app-react16-original.asar"
 mv "$RESOURCES/app-original.asar.unpacked" "$RESOURCES/app-react16-original.asar.unpacked"
 cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"

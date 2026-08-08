@@ -5,42 +5,47 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
-const sourceFile = path.join(project, 'extracted', 'app', 'resources', 'bot', 'shape-farmer.mjs');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-new-headless-'));
-const farmerFile = path.join(directory, 'shape-farmer.mjs');
-fs.copyFileSync(sourceFile, farmerFile);
+execFileSync(process.execPath, [path.join(__dirname, 'verify-native-farmer-upstream.js')], { stdio: 'inherit' });
 
-execFileSync(process.execPath, [path.join(__dirname, 'patch-target-farmer-new-headless.js'), farmerFile], { stdio: 'inherit' });
-const farmer = fs.readFileSync(farmerFile, 'utf8');
-assert.match(farmer, /const HEADLESS = argOf\('headless', 'true'\) === 'true'/);
-assert.match(farmer, /\{ key: 'chromium', channel: 'chromium', realBrand: false \}/);
-assert.match(farmer, /display: \$\{HEADLESS \? 'new-headless'/);
-assert.doesNotMatch(farmer, /\{ key: 'chromium', channel: null, realBrand: false \}/);
-assert.doesNotMatch(farmer, /BROWSER_CANDIDATES\[2\]/);
-execFileSync(process.execPath, ['--check', farmerFile]);
+const farmer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-farmer.mjs'), 'utf8');
+const browserPool = fs.readFileSync(path.join(project, 'native-farmer', 'shape-browser-pool.mjs'), 'utf8');
+const runtimePaths = fs.readFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), 'utf8');
 
-const repeat = spawnSync(process.execPath, [path.join(__dirname, 'patch-target-farmer-new-headless.js'), farmerFile], { encoding: 'utf8' });
-assert.notEqual(repeat.status, 0, 'hash gate accepted an already-modified farmer');
-assert.match(`${repeat.stdout}${repeat.stderr}`, /does not match the reviewed source/);
+for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']) {
+  assert.match(browserPool, new RegExp(`key: '${key}'`), `native browser pool omits ${key}`);
+}
+assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family launches lack an explicit full-browser channel');
+assert.match(browserPool, /Brave Browser\.app\/Contents\/MacOS\/Brave Browser/);
+assert.match(browserPool, /Vivaldi\.app/);
+assert.match(browserPool, /Yandex\.app/);
+assert.match(farmer, /const HEADLESS = argOf\('headless', 'false'\) === 'true'/);
+assert.match(farmer, /browserMode = HEADLESS \? 'new-headless'/);
+assert.match(farmer, /activeWorkers: scale\.activeWorkers/);
+assert.match(farmer, /configuredWorkers: startedWorkerCount/);
+assert.match(farmer, /farmerBrowsers = detected\.map/);
+assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/);
+assert.match(runtimePaths, /return process\.execPath/);
 
-const resources = path.join(project, 'extracted', 'app', 'resources');
-const playwrightPackage = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright', 'package.json'), 'utf8'));
-const browsers = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'browsers.json'), 'utf8'));
-const chromium = browsers.browsers.find((browser) => browser.name === 'chromium');
-const coreBundle = fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'lib', 'coreBundle.js'), 'utf8');
-assert.ok(chromium, 'bundled regular Chromium descriptor is missing');
-assert.ok(fs.existsSync(path.join(resources, 'vendor', 'ms-playwright', `chromium-${chromium.revision}`, 'chrome-win64', 'chrome.exe')));
-assert.match(coreBundle, /options\.channel && registry\.isChromiumAlias\(options\.channel\)[\s\S]{0,80}return "chromium"/);
-assert.match(coreBundle, /return options\.headless \? "chromium-headless-shell" : "chromium"/);
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hope-native-engine-'));
+for (const filename of ['target-engine.js', 'walmart-engine.js']) {
+  fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', filename), path.join(directory, filename));
+}
+fs.copyFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), path.join(directory, 'runtime-paths.js'));
+execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
+const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
+assert.match(engine, /'--headless=true'/, 'control plane does not request New Headless');
+assert.doesNotMatch(engine, /'--headless=false'/);
+assert.match(engine, /const findNodeExe = nodeExecutable/);
+assert.match(engine, /nodeEnvironment\(\{ FORCE_COLOR/);
+assert.match(engine, /`--browsers=auto`/);
 
 console.log(JSON.stringify({
   ok: true,
-  hashGated: true,
+  source: 'jasonhr13/hope@423d132',
+  runtime: 'native-electron-node',
   displayMode: 'new-headless',
-  playwright: playwrightPackage.version,
-  chromium: chromium.browserVersion,
-  executableProduct: 'chromium',
+  browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium'],
 }, null, 2));

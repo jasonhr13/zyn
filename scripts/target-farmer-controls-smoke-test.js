@@ -18,7 +18,7 @@ for (const filename of ['target-engine.js', 'walmart-engine.js']) {
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
 
 const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
-const farmer = fs.readFileSync(path.join(project, 'extracted', 'app', 'resources', 'bot', 'shape-farmer.mjs'), 'utf8');
+const farmer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-farmer.mjs'), 'utf8');
 const settings = fs.readFileSync(path.join(project, 'frontend', 'src', 'components', 'pages', 'settings.js'), 'utf8');
 
 // The ported GitHub setting names must survive UI state, saving, and the engine boundary.
@@ -34,17 +34,19 @@ assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredCaptures\)\)/);
 assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredLoads\)\)/);
 assert.match(engine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/);
 assert.match(engine, /`--loadsPerBrowser=\$\{loadsPerBrowser\}`/);
-assert.match(engine, /`--blockAssets=\$\{blockHeavyResources \? 'image,media,font' : ''\}`/);
+assert.match(engine, /`--blockHeavyResources=\$\{blockHeavyResources\}`/);
+assert.match(engine, /`--browsers=auto`/);
+assert.match(engine, /`--sessionReady=\$\{hasSession\}`/);
+assert.match(engine, /health: j\.health \|\| null/, 'broker worker health is not forwarded to the UI');
 
-// The recovered farmer already implements the GitHub behavior; guard that implementation instead
-// of replacing it with a parallel control path.
+// The native farmer is the pinned GitHub implementation, not a parallel rewrite.
 assert.match(farmer, /bag\.push\(picked\)/, 'one page cannot accumulate multiple signatures');
 assert.match(farmer, /bag\.length >= CAPTURES_PER_LOAD/, 'multi-capture ceiling is not honored');
-assert.match(farmer, /loadsForSession = \(\) => 1 \+ Math\.floor\(Math\.random\(\) \* LOADS_PER_BROWSER\)/);
-assert.match(farmer, /harvestOnce\(type, proxy, browser, instance, stats\)/, 'worker does not reuse its browser');
-assert.match(farmer, /instance\.newContext\(/, 'a reused browser does not create fresh contexts');
-assert.match(farmer, /argOf\('blockAssets', 'image,media,font'\)/);
-assert.match(farmer, /BLOCK_TYPES\.has\(route\.request\(\)\.resourceType\(\)\)/);
+assert.match(farmer, /randomLoadsForBrowser\(LOADS_PER_BROWSER\)/);
+assert.match(farmer, /harvestOnce\(type, proxy, selectedBrowser, browser\)/, 'worker does not reuse its browser');
+assert.match(farmer, /browser\.newContext\(/, 'a reused browser does not create fresh contexts');
+assert.match(farmer, /argOf\('blockHeavyResources', 'true'\)/);
+assert.match(farmer, /installHeavyResourceBlock\(page/);
 
 console.log(JSON.stringify({
   ok: true,

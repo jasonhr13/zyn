@@ -18,6 +18,7 @@ const bank = {
     waiting: { login: 0, atc: 1 },
   },
   health: {
+    workerState: 'running',
     activeWorkers: 3,
     configuredWorkers: 4,
     scaling: { policy: 'fixed', desiredWorkers: 4, hardLimit: 4 },
@@ -41,6 +42,7 @@ assert.deepEqual({
   delivered: 2,
 });
 assert.equal(sameTargetBank(bank, structuredClone(bank)), true);
+assert.equal(metrics.workerState, 'running');
 const changed = structuredClone(bank);
 changed.atc += 1;
 assert.equal(sameTargetBank(bank, changed), false);
@@ -71,5 +73,8 @@ assert.match(taskGroups, /<small>Login<\/small>/);
 assert.match(taskGroups, /<small>ATC<\/small>/);
 assert.match(taskGroups, /<small>Workers<\/small>/);
 assert.match(taskGroups, /aria-label="Target cookie bank maximum size"/);
+assert.match(taskGroups, /state === 'starting' \? 'Starting broker'/);
+assert.doesNotMatch(taskGroups, /workerLimit \|\| 'Auto'/);
+assert.doesNotMatch(taskGroups, /R2 groups existing Target controls only/);
 
 console.log('Target cookie-bank metrics smoke test passed');

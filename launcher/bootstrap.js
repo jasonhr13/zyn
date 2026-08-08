@@ -35,6 +35,12 @@ const originalAsar = path.join(resources, 'app-original.asar');
 const originalSpawn = childProcess.spawn.bind(childProcess);
 const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
 const developerIdentity = 'seaniepokie';
+const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac-arm64');
+if (fs.existsSync(nativePlaywrightBrowsers)) {
+  // The native farmer reuses this signed Electron executable as Node. Point Playwright at the
+  // matching macOS Chromium bundle; the original Windows runtime remains available to backend.exe.
+  process.env.HOPE_PLAYWRIGHT_BROWSERS_PATH = nativePlaywrightBrowsers;
+}
 
 const windowsLaunchers = new Set([
   path.normalize(path.join(resources, 'engine', 'backend')),
