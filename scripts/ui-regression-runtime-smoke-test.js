@@ -64,6 +64,26 @@ async function main() {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
       await wait(350);
       const originalGroups = ipc.sendSync('getTaskGroups') || [];
+      const originalInvoke = ipc.invoke.bind(ipc);
+      const originalSendSync = ipc.sendSync.bind(ipc);
+      let savedSettings = null;
+      ipc.invoke = (channel, ...args) => channel === 'targetCookieBank'
+        ? Promise.resolve({
+          login: 6,
+          atc: 18,
+          proxies: 1200,
+        })
+        : originalInvoke(channel, ...args);
+      ipc.sendSync = (channel, ...args) => {
+        if (channel === 'getSettings') {
+          return { ...(originalSendSync(channel, ...args) || {}), targetCookieBank: '64', targetHarvestWorkers: '4' };
+        }
+        if (channel === 'saveSettings') {
+          savedSettings = args[0];
+          return args[0];
+        }
+        return originalSendSync(channel, ...args);
+      };
       const gate = {
         badge: document.querySelector('.license-gate-badge')?.textContent.trim() || '',
         acknowledgementPresent: Boolean(document.querySelector('.license-gate-acknowledge')),
@@ -102,7 +122,17 @@ async function main() {
         .find(element => element.textContent.includes('Target Log Verification'));
       groupRow?.click();
       await wait(250);
+      const bankMaximum = document.querySelector('[aria-label="Target cookie bank maximum size"]');
+      if (!bankMaximum) throw new Error('Cookie bank maximum control was not found');
+      const nativeInputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      bankMaximum.focus();
+      nativeInputSetter.call(bankMaximum, '80');
+      bankMaximum.dispatchEvent(new Event('input', { bubbles: true }));
+      bankMaximum.dispatchEvent(new Event('change', { bubbles: true }));
+      bankMaximum.blur();
+      await wait(100);
       ipc.emit('targetLog', {}, { lines: [
+        '[shape] started 3 farmer worker(s): chrome, msedge, chromium',
         'ENGINE: shape farmer ready',
         'MONITOR: watching Target inventory',
       ] });
@@ -114,7 +144,8 @@ async function main() {
       });
       await wait(200);
       const panel = document.querySelector('.engine-log-panel');
-      return {
+      const cookieBank = document.querySelector('.cookie-bank-prominent');
+      const result = {
         originalGroups,
         electron: process.versions.electron,
         gate,
@@ -126,7 +157,15 @@ async function main() {
         monitorChip: panel?.querySelector('.engine-monitor-chip')?.textContent.replace(/\\s+/g, ' ').trim() || '',
         panelBelowTasks: Boolean(panel && document.querySelector('.group-task-panel')
           && (document.querySelector('.group-task-panel').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        cookieBankText: cookieBank?.textContent.replace(/\\s+/g, ' ').trim() || '',
+        cookieBankMaximum: bankMaximum.value,
+        savedCookieBankMaximum: savedSettings && savedSettings.targetCookieBank,
+        cookieBankAboveTasks: Boolean(cookieBank && document.querySelector('.group-task-panel')
+          && (cookieBank.compareDocumentPosition(document.querySelector('.group-task-panel')) & Node.DOCUMENT_POSITION_FOLLOWING)),
       };
+      ipc.invoke = originalInvoke;
+      ipc.sendSync = originalSendSync;
+      return result;
     })()`,
   });
   if (evaluated.exceptionDetails) throw new Error(evaluated.exceptionDetails.exception?.description || evaluated.exceptionDetails.text);
@@ -152,6 +191,14 @@ async function main() {
   assert.ok(report.engineLines >= 2, 'expected the injected engine and monitor lines');
   assert.match(report.monitorChip, /Monitoring products/);
   assert.equal(report.panelBelowTasks, true);
+  assert.match(report.cookieBankText, /Cookie Bank/);
+  assert.match(report.cookieBankText, /6\s*Login/);
+  assert.match(report.cookieBankText, /18\s*ATC/);
+  assert.match(report.cookieBankText, /3\/4\s*Workers/);
+  assert.match(report.cookieBankText, /Bank max/);
+  assert.equal(report.cookieBankMaximum, '80');
+  assert.equal(report.savedCookieBankMaximum, '80');
+  assert.equal(report.cookieBankAboveTasks, true);
   assert.equal(rendererExceptions, 0);
   assert.equal(rendererErrors, 0);
 }

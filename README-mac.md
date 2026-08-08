@@ -294,8 +294,10 @@ The independently installable output is `dist/Hope-ControlPlane-R7.app`. R6 rema
 the `control-plane-r6` Git tag and its previously built application bundle.
 
 The R7 UI maintenance build removes the redundant device-session acknowledgement from account sign
-in and restores the shared Target Engine & Monitor Log directly below each task group's task table.
-The log consumes the existing Target IPC/reducer stream; no backend or engine behavior changes.
+in, restores the shared Target Engine & Monitor Log below each task group's task table, and ports the
+Hope cookie-bank card into Target groups. The card polls the existing broker status for login and ATC
+cookie totals, reports the active/configured farmer workers, and saves Bank Max to the existing
+`targetCookieBank` setting for the next start. No `backend.exe` or Wine behavior changes.
 
 To rebuild after moving the old output aside:
 

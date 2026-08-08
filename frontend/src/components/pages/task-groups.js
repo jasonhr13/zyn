@@ -2,6 +2,7 @@ import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
+import { sameTargetBank, targetBankMetrics } from '../target-bank-metrics.mjs';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -14,6 +15,7 @@ const EMPTY_GROUP = Object.freeze({
 
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const siteOf = account => String((account && account.site) || 'bandai').toLowerCase();
+const normalizeCookieBankSize = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 4);
 const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
   const value = line.trim();
   if (!value) return '';
@@ -66,10 +68,15 @@ class TaskGroups extends Component {
     selectedAccounts: [],
     taskProxy: '',
     copiedEngine: false,
+    bank: null,
+    cookieBankSize: '',
+    harvestWorkers: '',
   };
 
   componentDidMount() {
     this.loadGroups();
+    this.pollBank();
+    this.bankTimer = setInterval(this.pollBank, 5000);
   }
 
   componentDidUpdate(prevProps) {
@@ -83,14 +90,44 @@ class TaskGroups extends Component {
     }
   }
 
+  componentWillUnmount() {
+    clearInterval(this.bankTimer);
+  }
+
   loadGroups = () => {
     let groups = [];
+    let cookieBankSize = '';
+    let harvestWorkers = '';
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
+    try {
+      const settings = ipcRenderer.sendSync('getSettings') || {};
+      cookieBankSize = normalizeCookieBankSize(settings.targetCookieBank);
+      harvestWorkers = normalizeCookieBankSize(settings.targetHarvestWorkers);
+    } catch {}
     this.setState(({ selectedGroupId }) => ({
       groups,
       loaded: true,
+      cookieBankSize,
+      harvestWorkers,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
     }));
+  };
+
+  pollBank = () => {
+    ipcRenderer.invoke('targetCookieBank')
+      .then(bank => this.setState(previous => sameTargetBank(previous.bank, bank) ? null : { bank }))
+      .catch(() => this.setState(previous => previous.bank === null ? null : { bank: null }));
+  };
+
+  saveCookieBankSize = () => {
+    const targetCookieBank = normalizeCookieBankSize(this.state.cookieBankSize);
+    let settings = this.props.settings || {};
+    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
+    if (String(settings.targetCookieBank == null ? '' : settings.targetCookieBank) === targetCookieBank) return;
+    const next = { ...settings, targetCookieBank };
+    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+    this.props.dispatch({ type: 'update', obj: { settings: next } });
+    this.setState({ cookieBankSize: targetCookieBank });
   };
 
   profileList = () => {
@@ -371,6 +408,75 @@ class TaskGroups extends Component {
     );
   }
 
+  legacyActiveWorkerCount = () => {
+    if (!this.state.bank) return 0;
+    const logs = ((this.props.target && this.props.target.logs) || []).slice().reverse();
+    for (const line of logs) {
+      const text = String(line);
+      if (/shape farmer exited|farmer disabled|harvester broker listening/i.test(text)) return 0;
+      const match = text.match(/started\s+(\d+)\s+farmer worker/i);
+      if (match) return Number(match[1]) || 0;
+    }
+    return 0;
+  };
+
+  renderCookieBank() {
+    const bank = this.state.bank;
+    const metrics = targetBankMetrics(bank);
+    const legacyWorkers = this.legacyActiveWorkerCount();
+    const configuredWorkers = Number(this.state.harvestWorkers) || 0;
+    const activeWorkers = metrics.activeWorkers || legacyWorkers;
+    const workerLimit = metrics.workerLimit || metrics.configuredWorkers || configuredWorkers;
+    const workerValue = activeWorkers && workerLimit
+      ? `${activeWorkers}/${workerLimit}`
+      : activeWorkers || workerLimit || 'Auto';
+    const working = metrics.inFlightAtc > 0 || activeWorkers > 0 || metrics.farmedAtc > 0;
+    const state = !bank ? 'offline' : metrics.login > 0 || metrics.atc > 0 ? 'ready' : working ? 'working' : 'warming';
+    const label = state === 'ready' ? 'Ready' : state === 'working' ? 'Farming live' : state === 'warming' ? 'Warming up' : 'Broker offline';
+    const workerDescription = activeWorkers
+      ? `${activeWorkers} active worker${activeWorkers === 1 ? '' : 's'}${workerLimit ? ` / ${workerLimit} configured` : ''}`
+      : workerLimit
+        ? `${workerLimit} configured worker${workerLimit === 1 ? '' : 's'}`
+        : 'Automatic worker count (one per detected browser)';
+    const description = bank
+      ? `${metrics.login} login and ${metrics.atc} ATC cookies banked · ${workerDescription}.`
+      : 'Start a Target task or harvester to bring the cookie broker online.';
+
+    return (
+      <section className={`cookie-bank cookie-bank-prominent cookie-bank-${state}`} title={description}>
+        <span className="cookie-bank-icon"><Icon name="cookie" size={18} /></span>
+        <span className="cookie-bank-copy">
+          <small>Cookie Bank</small>
+          <strong>{label}</strong>
+          <em>{description}</em>
+        </span>
+        <span className="cookie-bank-counts">
+          <span><strong>{metrics.login}</strong><small>Login</small></span>
+          <span><strong>{metrics.atc}</strong><small>ATC</small></span>
+          <span title={workerDescription}><strong>{workerValue}</strong><small>Workers</small></span>
+        </span>
+        <label
+          className="cookie-bank-limit"
+          title="Maximum cookies of each type to bank. Blank or 0 keeps this recovered engine uncapped. Changes apply on the next Start."
+        >
+          <span>Bank max</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={this.state.cookieBankSize}
+            placeholder="No limit"
+            aria-label="Target cookie bank maximum size"
+            onChange={event => this.setState({ cookieBankSize: normalizeCookieBankSize(event.target.value) })}
+            onBlur={this.saveCookieBankSize}
+            onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+          />
+          <small>Next start</small>
+        </label>
+        <span className="cookie-bank-live"><i />{state === 'offline' ? 'Offline' : 'Live'}</span>
+      </section>
+    );
+  }
+
   renderMetrics() {
     const stats = this.allStats();
     const metrics = [
@@ -525,6 +631,7 @@ class TaskGroups extends Component {
             <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
           </div>
+          {this.renderCookieBank()}
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
               <div><h2>Account tasks</h2><p>A matching checkout profile is required for each Target account.</p></div>
@@ -618,5 +725,6 @@ export default connect(state => ({
   accounts: state.accounts,
   profiles: state.profiles,
   proxies: state.proxies,
+  settings: state.settings,
   target: state.target,
 }))(TaskGroups);

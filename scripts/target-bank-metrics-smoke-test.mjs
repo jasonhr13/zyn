@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { sameTargetBank, targetBankMetrics } from '../frontend/src/components/target-bank-metrics.mjs';
+
+assert.equal(targetBankMetrics(null).online, false);
+
+const bank = {
+  login: 2,
+  atc: 7,
+  proxies: 1200,
+  inFlight: { login: 0, atc: 1 },
+  activity: {
+    startedAt: 1234,
+    produced: { login: 2, atc: 9 },
+    delivered: { login: 0, atc: 2 },
+    waiting: { login: 0, atc: 1 },
+  },
+  health: {
+    activeWorkers: 3,
+    configuredWorkers: 4,
+    scaling: { policy: 'fixed', desiredWorkers: 4, hardLimit: 4 },
+  },
+};
+
+const metrics = targetBankMetrics(bank);
+assert.deepEqual({
+  login: metrics.login,
+  atc: metrics.atc,
+  proxies: metrics.proxies,
+  workers: `${metrics.activeWorkers}/${metrics.workerLimit}`,
+  farmed: metrics.farmedAtc,
+  delivered: metrics.deliveredAtc,
+}, {
+  login: 2,
+  atc: 7,
+  proxies: 1200,
+  workers: '3/4',
+  farmed: 9,
+  delivered: 2,
+});
+assert.equal(sameTargetBank(bank, structuredClone(bank)), true);
+const changed = structuredClone(bank);
+changed.atc += 1;
+assert.equal(sameTargetBank(bank, changed), false);
+
+// The recovered broker's compact payload remains supported while the renderer also accepts the
+// richer upstream health payload above.
+const compact = targetBankMetrics({ login: 5, atc: 8, proxies: 9 });
+assert.deepEqual({
+  online: compact.online,
+  login: compact.login,
+  atc: compact.atc,
+  proxies: compact.proxies,
+  activeWorkers: compact.activeWorkers,
+  workerLimit: compact.workerLimit,
+}, {
+  online: true,
+  login: 5,
+  atc: 8,
+  proxies: 9,
+  activeWorkers: 0,
+  workerLimit: 0,
+});
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/pages/task-groups.js'), 'utf8');
+assert.match(taskGroups, /ipcRenderer\.invoke\('targetCookieBank'\)/);
+assert.match(taskGroups, /<small>Login<\/small>/);
+assert.match(taskGroups, /<small>ATC<\/small>/);
+assert.match(taskGroups, /<small>Workers<\/small>/);
+assert.match(taskGroups, /aria-label="Target cookie bank maximum size"/);
+
+console.log('Target cookie-bank metrics smoke test passed');
