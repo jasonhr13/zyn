@@ -1,0 +1,241 @@
+package frontend
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/captcha"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/webhook"
+	"github.com/gorilla/websocket"
+)
+
+var (
+	errNoFrontendConnection = errors.New("frontend websocket is not connected")
+	frontendConn            *websocket.Conn
+	frontendConnMu          sync.Mutex
+	frontendWriteMu         sync.Mutex
+	watcherReadyMu          sync.Mutex
+	watcherReady            = map[string]chan struct{}{}
+	watcherSequence         atomic.Uint64
+)
+
+func ConnectFrontend(port string) {
+	task.SetMessageSender(SendMessage)
+	captcha.SetMessageSender(SendMessage)
+	task.SetProductWebhookSender(webhook.SendProductCheckout)
+	imapcode.SetCodeRequester(RequestCode)
+	for {
+		connectAndLog(port)
+		time.Sleep(time.Second)
+	}
+}
+
+func RequestCode(email string) {
+	requestID := strconv.FormatUint(watcherSequence.Add(1), 10)
+	ready := make(chan struct{}, 1)
+	watcherReadyMu.Lock()
+	watcherReady[requestID] = ready
+	watcherReadyMu.Unlock()
+	defer func() {
+		watcherReadyMu.Lock()
+		delete(watcherReady, requestID)
+		watcherReadyMu.Unlock()
+	}()
+	message := SentMessage{
+		Type: "request-code",
+		Messages: []any{
+			map[string]any{"email": email, "requestId": requestID},
+		},
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if err := SendMessage(message); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			log.Printf("RequestCode send failed for %s: %v", email, err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	select {
+	case <-ready:
+	case <-time.After(15 * time.Second):
+		log.Printf("RequestCode watcher readiness timed out for %s", email)
+	}
+}
+
+func deliverWatcherReady(requestID string) {
+	watcherReadyMu.Lock()
+	ready := watcherReady[requestID]
+	watcherReadyMu.Unlock()
+	if ready == nil {
+		return
+	}
+	select {
+	case ready <- struct{}{}:
+	default:
+	}
+}
+
+func connectAndLog(port string) {
+	url := "ws://127.0.0.1:" + port + "/"
+	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		log.Printf("ConnectFrontend: dial %s: %v", url, err)
+		return
+	}
+	defer c.Close()
+	frontendConnMu.Lock()
+	frontendConn = c
+	frontendConnMu.Unlock()
+	defer func() {
+		frontendConnMu.Lock()
+		if frontendConn == c {
+			frontendConn = nil
+		}
+		frontendConnMu.Unlock()
+	}()
+	log.Printf("ConnectFrontend: connected %s", url)
+	for {
+		if err := readMessage(c); err != nil {
+			log.Printf("ConnectFrontend: read: %v", err)
+			return
+		}
+	}
+}
+
+func readMessage(c *websocket.Conn) error {
+	_, data, err := c.ReadMessage()
+	if err != nil {
+		return err
+	}
+	msg := MessageEnvelope{}
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("ConnectFrontend: invalid JSON: %v", err)
+		return nil
+	}
+	switch msg.Type {
+	//configs
+	case "send-configs":
+		var configMessage ConfigsStruct
+		if err := json.Unmarshal(msg.Messages[0], &configMessage); err != nil {
+			log.Printf("ConnectFrontend config: %v", err)
+			return nil
+		}
+		var s SettingsPayload
+		_ = json.Unmarshal([]byte(configMessage.Settings), &s)
+		Webhooks = s.Webhooks
+		webhook.SetURLs(s.Webhooks.Checkout, s.Webhooks.Decline)
+
+		profiles.SetProfilesFromJSON([]byte(configMessage.ProfileList))
+		proxy.SetProxiesFromJSON([]byte(configMessage.ProxyListRaw))
+		accounts.SetAccountsFromJSON([]byte(configMessage.AccountList))
+	//task controls
+	case "start-tasks":
+		for i, raw := range msg.Messages {
+			var taskMessage StartTaskMessage
+			if err := json.Unmarshal(raw, &taskMessage); err != nil {
+				log.Printf("ConnectFrontend: start-tasks [%d] decode: %v", i, err)
+				continue
+			}
+			safego.Go(func() { StartTask(taskMessage) })
+		}
+	case "start-monitors":
+		for i, raw := range msg.Messages {
+			var monitorMessage StartMonitorMessage
+			if err := json.Unmarshal(raw, &monitorMessage); err != nil {
+				log.Printf("ConnectFrontend: start-monitors [%d] decode: %v", i, err)
+				continue
+			}
+			safego.Go(func() { StartMonitor(monitorMessage) })
+		}
+	case "stop-tasks":
+		taskIDs := make([]string, 0, len(msg.Messages))
+		for i, raw := range msg.Messages {
+			var taskMessage StopTaskMessage
+			if err := json.Unmarshal(raw, &taskMessage); err != nil {
+				log.Printf("ConnectFrontend: stop-tasks [%d] decode: %v", i, err)
+				continue
+			}
+			taskIDs = append(taskIDs, taskMessage.Id)
+		}
+		safego.Go(func() { StopTasks(taskIDs) })
+	case "edit-tasks":
+		for i, raw := range msg.Messages {
+			var taskMessage StartTaskMessage
+			if err := json.Unmarshal(raw, &taskMessage); err != nil {
+				log.Printf("ConnectFrontend: edit-tasks [%d] decode: %v", i, err)
+				continue
+			}
+			safego.Go(func() { EditTask(taskMessage) })
+		}
+
+	//captcha sovles
+	case "received-token":
+		var captchaMessage CaptchaSolvePayload
+		if err := json.Unmarshal(msg.Messages[0], &captchaMessage); err != nil {
+			log.Printf("ConnectFrontend captcha: %v", err)
+			return nil
+		}
+		captcha.DeliverToken(captchaMessage.TaskId, captchaMessage.Token)
+
+	//imap
+	case "received-code":
+		var imapMessage ImapCodeResponse
+		if err := json.Unmarshal(msg.Messages[0], &imapMessage); err != nil {
+			log.Printf("ConnectFrontend imap: %v", err)
+			return nil
+		}
+		imapcode.DeliverCode(imapMessage.Email, imapMessage.Code)
+	case "code-watcher-ready":
+		var readyMessage struct {
+			RequestID string `json:"requestId"`
+		}
+		if len(msg.Messages) == 0 {
+			return nil
+		}
+		if err := json.Unmarshal(msg.Messages[0], &readyMessage); err != nil {
+			return nil
+		}
+		deliverWatcherReady(readyMessage.RequestID)
+	default:
+		log.Printf("ConnectFrontend: unknown type %q", msg.Type)
+	}
+	return nil
+}
+
+func SendMessage(v any) error {
+	frontendConnMu.Lock()
+	c := frontendConn
+	frontendConnMu.Unlock()
+	if c == nil {
+		return errNoFrontendConnection
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	frontendWriteMu.Lock()
+	defer frontendWriteMu.Unlock()
+	if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+		frontendConnMu.Lock()
+		if frontendConn == c {
+			frontendConn = nil
+		}
+		frontendConnMu.Unlock()
+		_ = c.Close()
+		return err
+	}
+	return nil
+}
