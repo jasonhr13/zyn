@@ -120,6 +120,24 @@ const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Targe
     \`--blockHeavyResources=\${blockHeavyResources}\`, \`--browsers=auto\`,
     \`--sessionReady=\${hasSession}\`,`, 'Target farmer control arguments');
 
+  source = replaceOnce(source, `function getCookieBank() {`, `// The upstream broker exposes aggregate health but not a success timestamp. The persisted bank already
+// timestamps every signature, so expose only the newest timestamp; cookie headers and proxy values
+// remain confined to the main process.
+function latestBankedAt() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(bankFile(), 'utf8'));
+    let latest = 0;
+    for (const type of ['login', 'atc']) {
+      for (const entry of (saved.pool && saved.pool[type]) || []) {
+        latest = Math.max(latest, Number(entry && entry.at) || 0);
+      }
+    }
+    return latest;
+  } catch { return 0; }
+}
+
+function getCookieBank() {`, 'Target last bank success timestamp');
+
   source = replaceOnce(source, `          resolve({ login: j.pools?.login || 0, atc: j.pools?.atc || 0, proxies: j.proxies || 0 });`, `          resolve({
             login: j.pools?.login || 0,
             atc: j.pools?.atc || 0,
@@ -128,6 +146,7 @@ const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Targe
             inFlight: j.inFlight || { login: 0, atc: 0 },
             activity: j.activity || null,
             health: j.health || null,
+            lastBankedAt: latestBankedAt(),
           });`, 'Target broker health passthrough');
 
   source = replaceOnce(source, `// Two acceptable proofs. \`app\` is the explicit marker current builds send; the legacy branch`, `// Ported from jasonhr13/hope: a cold account initially farms login with one safe lane. Once the

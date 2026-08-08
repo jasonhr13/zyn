@@ -124,6 +124,7 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(farmer, /activeWorkers: scale\.activeWorkers/, 'farmer omits resolved worker count');
   assert.match(farmer, /configuredWorkers: startedWorkerCount/, 'farmer omits configured worker count');
   assert.match(targetEngine, /health: j\.health \|\| null/, 'control plane drops broker worker health');
+  assert.match(targetEngine, /lastBankedAt: latestBankedAt\(\)/, 'control plane drops latest bank success time');
 
   const manifest = JSON.parse(asar.extractFile(path.join(resources, 'app-original.asar'), 'build/asset-manifest.json').toString('utf8'));
   const rendererBundlePath = `build/${manifest.files['main.js'].replace(/^\.\//, '')}`;
@@ -133,6 +134,9 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');
   assert.match(rendererBundle, /Starting broker/, 'packaged task groups omit broker startup state');
   assert.match(rendererBundle, /only this task/, 'packaged task groups omit per-task logs');
+  for (const label of ['Last success', 'Recent errors', 'Cooling routes', 'Top failure']) {
+    assert.match(rendererBundle, new RegExp(label), `packaged cookie bank omits ${label}`);
+  }
   assert.doesNotMatch(rendererBundle, /R2 groups existing Target controls only/, 'packaged task groups retain the stale R2 boundary');
 
   const browsers = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'browsers.json'), 'utf8'));

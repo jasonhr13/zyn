@@ -73,6 +73,7 @@ class TaskGroups extends Component {
     copiedTask: false,
     bank: null,
     bankCheckedAt: 0,
+    lastObservedFarmerSuccessAt: 0,
     brokerStartRequestedAt: 0,
     cookieBankSize: '',
     harvestWorkers: '',
@@ -131,11 +132,21 @@ class TaskGroups extends Component {
 
   pollBank = () => {
     ipcRenderer.invoke('targetCookieBank')
-      .then(bank => this.setState(previous => ({
-        bank: sameTargetBank(previous.bank, bank) ? previous.bank : bank,
-        bankCheckedAt: Date.now(),
-        brokerStartRequestedAt: bank ? 0 : previous.brokerStartRequestedAt,
-      })))
+      .then(bank => this.setState(previous => {
+        const checkedAt = Date.now();
+        const before = targetBankMetrics(previous.bank);
+        const after = targetBankMetrics(bank);
+        const sameRun = before.startedAt > 0 && before.startedAt === after.startedAt;
+        const observedSuccess = sameRun && after.farmedAtc > before.farmedAtc;
+        return {
+          bank: sameTargetBank(previous.bank, bank) ? previous.bank : bank,
+          bankCheckedAt: checkedAt,
+          lastObservedFarmerSuccessAt: observedSuccess
+            ? checkedAt
+            : sameRun ? previous.lastObservedFarmerSuccessAt : 0,
+          brokerStartRequestedAt: bank ? 0 : previous.brokerStartRequestedAt,
+        };
+      }))
       .catch(() => this.setState({ bank: null, bankCheckedAt: Date.now() }));
   };
 
@@ -465,6 +476,19 @@ class TaskGroups extends Component {
     return 0;
   };
 
+  farmerSuccessAge = (metrics) => {
+    if (!metrics.online) return '—';
+    const timestamp = Math.max(metrics.lastBankedAt, this.state.lastObservedFarmerSuccessAt);
+    if (!timestamp) return metrics.farmedAtc > 0 ? 'Before this view' : 'None yet';
+    const seconds = Math.max(0, Math.floor(((this.state.bankCheckedAt || Date.now()) - timestamp) / 1000));
+    if (seconds < 5) return 'Just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ago`;
+  };
+
   renderCookieBank() {
     const bank = this.state.bank;
     const metrics = targetBankMetrics(bank);
@@ -508,12 +532,28 @@ class TaskGroups extends Component {
           : configuredWorkers
             ? `${configuredWorkers} configured; waiting for the broker to start`
             : 'Worker count becomes available after browser detection';
+    const lastSuccess = this.farmerSuccessAge(metrics);
+    const recentErrors = metrics.recentSamples
+      ? `${metrics.recentErrors}/${metrics.recentSamples} · ${metrics.recentErrorPercent}%`
+      : 'No samples';
+    const coolingRoutes = metrics.quarantinedProxies
+      ? `${metrics.quarantinedProxies} route${metrics.quarantinedProxies === 1 ? '' : 's'}`
+      : 'None';
+    const laneCooldown = metrics.atcCooldownSec ? ` · lane ${metrics.atcCooldownSec}s` : '';
+    const leadingFailure = metrics.leadingFailure
+      ? `${metrics.leadingFailure.label} · ${metrics.leadingFailure.count}`
+      : 'None';
+    const healthDescription = bank
+      ? `${metrics.inFlightAtc} ATC in flight · ${metrics.waitingAtc} waiting · ${metrics.recentErrorPercent}% recent errors`
+        + `${metrics.quarantinedProxies ? ` · ${coolingRoutes} cooling` : ''}`
+        + `${metrics.leadingFailure ? ` · top failure ${leadingFailure}` : ''}`
+      : '';
     const description = state === 'starting'
       ? 'The native cookie broker is starting. Installed-browser detection follows as soon as it is online.'
       : state === 'error'
         ? 'The broker did not answer within 45 seconds. Check Engine & Monitor Log below for the startup error.'
         : bank
-      ? `${metrics.login} login and ${metrics.atc} ATC cookies banked · ${workerDescription}.`
+      ? `${metrics.login} login and ${metrics.atc} ATC cookies banked · ${workerDescription} · ${healthDescription}.`
       : 'Start a Target task or harvester to bring the cookie broker online.';
 
     return (
@@ -549,6 +589,32 @@ class TaskGroups extends Component {
         <span className="cookie-bank-live"><i />{
           state === 'offline' ? 'Offline' : state === 'starting' ? 'Starting' : state === 'error' ? 'Error' : 'Live'
         }</span>
+        <div className="cookie-bank-health" aria-label="Cookie farmer health">
+          <span>
+            <small>Run output</small>
+            <strong>{metrics.farmedAtc} farmed · {metrics.deliveredAtc} used</strong>
+          </span>
+          <span>
+            <small>Activity</small>
+            <strong>{metrics.inFlightAtc} in flight · {metrics.waitingAtc} waiting</strong>
+          </span>
+          <span>
+            <small>Last success</small>
+            <strong>{lastSuccess}</strong>
+          </span>
+          <span className={metrics.recentErrors ? 'cookie-bank-health-warning' : ''}>
+            <small>Recent errors</small>
+            <strong>{recentErrors}</strong>
+          </span>
+          <span className={metrics.quarantinedProxies || metrics.atcCooldownSec ? 'cookie-bank-health-warning' : ''}>
+            <small>Cooling routes</small>
+            <strong>{coolingRoutes}{laneCooldown}</strong>
+          </span>
+          <span className={metrics.leadingFailure ? 'cookie-bank-health-danger' : ''}>
+            <small>Top failure</small>
+            <strong>{leadingFailure}</strong>
+          </span>
+        </div>
       </section>
     );
   }

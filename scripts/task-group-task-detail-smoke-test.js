@@ -27,5 +27,8 @@ assert.doesNotMatch(taskGroups, /R2 groups existing Target controls only/);
 assert.match(styles, /\.group-task-row-clickable:focus-visible/);
 assert.match(styles, /\.cookie-bank-starting/);
 assert.match(styles, /\.cookie-bank-error/);
+assert.match(styles, /\.cookie-bank-health/);
+assert.match(styles, /\.cookie-bank-health-warning/);
+assert.match(styles, /\.cookie-bank-health-danger/);
 
 console.log('Target task-group detail and broker-startup smoke test passed');

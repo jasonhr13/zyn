@@ -310,6 +310,12 @@ browser reuse, multi-capture, bandwidth, and cold-login coordination paths stay 
 documented source adaptation retains this app's existing font block alongside upstream's image/media
 filter, so the already-released proxy-bandwidth toggle does not regress.
 
+The Target cookie-bank card also surfaces the upstream health counters directly: farmed/delivered
+output, work in flight, waiting engine requests, recent error evidence, cooling proxy-route count,
+lane cooldown, and the leading failure category. The bridge adds only the newest persisted bank
+timestamp so the UI can show when the last successful signature arrived without exposing headers or
+proxy values to the renderer.
+
 Prepare the ignored, architecture-specific Chromium payload once before packaging:
 
 ```sh

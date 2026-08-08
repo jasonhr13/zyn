@@ -38,6 +38,7 @@ assert.match(engine, /`--blockHeavyResources=\$\{blockHeavyResources\}`/);
 assert.match(engine, /`--browsers=auto`/);
 assert.match(engine, /`--sessionReady=\$\{hasSession\}`/);
 assert.match(engine, /health: j\.health \|\| null/, 'broker worker health is not forwarded to the UI');
+assert.match(engine, /lastBankedAt: latestBankedAt\(\)/, 'latest bank success is not forwarded to the UI');
 
 // The native farmer is the pinned GitHub implementation, not a parallel rewrite.
 assert.match(farmer, /bag\.push\(picked\)/, 'one page cannot accumulate multiple signatures');

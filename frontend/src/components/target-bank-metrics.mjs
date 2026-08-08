@@ -93,6 +93,7 @@ export function targetBankMetrics(bank) {
     atcCooldownSec: Math.ceil(count(health.cooldowns && health.cooldowns.atc && health.cooldowns.atc.remainingMs) / 1000),
     browserMode: String((health.browser && health.browser.mode) || ''),
     startedAt: count(activity.startedAt),
+    lastBankedAt: count(bank && bank.lastBankedAt),
   };
 }
 

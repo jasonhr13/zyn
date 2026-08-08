@@ -919,6 +919,14 @@ body.theme-night .form-select {
 .cookie-bank-offline .cookie-bank-live { color: var(--muted); }
 .cookie-bank-warming .cookie-bank-live, .cookie-bank-working .cookie-bank-live, .cookie-bank-starting .cookie-bank-live { color: var(--run); }
 .cookie-bank-error .cookie-bank-live { color: var(--danger); }
+.cookie-bank-prominent { flex-wrap: wrap; }
+.cookie-bank-health { flex: 1 0 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--panel-border); border-radius: 9px; background: var(--surface-tint); }
+.cookie-bank-health > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-right: 1px solid var(--panel-border); }
+.cookie-bank-health > span:last-child { border-right: 0; }
+.cookie-bank-health small { color: var(--muted); font-size: 7.5px; font-weight: 750; letter-spacing: .55px; text-transform: uppercase; }
+.cookie-bank-health strong { overflow: hidden; color: var(--text2); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cookie-bank-health-warning strong { color: var(--run); }
+.cookie-bank-health-danger strong { color: var(--danger); }
 .cookie-bank-compact { gap: 8px; padding: 9px 10px; margin: 13px 0; border-radius: 9px; box-shadow: none; }
 .cookie-bank-compact .cookie-bank-icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: 8px; }
 .cookie-bank-compact .cookie-bank-copy { display: none; }
@@ -1223,6 +1231,9 @@ body.theme-night .form-select {
 .task-workspace-missing h2 { color: var(--text); font-size: 15px; }
 
 @media (max-width: 1450px) {
+  .cookie-bank-health { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cookie-bank-health > span:nth-child(3) { border-right: 0; }
+  .cookie-bank-health > span:nth-child(n+4) { border-top: 1px solid var(--panel-border); }
   .task-group-row {
     grid-template-columns: minmax(245px, 1.2fr) minmax(205px, .8fr) auto;
     grid-template-areas:
@@ -1255,6 +1266,10 @@ body.theme-night .form-select {
   .group-task-row > span:nth-child(2) { display: none; }
   .cookie-bank-copy em { display: none; }
   .cookie-bank-counts > span { min-width: 48px; padding-left: 7px; padding-right: 7px; }
+  .cookie-bank-health { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cookie-bank-health > span:nth-child(3) { border-right: 1px solid var(--panel-border); }
+  .cookie-bank-health > span:nth-child(2n) { border-right: 0; }
+  .cookie-bank-health > span:nth-child(n+3) { border-top: 1px solid var(--panel-border); }
 }
 
 /* ── Profile checkboxes in task modal ───────────────────────────────────────── */

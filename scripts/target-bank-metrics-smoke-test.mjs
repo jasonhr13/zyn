@@ -10,6 +10,7 @@ const bank = {
   login: 2,
   atc: 7,
   proxies: 1200,
+  lastBankedAt: 1700000000000,
   inFlight: { login: 0, atc: 1 },
   activity: {
     startedAt: 1234,
@@ -21,7 +22,13 @@ const bank = {
     workerState: 'running',
     activeWorkers: 3,
     configuredWorkers: 4,
-    scaling: { policy: 'fixed', desiredWorkers: 4, hardLimit: 4 },
+    failures: { total: 3, byCategory: { timeout: 2, proxy: 1 } },
+    quarantinedProxies: 2,
+    cooldowns: { atc: { remainingMs: 8200 } },
+    scaling: {
+      policy: 'fixed', desiredWorkers: 4, hardLimit: 4,
+      recentSamples: 10, recentErrors: 3, recentErrorRate: 0.3,
+    },
   },
 };
 
@@ -33,6 +40,12 @@ assert.deepEqual({
   workers: `${metrics.activeWorkers}/${metrics.workerLimit}`,
   farmed: metrics.farmedAtc,
   delivered: metrics.deliveredAtc,
+  inFlight: metrics.inFlightAtc,
+  recentErrors: `${metrics.recentErrors}/${metrics.recentSamples}`,
+  cooling: metrics.quarantinedProxies,
+  leadingFailure: metrics.leadingFailure.label,
+  cooldown: metrics.atcCooldownSec,
+  lastBankedAt: metrics.lastBankedAt,
 }, {
   login: 2,
   atc: 7,
@@ -40,6 +53,12 @@ assert.deepEqual({
   workers: '3/4',
   farmed: 9,
   delivered: 2,
+  inFlight: 1,
+  recentErrors: '3/10',
+  cooling: 2,
+  leadingFailure: 'Timeout',
+  cooldown: 9,
+  lastBankedAt: 1700000000000,
 });
 assert.equal(sameTargetBank(bank, structuredClone(bank)), true);
 assert.equal(metrics.workerState, 'running');
@@ -72,6 +91,14 @@ assert.match(taskGroups, /ipcRenderer\.invoke\('targetCookieBank'\)/);
 assert.match(taskGroups, /<small>Login<\/small>/);
 assert.match(taskGroups, /<small>ATC<\/small>/);
 assert.match(taskGroups, /<small>Workers<\/small>/);
+assert.match(taskGroups, /<small>Run output<\/small>/);
+assert.match(taskGroups, /<small>Activity<\/small>/);
+assert.match(taskGroups, /<small>Last success<\/small>/);
+assert.match(taskGroups, /<small>Recent errors<\/small>/);
+assert.match(taskGroups, /<small>Cooling routes<\/small>/);
+assert.match(taskGroups, /<small>Top failure<\/small>/);
+assert.match(taskGroups, /metrics\.leadingFailure\.label/);
+assert.match(taskGroups, /metrics\.quarantinedProxies/);
 assert.match(taskGroups, /aria-label="Target cookie bank maximum size"/);
 assert.match(taskGroups, /state === 'starting' \? 'Starting broker'/);
 assert.doesNotMatch(taskGroups, /workerLimit \|\| 'Auto'/);

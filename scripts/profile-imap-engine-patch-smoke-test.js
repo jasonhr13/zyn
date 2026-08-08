@@ -28,6 +28,8 @@ assert.match(target, /nodeEnvironment/);
 assert.match(target, /const findNodeExe = nodeExecutable/);
 assert.match(target, /signalFarmerSessionReady\(\)/);
 assert.match(target, /health: j\.health \|\| null/);
+assert.match(target, /function latestBankedAt\(\)/);
+assert.match(target, /lastBankedAt: latestBankedAt\(\)/);
 assert.match(target, /taskProfileById\.set\(t\.id, t\.profileId/);
 assert.match(target, /useOtpLogin: otpEnabled\(t\.profileId\)/);
 assert.match(target, /profileId: first\.profileId/);

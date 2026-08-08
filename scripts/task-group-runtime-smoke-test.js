@@ -100,6 +100,9 @@ const getJson = url => new Promise((resolve, reject) => {
   }
   const report = { ...evaluated.result.value, rendererErrors, rendererExceptions };
   assert.match(report.bankText, /6\s*Workers/i, 'cookie bank does not display six resolved workers');
+  for (const label of ['Run output', 'Activity', 'Last success', 'Recent errors', 'Cooling routes', 'Top failure']) {
+    assert.match(report.bankText, new RegExp(label, 'i'), `cookie bank health strip omits ${label}`);
+  }
   for (const browser of ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium']) {
     assert.match(report.bankTitle, new RegExp(browser, 'i'), `cookie bank tooltip omits ${browser}`);
   }
