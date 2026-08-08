@@ -13,8 +13,12 @@ const taskGroups = source('frontend/src/components/pages/task-groups.js');
 const pageHandler = source('frontend/src/components/page-handler.js');
 const store = source('frontend/src/components/store.js');
 const runtimePatcher = source('scripts/patch-profile-imap-engines.js');
+const brandPatcher = source('scripts/patch-zyn-runtime-brand.js');
+const harvesterConfig = source('scripts/target-multi-harvester-config.fragment.js');
+const harvesterProducers = source('scripts/target-multi-harvester-producers.fragment.js');
 const electron = source('extracted/asar/public/electron.js');
 const bridge = source('extracted/asar/public/helpers/target-engine.js');
+const farmer = source('native-farmer/shape-farmer.mjs');
 const engine = fs.readFileSync(path.join(
   root,
   'dist/Zyn-Runtime-Base.app/Contents/Resources/engine/backend.exe',
@@ -30,6 +34,20 @@ assert.match(taskGroups, /const displayStatus = this\.proxyStatusFor\(task\) \|\
   'task groups must keep the operational status behind transient proxy feedback');
 assert.match(taskGroups, /const running = statusKind\(status\) === 'running'/,
   'task actions must continue to use the operational status during a proxy failure notice');
+assert.match(taskGroups, /targetHarvesterProxyList/,
+  'task groups must migrate the former shared farmer proxy setting');
+assert.match(taskGroups, /targetThrottleFallbackGroup/,
+  'task groups must expose and persist the post-cart throttle fallback setting');
+assert.match(taskGroups, />HARVESTERS</,
+  'task groups must render the global harvester manager summary');
+assert.match(taskGroups, />FALLBACK</,
+  'task groups must render the global fallback selector');
+assert.match(taskGroups, /targetHarvesters/,
+  'task groups must persist multiple harvester configurations');
+assert.match(taskGroups, /Target Login/,
+  'task groups must expose a dedicated login harvester type');
+assert.match(taskGroups, /Target ATC/,
+  'task groups must expose a dedicated ATC harvester type');
 assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,
@@ -40,10 +58,22 @@ assert.match(runtimePatcher, /Object\.assign\(sentConfigs\.proxies, buildProxyMa
   'live edits must load or refresh the selected proxy group before asking the engine to switch');
 assert.match(electron, /ipcMain\.on\('setTargetTaskProxy'/,
   'main process must bridge live proxy edits');
+assert.match(brandPatcher, /ipcMain\.on\('syncTargetHarvesters'/,
+  'packaged main process patch must reconcile saved harvester configurations immediately');
 assert.match(bridge, /runningTaskIds\.has\(taskId\)/,
   'bridge must only report live delivery for a running task');
 assert.match(bridge, /type: 'set-task-proxy'.*proxyGroup: group/,
   'bridge must emit the backend live-edit protocol');
+assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
+  'packaged bridge patch must create independent producer process handles');
+assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
+  'managed harvester configuration must preserve the selected producer type');
+assert.match(harvesterProducers, /'--producer=true'/,
+  'managed harvesters must run as producer-only processes behind the shared broker');
+assert.match(farmer, /u\.pathname === '\/harvesterStatus'/,
+  'the shared broker must aggregate per-harvester runtime telemetry');
+assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login'/,
+  'a dedicated login harvester must replenish login cookies instead of stopping after one');
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',

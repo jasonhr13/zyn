@@ -13,9 +13,64 @@ const EMPTY_GROUP = Object.freeze({
   proxyListName: '',
 });
 
+const EMPTY_HARVESTER = Object.freeze({
+  name: '',
+  type: 'atc',
+  browser: 'auto',
+  proxyListName: '',
+  workers: '1',
+  input: '',
+  cookieTtlSec: '600',
+  intervalDelaySec: '10',
+  startSchedule: '',
+  stopSchedule: '',
+  enabled: true,
+});
+
+const HARVESTER_BROWSERS = [
+  ['auto', 'Automatic pool'],
+  ['chrome', 'Chrome'],
+  ['msedge', 'Microsoft Edge'],
+  ['brave', 'Brave'],
+  ['vivaldi', 'Vivaldi'],
+  ['yandex', 'Yandex'],
+  ['chromium', 'Bundled Chromium'],
+];
+
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const siteOf = account => String((account && account.site) || '').toLowerCase();
 const normalizeCookieBankSize = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 4);
+const clampInteger = (value, minimum, maximum, fallback) => {
+  const parsed = Number.parseInt(String(value == null ? '' : value), 10);
+  return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
+};
+const localDateTimeValue = value => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+const isoDateTimeValue = value => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+};
+const normalizeHarvester = (raw, index = 0) => {
+  const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+  return {
+    id: String((raw && raw.id) || uid('harvester')),
+    name: String((raw && raw.name) || `Harvester ${index + 1}`),
+    type,
+    browser: HARVESTER_BROWSERS.some(([value]) => value === (raw && raw.browser)) ? raw.browser : 'auto',
+    proxyListName: String((raw && raw.proxyListName) || ''),
+    workers: type === 'login' ? 1 : clampInteger(raw && raw.workers, 1, 100, 1),
+    input: String((raw && raw.input) || ''),
+    cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
+    intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
+    startSchedule: String((raw && raw.startSchedule) || ''),
+    stopSchedule: String((raw && raw.stopSchedule) || ''),
+    enabled: !!(raw && raw.enabled),
+  };
+};
 const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
   const value = line.trim();
   if (!value) return '';
@@ -77,6 +132,11 @@ class TaskGroups extends Component {
     brokerStartRequestedAt: 0,
     cookieBankSize: '',
     harvestWorkers: '',
+    harvesters: [],
+    showHarvesterModal: false,
+    editingHarvesterId: '',
+    harvesterDraft: { ...EMPTY_HARVESTER },
+    throttleFallbackGroup: 'Local',
   };
 
   componentDidMount() {
@@ -113,17 +173,53 @@ class TaskGroups extends Component {
     let groups = [];
     let cookieBankSize = '';
     let harvestWorkers = '';
+    let harvesters = [];
+    let throttleFallbackGroup = 'Local';
+    let migratedSettings = null;
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
     try {
       const settings = ipcRenderer.sendSync('getSettings') || {};
       cookieBankSize = normalizeCookieBankSize(settings.targetCookieBank);
       harvestWorkers = normalizeCookieBankSize(settings.targetHarvestWorkers);
+      if (Array.isArray(settings.targetHarvesters)) {
+        harvesters = settings.targetHarvesters.map(normalizeHarvester);
+      } else {
+        // One-time migration from the single global selector. It starts enabled so existing users
+        // still have a farmer after upgrading, while every field is now editable independently.
+        const proxyListName = typeof settings.targetHarvesterProxyList === 'string'
+          ? settings.targetHarvesterProxyList : '';
+        const workers = clampInteger(settings.targetHarvestWorkers, 1, 100, proxyListName ? 4 : 1);
+        harvesters = [normalizeHarvester({
+          id: uid('harvester'),
+          name: 'Default Harvester',
+          type: 'auto',
+          browser: 'auto',
+          proxyListName,
+          workers,
+          input: settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '',
+          cookieTtlSec: settings.targetCookieTtlSec || 600,
+          intervalDelaySec: 10,
+          enabled: true,
+        })];
+        migratedSettings = { ...settings, targetHarvesters: harvesters };
+        ipcRenderer.sendSync('saveSettings', migratedSettings);
+      }
+      if (typeof settings.targetThrottleFallbackGroup === 'string'
+        && settings.targetThrottleFallbackGroup.trim()) {
+        throttleFallbackGroup = settings.targetThrottleFallbackGroup;
+      }
     } catch {}
+    if (migratedSettings) {
+      this.props.dispatch({ type: 'update', obj: { settings: migratedSettings } });
+      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+    }
     this.setState(({ selectedGroupId, selectedTaskId }) => ({
       groups,
       loaded: true,
       cookieBankSize,
       harvestWorkers,
+      harvesters,
+      throttleFallbackGroup,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
       selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
         ? selectedTaskId : '',
@@ -159,6 +255,98 @@ class TaskGroups extends Component {
     try { ipcRenderer.sendSync('saveSettings', next); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings: next } });
     this.setState({ cookieBankSize: targetCookieBank });
+  };
+
+  saveTargetSetting = (key, value) => {
+    let settings = this.props.settings || {};
+    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
+    const next = { ...settings, [key]: value };
+    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+    this.props.dispatch({ type: 'update', obj: { settings: next } });
+    if (key === 'targetThrottleFallbackGroup') this.setState({ throttleFallbackGroup: value });
+  };
+
+  persistHarvesters = (harvesters, callback) => {
+    const normalized = harvesters.map(normalizeHarvester);
+    let settings = this.props.settings || {};
+    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
+    const first = normalized[0] || null;
+    const next = {
+      ...settings,
+      targetHarvesters: normalized,
+      // Keep the legacy keys synchronized so cloud backups remain readable by the previous build.
+      targetHarvesterProxyList: first ? first.proxyListName : '',
+      targetHarvestWorkers: first ? String(first.workers) : '',
+    };
+    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+    this.props.dispatch({ type: 'update', obj: { settings: next } });
+    this.setState({ harvesters: normalized }, () => {
+      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+      if (callback) callback();
+    });
+  };
+
+  openNewHarvester = () => this.setState({
+    showHarvesterModal: true,
+    editingHarvesterId: '',
+    harvesterDraft: { ...EMPTY_HARVESTER },
+  });
+
+  openEditHarvester = harvester => this.setState({
+    showHarvesterModal: true,
+    editingHarvesterId: harvester.id,
+    harvesterDraft: {
+      ...harvester,
+      workers: String(harvester.workers),
+      cookieTtlSec: String(harvester.cookieTtlSec),
+      intervalDelaySec: String(harvester.intervalDelaySec),
+      startSchedule: localDateTimeValue(harvester.startSchedule),
+      stopSchedule: localDateTimeValue(harvester.stopSchedule),
+    },
+  });
+
+  closeHarvesterModal = () => this.setState({
+    showHarvesterModal: false,
+    editingHarvesterId: '',
+  });
+
+  saveHarvester = () => {
+    const draft = this.state.harvesterDraft;
+    const name = String(draft.name || '').trim();
+    if (!name) return;
+    const startSchedule = isoDateTimeValue(draft.startSchedule);
+    const stopSchedule = isoDateTimeValue(draft.stopSchedule);
+    if (startSchedule && stopSchedule && Date.parse(stopSchedule) <= Date.parse(startSchedule)) {
+      window.alert('Stop Schedule must be later than Start Schedule.');
+      return;
+    }
+    const requestedWorkers = draft.type === 'login'
+      ? 1 : clampInteger(draft.workers, 1, 100, 1);
+    const harvester = normalizeHarvester({
+      ...draft,
+      id: this.state.editingHarvesterId || uid('harvester'),
+      name,
+      workers: draft.proxyListName ? requestedWorkers : Math.min(2, requestedWorkers),
+      cookieTtlSec: clampInteger(draft.cookieTtlSec, 30, 86400, 600),
+      intervalDelaySec: clampInteger(draft.intervalDelaySec, 0, 3600, 10),
+      startSchedule,
+      stopSchedule,
+    });
+    const harvesters = this.state.editingHarvesterId
+      ? this.state.harvesters.map(item => item.id === this.state.editingHarvesterId ? harvester : item)
+      : [...this.state.harvesters, harvester];
+    this.persistHarvesters(harvesters, this.closeHarvesterModal);
+  };
+
+  toggleHarvester = harvester => {
+    const harvesters = this.state.harvesters.map(item => item.id === harvester.id
+      ? { ...item, enabled: !item.enabled } : item);
+    this.persistHarvesters(harvesters);
+  };
+
+  deleteHarvester = harvester => {
+    if (!window.confirm(`Delete “${harvester.name}”? Its cookies already in the shared bank will remain until they expire.`)) return;
+    this.persistHarvesters(this.state.harvesters.filter(item => item.id !== harvester.id));
   };
 
   profileList = () => {
@@ -650,6 +838,117 @@ class TaskGroups extends Component {
     );
   }
 
+  renderTargetProxyControls() {
+    const proxyLists = this.proxyLists();
+    const runtimes = (this.state.bank && Array.isArray(this.state.bank.harvesters))
+      ? this.state.bank.harvesters : [];
+    const activeWorkers = runtimes.reduce((sum, item) => {
+      const config = this.state.harvesters.find(harvester => String(harvester.id) === String(item.id));
+      return sum + (config && this.harvesterState(config, item).kind === 'running'
+        ? Number(item.activeWorkers) || 0 : 0);
+    }, 0);
+    return (
+      <section className="panel target-global-proxy-controls" aria-label="Global Target proxy routing">
+        <div className="target-global-proxy-heading">
+          <span className="target-global-proxy-icon"><Icon name="target" size={16} /></span>
+          <span><strong>Global Target routing</strong><small>Shared by every task group</small></span>
+        </div>
+        <div className="target-global-harvester-summary">
+          <span><strong>HARVESTERS</strong><small>{this.state.harvesters.length} configured · {activeWorkers} active worker{activeWorkers === 1 ? '' : 's'}</small></span>
+          <button className="btn btn-secondary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={11} /> New</button>
+        </div>
+        <label className="target-global-proxy-field" title="After carting, a checkout that is rate limited switches once to this route.">
+          <span><strong>FALLBACK</strong><small>Rate-limited checkout route · carted tasks</small></span>
+          <select
+            className="form-select"
+            aria-label="Target checkout fallback proxy group"
+            value={this.state.throttleFallbackGroup}
+            onChange={event => this.saveTargetSetting('targetThrottleFallbackGroup', event.target.value)}
+          >
+            <option value="Local">Local (no proxy)</option>
+            {proxyLists.map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+          </select>
+        </label>
+      </section>
+    );
+  }
+
+  harvesterRuntimeFor = id => {
+    const list = (this.state.bank && Array.isArray(this.state.bank.harvesters))
+      ? this.state.bank.harvesters : [];
+    return list.find(item => String(item.id) === String(id)) || null;
+  };
+
+  harvesterState = (harvester, runtime) => {
+    if (!harvester.enabled) return { kind: 'idle', label: 'Stopped' };
+    const now = Date.now();
+    const startsAt = harvester.startSchedule ? Date.parse(harvester.startSchedule) : NaN;
+    const stopsAt = harvester.stopSchedule ? Date.parse(harvester.stopSchedule) : NaN;
+    if (Number.isFinite(startsAt) && now < startsAt) return { kind: 'idle', label: 'Scheduled' };
+    if (Number.isFinite(stopsAt) && now >= stopsAt) return { kind: 'idle', label: 'Schedule ended' };
+    if (!runtime) return { kind: 'running', label: 'Starting' };
+    return (Number(runtime.activeWorkers) || 0) > 0
+      ? { kind: 'running', label: 'Running' }
+      : { kind: 'running', label: 'Detecting browsers' };
+  };
+
+  harvesterLastSuccess = runtime => {
+    const timestamp = Number(runtime && runtime.lastSuccessAt) || 0;
+    if (!timestamp) return 'No cookies yet';
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (seconds < 5) return 'Just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
+  };
+
+  renderHarvesterManager() {
+    return (
+      <section className="panel target-harvester-manager" aria-label="Target cookie harvesters">
+        <div className="target-harvester-manager-head">
+          <div><h2>Cookie Harvesters</h2><p>Independent typed workers feed one shared cookie bank.</p></div>
+          <button className="btn btn-primary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={12} /> New Harvester</button>
+        </div>
+        {!this.state.harvesters.length ? (
+          <div className="target-harvester-empty"><Icon name="cookie" size={20} /><span>No harvesters configured</span><small>Create a Login, ATC, or Automatic harvester to pre-fill the bank.</small></div>
+        ) : (
+          <div className="target-harvester-list">
+            {this.state.harvesters.map(harvester => {
+              const runtime = this.harvesterRuntimeFor(harvester.id);
+              const state = this.harvesterState(harvester, runtime);
+              const produced = (runtime && runtime.produced) || {};
+              const browser = (HARVESTER_BROWSERS.find(([value]) => value === harvester.browser) || [null, harvester.browser])[1];
+              const typeLabel = harvester.type === 'atc' ? 'Target ATC' : harvester.type === 'login' ? 'Target Login' : 'Automatic';
+              const schedule = harvester.startSchedule || harvester.stopSchedule
+                ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
+                : 'Always';
+              return (
+                <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
+                  <div className="target-harvester-identity">
+                    <span className="target-harvester-state-dot" />
+                    <span><strong>{harvester.name}</strong><small>{typeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')}</small></span>
+                  </div>
+                  <div className="target-harvester-card-stat"><small>Workers</small><strong>{runtime ? `${Number(runtime.activeWorkers) || 0}/${harvester.workers}` : harvester.workers}</strong></div>
+                  <div className="target-harvester-card-stat"><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></div>
+                  <div className="target-harvester-card-stat"><small>Browser / Last success</small><strong>{browser} · {this.harvesterLastSuccess(runtime)}</strong></div>
+                  <div className="target-harvester-card-stat target-harvester-schedule"><small>Schedule</small><strong title={schedule}>{schedule}</strong></div>
+                  <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
+                  <div className="target-harvester-actions">
+                    <button className={harvester.enabled ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'} onClick={() => this.toggleHarvester(harvester)}>
+                      <Icon name={harvester.enabled ? 'stop' : 'play'} size={11} /> {harvester.enabled ? 'Stop' : 'Start'}
+                    </button>
+                    <button className="icon-action" title="Edit harvester" onClick={() => this.openEditHarvester(harvester)}><Icon name="settings" size={12} /></button>
+                    <button className="icon-action icon-action-danger" title="Delete harvester" onClick={() => this.deleteHarvester(harvester)}><Icon name="trash" size={12} /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    );
+  }
+
   renderGroupRow(group) {
     const stats = this.groupStats(group);
     const skus = parseSkus(group.skus);
@@ -704,6 +1003,8 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-groups-content">
+          {this.renderTargetProxyControls()}
+          {this.renderHarvesterManager()}
           {this.renderMetrics()}
           <div className="workspace-section-heading">
             <div><h2>Target task groups</h2><p>Organize shared watch lists and account tasks without changing the checkout engine.</p></div>
@@ -725,6 +1026,7 @@ class TaskGroups extends Component {
           )}
         </div>
         {this.renderGroupModal()}
+        {this.renderHarvesterModal()}
       </div>
     );
   }
@@ -811,6 +1113,7 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-detail-content">
+          {this.renderTargetProxyControls()}
           <section className={`task-status-hero task-status-hero-${kind}`}>
             <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
@@ -857,6 +1160,7 @@ class TaskGroups extends Component {
 
           {this.renderSharedEngineLog()}
         </div>
+        {this.renderHarvesterModal()}
       </div>
     );
   }
@@ -882,6 +1186,8 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-group-dashboard">
+          {this.renderTargetProxyControls()}
+          {this.renderHarvesterManager()}
           <div className="panel group-config-strip group-config-strip-r2">
             <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
@@ -911,6 +1217,108 @@ class TaskGroups extends Component {
         </div>
         {this.renderGroupModal()}
         {this.renderTaskModal(group)}
+        {this.renderHarvesterModal()}
+      </div>
+    );
+  }
+
+  renderHarvesterModal() {
+    if (!this.state.showHarvesterModal) return null;
+    const draft = this.state.harvesterDraft;
+    const editing = Boolean(this.state.editingHarvesterId);
+    const setDraft = patch => this.setState({ harvesterDraft: { ...draft, ...patch } });
+    const proxyMissing = draft.proxyListName
+      && !this.proxyLists().some(list => proxyRef(list) === draft.proxyListName);
+    const workerMaximum = draft.type === 'login' ? 1 : draft.proxyListName ? 100 : 2;
+    return (
+      <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeHarvesterModal()}>
+        <div className="modal target-harvester-modal" onMouseDown={event => event.stopPropagation()}>
+          <div className="modal-header">
+            <div><div className="modal-title">{editing ? 'Edit Cookie Harvester' : 'Create Cookie Harvester'}</div><p>Each harvester runs independently and contributes to the shared Target cookie bank.</p></div>
+            <button className="modal-close" onClick={this.closeHarvesterModal}>×</button>
+          </div>
+          <div className="modal-body target-harvester-modal-body">
+            <div className="form-group">
+              <label className="form-label">Name</label>
+              <input className="form-input" autoFocus value={draft.name} placeholder="Home ATC" onChange={event => setDraft({ name: event.target.value })} />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Type</label>
+                <select className="form-select" value={draft.type} onChange={event => {
+                  const type = event.target.value;
+                  setDraft({ type, workers: type === 'login' ? '1' : draft.workers });
+                }}>
+                  <option value="atc">Target ATC</option>
+                  <option value="login">Target Login</option>
+                  <option value="auto">Automatic (Login + ATC)</option>
+                </select>
+                <div className="form-hint">Login uses a generated email and one worker. ATC uses the product rotation below.</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Browser</label>
+                <select className="form-select" value={draft.browser} onChange={event => setDraft({ browser: event.target.value })}>
+                  {HARVESTER_BROWSERS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                </select>
+                <div className="form-hint">Automatic distributes workers across every detected browser.</div>
+              </div>
+            </div>
+            {draft.type !== 'login' && (
+              <div className="form-group">
+                <label className="form-label">Harvest products</label>
+                <textarea className="form-input target-harvester-input" value={draft.input} placeholder="Leave blank for the built-in Target product rotation, or paste TCINs / product links" onChange={event => setDraft({ input: event.target.value })} />
+              </div>
+            )}
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Proxy</label>
+                <select className="form-select" value={draft.proxyListName} onChange={event => {
+                  const proxyListName = event.target.value;
+                  const workers = proxyListName ? draft.workers : String(Math.min(2, clampInteger(draft.workers, 1, 100, 1)));
+                  setDraft({ proxyListName, workers });
+                }}>
+                  <option value="">Local (no proxy)</option>
+                  {proxyMissing && <option value={draft.proxyListName}>Unavailable: {draft.proxyListName}</option>}
+                  {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Workers</label>
+                <input className="form-input" type="number" min="1" max={workerMaximum} disabled={draft.type === 'login'} value={draft.type === 'login' ? '1' : draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
+                <div className="form-hint">Local is capped at 2; proxy harvesters allow up to 100.</div>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Cookie expiration (seconds)</label>
+                <input className="form-input" type="number" min="30" max="86400" value={draft.cookieTtlSec} onChange={event => setDraft({ cookieTtlSec: event.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Interval delay (seconds)</label>
+                <input className="form-input" type="number" min="0" max="3600" value={draft.intervalDelaySec} onChange={event => setDraft({ intervalDelaySec: event.target.value })} />
+                <div className="form-hint">Minimum pause after an attempt; health cooldowns may wait longer.</div>
+              </div>
+            </div>
+            <div className="target-harvester-schedule-grid">
+              <div className="form-group">
+                <label className="form-label">Start Schedule</label>
+                <input className="form-input" type="datetime-local" value={draft.startSchedule} onChange={event => setDraft({ startSchedule: event.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Stop Schedule</label>
+                <input className="form-input" type="datetime-local" value={draft.stopSchedule} onChange={event => setDraft({ stopSchedule: event.target.value })} />
+              </div>
+            </div>
+            <label className="target-harvester-enabled">
+              <input type="checkbox" checked={draft.enabled !== false} onChange={event => setDraft({ enabled: event.target.checked })} />
+              <span><strong>Start this harvester</strong><small>Future schedules wait until their start time. Zyn must remain open.</small></span>
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={this.closeHarvesterModal}>Cancel</button>
+            <button className="btn btn-primary" disabled={!String(draft.name || '').trim()} onClick={this.saveHarvester}><Icon name="check" size={12} /> {editing ? 'Save Changes' : 'Create Harvester'}</button>
+          </div>
+        </div>
       </div>
     );
   }

@@ -16,6 +16,7 @@ export function createHarvestCoordinator({
   targetPool = 0,
   sessionReady = false,
   loginConcurrency = 1,
+  continuousLogin = false,
   workerStaggerMs = 2000,
   now = () => Date.now(),
 } = {}) {
@@ -54,6 +55,11 @@ export function createHarvestCoordinator({
     // engine has a session, further login harvests are demand-only (expired session recovery).
     let prewarm = false;
     if (type === 'atc' && allowed.has(type)) {
+      prewarm = true;
+    } else if (type === 'login' && allowed.has(type) && continuousLogin) {
+      // A dedicated Target Login harvester is an operator-selected producer lane, not the automatic
+      // farmer's one-shot cold-login helper. Keep its login bank topped up while still enforcing a
+      // single in-flight login browser.
       prewarm = true;
     } else if (
       type === 'login'

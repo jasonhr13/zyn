@@ -111,9 +111,10 @@ export function shapeBrowserLaunchOptions(
 }
 
 export function shapeBrowserCandidates(selection = 'auto') {
-  return selection === 'chromium'
-    ? SHAPE_BROWSER_CANDIDATES.filter(candidate => candidate.key === 'chromium')
-    : SHAPE_BROWSER_CANDIDATES;
+  const selected = String(selection || 'auto').trim().toLowerCase();
+  return selected === 'auto'
+    ? SHAPE_BROWSER_CANDIDATES
+    : SHAPE_BROWSER_CANDIDATES.filter(candidate => candidate.key === selected);
 }
 
 export async function detectShapeBrowsers(

@@ -30,6 +30,7 @@ assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/);
 assert.match(runtimePaths, /return process\.execPath/);
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-native-engine-'));
+process.on('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true }); } catch {} });
 for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
   fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', filename), path.join(directory, filename));
 }

@@ -10,16 +10,20 @@
     },
     "shape-browser-pool.mjs": {
       "upstreamSha256": "b8cb1d5353f472513609ba9eea6349361d5c1e2069efc4d9e4fd098ecc3f981b",
-      "sha256": "46bc3ba90d70d9ae1fe00eeefc7501e00c3dc91b975fec9fb5aa1ab0bd4e65b9",
-      "adaptation": "Keep New Headless, but require each browser to open and hold a real page before adding it to the worker pool so crash-on-page builds cannot enter a relaunch loop."
+      "sha256": "d39638bfc1db645c40320b52b50daaced366f59d5c87cb4cc5b338bfc3b9fb45",
+      "adaptation": "Keep New Headless and page-stability probing, while allowing each managed harvester to select any one detected browser or the automatic browser pool."
     },
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "6a2087806984cb6108830f4d5cb31aec69db5d7a332bc8ce4a0ca80e57f2074d",
-      "adaptation": "Classify Chromium ERR_TUNNEL_CONNECTION_FAILED pages as proxy-route failures so managed routes are cooled and rotated instead of being retried as browser/navigation failures."
+      "sha256": "b550ddce3f986b620403b89f0663192a7fec35d49ce701b4911243fce5488a70",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry, browser selection, and configurable worker pacing."
     },
-    "shape-harvest-coordinator.mjs": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
+    "shape-harvest-coordinator.mjs": {
+      "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
+      "sha256": "4b06f421113670dd4c340025772820a24016f9e0cb971699595b214636a7f291",
+      "adaptation": "Dedicated Target Login harvesters continuously replenish their login pool while preserving the single in-flight login lane."
+    },
     "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
     "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
     "shape-worker-scaler.mjs": "00cd453c4289e99efae40e636d9f97746fb0e6dc6d5d5651fbdee1d986e19b9f",

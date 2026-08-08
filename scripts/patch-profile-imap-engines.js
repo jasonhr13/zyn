@@ -164,6 +164,7 @@ function getCookieBank() {`, 'Target last bank success timestamp');
             login: j.pools?.login || 0,
             atc: j.pools?.atc || 0,
             proxies: j.proxies || 0,
+            harvesters: Array.isArray(j.harvesters) ? j.harvesters : [],
             sessionReady: j.sessionReady === true,
             inFlight: j.inFlight || { login: 0, atc: 0 },
             activity: j.activity || null,
@@ -333,6 +334,118 @@ const taskProfileById = new Map();`, 'Target task/profile map declaration');
   toRenderer('targetDone'`, `  runningTaskIds.clear();
   taskProfileById.clear();
   toRenderer('targetDone'`, 'Target full task cleanup');
+
+  // A single broker owns :4727 and the shared bank. Every saved harvester runs as a producer-only
+  // child, so browser, route, worker count, schedule, type, and lifecycle remain independent.
+  source = replaceOnce(source, `let farmerProc = null;  // the Shape cookie farmer/broker (node bot/shape-farmer.mjs, port 4727)`, `let farmerProc = null;  // the Shape cookie farmer/broker (node bot/shape-farmer.mjs, port 4727)
+// Managed harvesters are isolated producer processes. They never bind :4727; each posts signed
+// cookies into the single broker above, so one route/browser can be stopped or crash without
+// interrupting the shared bank or another harvester.
+const harvesterProcs = new Map(); // id -> { proc, fingerprint }
+let harvesterSyncTimer = null;`, 'Target managed harvester process state');
+
+  const harvesterConfig = fs.readFileSync(path.join(__dirname, 'target-multi-harvester-config.fragment.js'), 'utf8').trimEnd();
+  source = replaceOnce(source, `function botDirPath() {
+  return isPackaged() ? path.join(process.resourcesPath, 'bot') : path.join(__dirname, '..', '..', 'bot');
+}`, `function botDirPath() {
+  return isPackaged() ? path.join(process.resourcesPath, 'bot') : path.join(__dirname, '..', '..', 'bot');
+}
+
+${harvesterConfig}`, 'Target managed harvester config');
+
+  source = replaceOnce(source, `function ensureHarvesterBroker() {
+  if (quitting) return;                         // never resurrect the broker while shutting down
+  if (farmerProc) return;                       // a task's farmer already provides the broker
+  if (farmerPending) return;                    // a real farmer is mid-spawn — it wins, it can farm
+  if (shapeMethodSetting() !== 'Harvester') return;`, `function ensureHarvesterBroker() {
+  if (quitting) return;                         // never resurrect the broker while shutting down
+  const managed = managedHarvesterConfigs();
+  if (managed) {
+    armHarvesterScheduleSync();
+    syncHarvesterProducers(managed);
+    // Replace a legacy task-owned farmer with a broker-only owner. Checkout stopping must never
+    // stop the managed cookie producers or their bank.
+    if (farmerProc && !brokerOnly) {
+      const pid = farmerProc.pid;
+      killTree(farmerProc);
+      farmerProc = null;
+      sweepOrphanHarvesters(pid);
+    }
+  }
+  if (farmerProc) return;                       // a task's farmer already provides the broker
+  if (farmerPending) return;                    // a real farmer is mid-spawn — it wins, it can farm
+  if (!managed && shapeMethodSetting() !== 'Harvester') return;`, 'Target managed broker reconciliation');
+
+  source = replaceOnce(source, `function spawnHarvesterBroker(script, botDir, env) {
+  let proc;
+  try {
+    proc = spawn(findNodeExe(), [script, '--noFarm=true', \`--bankFile=\${bankFile()}\`], { cwd: botDir, stdio: ['pipe', 'pipe', 'pipe'], env, ...plat.spawnOpts() });`, `function spawnHarvesterBroker(script, botDir, env) {
+  let settings = {};
+  try { settings = dm.getSettings() || {}; } catch {}
+  const poolSize = parseInt(settings.targetCookieBank, 10) > 0 ? parseInt(settings.targetCookieBank, 10) : 0;
+  const cookieTtlSec = parseInt(settings.targetCookieTtlSec, 10) > 0 ? parseInt(settings.targetCookieTtlSec, 10) : 600;
+  const maxDrainPerMin = parseInt(settings.targetCookieDrainPerMin, 10) > 0 ? parseInt(settings.targetCookieDrainPerMin, 10) : 0;
+  let proc;
+  try {
+    proc = spawn(findNodeExe(), [script, '--noFarm=true', \`--bankFile=\${bankFile()}\`,
+      \`--poolSize=\${poolSize}\`, \`--cookieTtlMs=\${cookieTtlSec * 1000}\`,
+      \`--maxDrainPerMin=\${maxDrainPerMin}\`], { cwd: botDir, stdio: ['pipe', 'pipe', 'pipe'], env, ...plat.spawnOpts() });`, 'Target managed broker controls');
+
+  source = replaceOnce(source, `  proc.on('exit', () => { if (farmerProc === proc) { farmerProc = null; brokerOnly = false; } });`, `  proc.on('exit', () => {
+    if (farmerProc === proc) { farmerProc = null; brokerOnly = false; }
+    if (!quitting && managedHarvesterMode()) setTimeout(ensureHarvesterBroker, 1000);
+  });`, 'Target managed broker restart');
+
+  const harvesterProducers = fs.readFileSync(path.join(__dirname, 'target-multi-harvester-producers.fragment.js'), 'utf8').trimEnd();
+  source = replaceOnce(source, `// ── config translation: data-manager shapes -> engine JSON ───────────────────────`, `${harvesterProducers}
+
+// ── config translation: data-manager shapes -> engine JSON ───────────────────────`, 'Target managed harvester producers');
+
+  source = replaceOnce(source, `    startFarmer({
+      proxyListName: harvesterPool,
+      accountId: first.accountId || '',
+      profileId: first.profileId || '',
+      sku: (config.skus || [])[0] || '',
+    });`, `    if (managedHarvesterMode()) {
+      // Managed harvesters pre-farm independently. Starting checkout only reconciles them and the
+      // shared broker; it does not create a task-owned producer.
+      ensureHarvesterBroker();
+    } else {
+      startFarmer({
+        proxyListName: harvesterPool,
+        accountId: first.accountId || '',
+        profileId: first.profileId || '',
+        sku: (config.skus || [])[0] || '',
+      });
+    }`, 'Target checkout managed harvester start');
+
+  source = replaceOnce(source, `  const deadFarmerPid = farmerProc && farmerProc.pid;
+  killTree(farmerProc);
+  farmerProc = null;
+  sweepOrphanHarvesters(deadFarmerPid);
+  brokerOnly = false;`, `  if (!managedHarvesterMode()) {
+    const deadFarmerPid = farmerProc && farmerProc.pid;
+    killTree(farmerProc);
+    farmerProc = null;
+    sweepOrphanHarvesters(deadFarmerPid);
+    brokerOnly = false;
+  }`, 'Target checkout managed harvester stop');
+
+  source = replaceOnce(source, `function shutdown() {
+  quitting = true;
+  try { stopTarget(); } catch {}
+  try { if (wss) wss.close(); } catch {}`, `function shutdown() {
+  quitting = true;
+  try { stopTarget(); } catch {}
+  if (harvesterSyncTimer) clearInterval(harvesterSyncTimer);
+  harvesterSyncTimer = null;
+  for (const id of [...harvesterProcs.keys()]) stopHarvesterProducer(id);
+  try { killTree(farmerProc); } catch {}
+  farmerProc = null;
+  brokerOnly = false;
+  try { if (wss) wss.close(); } catch {}`, 'Target managed harvester shutdown');
+
+  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
 
   opened.source = source;
   saveSource(opened);

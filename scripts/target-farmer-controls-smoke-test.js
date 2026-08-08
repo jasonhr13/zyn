@@ -9,6 +9,7 @@ const { execFileSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-farmer-controls-'));
+process.on('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true }); } catch {} });
 for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
   fs.copyFileSync(
     path.join(project, 'extracted', 'asar', 'public', 'helpers', filename),
@@ -16,6 +17,7 @@ for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']
   );
 }
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--check', path.join(directory, 'target-engine.js')]);
 
 const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
 const farmer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-farmer.mjs'), 'utf8');
@@ -39,6 +41,32 @@ assert.match(engine, /`--browsers=auto`/);
 assert.match(engine, /`--sessionReady=\$\{hasSession\}`/);
 assert.match(engine, /health: j\.health \|\| null/, 'broker worker health is not forwarded to the UI');
 assert.match(engine, /lastBankedAt: latestBankedAt\(\)/, 'latest bank success is not forwarded to the UI');
+assert.equal((engine.match(/const env = nodeEnvironment\(/g) || []).length, 3,
+  'broker, legacy farmer, and managed producer must all use the packaged native runtime environment');
+assert.match(engine, /'--producer=true'/, 'packaged bridge is missing managed producer launch mode');
+assert.match(engine, /harvesters: Array\.isArray\(j\.harvesters\)/,
+  'per-harvester telemetry is not forwarded to the renderer');
+
+// The IPC bridge is applied while staging an app, so exercise that tracked patch against the
+// recovered baseline instead of depending on ignored extracted-file edits.
+const stagedApp = path.join(directory, 'staged-app');
+fs.mkdirSync(path.join(stagedApp, 'public', 'helpers'), { recursive: true });
+for (const relative of [
+  'public/electron.js',
+  'public/index.html',
+  'public/helpers/platform.js',
+  'public/helpers/monitor-parse.js',
+  'public/helpers/discord-monitor.js',
+]) {
+  const destination = path.join(stagedApp, relative);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(path.join(project, 'extracted', 'asar', relative), destination);
+}
+execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-runtime-brand.js'), stagedApp], { stdio: 'inherit' });
+const stagedElectron = fs.readFileSync(path.join(stagedApp, 'public', 'electron.js'), 'utf8');
+assert.match(stagedElectron, /ipcMain\.on\('syncTargetHarvesters'/,
+  'staged main process is missing the managed harvester reconciliation channel');
+execFileSync(process.execPath, ['--check', path.join(stagedApp, 'public', 'electron.js')]);
 
 // The native farmer is the pinned GitHub implementation, not a parallel rewrite.
 assert.match(farmer, /bag\.push\(picked\)/, 'one page cannot accumulate multiple signatures');

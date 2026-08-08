@@ -51,7 +51,7 @@ import {
 // nobody was listening on. The literal is only the standalone-run default.
 const PORT = Number(process.env.HOPE_SHAPE_PORT) || 4727;
 const HOST = '127.0.0.1';
-const MAX_FARMER_WORKERS = 12;
+const MAX_FARMER_WORKERS = 100;
 // Per-launch secret from the app, shared with the engine through its environment. Empty when the
 // farmer is run standalone (no app), in which case /cookie stays open exactly as before rather than
 // becoming unusable — a bare farmer has no engine to authenticate anyway.
@@ -68,6 +68,12 @@ const argOf = (name, def = '') => {
   return p ? p.slice(name.length + 3) : def;
 };
 const log = (...a) => console.log('[shape]', ...a);
+const PRODUCER_MODE = argOf('producer', 'false') === 'true';
+const HARVESTER_ID = String(argOf('harvesterId', 'legacy')).replace(/[^a-z0-9_-]/gi, '').slice(0, 64) || 'legacy';
+const HARVESTER_NAME = String(argOf('harvesterName', 'Cookie Harvester')).slice(0, 80);
+const HARVESTER_TYPE = ['login', 'atc', 'auto'].includes(argOf('harvesterType', 'auto'))
+  ? argOf('harvesterType', 'auto') : 'auto';
+const ROUTE_LABEL = String(argOf('routeLabel', 'Local')).slice(0, 100);
 
 // ── proxy list ───────────────────────────────────────────────────────────────────
 // One "host:port" or "host:port:user:pass" per line, from --proxyFile=<path>.
@@ -100,6 +106,12 @@ const activity = {
   produced: { login: 0, atc: 0 },
   delivered: { login: 0, atc: 0 },
 };
+// Producer processes do not own the bank. They mirror the broker's counts so their existing
+// demand/cap coordinator can avoid farming past a shared ceiling while every producer feeds the
+// same broker on :4727.
+const producerBank = { login: 0, atc: 0 };
+const producerStatusById = new Map();
+let producerLastSuccessAt = 0;
 // Soft bank target per type. Workers harvest until the bank reaches this depth, then close their
 // browsers and relaunch only as cookies expire or the engine waits — saves proxy GB versus keeping
 // idle browser/proxy sessions open or farming continuously without a cap.
@@ -112,11 +124,13 @@ const BLOCK_HEAVY_RESOURCES = blockHeavyResourcesEnabled(argOf('blockHeavyResour
 const ALLOWED = argOf('types', 'login,atc').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 const SESSION_READY_AT_START = argOf('sessionReady', 'false') === 'true';
 const WORKER_STAGGER_MS = parseInt(argOf('workerStaggerMs', '2000'), 10);
+const INTERVAL_DELAY_MS = Math.max(0, parseInt(argOf('intervalDelayMs', '0'), 10) || 0);
 const harvestCoordinator = createHarvestCoordinator({
   allowedTypes: ALLOWED,
   targetPool: TARGET_POOL,
   sessionReady: SESSION_READY_AT_START,
   loginConcurrency: 1,
+  continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login',
   workerStaggerMs: WORKER_STAGGER_MS,
 });
 const harvestHealth = createHarvestHealth();
@@ -168,7 +182,10 @@ const hasAllShapeHeaders = (h) => REQUIRED.every(k => h[k] && String(h[k]).trim(
 
 function prune(type) {
   const now = Date.now();
-  pool[type] = pool[type].filter(c => now - c.at < COOKIE_TTL_MS);
+  pool[type] = pool[type].filter(c => {
+    const expiresAt = Number(c && c.expiresAt) || ((Number(c && c.at) || 0) + COOKIE_TTL_MS);
+    return expiresAt > now;
+  });
 }
 
 // ── the bank, mirrored to disk ───────────────────────────────────────────────────────
@@ -221,13 +238,28 @@ function loadBank() {
   } catch (e) { log(`bank load failed: ${e.message}`); }
 }
 
-function pushCookie(type, headers, proxy) {
+function pushCookie(type, headers, proxy, options = {}) {
   if (!pool[type]) return false;
   const norm = {};
   for (const k of Object.keys(headers || {})) norm[k.toLowerCase()] = headers[k];
   if (!hasAllShapeHeaders(norm)) return false;
   if (type === 'login') harvestCoordinator.noteLoginHarvested();
-  const cookie = { headers: norm, proxy: proxy || '', at: Date.now() };
+  const now = Date.now();
+  const requestedExpiry = Number(options.expiresAt) || 0;
+  const cookie = {
+    headers: norm,
+    proxy: proxy || '',
+    at: now,
+    expiresAt: requestedExpiry > now ? requestedExpiry : now + COOKIE_TTL_MS,
+    harvesterId: String(options.harvesterId || HARVESTER_ID || '').slice(0, 64),
+  };
+  if (PRODUCER_MODE) {
+    activity.produced[type]++;
+    producerBank[type]++;
+    producerLastSuccessAt = now;
+    submitCookieToBroker(type, cookie);
+    return true;
+  }
   activity.produced[type]++;
   const w = waiters[type].shift();
   if (w) {
@@ -263,6 +295,93 @@ function takeCookie(type, waitMs) {
   });
 }
 
+function brokerRequest(method, requestPath, payload, callback, attempt = 0) {
+  const body = payload == null ? '' : JSON.stringify(payload);
+  const req = http.request({
+    host: HOST,
+    port: PORT,
+    path: requestPath,
+    method,
+    timeout: 2500,
+    headers: {
+      ...(TOKEN ? { 'x-hope-token': TOKEN } : {}),
+      ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
+    },
+  }, (res) => {
+    let response = '';
+    res.on('data', chunk => { response += chunk; });
+    res.on('end', () => {
+      let parsed = null;
+      try { parsed = JSON.parse(response || '{}'); } catch {}
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (callback) callback(null, parsed);
+        return;
+      }
+      if (callback) callback(new Error(`broker returned ${res.statusCode}`));
+    });
+  });
+  req.on('error', (error) => {
+    if (attempt < 2) {
+      setTimeout(() => brokerRequest(method, requestPath, payload, callback, attempt + 1), 400 * (attempt + 1));
+      return;
+    }
+    if (callback) callback(error);
+  });
+  req.on('timeout', () => req.destroy(new Error('broker request timed out')));
+  if (body) req.write(body);
+  req.end();
+}
+
+function submitCookieToBroker(type, cookie) {
+  brokerRequest('POST', '/saveCookies', {
+    type,
+    headers: cookie.headers,
+    proxy: cookie.proxy,
+    expiresAt: cookie.expiresAt,
+    harvesterId: HARVESTER_ID,
+  }, (error, response) => {
+    if (error) {
+      producerBank[type] = Math.max(0, producerBank[type] - 1);
+      log(`harvester ${HARVESTER_NAME}: broker submission failed — ${error.message}`);
+    } else if (!response || !response.saved) {
+      producerBank[type] = Math.max(0, producerBank[type] - 1);
+    }
+  });
+}
+
+function refreshProducerBank() {
+  if (!PRODUCER_MODE) return;
+  brokerRequest('GET', '/status', null, (error, status) => {
+    if (error || !status || !status.pools) return;
+    producerBank.login = Math.max(0, Number(status.pools.login) || 0);
+    producerBank.atc = Math.max(0, Number(status.pools.atc) || 0);
+  });
+}
+
+function producerStatusPayload() {
+  const scale = workerScaler && workerScaler.snapshot();
+  const health = harvestHealth.snapshot();
+  return {
+    id: HARVESTER_ID,
+    name: HARVESTER_NAME,
+    type: HARVESTER_TYPE,
+    route: ROUTE_LABEL,
+    browser: BROWSER_SELECTION,
+    configuredWorkers: startedWorkerCount,
+    activeWorkers: scale ? scale.activeWorkers : 0,
+    produced: { ...activity.produced },
+    failures: health.failures || {},
+    quarantinedProxies: Number(health.quarantinedProxies) || 0,
+    lastSuccessAt: producerLastSuccessAt,
+    startedAt: activity.startedAt,
+  };
+}
+
+function publishProducerStatus() {
+  if (!PRODUCER_MODE) return;
+  brokerRequest('POST', '/harvesterStatus', producerStatusPayload(), () => {});
+}
+
 // ── broker HTTP server ──────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, `http://${HOST}:${PORT}`);
@@ -295,10 +414,30 @@ const server = http.createServer((req, res) => {
         let n = 0;
         for (const it of items) {
           const type = (it.type || 'login').toLowerCase() === 'atc' ? 'atc' : 'login';
-          if (pushCookie(type, it.headers || {}, it.proxy || '')) n++;
+          prune(type);
+          if (!UNCAPPED && !waiters[type].length && pool[type].length >= TARGET_POOL) continue;
+          if (pushCookie(type, it.headers || {}, it.proxy || '', {
+            expiresAt: Number(it.expiresAt) || 0,
+            harvesterId: it.harvesterId,
+          })) n++;
         }
         json({ ok: true, saved: n });
       } catch (e) { json({ ok: false, error: e.message }, 400); }
+    });
+    return;
+  }
+  if (req.method === 'POST' && u.pathname === '/harvesterStatus') {
+    if (!tokenOk(req)) { json({ ok: false, error: 'unauthorized' }, 401); return; }
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 256000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const id = String(data.id || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 64);
+        if (!id) { json({ ok: false, error: 'missing harvester id' }, 400); return; }
+        producerStatusById.set(id, { ...data, id, seenAt: Date.now() });
+        json({ ok: true });
+      } catch (error) { json({ ok: false, error: error.message }, 400); }
     });
     return;
   }
@@ -341,9 +480,16 @@ const server = http.createServer((req, res) => {
     }));
     // `app` and `owner` let the app identify this process positively before ever reclaiming the
     // port from it — image-name matching would be reckless (node.exe is everyone's dev server).
+    const now = Date.now();
+    const harvesters = [...producerStatusById.values()]
+      .filter(item => now - (Number(item.seenAt) || 0) < 30000)
+      .map(item => ({ ...item }));
+    const producerWorkers = harvesters.reduce((sum, item) => sum + (Number(item.activeWorkers) || 0), 0);
+    const producerConfigured = harvesters.reduce((sum, item) => sum + (Number(item.configuredWorkers) || 0), 0);
     json({ ok: true, app: 'hope-shape-broker', pid: process.pid,
            owner: Number(process.env.HOPE_OWNER_PID) || 0,
            pools: { login: pool.login.length, atc: pool.atc.length }, proxies: PROXIES.length,
+           harvesters,
            activity: {
              startedAt: activity.startedAt,
              produced: { ...activity.produced },
@@ -351,9 +497,15 @@ const server = http.createServer((req, res) => {
              waiting: { login: waiters.login.length, atc: waiters.atc.length },
            },
            sessionReady: coordination.sessionReady, inFlight: coordination.inFlight,
-           health: { ...health, activeWorkers: scale.activeWorkers,
+           health: { ...health, activeWorkers: scale.activeWorkers + producerWorkers,
              busyWorkers: coordination.inFlight.login + coordination.inFlight.atc,
-             configuredWorkers: startedWorkerCount, scaling: scale,
+             configuredWorkers: startedWorkerCount + producerConfigured,
+             scaling: producerConfigured ? {
+               ...scale,
+               desiredWorkers: producerConfigured,
+               hardLimit: producerConfigured,
+               activeWorkers: producerWorkers,
+             } : scale,
              browser: farmerBrowser, browsers } });
     return;
   }
@@ -1021,7 +1173,10 @@ async function farmerWorker(id, selectedBrowser) {
     // reserve() increments the in-flight count before this loop reaches its first await. That is the
     // critical section: all workers may observe an empty pool, but only one can claim login.
     const reservation = harvestCoordinator.reserve({
-      pools: pool, waiters, workerId: id, unavailableTypes: harvestHealth.coolingTypes(),
+      pools: PRODUCER_MODE ? producerBank : pool,
+      waiters,
+      workerId: id,
+      unavailableTypes: harvestHealth.coolingTypes(),
     });
     if (!reservation) {
       // Full banks, lane cooldowns, and the pre-session ATC gate can all park a worker for minutes.
@@ -1072,7 +1227,8 @@ async function farmerWorker(id, selectedBrowser) {
           // A multi-capture page may reach a configured bank ceiling in one load. Waiting engine
           // requests still take priority; otherwise stop at the target instead of overshooting it.
           // Uncapped banks never short-circuit — TTL prune is the only depth limit.
-          if (!UNCAPPED && !waiters[type].length && pool[type].length >= TARGET_POOL) break;
+          const bankDepth = PRODUCER_MODE ? producerBank[type] : pool[type].length;
+          if (!UNCAPPED && !waiters[type].length && bankDepth >= TARGET_POOL) break;
           if (pushCookie(type, captured, proxy ? proxy.raw : '')) banked++;
         }
         harvested = banked > 0;
@@ -1109,7 +1265,7 @@ async function farmerWorker(id, selectedBrowser) {
       // and bypassing pickProxy() with the still-live browser would defeat that quarantine.
       await endSession();
     }
-    await sleep(nextLoopDelayMs);
+    await sleep(Math.max(nextLoopDelayMs, INTERVAL_DELAY_MS));
   }
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -1118,22 +1274,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // Before the broker accepts anything, so the first /cookie or /status sees the real level rather
 // than a zero that fills in a moment later. This matters for the broker-only process too — it is
 // exactly the one that replaces a killed farmer and would otherwise report an empty bank.
-loadBank();
-server.on('error', (e) => { log(`broker error: ${e.message}${e.code === 'EADDRINUSE' ? ` (port ${PORT} in use)` : ''}`); process.exit(1); });
-server.listen(PORT, HOST, () => {
-  const browserMode = HEADLESS ? 'new-headless' : OFFSCREEN ? 'headed/off-screen' : 'headed/visible';
-  const farmingDisabled = argOf('noFarm', 'false') === 'true';
-  farmerBrowser = farmingDisabled
-    ? { key: 'chromium', channel: 'chromium', mode: 'broker-only' }
-    : { key: 'pool', channel: '', mode: browserMode };
-  log(`broker listening on http://${HOST}:${PORT}  (proxies: ${PROXIES.length}, browser: ${farmerBrowser.mode}`
-    + `, bank ${UNCAPPED ? 'uncapped' : `soft-target ${TARGET_POOL}`}`
-    + `, heavy-resources ${BLOCK_HEAVY_RESOURCES ? 'blocked' : 'allowed'})`);
-  if (farmingDisabled) { log('farmer disabled (--noFarm) — broker only, feed cookies via POST /saveCookies'); return; }
+function startFarming(browserMode) {
   // Bank level every 20s — without this you cannot tell whether pre-farming is keeping up or
-  // quietly settling below target because throughput can't cover the TTL.
+  // quietly settling below target because throughput cannot cover the TTL.
   setInterval(() => {
-    prune('login'); prune('atc');
+    if (!PRODUCER_MODE) { prune('login'); prune('atc'); }
     const health = harvestHealth.snapshot();
     const scale = workerScaler && workerScaler.snapshot();
     const cooling = Object.entries(health.cooldowns).filter(([, lane]) => lane.remainingMs > 0)
@@ -1141,7 +1286,8 @@ server.listen(PORT, HOST, () => {
     const browserMix = scale ? Object.entries(scale.scheduling.activeBrowserCounts)
       .filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`).join(',') : '';
     const cap = UNCAPPED ? '' : `/${TARGET_POOL}`;
-    log(`bank: login=${pool.login.length}${cap} atc=${pool.atc.length}${cap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
+    const counts = PRODUCER_MODE ? producerBank : { login: pool.login.length, atc: pool.atc.length };
+    log(`bank: login=${counts.login}${cap} atc=${counts.atc}${cap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
       + ` | health ok=${health.successes.total} fail=${health.failures.total}`
       + ` blocked=${health.failures.byCategory.target_block} cooldown=${cooling}`
       + ` localized=${health.backpressure.localizedFailures} quarantined=${health.quarantinedProxies}`
@@ -1157,16 +1303,18 @@ server.listen(PORT, HOST, () => {
     BROWSER_SELECTION,
   ).then((detected) => {
     if (!detected.length) {
-      log(BROWSER_SELECTION === 'chromium'
-        ? 'browser detection failed — bundled Chromium is not available'
-        : 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, or bundled Chromium browser is available');
+      log(BROWSER_SELECTION === 'auto'
+        ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, or bundled Chromium browser is available'
+        : `browser detection failed — ${BROWSER_SELECTION} is not available`);
       return;
     }
     log(`browsers: ${detected.map(browser => browser.key).join(', ')} (selection: ${BROWSER_SELECTION})`);
     const requestedWorkers = parseInt(argOf('workers', ''), 10);
     const configuredWorkers = Number.isFinite(requestedWorkers)
       ? Math.max(1, Math.min(requestedWorkers, MAX_FARMER_WORKERS)) : detected.length;
-    const proxyCapacity = PROXIES.length || 1;
+    // A managed Local producer intentionally allows up to its configured worker count. Legacy mode
+    // remains one home-IP lane, preserving the original conservative behavior.
+    const proxyCapacity = PROXIES.length || (PRODUCER_MODE ? configuredWorkers : 1);
     const hardLimit = Math.min(configuredWorkers, proxyCapacity);
     // Idle loops are cheap (they do not own a browser until active). Keep at least one schedulable
     // slot per detected channel even when the concurrency ceiling is smaller than the browser pool,
@@ -1186,8 +1334,35 @@ server.listen(PORT, HOST, () => {
     log(`fixed worker slots ${scale.activeWorkers}/${scale.hardLimit} active immediately; scheduler `
       + `${workerBrowsers.length}: ${workerBrowsers.map(browser => browser.key).join(', ')}`
       + ` — no error scale-down, login concurrency 1, session ${SESSION_READY_AT_START ? 'restored' : 'pending'}`);
+    publishProducerStatus();
   }).catch((error) => log(`browser detection failed: ${error.message}`));
-});
+}
+
+if (PRODUCER_MODE) {
+  const browserMode = HEADLESS ? 'new-headless' : OFFSCREEN ? 'headed/off-screen' : 'headed/visible';
+  farmerBrowser = { key: 'pool', channel: '', mode: browserMode };
+  log(`producer ${HARVESTER_NAME} starting (type ${HARVESTER_TYPE}, route ${ROUTE_LABEL}, proxies ${PROXIES.length})`);
+  refreshProducerBank();
+  publishProducerStatus();
+  setInterval(refreshProducerBank, 3000).unref?.();
+  setInterval(publishProducerStatus, 3000).unref?.();
+  startFarming(browserMode);
+} else {
+  loadBank();
+  server.on('error', (e) => { log(`broker error: ${e.message}${e.code === 'EADDRINUSE' ? ` (port ${PORT} in use)` : ''}`); process.exit(1); });
+  server.listen(PORT, HOST, () => {
+    const browserMode = HEADLESS ? 'new-headless' : OFFSCREEN ? 'headed/off-screen' : 'headed/visible';
+  const farmingDisabled = argOf('noFarm', 'false') === 'true';
+  farmerBrowser = farmingDisabled
+    ? { key: 'chromium', channel: 'chromium', mode: 'broker-only' }
+    : { key: 'pool', channel: '', mode: browserMode };
+  log(`broker listening on http://${HOST}:${PORT}  (proxies: ${PROXIES.length}, browser: ${farmerBrowser.mode}`
+    + `, bank ${UNCAPPED ? 'uncapped' : `soft-target ${TARGET_POOL}`}`
+    + `, heavy-resources ${BLOCK_HEAVY_RESOURCES ? 'blocked' : 'allowed'})`);
+  if (farmingDisabled) { log('farmer disabled (--noFarm) — broker only, feed cookies via POST /saveCookies'); return; }
+    startFarming(browserMode);
+  });
+}
 
 // Never let a stray browser/page rejection take down the broker — log and keep serving. On Node 22+
 // an unhandled rejection would otherwise crash the whole process (and release port 4727).
