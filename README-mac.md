@@ -166,8 +166,7 @@ in Settings. If OS-backed encryption is unavailable the token remains in memory 
 R3 is observe-only. Its status does not replace the existing local developer session, gate the UI,
 block task launches, hide modules, apply managed proxy lists, or change the `seaniepokie` reporter
 identity. Signing in is nevertheless a live service action: the imported Cloudflare Worker revokes
-the account's prior active license before minting the new device-bound session, so the panel requires
-an explicit acknowledgement first.
+the account's prior active license before minting the new device-bound session.
 
 ```sh
 ./scripts/build-r3.sh
@@ -293,6 +292,10 @@ node ./scripts/managed-proxy-runtime-smoke-test.js <port> /tmp/hope-r7-managed-p
 
 The independently installable output is `dist/Hope-ControlPlane-R7.app`. R6 remains available from
 the `control-plane-r6` Git tag and its previously built application bundle.
+
+The R7 UI maintenance build removes the redundant device-session acknowledgement from account sign
+in and restores the shared Target Engine & Monitor Log directly below each task group's task table.
+The log consumes the existing Target IPC/reducer stream; no backend or engine behavior changes.
 
 To rebuild after moving the old output aside:
 

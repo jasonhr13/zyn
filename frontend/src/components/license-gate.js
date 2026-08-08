@@ -10,7 +10,6 @@ class LicenseGate extends Component {
     password: '',
     newPassword: '',
     confirmPassword: '',
-    acknowledged: false,
     busy: false,
     err: '',
   };
@@ -19,7 +18,7 @@ class LicenseGate extends Component {
     if (event) event.preventDefault();
     const email = this.state.email.trim();
     const password = this.state.password;
-    if (!email || !password || !this.state.acknowledged || this.state.busy) return;
+    if (!email || !password || this.state.busy) return;
     this.setState({ busy: true, err: '' });
     try {
       const status = await ipcRenderer.invoke('loginLicense', { email, password });
@@ -80,7 +79,7 @@ class LicenseGate extends Component {
   });
 
   render() {
-    const { mode, email, password, newPassword, confirmPassword, acknowledged, busy, err } = this.state;
+    const { mode, email, password, newPassword, confirmPassword, busy, err } = this.state;
     const priorReason = this.props.status?.reason;
     const displayError = err || (priorReason && priorReason !== 'Sign in to continue.' ? priorReason : '');
     const inputStyle = { width: '100%' };
@@ -105,11 +104,6 @@ class LicenseGate extends Component {
               <input className="form-input" style={inputStyle} type="password" autoComplete="current-password"
                 placeholder="Password" value={password} onChange={event => this.setState({ password: event.target.value })}
                 disabled={busy} />
-              <label className="license-gate-acknowledge">
-                <input type="checkbox" checked={acknowledged}
-                  onChange={event => this.setState({ acknowledged: event.target.checked })} disabled={busy} />
-                <span>I understand that signing in replaces this account&apos;s active device session.</span>
-              </label>
             </>
           ) : (
             <>
@@ -124,7 +118,7 @@ class LicenseGate extends Component {
 
           {displayError && <div className="license-gate-error">{displayError}</div>}
           <button type="submit" className="btn btn-primary"
-            disabled={busy || (mode === 'login' ? !email.trim() || !password || !acknowledged : !newPassword || !confirmPassword)}>
+            disabled={busy || (mode === 'login' ? !email.trim() || !password : !newPassword || !confirmPassword)}>
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Save password & continue'}
           </button>
           {mode === 'reset' && (

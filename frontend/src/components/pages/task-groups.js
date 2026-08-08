@@ -1,9 +1,9 @@
-import React, { Component } from 'react';
+import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
 
-const { ipcRenderer } = window.require('electron');
+const { ipcRenderer, clipboard } = window.require('electron');
 
 const EMPTY_GROUP = Object.freeze({
   name: '',
@@ -51,6 +51,8 @@ function StatusBadge({ status }) {
 }
 
 class TaskGroups extends Component {
+  engineLogBox = createRef();
+
   state = {
     loaded: false,
     groups: [],
@@ -63,10 +65,22 @@ class TaskGroups extends Component {
     showTaskModal: false,
     selectedAccounts: [],
     taskProxy: '',
+    copiedEngine: false,
   };
 
   componentDidMount() {
     this.loadGroups();
+  }
+
+  componentDidUpdate(prevProps) {
+    const previous = ((prevProps.target && prevProps.target.logs) || []).length;
+    const current = ((this.props.target && this.props.target.logs) || []).length;
+    if (previous !== current && this.engineLogBox.current) {
+      const element = this.engineLogBox.current;
+      if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
+        element.scrollTop = element.scrollHeight;
+      }
+    }
   }
 
   loadGroups = () => {
@@ -298,6 +312,65 @@ class TaskGroups extends Component {
     }
   };
 
+  copyEngineLogs = () => {
+    const logs = (this.props.target && this.props.target.logs) || [];
+    if (!logs.length) return;
+    try { clipboard.writeText(logs.join('\n')); } catch {}
+    this.setState({ copiedEngine: true }, () => {
+      setTimeout(() => this.setState({ copiedEngine: false }), 1200);
+    });
+  };
+
+  clearEngineLogs = () => {
+    const logs = (this.props.target && this.props.target.logs) || [];
+    if (!logs.length || !window.confirm('Clear the shared engine / monitor log?')) return;
+    this.props.dispatch({ type: 'targetSet', obj: { logs: [] } });
+  };
+
+  renderSharedEngineLog() {
+    const target = this.props.target || {};
+    const logs = target.logs || [];
+    const monitor = target.monitorStatus;
+    return (
+      <section className="panel task-log-panel engine-log-panel engine-log-panel-dashboard">
+        <div className="detail-panel-heading engine-log-heading">
+          <div className="engine-log-heading-left">
+            <h3><Icon name="activity" size={13} /> Engine &amp; Monitor Log</h3>
+            <span className="engine-log-meta">
+              <span className="engine-log-line-count">
+                {logs.length} line{logs.length === 1 ? '' : 's'}
+              </span>
+              {monitor && (
+                <em className="engine-monitor-chip" style={{ color: monitor.color || 'var(--muted)' }}>
+                  monitor: {monitor.label || monitor.state || 'idle'}
+                </em>
+              )}
+            </span>
+          </div>
+          <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" onClick={this.copyEngineLogs} disabled={!logs.length}>
+              <Icon name="copy" size={11} /> {this.state.copiedEngine ? 'Copied' : 'Copy'}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={this.clearEngineLogs} disabled={!logs.length}>
+              Clear
+            </button>
+          </div>
+        </div>
+        <div className="task-log-view engine-log-view" ref={this.engineLogBox}>
+          {!logs.length ? (
+            <div className="task-log-empty">
+              <Icon name="activity" size={20} />
+              <span>No shared engine output yet</span>
+              <small>Shape farmer, stock monitor, Discord pings, and engine lifecycle output appear here for this Target workspace.</small>
+            </div>
+          ) : logs.map((line, index) => (
+            <div key={index}><span>{String(index + 1).padStart(3, '0')}</span>{line}</div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   renderMetrics() {
     const stats = this.allStats();
     const metrics = [
@@ -470,6 +543,7 @@ class TaskGroups extends Component {
               </div>
             )}
           </div>
+          {this.renderSharedEngineLog()}
           <div className="task-group-r2-boundary"><Icon name="warning" size={14} /><span>R2 groups existing Target controls only. Scheduling remains disabled until its own release gate.</span></div>
         </div>
         {this.renderGroupModal()}

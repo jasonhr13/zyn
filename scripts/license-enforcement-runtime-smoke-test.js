@@ -65,9 +65,8 @@ async function main() {
       const license = await ipc.invoke('licenseStatus');
       const email = document.querySelector('.license-gate-card input[type="email"]');
       const password = document.querySelector('.license-gate-card input[type="password"]');
-      const acknowledgement = document.querySelector('.license-gate-acknowledge input');
       const submit = document.querySelector('.license-gate-card button[type="submit"]');
-      if (!email || !password || !acknowledgement || !submit) throw new Error('R4 account gate controls were not found');
+      if (!email || !password || !submit) throw new Error('Account gate controls were not found');
 
       email.focus();
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -106,7 +105,7 @@ async function main() {
           present: Boolean(document.querySelector('.license-gate-r4')),
           badge: document.querySelector('.license-gate-badge')?.textContent.trim(),
           title: document.querySelector('.license-gate-title')?.textContent.trim(),
-          warnsSessionReplacement: document.querySelector('.license-gate-acknowledge')?.textContent.includes('replaces this account'),
+          acknowledgementPresent: Boolean(document.querySelector('.license-gate-acknowledge')),
           legacyKeyCopyPresent: document.body.textContent.includes('Enter your license key'),
           submitInitiallyDisabled: submit.disabled,
           insertedCharacters,
@@ -135,7 +134,7 @@ async function main() {
     || !report.gate.present
     || report.gate.badge !== 'CONTROL PLANE R4'
     || report.gate.title !== 'Sign in to rCart'
-    || !report.gate.warnsSessionReplacement
+    || report.gate.acknowledgementPresent
     || report.gate.legacyKeyCopyPresent
     || !report.gate.submitInitiallyDisabled
     || report.gate.insertedCharacters !== 60

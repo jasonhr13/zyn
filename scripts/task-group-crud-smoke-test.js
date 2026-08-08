@@ -189,6 +189,9 @@ async function main() {
       setValue(editName, 'R2 Verified Drop');
       clickText('.task-group-modal button', 'Save Changes');
       await wait(300);
+      ipc.emit('targetLog', {}, { lines: ['ENGINE: shape farmer ready', 'MONITOR: watching 2 products'] });
+      ipc.emit('targetStatus', {}, { state: 'monitoring', label: 'Monitoring products', color: '#65d6a6', detail: 'Watching Target stock' });
+      await wait(150);
       const groups = ipc.sendSync('getTaskGroups') || [];
       const group = groups.find(item => item.name === 'R2 Verified Drop');
       const row = document.querySelector('.group-task-row:not(.group-task-table-head)');
@@ -202,6 +205,9 @@ async function main() {
         pageTitle: document.querySelector('.page-title')?.textContent.trim(),
         taskRow: Boolean(row),
         taskRowText: row ? row.textContent.replace(/\\s+/g, ' ').trim() : '',
+        enginePanel: document.querySelector('.engine-log-panel')?.textContent.replace(/\\s+/g, ' ').trim() || '',
+        engineLines: document.querySelectorAll('.engine-log-view > div:not(.task-log-empty)').length,
+        monitorChip: document.querySelector('.engine-monitor-chip')?.textContent.replace(/\\s+/g, ' ').trim() || '',
         scheduleControls: [...document.querySelectorAll('button')].some(button => /schedule/i.test(button.textContent)),
         launchIntercepted: Boolean(launchPayload),
         launchTaskCount: launchPayload && launchPayload.tasks ? launchPayload.tasks.length : 0,
@@ -243,6 +249,11 @@ async function main() {
     || report.taskAccountId !== cleanup.accountId
     || !report.taskRow
     || !report.taskRowText.includes('Ready')
+    || !report.enginePanel.includes('Engine & Monitor Log')
+    || !report.enginePanel.includes('ENGINE: shape farmer ready')
+    || !report.enginePanel.includes('MONITOR: watching 2 products')
+    || report.engineLines < 2
+    || !report.monitorChip.includes('Monitoring products')
     || report.scheduleControls
     || !report.launchIntercepted
     || report.launchTaskCount !== 1

@@ -1427,8 +1427,6 @@ body.theme-night .form-select {
 .license-gate-badge { align-self: center; padding: 4px 7px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 999px; background: var(--panel-raised); font-size: 8px; font-weight: 800; letter-spacing: .7px; }
 .license-gate-title { color: var(--text); font-size: 17px; font-weight: 700; text-align: center; }
 .license-gate-copy { margin-bottom: 2px; color: var(--muted); font-size: 11px; line-height: 1.5; text-align: center; }
-.license-gate-acknowledge { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; cursor: pointer; }
-.license-gate-acknowledge input { margin-top: 2px; accent-color: var(--accent); }
 .license-gate-error { color: var(--danger); font-size: 10.5px; line-height: 1.45; text-align: center; }
 .license-gate-footnote { margin-top: 2px; color: var(--dim); font-size: 9.5px; line-height: 1.5; text-align: center; }
 
