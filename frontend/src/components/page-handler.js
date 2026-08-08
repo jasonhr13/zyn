@@ -30,6 +30,12 @@ class PageHandler extends Component {
     // License: check on mount, and accept pushes from main (periodic re-check / revoke).
     ipcRenderer.invoke('licenseStatus').then(license => this.setState({ license })).catch(() => {});
     ipcRenderer.on('licenseStatus', (e, license) => this.setState({ license }));
+    ipcRenderer.on('proxiesUpdated', (e, proxies) => {
+      this.props.dispatch({ type: 'update', obj: { proxies } });
+    });
+    ipcRenderer.on('managedProxyError', (e, message) => {
+      window.alert(String(message || 'This managed proxy list is no longer available.'));
+    });
 
     // Load initial data
     const tasks = ipcRenderer.sendSync('getTasks');
@@ -187,6 +193,8 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('discordStatus');
     ipcRenderer.removeAllListeners('queuePass');
     ipcRenderer.removeAllListeners('licenseStatus');
+    ipcRenderer.removeAllListeners('proxiesUpdated');
+    ipcRenderer.removeAllListeners('managedProxyError');
     ipcRenderer.removeAllListeners('pbandaiLog');
     ipcRenderer.removeAllListeners('pbandaiStatus');
     ipcRenderer.removeAllListeners('pbandaiDone');

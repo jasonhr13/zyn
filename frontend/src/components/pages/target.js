@@ -1,6 +1,7 @@
 import React, { Component, createRef } from 'react';
 import ReactDOM from 'react-dom';
 import { connect } from 'react-redux';
+import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 // Target runs ONE shared monitor over a list of SKUs plus many checkout tasks. Every task watches
@@ -749,7 +750,7 @@ class Target extends Component {
                 style={{ fontSize: 11, padding: '2px 6px', maxWidth: 190 }}
               >
                 <option value="">Local (no proxy)</option>
-                {proxyLists.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
               </select>
             </div>
             {/* Always on: a task that has carted and then hits DCO_RATE_LIMITED switches to whatever
@@ -770,7 +771,7 @@ class Target extends Component {
                 style={{ fontSize: 11, padding: '2px 6px', maxWidth: 190 }}
               >
                 <option value="Local">Local (no proxy)</option>
-                {proxyLists.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
               </select>
             </div>
             {/* Bank stacked ON TOP of the buttons rather than beside them. The header row is as tall
@@ -1211,7 +1212,7 @@ class Target extends Component {
                   {/* Local is stored as the empty string, which is also this select's "nothing
                       chosen" value — so it travels under a sentinel and is unwrapped on apply. */}
                   <option value={LOCAL_SENTINEL}>Local (no proxy)</option>
-                  {proxyLists.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                  {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
                 </select>
                 <button className="btn btn-primary btn-sm" onClick={this.bulkStart}>Start</button>
                 <button className="btn btn-secondary btn-sm" onClick={this.bulkStop}>Stop</button>
@@ -1307,7 +1308,7 @@ class Target extends Component {
                       title={t.proxyListName ? '' : 'Local IP, do not run many tasks'}
                     >
                       <option value="">Local (no proxy)</option>
-                      {proxyLists.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                      {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
                     </select>
                     {/* Only for a switch that actually reached a running task. The engine's own
                         status line says whether it took hold now or waits until after carting. */}

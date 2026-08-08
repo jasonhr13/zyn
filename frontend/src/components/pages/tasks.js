@@ -308,6 +308,7 @@ class Tasks extends Component {
                   taskStatus={taskStatus}
                   taskLogs={taskLogs}
                   profiles={this.props.profiles}
+                  proxies={this.props.proxies}
                   isWaiting={waitingIds.has(task.id)}
                   onStart={this.handleStart}
                   onFireNow={this.handleFireNow}
@@ -335,6 +336,7 @@ class Tasks extends Component {
 const mapStateToProps = s => ({
   tasks: s.tasks,
   profiles: s.profiles,
+  proxies: s.proxies,
   taskStatus: s.taskStatus,
   taskLogs: s.taskLogs,
   discordStatus: s.discordStatus,

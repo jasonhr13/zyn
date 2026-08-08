@@ -49,6 +49,7 @@ function createLicenseAuthority({
   onStatus = () => {},
   onLock = () => {},
   onEntitlementsChanged = () => {},
+  onManagedProxies = () => null,
   logger = console,
 } = {}) {
   if (!dataDirectory) throw new Error('license authority dataDirectory is required');
@@ -59,6 +60,9 @@ function createLicenseAuthority({
   let licenseToken = '';
   let licenseValidatedAt = 0;
   let pendingResetToken = '';
+  // Remote list credentials and their revision are process-memory session state. Neither belongs
+  // in license-session.json: after a restart the first validation must request a fresh full copy.
+  let managedProxyRevision = '';
   let loaded = false;
   let validationInFlight = null;
   let timer = null;
@@ -176,6 +180,18 @@ function createLicenseAuthority({
     const wasActive = licenseState.ok === true;
     const previousTaskTypes = normalizeTaskTypes(licenseState.taskTypes);
     const nextTaskTypes = normalizeTaskTypes(result.taskTypes);
+    let managed = null;
+    try { managed = onManagedProxies(result); }
+    catch (error) { logger.warn?.(`[license] managed proxy hook: ${error.message}`); }
+    const reportedManagedCount = Number.isFinite(Number(result.proxyListCount))
+      ? Math.max(0, Number(result.proxyListCount))
+      : (Array.isArray(result.managedProxyLists) ? result.managedProxyLists.length : 0);
+    const managedProxyCount = Number.isFinite(Number(managed?.count))
+      ? Math.max(0, Number(managed.count)) : reportedManagedCount;
+    const revisionCandidate = managed && Object.prototype.hasOwnProperty.call(managed, 'revision')
+      ? managed.revision : result.proxyRevision;
+    managedProxyRevision = /^[a-f0-9]{64}$/i.test(String(revisionCandidate || ''))
+      ? String(revisionCandidate).toLowerCase() : '';
     licenseToken = String(token || licenseToken || '');
     licenseValidatedAt = Number(validatedAt) || now();
     pendingResetToken = '';
@@ -186,9 +202,7 @@ function createLicenseAuthority({
       expiresAt: Number(result.expiresAt) || 0,
       offline: false,
       proxyAccess: result.proxyAccess === true,
-      managedProxyCount: Number.isFinite(Number(result.proxyListCount))
-        ? Math.max(0, Number(result.proxyListCount))
-        : (Array.isArray(result.managedProxyLists) ? result.managedProxyLists.length : 0),
+      managedProxyCount,
       taskTypes: nextTaskTypes,
       requiresPasswordReset: false,
       storage: 'memory',
@@ -215,6 +229,9 @@ function createLicenseAuthority({
       storage: clear ? 'none' : (licenseToken ? licenseState.storage : 'none'),
     };
     pendingResetToken = '';
+    managedProxyRevision = '';
+    try { onManagedProxies({ proxyAccess: false, proxyRevision: '', managedProxyLists: [], proxyListsChanged: true }); }
+    catch (error) { logger.warn?.(`[license] managed proxy clear hook: ${error.message}`); }
     if (clear) {
       licenseToken = '';
       licenseValidatedAt = 0;
@@ -237,7 +254,7 @@ function createLicenseAuthority({
       const saved = loadSession();
       if (!licenseToken) return lock('Sign in to continue.', { clear: false, stop: false });
       try {
-        const result = await licenseApi.validate(licenseToken, '');
+        const result = await licenseApi.validate(licenseToken, managedProxyRevision);
         if (result.ok) return acceptLicense(result, licenseToken);
         if (result.status === 401 || result.status === 403) {
           return lock(definiteReason(result), { clear: true });
@@ -332,7 +349,7 @@ function createLicenseAuthority({
   });
 }
 
-function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_API_BASE, onStatus, onLock, onEntitlementsChanged, logger } = {}) {
+function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_API_BASE, onStatus, onLock, onEntitlementsChanged, onManagedProxies, logger } = {}) {
   const authority = createLicenseAuthority({
     dataDirectory: app.getPath('userData'),
     safeStorage,
@@ -340,6 +357,7 @@ function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_
     onStatus,
     onLock,
     onEntitlementsChanged,
+    onManagedProxies,
     logger,
   });
   ipcMain.handle(IPC.login, (_event, credentials) => authority.login(credentials));

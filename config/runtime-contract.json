@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "controlPlaneRelease": "R6",
+  "controlPlaneRelease": "R7",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -8,6 +8,7 @@
     "licenseEnforce": true,
     "apiModuleAccess": true,
     "profileImap": true,
+    "managedProxies": true,
     "cloudBackup": false,
     "taskScheduling": false,
     "isolatedRenderer": false
@@ -47,6 +48,8 @@
     "Contents/Resources/app/imap-password.js",
     "Contents/Resources/app/imap-connection.js",
     "Contents/Resources/app/profile-imap-control.js",
+    "Contents/Resources/app/managed-proxy-control.js",
+    "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
     "Contents/Resources/wine/bin/wineserver"
   ],

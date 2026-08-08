@@ -1,5 +1,6 @@
 import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
+import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 // Per-account status pill styling (mirrors the engine's @@STATUS states).
@@ -365,7 +366,7 @@ class Pbandai extends Component {
                 <option value="inhouse3">In-House Proxy 3</option>
                 <option value="inhousemix">In-House Proxy Mix (all 3)</option>
                 {proxyLists.map(l => (
-                  <option key={l.name} value={`list:${l.name}`}>My Proxies: {l.name}</option>
+                  <option key={proxyRef(l)} value={`list:${proxyRef(l)}`}>My Proxies: {proxyLabel(l)}</option>
                 ))}
                 <option value="none">None (home IP)</option>
               </select>

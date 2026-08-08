@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import { proxyCount, proxyLabel, proxyRef } from '../proxy-options';
 
 const { ipcRenderer, clipboard, shell } = window.require('electron');
 
@@ -309,11 +310,14 @@ class Generate extends Component {
 
   // The selected list's lines, in host:port[:user:pass] form — same format every other bot in
   // this app expects (see pbandai-buyer.mjs's parseProxy).
-  proxyLines = () => {
+  selectedProxyList = () => {
     const { proxyListName } = this.state;
-    if (!proxyListName) return [];
-    const list = ((this.props.proxies || {}).lists || []).find(l => l.name === proxyListName);
-    if (!list) return [];
+    return ((this.props.proxies || {}).lists || []).find(l => proxyRef(l) === proxyListName);
+  };
+
+  proxyLines = () => {
+    const list = this.selectedProxyList();
+    if (!list || list.managed) return [];
     return (list.raw || '').split('\n').map(l => l.trim()).filter(Boolean);
   };
 
@@ -373,7 +377,9 @@ class Generate extends Component {
       return;
     }
 
+    const selectedProxyList = this.selectedProxyList();
     const proxyLines = this.proxyLines();
+    const managedProxyRef = selectedProxyList?.managed ? proxyRef(selectedProxyList) : '';
     const maxConcurrent = Math.max(1, Math.min(MAX_CONCURRENCY, parseInt(concurrency, 10) || 1));
 
     this.stopRequested = false;
@@ -381,7 +387,7 @@ class Generate extends Component {
     this.setState({ isRunning: true, logs: [], progress: 0 });
     if (skippedCount) this.addLog(`Skipped ${skippedCount} email(s) that already have a ${meta.siteName} account.`);
     this.addLog(`Starting ${meta.siteName} account generation for ${emails.length} accounts${maxConcurrent > 1 ? ` (${maxConcurrent} concurrent)` : ''}...`);
-    if (proxyLines.length) this.addLog(`Rotating ${proxyLines.length} proxy line(s) from "${this.state.proxyListName}"`);
+    if (selectedProxyList) this.addLog(`Rotating ${proxyCount(selectedProxyList)} proxy line(s) from "${proxyLabel(selectedProxyList)}"`);
 
     let completed = 0;
     let nextIndex = 0;
@@ -433,7 +439,9 @@ class Generate extends Component {
       this.runLabels[runId] = email;
 
       try {
-        const result = await ipcRenderer.invoke('runBotScript', meta.script, args, runId);
+        // Managed credentials never cross into this renderer. Main resolves the stable ref and
+        // injects one randomly-selected line immediately before the child process is launched.
+        const result = await ipcRenderer.invoke('runBotScript', meta.script, args, runId, managedProxyRef);
         if (result.success) {
           this.addLog(`✓ Account created: ${email}`);
           // Register it on the Accounts tab, tagged "generated" so it shows "Genned at" there.
@@ -828,7 +836,7 @@ class Generate extends Component {
               <label className="form-label">Proxy List</label>
               <select className="form-select" name="proxyListName" value={proxyListName} onChange={this.handleInputChange}>
                 <option value="">None (home IP)</option>
-                {proxyLists.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
               </select>
             </div>
 

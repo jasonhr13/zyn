@@ -262,6 +262,38 @@ node ./scripts/profile-imap-runtime-smoke-test.js <port> /tmp/hope-r6-profile-im
 The independently installable output is `dist/Hope-ControlPlane-R6.app`. R5 remains available from
 the `control-plane-r5` Git tag and its previously built application bundle.
 
+## Control-plane R7 managed proxy lists
+
+R7 activates the managed-list protocol already present in the pinned Hope Cloudflare Worker. An
+administrator can create encrypted remote proxy lists and grant or revoke each user's proxy access.
+The desktop sends its current revision during five-minute license validation, so unchanged lists do
+not need to be downloaded again. The existing Worker, D1 migration, admin UI, and license client are
+reused without a new service implementation.
+
+Remote proxy lines live only in Electron's main-process memory. The renderer receives a stable
+`managed:<uuid>` reference, admin label, and line count; it never receives the host, port, username,
+or password. Managed entries are read-only in the Proxies page and work in the existing Tasks,
+Target, P-Bandai, Round1, Pokémon Center, Walmart, Settings, and Generate selectors. Local proxy
+lists remain editable and persist in `proxies.json` as before. Managed lists are excluded from local
+files and backup exports.
+
+Main-process launch guards resolve the reference only at an existing engine boundary. A revoked or
+missing managed list stops before launch instead of falling back to the home IP. Revision changes or
+access removal also stop running subsystems because their child processes may hold an older proxy
+snapshot. Cloud backup and scheduling remain disabled in R7.
+
+```sh
+./scripts/build-r7.sh
+node ./scripts/verify-upstream-license.js
+node ./scripts/managed-proxy-control-smoke-test.js
+node ./scripts/managed-proxy-ipc-guard-smoke-test.js
+node ./scripts/license-authority-smoke-test.js
+node ./scripts/managed-proxy-runtime-smoke-test.js <port> /tmp/hope-r7-managed-proxies.png
+```
+
+The independently installable output is `dist/Hope-ControlPlane-R7.app`. R6 remains available from
+the `control-plane-r6` Git tag and its previously built application bundle.
+
 To rebuild after moving the old output aside:
 
 ```sh

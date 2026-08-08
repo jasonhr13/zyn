@@ -70,6 +70,8 @@ cp "$PROJECT_DIR/launcher/window-size-state.js" "$RESOURCES/app/window-size-stat
 cp "$PROJECT_DIR/launcher/imap-password.js" "$RESOURCES/app/imap-password.js"
 cp "$PROJECT_DIR/launcher/imap-connection.js" "$RESOURCES/app/imap-connection.js"
 cp "$PROJECT_DIR/launcher/profile-imap-control.js" "$RESOURCES/app/profile-imap-control.js"
+cp "$PROJECT_DIR/launcher/managed-proxy-control.js" "$RESOURCES/app/managed-proxy-control.js"
+cp "$PROJECT_DIR/launcher/managed-proxy-ipc-guard.js" "$RESOURCES/app/managed-proxy-ipc-guard.js"
 cp -R "$PROJECT_DIR/launcher/node_modules" "$RESOURCES/app/node_modules"
 
 PLIST="$OUTPUT_APP/Contents/Info.plist"

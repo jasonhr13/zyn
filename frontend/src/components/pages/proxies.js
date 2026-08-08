@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import { proxyCount, proxyLabel, proxyName, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 class Proxies extends Component {
@@ -10,8 +11,22 @@ class Proxies extends Component {
     isEditing: false,
   };
 
+  componentDidUpdate(prevProps) {
+    if (prevProps.proxies === this.props.proxies || !this.state.activeList) return;
+    const stillExists = ((this.props.proxies && this.props.proxies.lists) || [])
+      .some(list => proxyRef(list) === this.state.activeList);
+    if (!stillExists) {
+      this.setState({ activeList: null, editorName: '', editorRaw: '', isEditing: false });
+    }
+  }
+
   selectList = (list) => {
-    this.setState({ activeList: list.name, editorName: list.name, editorRaw: list.raw, isEditing: false });
+    this.setState({
+      activeList: proxyRef(list),
+      editorName: proxyName(list),
+      editorRaw: list.managed ? '' : (list.raw || ''),
+      isEditing: false,
+    });
   };
 
   newList = () => {
@@ -44,7 +59,7 @@ class Proxies extends Component {
     const { proxies } = this.props;
     const { activeList, editorName, editorRaw, isEditing } = this.state;
     const lists = proxies.lists || [];
-    const activeData = lists.find(l => l.name === activeList);
+    const activeData = lists.find(l => proxyRef(l) === activeList);
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -73,21 +88,21 @@ class Proxies extends Component {
                 )}
                 {lists.map(l => (
                   <div
-                    key={l.name}
-                    className={`proxy-list-item${l.name === activeList ? ' active' : ''}`}
+                    key={proxyRef(l)}
+                    className={`proxy-list-item${proxyRef(l) === activeList ? ' active' : ''}`}
                     onClick={() => this.selectList(l)}
                   >
                     <div>
-                      <div className="proxy-list-name">{l.name}</div>
-                      <div className="proxy-list-count">{this.countLines(l.raw)} proxies</div>
+                      <div className="proxy-list-name">{proxyLabel(l)}</div>
+                      <div className="proxy-list-count">{proxyCount(l)} proxies</div>
                     </div>
-                    <button
+                    {!l.managed && <button
                       className="btn btn-sm btn-danger btn-icon"
                       title="Delete"
                       onClick={e => { e.stopPropagation(); this.deleteList(l.name); }}
                     >
                       <i className="ion-md-trash" style={{ fontSize: 11 }} />
-                    </button>
+                    </button>}
                   </div>
                 ))}
               </div>
@@ -123,26 +138,34 @@ class Proxies extends Component {
                       </>
                     ) : (
                       <>
-                        <span style={{ flex: 1, fontWeight: 600, color: '#d1d5db', fontSize: 13 }}>{activeList}</span>
+                        <span style={{ flex: 1, fontWeight: 600, color: '#d1d5db', fontSize: 13 }}>{proxyLabel(activeData)}</span>
                         <span style={{ fontSize: 11, color: '#6b7280', marginRight: 8 }}>
-                          {this.countLines(activeData?.raw)} proxies
+                          {proxyCount(activeData)} proxies
                         </span>
-                        <button className="btn btn-secondary btn-sm" onClick={this.editList}>
+                        {!activeData?.managed && <button className="btn btn-secondary btn-sm" onClick={this.editList}>
                           <i className="ion-md-create" style={{ fontSize: 12 }} /> Edit
-                        </button>
+                        </button>}
                       </>
                     )}
                   </div>
                   <div className="proxy-editor-body">
-                    <textarea
+                    {activeData?.managed ? (
+                      <div className="table-empty" style={{ margin: 'auto' }}>
+                        <div className="table-empty-icon"><i className="ion-md-lock" /></div>
+                        <div className="table-empty-text">Managed by rCart</div>
+                        <div className="table-empty-sub">
+                          This shared list is synchronized with your account and available in proxy selectors.
+                        </div>
+                      </div>
+                    ) : <textarea
                       className="proxy-editor-textarea"
                       placeholder={'ip:port:user:pass\nip:port:user:pass\n...'}
                       value={editorRaw}
                       onChange={e => this.setState({ editorRaw: e.target.value })}
                       readOnly={!isEditing}
                       spellCheck={false}
-                    />
-                    {isEditing && (
+                    />}
+                    {isEditing && !activeData?.managed && (
                       <div style={{ fontSize: 10, color: '#4b5563' }}>
                         {this.countLines(editorRaw)} proxies — Format: <span className="monospace">ip:port:user:pass</span> or <span className="monospace">ip:port</span>
                       </div>

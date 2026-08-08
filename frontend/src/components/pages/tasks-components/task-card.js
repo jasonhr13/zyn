@@ -1,4 +1,5 @@
 import React, { Component, createRef } from 'react';
+import { proxyLabelForRef } from '../../proxy-options';
 
 const STATUS_LABELS = {
   idle: 'Idle', waiting: 'Waiting', running: 'Running', done: 'Done',
@@ -129,7 +130,7 @@ class TaskCard extends Component {
               {profileName ? profileName : <span style={{ color: 'var(--muted)' }}>no profile</span>}
               {' · '}qty {task.qty || 1}
               {task.variant ? ` · ${task.variant}` : ''}
-              {task.proxyList ? ` · ${task.proxyList}` : ''}
+              {task.proxyList ? ` · ${proxyLabelForRef((this.props.proxies || {}).lists, task.proxyList)}` : ''}
             </div>
           </div>
 

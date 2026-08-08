@@ -37,6 +37,8 @@ const silentLogger = { warn() {} };
     let intervalDelay = 0;
     let canceledTimer = null;
     const entitlementChanges = [];
+    const managedEvents = [];
+    const proxyRevision = 'a'.repeat(64);
     const api = {
       async login(email, password) {
         calls.push({ method: 'login', email, password });
@@ -48,12 +50,18 @@ const silentLogger = { warn() {} };
           taskTypes: { pokemoncenter: true, round1: false },
           proxyAccess: true,
           proxyListCount: 3,
+          proxyRevision,
+          proxyListsChanged: true,
           managedProxyLists: [{ raw: 'proxy-secret' }],
         };
       },
       async validate(token, revision) {
         calls.push({ method: 'validate', token, revision });
-        return { ok: true, email: 'owner@example.com', expiresAt: now + 5000, taskTypes: { round1: true } };
+        return {
+          ok: true, email: 'owner@example.com', expiresAt: now + 5000,
+          taskTypes: { round1: true }, proxyAccess: true, proxyListCount: 3,
+          proxyRevision, proxyListsChanged: false,
+        };
       },
       async logout(token) { calls.push({ method: 'logout', token }); return { ok: true }; },
       async resetPassword() { throw new Error('unexpected reset'); },
@@ -69,6 +77,12 @@ const silentLogger = { warn() {} };
       onStatus: status => statuses.push(status),
       onLock: () => { lockCount += 1; },
       onEntitlementsChanged: change => entitlementChanges.push(change),
+      onManagedProxies: result => {
+        managedEvents.push(result);
+        return result.proxyAccess === true
+          ? { count: Number(result.proxyListCount) || 3, revision: result.proxyRevision }
+          : { count: 0, revision: '' };
+      },
       scheduleInterval: (callback, delay) => { intervalCallback = callback; intervalDelay = delay; return 44; },
       cancelInterval: id => { canceledTimer = id; },
       logger: silentLogger,
@@ -91,6 +105,8 @@ const silentLogger = { warn() {} };
     assert.equal(stored.includes('proxy-secret'), false, 'managed proxy credential was persisted');
     assert.equal(fs.statSync(authority.sessionPath).mode & 0o777, 0o600);
     const refreshed = await authority.validate();
+    assert.equal(calls.find(call => call.method === 'validate').revision, proxyRevision);
+    assert.equal(managedEvents.some(result => JSON.stringify(result.managedProxyLists || []).includes('proxy-secret')), true);
     assert.deepEqual(refreshed.taskTypes, { pokemoncenter: false, round1: true });
     assert.deepEqual(entitlementChanges, [{
       removed: ['pokemoncenter'],
@@ -219,6 +235,7 @@ const silentLogger = { warn() {} };
       removedEntitlementStopped: entitlementChanges[0].removed[0],
       observerSessionMigrated: true,
       logoutLocked: logoutLocks === 1,
+      managedProxyRevisionReused: true,
     }, null, 2));
   } finally {
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });

@@ -89,7 +89,7 @@ class LicenseGate extends Component {
       <div className="license-gate-r4">
         <form onSubmit={mode === 'login' ? this.signIn : this.resetPassword} className="license-gate-card">
           <div className="license-gate-mark"><i className={mode === 'login' ? 'ion-md-lock' : 'ion-md-key'} /></div>
-          <div className="license-gate-badge">CONTROL PLANE R6</div>
+          <div className="license-gate-badge">CONTROL PLANE R7</div>
           <div className="license-gate-title">{mode === 'login' ? 'Sign in to rCart' : 'Choose a new password'}</div>
           <div className="license-gate-copy">
             {mode === 'login'

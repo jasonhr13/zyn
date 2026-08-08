@@ -1,5 +1,6 @@
 import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
+import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 // Mirrors P-Bandai's STATUS_META, scoped to what the monitor script actually reports right now
@@ -95,7 +96,7 @@ class PokemonCenter extends Component {
                 <select className="form-select" value={proxyListName} onChange={e => this.set('proxyListName', e.target.value)} disabled={running}>
                   <option value="">None (home IP)</option>
                   {proxyLists.map(l => (
-                    <option key={l.name} value={l.name}>My Proxies: {l.name}</option>
+                    <option key={proxyRef(l)} value={proxyRef(l)}>My Proxies: {proxyLabel(l)}</option>
                   ))}
                 </select>
               </div>

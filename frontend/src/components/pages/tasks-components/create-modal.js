@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import { proxyLabel, proxyRef } from '../../proxy-options';
 
 class CreateTaskModal extends Component {
   constructor(props) {
@@ -181,7 +182,7 @@ class CreateTaskModal extends Component {
                 >
                   <option value="">None</option>
                   {proxies.lists.map(l => (
-                    <option key={l.name} value={l.name}>{l.name}</option>
+                    <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>
                   ))}
                 </select>
               </div>

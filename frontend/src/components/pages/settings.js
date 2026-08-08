@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -18,7 +19,7 @@ class Settings extends Component {
       targetVerboseLogs: false, shapeMethod: 'In Bot',
       // Auto Buy: who runs when a BUY NOW button on a monitor embed is clicked.
       autoBuyGroup: '', autoBuyMax: '5', autoBuyConnection: 'inhouse1',
-      licenseEmail: '', licenseOffline: false,
+      licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
       licenseTaskTypes: { pokemoncenter: false, round1: false }, signingOut: false,
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
     };
@@ -49,6 +50,8 @@ class Settings extends Component {
     this.setState({
       licenseEmail: status.email || '',
       licenseOffline: status.offline === true,
+      proxyAccess: status.proxyAccess === true,
+      managedProxyCount: Number(status.managedProxyCount) || 0,
       licenseTaskTypes: {
         pokemoncenter: status.taskTypes?.pokemoncenter === true,
         round1: status.taskTypes?.round1 === true,
@@ -180,7 +183,7 @@ class Settings extends Component {
     const { discordWebhook, lucaApiKey, hyperApiKey, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
       targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
-      licenseEmail, licenseOffline, licenseTaskTypes, signingOut } = this.state;
+      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, licenseTaskTypes, signingOut } = this.state;
 
     // Groups come from the profiles themselves, so the list can never drift from what exists.
     const allProfiles = this.props.profiles || [];
@@ -232,9 +235,12 @@ class Settings extends Component {
               <span>Round1</span><strong className={licenseTaskTypes.round1 ? 'enabled' : 'disabled'}>
                 {licenseTaskTypes.round1 ? 'Enabled' : 'Not included'}
               </strong>
+              <span>Managed proxies</span><strong className={proxyAccess ? 'enabled' : 'disabled'}>
+                {proxyAccess ? `${managedProxyCount} list${managedProxyCount === 1 ? '' : 's'}` : 'Not included'}
+              </strong>
             </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Module access updates automatically. Managed proxy access remains disabled in this release.
+              Module and managed proxy access update automatically from your rCart account.
             </div>
           </div>
 
@@ -324,7 +330,7 @@ class Settings extends Component {
                   <option value="inhouse2">In-House 2</option>
                   <option value="inhousemix">In-House Mix</option>
                   <option value="none">No proxy</option>
-                  {proxyLists.map(l => <option key={l.name} value={`list:${l.name}`}>{l.name}</option>)}
+                  {proxyLists.map(l => <option key={proxyRef(l)} value={`list:${proxyRef(l)}`}>{proxyLabel(l)}</option>)}
                 </select>
               </div>
             </div>

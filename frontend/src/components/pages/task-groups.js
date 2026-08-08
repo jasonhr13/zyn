@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
+import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -408,7 +409,7 @@ class TaskGroups extends Component {
         <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
         <select className="form-select task-proxy-select" value={task.proxyListName || ''} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
           <option value="">Local</option>
-          {this.proxyLists().map(list => <option key={list.name} value={list.name}>{list.name}</option>)}
+          {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
         </select>
         <StatusBadge status={status} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
@@ -449,7 +450,7 @@ class TaskGroups extends Component {
             <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
             <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
-            <div><span>Default proxy</span><strong>{group.proxyListName || 'Local'}</strong></div>
+            <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
           </div>
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
@@ -490,7 +491,7 @@ class TaskGroups extends Component {
             <div className="form-group"><label className="form-label">Target SKUs or product URLs</label><textarea className="form-input group-sku-input" value={draft.skus} placeholder={'12345678\nhttps://www.target.com/p/example/-/A-87654321'} onChange={event => this.setState({ groupDraft: { ...draft, skus: event.target.value } })} /><div className="form-hint">One per line or comma-separated. The existing engine receives the same parsed TCIN list as the legacy Target page.</div></div>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
-              <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={list.name} value={list.name}>{list.name}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
             </div>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary" onClick={this.closeGroupModal}>Cancel</button><button className="btn btn-primary" disabled={!String(draft.name || '').trim()} onClick={this.saveGroup}><Icon name="check" size={12} /> {editing ? 'Save Changes' : 'Create Group'}</button></div>
@@ -509,7 +510,7 @@ class TaskGroups extends Component {
           <div className="modal-header"><div><div className="modal-title">Add Account Tasks</div><p>Select one or more Target accounts for “{group.name}”.</p></div><button className="modal-close" onClick={() => this.setState({ showTaskModal: false })}>×</button></div>
           <div className="modal-body">
             <div className="task-create-summary"><span><Icon name="user" size={14} /> {this.state.selectedAccounts.length} selected</span><strong>{accounts.length} Target accounts</strong></div>
-            <div className="form-group"><label className="form-label">Proxy group for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}><option value="">Local</option>{this.proxyLists().map(list => <option key={list.name} value={list.name}>{list.name}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">Proxy group for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
             <div className="form-label">Accounts</div>
             <div className="task-account-picker">
               {!accounts.length && <div className="task-account-empty">No accounts are tagged Target. Add them from Accounts first.</div>}

@@ -16,6 +16,8 @@ const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
 const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
+const { createManagedProxyControl } = require('./managed-proxy-control');
+const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 
 // Main-process-only release metadata. The original app does not consume it in R0; future phases
 // can query the same frozen object without smuggling configuration through renderer globals.
@@ -236,6 +238,17 @@ function pushLicenseStatus(status) {
   } catch {}
 }
 
+function pushProxyCatalog(catalog) {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('proxiesUpdated', catalog);
+      }
+    }
+  } catch {}
+}
+
 function stopAllRunningForLicense() {
   // Use recoverable stop methods here. Engine shutdown() is reserved for app quit and sets a
   // one-way latch that would prevent a freshly signed-in user from starting again this run.
@@ -322,7 +335,23 @@ function guardTaskHelpers(authority) {
   }
 }
 
-function installReplacementLicenseEnforcement() {
+function installManagedProxyControlPlane() {
+  if (!FEATURES.managedProxies) return null;
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    return createManagedProxyControl({
+      dataManager,
+      onCatalog: pushProxyCatalog,
+      onCredentialsChanged: stopAllRunningForLicense,
+      logger: console,
+    });
+  } catch (error) {
+    console.error(`Could not install managed proxy storage: ${error.message}`);
+    return null;
+  }
+}
+
+function installReplacementLicenseEnforcement(managedProxyControl) {
   if (!FEATURES.licenseEnforce) return null;
   const { ipcMain, safeStorage } = require('electron');
   const authority = installLicenseAuthority({
@@ -332,6 +361,11 @@ function installReplacementLicenseEnforcement() {
     onStatus: pushLicenseStatus,
     onLock: stopAllRunningForLicense,
     onEntitlementsChanged: stopRemovedTaskTypes,
+    onManagedProxies: result => {
+      if (!managedProxyControl) return null;
+      const count = managedProxyControl.applyLicenseResult(result);
+      return { count, revision: managedProxyControl.revision() };
+    },
     logger: console,
   });
 
@@ -510,7 +544,8 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
   installWindowSizePersistence();
   installTaskGroupControlPlane();
   installProfileImapControlPlane();
-  const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement() : null;
+  const managedProxyControl = installManagedProxyControlPlane();
+  const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   installProfileImapIpc(licenseAuthority);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
@@ -528,7 +563,19 @@ if (!fs.existsSync(wine) || !fs.existsSync(originalAsar)) {
         },
       })
     : () => {};
+  const restoreManagedProxyIpc = licenseAuthority && managedProxyControl && FEATURES.managedProxies
+    ? installManagedProxyIpcGuard({
+        ipcMain: require('electron').ipcMain,
+        dataManager: require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js')),
+        control: managedProxyControl,
+        onBlocked: ({ channel, message }) => console.warn(`Blocked ${channel} — ${message}`),
+      })
+    : () => {};
   try { require(path.join(originalAsar, 'public', 'electron.js')); }
-  finally { restoreTaskTypeIpc(); }
+  finally {
+    // Guards are nested in registration order, so restore them in reverse.
+    restoreManagedProxyIpc();
+    restoreTaskTypeIpc();
+  }
   if (licenseAuthority) replaceRetiredLicenseIpc(licenseAuthority);
 }

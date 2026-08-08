@@ -1,5 +1,6 @@
 import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
+import { proxyCount, proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 const STATUS_META = {
@@ -134,8 +135,8 @@ class Walmart extends Component {
                 >
                   <option value="">None (home IP)</option>
                   {proxyLists.map(l => (
-                    <option key={l.name} value={l.name}>
-                      {l.name} ({l.raw ? l.raw.split('\n').filter(x => x.trim()).length : 0})
+                    <option key={proxyRef(l)} value={proxyRef(l)}>
+                      {proxyLabel(l)} ({proxyCount(l)})
                     </option>
                   ))}
                 </select>
