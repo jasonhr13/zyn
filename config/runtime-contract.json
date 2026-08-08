@@ -51,6 +51,9 @@
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
+    "Contents/Resources/bot/shape-farmer.mjs",
+    "Contents/Resources/node_modules/playwright-core/browsers.json",
+    "Contents/Resources/vendor/ms-playwright/chromium-1228/chrome-win64/chrome.exe",
     "Contents/Resources/wine/bin/wineserver"
   ],
   "symlinks": [

@@ -17,6 +17,8 @@ execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines
 const target = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
 const walmart = fs.readFileSync(path.join(directory, 'walmart-engine.js'), 'utf8');
 assert.match(target, /dm\.getProfileImap\(profileId, email\)/);
+assert.match(target, /'--headless=true'/);
+assert.doesNotMatch(target, /'--headless=false'/);
 assert.match(target, /taskProfileById\.set\(t\.id, t\.profileId/);
 assert.match(target, /useOtpLogin: otpEnabled\(t\.profileId\)/);
 assert.match(target, /profileId: first\.profileId/);

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-// R6 keeps the recovered R5 engines as the source of truth. These narrow replacements only route
-// OTP reads through the profile-owned mailbox API ported from jasonhr13/hope. Refuse unknown inputs
-// so a future engine update cannot be silently rewritten with stale assumptions.
+// R6 keeps the recovered R5 engines as the source of truth. These narrow replacements route OTP
+// reads through the profile-owned mailbox API ported from jasonhr13/hope and opt the Target farmer
+// into New Headless. Refuse unknown inputs so a future engine update cannot be silently rewritten
+// with stale assumptions.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -48,6 +49,10 @@ function saveSource(opened) {
 function patchTarget() {
   const opened = openSource('target-engine.js');
   let source = opened.source;
+
+  // The packaged farmer defaults to New Headless too, but pass it explicitly from the control plane
+  // so the selected display mode is unambiguous in the spawned process command line.
+  source = replaceOnce(source, `'--headless=false'`, `'--headless=true'`, 'Target farmer New Headless mode');
 
   source = replaceOnce(source, `// IMAP config for OTP login. Prefer the top-level Settings → Email / OTP fields, but fall back to the
 // Generate tab's config (settings.generate.*) so an existing email-auth-code setup works for Target

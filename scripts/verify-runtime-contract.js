@@ -88,6 +88,30 @@ check('build receipt', () => {
   assert.deepEqual(receipt.features, contract.features);
 });
 
+check('Target farmer New Headless launch contract', () => {
+  const resources = path.join(appPath, 'Contents', 'Resources');
+  const farmer = fs.readFileSync(path.join(resources, 'bot', 'shape-farmer.mjs'), 'utf8');
+  assert.match(farmer, /const HEADLESS = argOf\('headless', 'true'\) === 'true'/, 'farmer does not default to headless');
+  assert.match(farmer, /\{ key: 'chromium', channel: 'chromium', realBrand: false \}/, 'bundled Chromium lacks its explicit channel');
+  assert.doesNotMatch(farmer, /\{ key: 'chromium', channel: null, realBrand: false \}/, 'bundled Chromium can fall through to headless shell');
+
+  const asar = require(path.join(projectDir, 'frontend', 'node_modules', '@electron', 'asar'));
+  const targetEngine = asar.extractFile(path.join(resources, 'app-original.asar'), 'public/helpers/target-engine.js').toString('utf8');
+  assert.match(targetEngine, /'--headless=true'/, 'control plane does not request headless mode');
+  assert.doesNotMatch(targetEngine, /'--headless=false'/, 'control plane still requests headed mode');
+
+  const browsers = JSON.parse(fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'browsers.json'), 'utf8'));
+  const chromium = browsers.browsers.find((browser) => browser.name === 'chromium');
+  assert.ok(chromium, 'regular Chromium descriptor is missing');
+  assert.equal(
+    fs.existsSync(path.join(resources, 'vendor', 'ms-playwright', `chromium-${chromium.revision}`, 'chrome-win64', 'chrome.exe')),
+    true,
+    'regular Chromium executable is missing',
+  );
+  const coreBundle = fs.readFileSync(path.join(resources, 'node_modules', 'playwright-core', 'lib', 'coreBundle.js'), 'utf8');
+  assert.match(coreBundle, /options\.channel && registry\.isChromiumAlias\(options\.channel\)[\s\S]{0,80}return "chromium"/, 'Playwright does not map the chromium channel to regular Chromium');
+});
+
 if (failures.length) {
   console.error(`Runtime contract failed for ${appPath}:`);
   for (const failure of failures) console.error(`- ${failure}`);

@@ -54,6 +54,7 @@ node -e '
 
 cp -cR "$BASE_APP" "$OUTPUT_APP"
 RESOURCES="$OUTPUT_APP/Contents/Resources"
+node "$PROJECT_DIR/scripts/patch-target-farmer-new-headless.js" "$RESOURCES/bot/shape-farmer.mjs"
 mv "$RESOURCES/app-original.asar" "$RESOURCES/app-react16-original.asar"
 mv "$RESOURCES/app-original.asar.unpacked" "$RESOURCES/app-react16-original.asar.unpacked"
 cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
