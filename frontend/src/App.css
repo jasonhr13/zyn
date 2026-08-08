@@ -919,8 +919,11 @@ body.theme-night .form-select {
 .cookie-bank-offline .cookie-bank-live { color: var(--muted); }
 .cookie-bank-warming .cookie-bank-live, .cookie-bank-working .cookie-bank-live, .cookie-bank-starting .cookie-bank-live { color: var(--run); }
 .cookie-bank-error .cookie-bank-live { color: var(--danger); }
-.cookie-bank-prominent { flex-wrap: wrap; }
-.cookie-bank-health { flex: 1 0 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--panel-border); border-radius: 9px; background: var(--surface-tint); }
+.cookie-bank-prominent { display: grid; grid-template-columns: 38px minmax(140px, 1fr) auto 90px auto; align-items: center; }
+.cookie-bank-prominent .cookie-bank-copy { min-width: 0; }
+.cookie-bank-prominent .cookie-bank-copy em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cookie-bank-prominent .cookie-bank-counts { margin-left: 0; }
+.cookie-bank-health { grid-column: 1 / -1; width: 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--panel-border); border-radius: 9px; background: var(--surface-tint); }
 .cookie-bank-health > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-right: 1px solid var(--panel-border); }
 .cookie-bank-health > span:last-child { border-right: 0; }
 .cookie-bank-health small { color: var(--muted); font-size: 7.5px; font-weight: 750; letter-spacing: .55px; text-transform: uppercase; }

@@ -87,6 +87,7 @@ assert.deepEqual({
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/pages/task-groups.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'frontend/src/App.css'), 'utf8');
 assert.match(taskGroups, /ipcRenderer\.invoke\('targetCookieBank'\)/);
 assert.match(taskGroups, /<small>Login<\/small>/);
 assert.match(taskGroups, /<small>ATC<\/small>/);
@@ -103,5 +104,11 @@ assert.match(taskGroups, /aria-label="Target cookie bank maximum size"/);
 assert.match(taskGroups, /state === 'starting' \? 'Starting broker'/);
 assert.doesNotMatch(taskGroups, /workerLimit \|\| 'Auto'/);
 assert.doesNotMatch(taskGroups, /R2 groups existing Target controls only/);
+assert.match(styles, /\.cookie-bank-prominent \{ display: grid; grid-template-columns:/,
+  'prominent bank header must keep its controls on one grid row');
+assert.match(styles, /\.cookie-bank-prominent \.cookie-bank-copy em \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
+  'long bank status must truncate instead of wrapping the controls');
+assert.match(styles, /\.cookie-bank-health \{ grid-column: 1 \/ -1;/,
+  'health metrics must remain on their own full-width row');
 
 console.log('Target cookie-bank metrics smoke test passed');
