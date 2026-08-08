@@ -118,8 +118,11 @@ async function main() {
         && !managedChecks.rowHasDelete && !managedChecks.editorTextarea;
       const secretVisible = document.documentElement.innerHTML.includes(leakedSecret);
 
-      await route('/generate');
-      const generateOption = [...document.querySelectorAll('select[name="proxyListName"] option')]
+      await route('/task-groups');
+      [...document.querySelectorAll('button')]
+        .find(button => button.textContent.includes('New Group'))?.click();
+      await wait(150);
+      const taskGroupOption = [...document.querySelectorAll('.modal select option')]
         .find(option => option.value === ref);
 
       const originalInvoke = ipc.invoke;
@@ -133,8 +136,11 @@ async function main() {
       ipc.invoke = originalInvoke;
 
       ipc.emit('proxiesUpdated', {}, { lists: local ? [local] : [] });
-      await route('/generate');
-      const revokedRemoved = ![...document.querySelectorAll('select[name="proxyListName"] option')]
+      await route('/task-groups');
+      [...document.querySelectorAll('button')]
+        .find(button => button.textContent.includes('New Group'))?.click();
+      await wait(150);
+      const revokedRemoved = ![...document.querySelectorAll('.modal select option')]
         .some(option => option.value === ref);
       ipc.emit('proxiesUpdated', {}, safeCatalog);
       await route('/proxies');
@@ -152,7 +158,7 @@ async function main() {
         managedChecks,
         proxiesRoute,
         secretVisible,
-        generateOption: generateOption ? { value: generateOption.value, label: generateOption.textContent } : null,
+        taskGroupOption: taskGroupOption ? { value: taskGroupOption.value, label: taskGroupOption.textContent } : null,
         settingsAccess,
         revokedRemoved,
       };
@@ -171,8 +177,8 @@ async function main() {
   assert.equal(result.persistedCatalogSafe, true);
   assert.equal(result.managedReadOnly, true);
   assert.equal(result.secretVisible, false);
-  assert.equal(result.generateOption.value, 'managed:11111111-2222-4333-8444-555555555555');
-  assert.match(result.generateOption.label, /Admin Residential.*Managed/);
+  assert.equal(result.taskGroupOption.value, 'managed:11111111-2222-4333-8444-555555555555');
+  assert.match(result.taskGroupOption.label, /Admin Residential.*Managed/);
   assert.match(result.settingsAccess.replace(/\s+/g, ''), /Managedproxies1list/i);
   assert.equal(result.revokedRemoved, true);
   assert.equal(rendererExceptions, 0);

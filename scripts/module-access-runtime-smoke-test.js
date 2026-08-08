@@ -167,22 +167,21 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
   socket.close();
 
-  const expectedBase = ['Task Groups', 'Bandai', 'Secret Lair'];
-  const expectedAll = [...expectedBase, 'Round1', 'Pokémon Center'];
+  const expectedCards = [];
   const exact = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
   const compactSettingsAccess = report.settingsAccess.replace(/\s+/g, '');
   if (report.authoritative.ok !== false
     || !exact(report.authoritative.taskTypes, { pokemoncenter: false, round1: false })
-    || report.gateBadge !== 'CONTROL PLANE R5'
-    || !exact(report.deniedCards, expectedBase)
-    || !report.deniedRound1Route.hash.endsWith('/modules')
-    || !report.deniedPokemonRoute.hash.endsWith('/modules')
-    || !exact(report.allowedCards, expectedAll)
-    || !/Round1/i.test(report.allowedRound1Route.title)
-    || !/Pokémon/i.test(report.allowedPokemonRoute.title)
-    || !compactSettingsAccess.includes('PokémonCenterEnabled')
-    || !compactSettingsAccess.includes('Round1Enabled')
-    || !report.removalRedirect.endsWith('/modules')
+    || report.gateBadge !== 'CONTROL PLANE R7'
+    || !exact(report.deniedCards, expectedCards)
+    || !report.deniedRound1Route.hash.endsWith('/task-groups')
+    || !report.deniedPokemonRoute.hash.endsWith('/task-groups')
+    || !exact(report.allowedCards, expectedCards)
+    || !report.allowedRound1Route.hash.endsWith('/task-groups')
+    || !report.allowedPokemonRoute.hash.endsWith('/task-groups')
+    || !compactSettingsAccess.includes('TargetworkspaceEnabled')
+    || /Pokémon|Round1/i.test(report.settingsAccess)
+    || !report.removalRedirect.endsWith('/task-groups')
     || report.launchBoundary.round1Accepted !== false
     || report.launchBoundary.denialPushes < 2
     || report.launchBoundary.authoritativeOk !== false

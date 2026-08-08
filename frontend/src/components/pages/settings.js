@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
-import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -33,17 +32,15 @@ class Settings extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      discordWebhook: '', lucaApiKey: '', hyperApiKey: '',
+      discordWebhook: '',
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
       // from jasonhr13/hope under the same persisted keys used by cloud backup.
       targetAtcHarvestTcins: '', targetCookieBank: '', targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, shapeMethod: 'In Bot',
-      // Auto Buy: who runs when a BUY NOW button on a monitor embed is clicked.
-      autoBuyGroup: '', autoBuyMax: '5', autoBuyConnection: 'inhouse1',
       licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
-      licenseTaskTypes: { pokemoncenter: false, round1: false }, signingOut: false,
+      signingOut: false,
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
     };
   }
@@ -51,7 +48,7 @@ class Settings extends Component {
   syncFromProps(s) {
     const g = s.generate || {};
     this.setState({
-      discordWebhook: s.discordWebhook || '', lucaApiKey: s.lucaApiKey || '', hyperApiKey: s.hyperApiKey || '',
+      discordWebhook: s.discordWebhook || '',
       aycdApiKey: s.aycdApiKey || g.aycdApiKey || '',
       // Blank means "use the engine default" — the placeholders show what that default is, so an empty
       // box is never ambiguous. targetAtcHarvestTcin (singular) is the legacy key for the same setting.
@@ -64,9 +61,6 @@ class Settings extends Component {
       targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!s.targetVerboseLogs,
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
-      autoBuyGroup: (s.autoBuy && s.autoBuy.group) || '',
-      autoBuyMax: String((s.autoBuy && s.autoBuy.max) || 5),
-      autoBuyConnection: (s.autoBuy && s.autoBuy.connection) || 'inhouse1',
     });
   }
 
@@ -78,10 +72,6 @@ class Settings extends Component {
       licenseOffline: status.offline === true,
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
-      licenseTaskTypes: {
-        pokemoncenter: status.taskTypes?.pokemoncenter === true,
-        round1: status.taskTypes?.round1 === true,
-      },
     });
   };
 
@@ -113,20 +103,12 @@ class Settings extends Component {
   };
 
   save = () => {
-    // Preserve any other stored settings; this screen manages the webhook + antibot solver keys.
+    // Preserve every legacy setting in storage while this Target-only screen manages only the
+    // settings it exposes. That keeps old backups reversible without leaking retired modules here.
     const settings = {
       ...(this.props.settings || {}),
       discordWebhook: this.state.discordWebhook,
-      lucaApiKey: this.state.lucaApiKey.trim(),
-      hyperApiKey: this.state.hyperApiKey.trim(),
       aycdApiKey: this.state.aycdApiKey.trim(),
-      autoBuy: {
-        group: this.state.autoBuyGroup,
-        // Clamped here AND in main: a hand-edited settings.json is the other way this number
-        // arrives, and 500 browsers from one click is not a mistake worth allowing twice.
-        max: Math.max(1, Math.min(50, parseInt(this.state.autoBuyMax, 10) || 5)),
-        connection: this.state.autoBuyConnection,
-      },
       // Normalise the TCIN list to bare comma-separated numbers: the farmer accepts full product URLs
       // too, so a pasted Target link survives, but stray spaces/newlines from a paste would otherwise
       // reach --atcTcins verbatim and break the argument.
@@ -211,20 +193,11 @@ class Settings extends Component {
   }
 
   render() {
-    const { discordWebhook, lucaApiKey, hyperApiKey, aycdApiKey, showAycdKey, saved,
+    const { discordWebhook, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
-      targetVerboseLogs, shapeMethod, autoBuyGroup, autoBuyMax, autoBuyConnection,
-      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, licenseTaskTypes, signingOut } = this.state;
-
-    // Groups come from the profiles themselves, so the list can never drift from what exists.
-    const allProfiles = this.props.profiles || [];
-    const profileGroups = [...new Set(allProfiles.flatMap(p => p.groups || []))].sort((a, b) => a.localeCompare(b));
-    const matchingProfiles = autoBuyGroup
-      ? allProfiles.filter(p => (p.groups || []).includes(autoBuyGroup)).length
-      : allProfiles.length;
-    const autoBuyCap = Math.max(1, Math.min(50, parseInt(autoBuyMax, 10) || 5));
-    const proxyLists = ((this.props.proxies || {}).lists) || [];
+      targetVerboseLogs, shapeMethod,
+      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
     // would not reach a state copy until the next settings update.
     const operatorMode = !!(this.props.settings || {}).operatorMode;
@@ -260,19 +233,13 @@ class Settings extends Component {
               </button>
             </div>
             <div className="license-module-access" data-license-module-access="active">
-              <span>Base workspaces</span><strong>Enabled</strong>
-              <span>Pokémon Center</span><strong className={licenseTaskTypes.pokemoncenter ? 'enabled' : 'disabled'}>
-                {licenseTaskTypes.pokemoncenter ? 'Enabled' : 'Not included'}
-              </strong>
-              <span>Round1</span><strong className={licenseTaskTypes.round1 ? 'enabled' : 'disabled'}>
-                {licenseTaskTypes.round1 ? 'Enabled' : 'Not included'}
-              </strong>
+              <span>Target workspace</span><strong>Enabled</strong>
               <span>Managed proxies</span><strong className={proxyAccess ? 'enabled' : 'disabled'}>
                 {proxyAccess ? `${managedProxyCount} list${managedProxyCount === 1 ? '' : 's'}` : 'Not included'}
               </strong>
             </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Module and managed proxy access update automatically from your rCart account.
+              Target and managed proxy access update automatically from your rCart account.
             </div>
           </div>
 
@@ -313,97 +280,9 @@ class Settings extends Component {
             </div>
           </div>
 
-          {/* Who runs when BUY NOW is clicked on a monitor embed. The SKU and quantity come off the
-              embed itself (PID and Cart Limit); this is the only part that is a choice. */}
-          <div className="settings-section">
-            <div className="settings-section-title">Auto Buy Profiles</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
-              Clicking <b>Buy Now</b> on a P-Bandai restock embed launches these profiles straight at
-              that SKU. Quantity follows the embed&apos;s Cart Limit. Only a click from the Discord
-              account this licence belongs to will do anything on this machine.
-            </div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ flex: '1 1 220px', minWidth: 0 }}>
-                <label className="form-label">Profile group</label>
-                <select
-                  className="form-select"
-                  value={autoBuyGroup}
-                  onChange={e => this.set('autoBuyGroup', e.target.value)}
-                >
-                  <option value="">All profiles</option>
-                  {profileGroups.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
-                  {matchingProfiles} profile{matchingProfiles === 1 ? '' : 's'} match
-                </div>
-              </div>
-              <div className="form-group" style={{ flex: '0 0 150px' }}>
-                <label className="form-label">Max at once</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={autoBuyMax}
-                  onChange={e => this.set('autoBuyMax', e.target.value)}
-                />
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
-                  one browser each
-                </div>
-              </div>
-              <div className="form-group" style={{ flex: '1 1 200px', minWidth: 0 }}>
-                <label className="form-label">Connection</label>
-                <select
-                  className="form-select"
-                  value={autoBuyConnection}
-                  onChange={e => this.set('autoBuyConnection', e.target.value)}
-                >
-                  <option value="inhouse1">In-House 1</option>
-                  <option value="inhouse2">In-House 2</option>
-                  <option value="inhousemix">In-House Mix</option>
-                  <option value="none">No proxy</option>
-                  {proxyLists.map(l => <option key={proxyRef(l)} value={`list:${proxyRef(l)}`}>{proxyLabel(l)}</option>)}
-                </select>
-              </div>
-            </div>
-            {matchingProfiles > autoBuyCap && (
-              <div style={{ fontSize: 11, color: '#ff8a5a', marginTop: 6 }}>
-                Only the first {autoBuyCap} of {matchingProfiles} will launch — one click, {autoBuyCap} browsers.
-              </div>
-            )}
-          </div>
-
-          {/* Operator-only from here. Solver keys are the operator's paid accounts — a beta tester
-              seeing them can copy them, and a tester CHANGING them silently breaks Walmart for
-              themselves with no error that points back here. Same for the harvest settings: wrong
-              TCINs starve the cookie bank and the symptom shows up as unexplained checkout failures
-              hours later. Hidden, not removed — see the operatorMode note by the page title. */}
+          {/* Operator-only Target harvest settings. Hidden by default because wrong TCINs can starve
+              the cookie bank and surface much later as unexplained checkout failures. */}
           {operatorMode && (<>
-          <div className="settings-section">
-            <div className="settings-section-title">Antibots / Solver Keys</div>
-            <div className="form-group">
-              <label className="form-label">Luca (PerimeterX) API Key — Walmart</label>
-              <input
-                className="form-input monospace"
-                placeholder="paste your ParallaxAPIs / Luca key"
-                value={lucaApiKey}
-                onChange={e => this.set('lucaApiKey', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Hyper Solutions API Key (optional)</label>
-              <input
-                className="form-input monospace"
-                placeholder="paste your Hyper Solutions key"
-                value={hyperApiKey}
-                onChange={e => this.set('hyperApiKey', e.target.value)}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              Required for Walmart checkout — the engine solves PerimeterX with this key. Without it, Walmart tasks stall at “px init failed”.
-            </div>
-          </div>
-
           {/* These settings are applied on the next farmer spawn. Throughput and bandwidth controls
               use the same persisted keys as jasonhr13/hope so backups remain compatible. */}
           <div className="settings-section">
@@ -580,4 +459,4 @@ class Settings extends Component {
   }
 }
 
-export default connect(s => ({ settings: s.settings, update: s.update, profiles: s.profiles, proxies: s.proxies }))(Settings);
+export default connect(s => ({ settings: s.settings, update: s.update }))(Settings);

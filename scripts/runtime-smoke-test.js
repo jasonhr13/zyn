@@ -93,9 +93,7 @@ async function main() {
       const electron = window.require('electron');
       const ipc = electron.ipcRenderer;
       const routePaths = [
-        '/modules', '/task-groups', '/tasks', '/generate', '/pbandai', '/round1', '/riotgames',
-        '/pokemoncenter', '/target', '/walmart', '/profiles', '/accounts',
-        '/proxies', '/settings'
+        '/task-groups', '/target', '/profiles', '/accounts', '/proxies', '/settings'
       ];
       const routes = [];
 
@@ -111,7 +109,7 @@ async function main() {
         });
       }
 
-      location.hash = '#/modules';
+      location.hash = '#/task-groups';
       await waitForPaint();
       const shell = {
         brand: (document.querySelector('.title-bar-name')?.textContent || '').trim(),
@@ -121,6 +119,22 @@ async function main() {
           .map(element => element.textContent.trim()),
         activeNavigation: (document.querySelector('.sidebar-link.active .sidebar-label')?.textContent || '').trim(),
         theme: document.body.classList.contains('theme-night') ? 'night' : 'day'
+      };
+
+      location.hash = '#/accounts';
+      await waitForPaint();
+      [...document.querySelectorAll('button')]
+        .find(button => button.textContent.includes('Add Accounts'))?.click();
+      await waitForPaint();
+      const siteSelect = document.querySelector('select[aria-label="Account site"]');
+      const accountUi = {
+        site: siteSelect?.value || '',
+        siteOptions: [...(siteSelect?.options || [])].map(option => option.textContent.trim()),
+        hasFilterChips: [...document.querySelectorAll('.page-area button')]
+          .some(button => /^(All|Bandai|Target(?: \(\d+\))?|iCloud)$/.test(button.textContent.trim())),
+        hasRetiredSiteText: /Bandai|Walmart|Pokémon|Round1|Riot|Secret Lair/.test(
+          document.querySelector('.page-area')?.textContent || ''
+        )
       };
 
       const safeLength = (channel) => {
@@ -217,6 +231,7 @@ async function main() {
           settings: safeLength('getSettings')
         },
         shell,
+        accountUi,
         routes,
         layout: {
           viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
@@ -244,7 +259,7 @@ async function main() {
     awaitPromise: true,
     expression: `(async () => {
       document.querySelector('.modal-close')?.click();
-      location.hash = '#/modules';
+      location.hash = '#/task-groups';
       await new Promise(resolve => setTimeout(resolve, 350));
     })()`,
   });
@@ -266,18 +281,20 @@ async function main() {
   const shellFailed = report.shell.brand !== 'Hope'
     || report.shell.activeNavigation !== 'Tasks'
     || JSON.stringify(report.shell.navigation) !== JSON.stringify([
-      'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Generate', 'Settings'
+      'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Settings'
     ])
-    || JSON.stringify(report.shell.moduleCards) !== JSON.stringify([
-      'Task Groups', 'Bandai', 'Secret Lair', 'Round1'
-    ]);
+    || JSON.stringify(report.shell.moduleCards) !== JSON.stringify([]);
   const replacementLicenseFailed = report.replacementLicense.mode !== 'observe'
     || report.replacementLicense.enforcing !== false
     || !report.replacementLicense.panel.present
     || report.replacementLicense.panel.badge !== 'R3 · OBSERVE ONLY'
     || !report.replacementLicense.panel.warnsAboutReplacement
     || report.replacementLicense.panel.rendererKeys.some(key => /token|password|device/i.test(key));
-  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed || replacementLicenseFailed) {
+  const accountUiFailed = report.accountUi.site !== 'target'
+    || JSON.stringify(report.accountUi.siteOptions) !== JSON.stringify(['Target'])
+    || report.accountUi.hasFilterChips
+    || report.accountUi.hasRetiredSiteText;
+  if (!report.licenseOk || report.profileInput.insertedCharacters !== 60 || routeFailed || bridgeFailed || shellFailed || accountUiFailed || replacementLicenseFailed) {
     process.exitCode = 1;
   }
 }

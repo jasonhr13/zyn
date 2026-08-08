@@ -27,11 +27,8 @@ const uid = () => 't_' + Math.random().toString(36).slice(2, 10);
 // "nothing chosen" value. Only the bulk dropdown needs the distinction.
 const LOCAL_SENTINEL = '__local__';
 
-// Mirrors accounts.js: untagged accounts predate site tagging and belong to Bandai, so anything
-// without an explicit site is NOT a Target login. Showing the full account list here was actively
-// misleading — a Bandai account can never log into Target, so offering it is offering a task that
-// cannot run.
-const siteOf = (a) => a.site || 'bandai';
+// Only explicitly tagged Target accounts can be assigned to a Target task.
+const siteOf = (a) => String((a && a.site) || '').toLowerCase();
 
 // Local panel styling. `.panel-header` renders its children inline, which ran the title straight
 // into the meta text ("Watch List0 valid"), so spacing is set explicitly here.
@@ -230,7 +227,7 @@ class Target extends Component {
     this.onSkuTitles = (e, payload) => this.setState({ skuTitles: (payload && payload.titles) || {} });
     ipcRenderer.on('targetSkuTitles', this.onSkuTitles);
     window.addEventListener('keydown', this.onKeyDown);
-    // Tasks + the SKU list live in main so they survive a restart, the same way Secret Lair's do.
+    // Tasks + the SKU list live in main so they survive a restart.
     try {
       const saved = ipcRenderer.sendSync('getTargetTasks') || {};
       const rawTasks = Array.isArray(saved.tasks) ? saved.tasks : [];
@@ -693,7 +690,6 @@ class Target extends Component {
 
     const proxyLists = (proxies && proxies.lists) || [];
     const skus = parseSkuBox(target.skus);
-    const running = Object.keys(taskStatus).length > 0;
     const { bank } = this.state;
 
     const q = filter.trim().toLowerCase();
@@ -713,8 +709,7 @@ class Target extends Component {
     const selectedCount = shown.filter(t => selected[t.id]).length;
     const allShownSelected = shown.length > 0 && selectedCount === shown.length;
 
-    // Target accounts ONLY — a Bandai login cannot sign into Target, so listing it would just
-    // create tasks that can never run.
+    // Target accounts only; other or untagged legacy records stay preserved but hidden.
     const targetAccounts = accounts.filter(a => siteOf(a) === 'target');
     const allAccountsPicked = targetAccounts.length > 0
       && targetAccounts.every(a => draft.accountIds.includes(a.id));

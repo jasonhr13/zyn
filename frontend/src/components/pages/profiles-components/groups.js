@@ -1,11 +1,9 @@
 import React, { Component } from 'react';
 const { ipcRenderer } = window.require('electron');
 
-// Profiles → Groups manager. A "group" is just a free-text tag stored on each profile
-// (`profiles[].groups: string[]`) — the exact field the Bandai picker's chips read — so anything you
-// tag here shows up as a selectable chip (All · Coupon · <your group>) on the Bandai page, letting you
-// launch a whole group at once. Writes go through batch IPC, then we re-fetch the authoritative profiles
-// list so Redux and disk can't drift.
+// Profiles → Groups manager. A "group" is a free-text tag stored on each profile
+// (`profiles[].groups: string[]`). Writes go through batch IPC, then we re-fetch the authoritative
+// profiles list so Redux and disk cannot drift.
 const inputStyle = {
   width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '6px 9px',
   border: '1px solid var(--field-border)', borderRadius: 6, background: 'var(--bg)', color: 'inherit', outline: 'none',
@@ -23,8 +21,7 @@ class Groups extends Component {
 
   count = (g) => this.props.profiles.filter(p => (p.groups || []).includes(g)).length;
 
-  // After any write, re-pull the authoritative profiles list and push it into Redux (the Bandai chips
-  // read the same slice, so they update automatically).
+  // After any write, re-pull the authoritative profiles list and push it into Redux.
   refresh = () => {
     const profiles = ipcRenderer.sendSync('getProfiles') || [];
     this.props.dispatch({ type: 'update', obj: { profiles } });
@@ -38,12 +35,7 @@ class Groups extends Component {
     this.setState(s => ({ newName: '', selected: name, search: '', draftGroups: [...new Set([...s.draftGroups, name])] }));
   };
 
-  // "Coupon" is auto-built from Coupon-Mode scans — treat it as read-only-ish here so a stray bulk click
-  // can't wipe/repopulate the scan results (which is exactly how it once got polluted to 1286).
-  isAuto = (g) => g === 'Coupon';
-
   deleteGroup = (g) => {
-    if (this.isAuto(g)) { window.alert(`“${g}” is auto-managed by Coupon-Mode scans and can’t be deleted here. Use “Rescan all” on the Bandai page to rebuild it.`); return; }
     const n = this.count(g);
     if (n && !window.confirm(`Remove the group “${g}” from ${n} profile(s)? (The profiles themselves are kept.)`)) return;
     const ids = this.props.profiles.filter(p => (p.groups || []).includes(g)).map(p => p.id);
@@ -63,11 +55,10 @@ class Groups extends Component {
     this.setState(s => ({ draftGroups: s.draftGroups.filter(x => x !== g) }), this.refresh);
   };
 
-  // Bulk add/remove — always confirm (a whole-group rewrite is exactly what nuked Coupon), and never
-  // allowed on an auto-managed group.
+  // Bulk add/remove always confirms because a whole-group rewrite is intentionally high impact.
   bulkSet = (ids, on) => {
     const g = this.state.selected;
-    if (!g || !ids.length || this.isAuto(g)) return;
+    if (!g || !ids.length) return;
     if (!window.confirm(`${on ? 'Add' : 'Remove'} ${ids.length} profile(s) ${on ? 'to' : 'from'} the group “${g}”?`)) return;
     this.writeMembers(ids, on);
   };
@@ -138,18 +129,13 @@ class Groups extends Component {
                   placeholder="Search profiles by name or email…"
                   style={{ ...inputStyle, flex: 1 }}
                 />
-                <button className="btn btn-secondary btn-sm" disabled={this.isAuto(selected) || !shownOut.length} onClick={() => this.bulkSet(shownOut.map(p => p.id), true)}>
+                <button className="btn btn-secondary btn-sm" disabled={!shownOut.length} onClick={() => this.bulkSet(shownOut.map(p => p.id), true)}>
                   + Add {q ? 'shown' : 'all'} ({shownOut.length})
                 </button>
-                <button className="btn btn-secondary btn-sm" disabled={this.isAuto(selected) || !shownIn.length} onClick={() => this.bulkSet(shownIn.map(p => p.id), false)}>
+                <button className="btn btn-secondary btn-sm" disabled={!shownIn.length} onClick={() => this.bulkSet(shownIn.map(p => p.id), false)}>
                   − Remove {q ? 'shown' : 'all'} ({shownIn.length})
                 </button>
               </div>
-              {this.isAuto(selected) && (
-                <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6, padding: '6px 9px', border: '1px solid var(--field-border)', borderRadius: 6, background: 'rgba(245,158,11,0.08)' }}>
-                  ⚠ “{selected}” is auto-built from Coupon-Mode scans — bulk edits are disabled so scan results can’t be overwritten. You can still untick a stray one below.
-                </div>
-              )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
                 “{selected}” — {this.count(selected)} profile(s) in group
               </div>

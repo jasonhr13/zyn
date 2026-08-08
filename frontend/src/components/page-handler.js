@@ -6,21 +6,12 @@ import Sidebar from './sidebar';
 import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
-import Modules from './pages/modules';
 import TaskGroups from './pages/task-groups';
-import Tasks from './pages/tasks';
-import Pbandai from './pages/pbandai';
-import Round1 from './pages/round1';
-import RiotGames from './pages/priotgames';
-import PokemonCenter from './pages/pokemoncenter';
 import Target from './pages/target';
-import Walmart from './pages/walmart';
 import Profiles from './pages/profiles';
 import Accounts from './pages/accounts';
 import Proxies from './pages/proxies';
 import Settings from './pages/settings';
-import Generate from './pages/generate';
-import { pushLinks } from './queue-pass-client';
 const { ipcRenderer } = window.require('electron');
 
 class PageHandler extends Component {
@@ -38,89 +29,15 @@ class PageHandler extends Component {
     });
 
     // Load initial data
-    const tasks = ipcRenderer.sendSync('getTasks');
     const profiles = ipcRenderer.sendSync('getProfiles');
     const accounts = ipcRenderer.sendSync('getAccounts');
     const proxies = ipcRenderer.sendSync('getProxies');
     const settings = ipcRenderer.sendSync('getSettings');
     const discordStatus = ipcRenderer.sendSync('getDiscordStatus');
-    let lastOrders = {};
-    try { lastOrders = ipcRenderer.sendSync('getLastOrders') || {}; } catch {}
-    let channel = 'dev';
-    try { channel = ipcRenderer.sendSync('getChannel') || 'dev'; } catch {}
-    this.props.dispatch({ type: 'update', obj: { tasks, profiles, accounts, proxies, settings, discordStatus, lastOrders, channel } });
-
-    // Task IPC events
-    ipcRenderer.on('taskStarted', (e, { taskId }) => {
-      this.props.dispatch({ type: 'taskStarted', taskId });
-    });
-
-    ipcRenderer.on('taskStopped', (e, { taskId }) => {
-      this.props.dispatch({ type: 'taskStopped', taskId });
-    });
-
-    ipcRenderer.on('taskDone', (e, { taskId }) => {
-      this.props.dispatch({ type: 'taskDone', taskId });
-    });
-
-    ipcRenderer.on('taskThreadStatus', (e, { taskId, threadId, status }) => {
-      this.props.dispatch({ type: 'taskThreadStatus', taskId, threadId, status });
-    });
-
-    ipcRenderer.on('taskThreadDone', (e, { taskId, threadId, code }) => {
-      this.props.dispatch({
-        type: 'taskThreadStatus',
-        taskId,
-        threadId,
-        status: code === 0 ? 'done' : 'error',
-      });
-    });
-
-    ipcRenderer.on('taskLog', (e, { taskId, threadId, line }) => {
-      this.props.dispatch({ type: 'taskLog', taskId, threadId, line });
-    });
+    this.props.dispatch({ type: 'update', obj: { profiles, accounts, proxies, settings, discordStatus } });
 
     ipcRenderer.on('discordStatus', (e, data) => {
       this.props.dispatch({ type: 'update', obj: { discordStatus: data } });
-    });
-
-    ipcRenderer.on('queuePass', (e, { cartUrl, proxy, sim }) => {
-      this.props.dispatch({ type: 'queuePass', cartUrl, proxy, sim });
-      // Also contribute it to the shared pool so other users' bots can claim it. Fire-and-forget;
-      // the server dedupes on qitq, so every client reporting every link it sees is correct.
-      // Simulated replays stay local — pushing rehearsal links would poison the real shared pool.
-      if (!sim) pushLinks([{ cartUrl, proxy }]);
-    });
-
-    // P-Bandai events are handled HERE, not on the P-Bandai page: that page unmounts on a tab
-    // switch, which used to tear down these listeners and silently drop every restock/checkout
-    // event that arrived while you were elsewhere.
-    ipcRenderer.on('pbandaiLog', (e, { tag, line }) => {
-      this.props.dispatch({ type: 'pbandaiLog', tag, line });
-    });
-    ipcRenderer.on('pbandaiStatus', (e, { instanceId, tag, state, detail }) => {
-      this.props.dispatch({ type: 'pbandaiStatus', instanceId, tag, state, detail });
-    });
-    ipcRenderer.on('pbandaiDone', (e, msg) => {
-      this.props.dispatch({ type: 'pbandaiDone', instanceId: msg && msg.instanceId });
-    });
-    ipcRenderer.on('pbandaiLastOrder', (e, { profileId, ts }) => {
-      this.props.dispatch({ type: 'pbandaiLastOrder', profileId, ts });
-    });
-
-    ipcRenderer.on('pbandaiRotateDone', () => {
-      this.props.dispatch({ type: 'pbandaiSet', obj: { rotate: false } });
-    });
-
-    // Same page-unmount reasoning as P-Bandai above — keep listeners here, not on the page.
-    ipcRenderer.on('pokemonLog', (e, { line }) => {
-      this.props.dispatch({ type: 'pokemonLog', line });
-    });
-    ipcRenderer.on('pokemonStatus', (e, { state, detail }) => {
-      this.props.dispatch({ type: 'pokemonStatus', state, detail });
-    });
-    ipcRenderer.on('pokemonDone', () => {
-      this.props.dispatch({ type: 'pokemonDone' });
     });
 
     // Target checkout engine — same page-unmount reasoning as above: the engine runs in main,
@@ -146,73 +63,23 @@ class PageHandler extends Component {
       this.props.dispatch({ type: 'targetOtp', pending: pending || [] });
     });
 
-    // Walmart checkout engine — same page-unmount reasoning as Target above.
-    ipcRenderer.on('walmartLog', (e, { line }) => {
-      this.props.dispatch({ type: 'walmartLog', line });
-    });
-    ipcRenderer.on('walmartStatus', (e, { state, label, color, detail }) => {
-      this.props.dispatch({ type: 'walmartStatus', state, label, color, detail });
-    });
-    ipcRenderer.on('walmartDone', () => {
-      this.props.dispatch({ type: 'walmartDone' });
-    });
-
-    // Riot Games events — same page-unmount reasoning as above
-    ipcRenderer.on('riotgamesLog', (e, { tag, line }) => {
-      this.props.dispatch({ type: 'riotgamesLog', tag, line });
-    });
-    ipcRenderer.on('riotgamesStatus', (e, { instanceId, tag, state, detail }) => {
-      this.props.dispatch({ type: 'riotgamesStatus', instanceId, tag, state, detail });
-    });
-    ipcRenderer.on('riotgamesDone', (e, msg) => {
-      this.props.dispatch({ type: 'riotgamesDone', instanceId: msg && msg.instanceId });
-    });
-
     // Update status → redux, so the sidebar badge and the Settings "Check for updates" button
     // read one shared source instead of each keeping their own copy.
     ipcRenderer.on('updateStatus', (e, update) => {
       this.props.dispatch({ type: 'update', obj: { update } });
     });
 
-    // Watchlist is persisted in main; seed it once at startup.
-    try {
-      const saved = ipcRenderer.sendSync('getWatchlist');
-      if (typeof saved === 'string' && saved.length) {
-        this.props.dispatch({ type: 'pbandaiSet', obj: { watchlist: saved } });
-      }
-    } catch {}
   }
 
   componentWillUnmount() {
-    ipcRenderer.removeAllListeners('taskStarted');
-    ipcRenderer.removeAllListeners('taskStopped');
-    ipcRenderer.removeAllListeners('taskDone');
-    ipcRenderer.removeAllListeners('taskThreadStatus');
-    ipcRenderer.removeAllListeners('taskThreadDone');
-    ipcRenderer.removeAllListeners('taskLog');
     ipcRenderer.removeAllListeners('discordStatus');
-    ipcRenderer.removeAllListeners('queuePass');
     ipcRenderer.removeAllListeners('licenseStatus');
     ipcRenderer.removeAllListeners('proxiesUpdated');
     ipcRenderer.removeAllListeners('managedProxyError');
-    ipcRenderer.removeAllListeners('pbandaiLog');
-    ipcRenderer.removeAllListeners('pbandaiStatus');
-    ipcRenderer.removeAllListeners('pbandaiDone');
-    ipcRenderer.removeAllListeners('pbandaiLastOrder');
-    ipcRenderer.removeAllListeners('pbandaiRotateDone');
-    ipcRenderer.removeAllListeners('pokemonLog');
-    ipcRenderer.removeAllListeners('pokemonStatus');
-    ipcRenderer.removeAllListeners('pokemonDone');
     ipcRenderer.removeAllListeners('targetLog');
     ipcRenderer.removeAllListeners('targetStatus');
     ipcRenderer.removeAllListeners('targetDone');
     ipcRenderer.removeAllListeners('targetOtp');
-    ipcRenderer.removeAllListeners('walmartLog');
-    ipcRenderer.removeAllListeners('walmartStatus');
-    ipcRenderer.removeAllListeners('walmartDone');
-    ipcRenderer.removeAllListeners('riotgamesLog');
-    ipcRenderer.removeAllListeners('riotgamesStatus');
-    ipcRenderer.removeAllListeners('riotgamesDone');
     ipcRenderer.removeAllListeners('updateStatus');
   }
 
@@ -235,8 +102,6 @@ class PageHandler extends Component {
       );
     }
 
-    const taskTypes = license.taskTypes || {};
-
     return (
       <HashRouter>
         <TitleBar />
@@ -248,23 +113,13 @@ class PageHandler extends Component {
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
-                <Route path="/modules" render={props => <Modules {...props} taskTypes={taskTypes} />} />
                 <Route path="/task-groups" component={TaskGroups} />
-                <Route path="/tasks" component={Tasks} />
-                <Route path="/generate" component={Generate} />
-                <Route path="/pbandai" component={Pbandai} />
-                <Route path="/round1" render={props => taskTypes.round1 === true
-                  ? <Round1 {...props} /> : <Redirect to="/modules" />} />
-                <Route path="/riotgames" component={RiotGames} />
-                <Route path="/pokemoncenter" render={props => taskTypes.pokemoncenter === true
-                  ? <PokemonCenter {...props} /> : <Redirect to="/modules" />} />
                 <Route path="/target" component={Target} />
-                <Route path="/walmart" component={Walmart} />
                 <Route path="/profiles" component={Profiles} />
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />
                 <Route path="/settings" component={Settings} />
-                <Redirect from="/" to="/modules" />
+                <Redirect to="/task-groups" />
               </Switch>
             </ErrorBoundary>
           </div>

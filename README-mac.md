@@ -271,10 +271,9 @@ reused without a new service implementation.
 
 Remote proxy lines live only in Electron's main-process memory. The renderer receives a stable
 `managed:<uuid>` reference, admin label, and line count; it never receives the host, port, username,
-or password. Managed entries are read-only in the Proxies page and work in the existing Tasks,
-Target, P-Bandai, Round1, Pokémon Center, Walmart, Settings, and Generate selectors. Local proxy
-lists remain editable and persist in `proxies.json` as before. Managed lists are excluded from local
-files and backup exports.
+or password. Managed entries are read-only in the Proxies page and work in Target task-group proxy
+selectors. Local proxy lists remain editable and persist in `proxies.json` as before. Managed lists
+are excluded from local files and backup exports.
 
 Main-process launch guards resolve the reference only at an existing engine boundary. A revoked or
 missing managed list stops before launch instead of falling back to the home IP. Revision changes or
@@ -298,6 +297,17 @@ in, restores the shared Target Engine & Monitor Log below each task group's task
 Hope cookie-bank card into Target groups. The card polls the existing broker status for login and ATC
 cookie totals, reports the active/configured farmer workers, and saves Bank Max to the existing
 `targetCookieBank` setting for the next start. No `backend.exe` or Wine behavior changes.
+
+The current R7 UI is Target-only. Accounts no longer show site filter chips, the Add Accounts form
+defaults its single site choice to Target, and only explicitly tagged Target accounts are displayed.
+Legacy module navigation, deep links, cards, account generators, entitlement rows, and module-specific
+settings are no longer reachable or rendered. Their stored data and compatibility settings are left
+untouched so existing backups remain reversible. iCloud remains available only as an IMAP provider for
+per-profile Target OTP mailboxes.
+
+```sh
+node ./scripts/target-only-ui-smoke-test.js
+```
 
 The native farmer is imported from `jasonhr13/hope` commit
 `423d13260bee6b6f9ba01d175c948c0afd86da9a`; every imported source hash is pinned in

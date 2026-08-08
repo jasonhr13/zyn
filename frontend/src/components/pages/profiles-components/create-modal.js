@@ -167,7 +167,7 @@ class CreateProfileModal extends Component {
             {/* Ported from Hope's profile-owned IMAP form. */}
             <div className="form-section-title">Email OTP Mailbox</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
-              Optional. Target and Walmart use this profile’s mailbox when this profile’s account requests a login code.
+              Optional. Target uses this profile’s mailbox when its matching account requests a login code.
             </div>
             <div className="form-row">
               <div className="form-group">

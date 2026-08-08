@@ -14,7 +14,7 @@ const EMPTY_GROUP = Object.freeze({
 });
 
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-const siteOf = account => String((account && account.site) || 'bandai').toLowerCase();
+const siteOf = account => String((account && account.site) || '').toLowerCase();
 const normalizeCookieBankSize = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 4);
 const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
   const value = line.trim();

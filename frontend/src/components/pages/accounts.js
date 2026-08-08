@@ -2,26 +2,7 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 const { ipcRenderer } = window.require('electron');
 
-// Site tabs/groups — mirrors Generate's own module list (bandai/target/walmart/icloud) so an
-// account created there lands under the matching tab here. 'all' isn't a real site value, just the
-// unfiltered view. Accounts with no `site` at all (added before this tagging existed, or pasted
-// manually before a site tab was picked) fall back to 'bandai' — this app's account list was
-// exclusively P-Bandai data before the multi-site Generate tab existed, so that's the correct home
-// for anything untagged, not an arbitrary guess.
-// devOnly tabs stay hidden from beta pushes until those modules actually ship.
-const SITE_TABS = [
-  { value: 'all', emoji: '📋', label: 'All' },
-  { value: 'bandai', emoji: '🃏', label: 'Bandai' },
-  // No longer devOnly (2026-07-28) — the Target module shipped in v1.6.41, so its account group
-  // has to exist on beta too. Without it the tab was invisible unless an account already carried
-  // site:'target', which left a shipped module with nowhere to put its accounts.
-  { value: 'target', emoji: '🎯', label: 'Target' },
-  { value: 'walmart', emoji: '🛒', label: 'Walmart', devOnly: true },
-  // No longer devOnly (2026-07-24) — iCloud generation is working end-to-end and shipping to beta.
-  { value: 'icloud', emoji: '🍎', label: 'iCloud' },
-  { value: 'pokemoncenter', emoji: '🎫', label: 'Pokémon Center', devOnly: true },
-];
-const siteOf = (a) => a.site || 'bandai';
+const isTargetAccount = account => String((account && account.site) || '').trim().toLowerCase() === 'target';
 
 // Accounts hold the site login (email + password) used for auto-login. Passwords are
 // encrypted at rest by the main process and are NEVER sent here — each account only
@@ -30,7 +11,7 @@ const siteOf = (a) => a.site || 'bandai';
 // hundreds of accounts, rendering a populated <select> per row was the actual cause of the list
 // lagging, reported live 2026-07-20 at 600 accounts).
 class Accounts extends Component {
-  state = { raw: '', adding: false, note: '', activeSite: 'all' };
+  state = { raw: '', adding: false, note: '' };
 
   refresh = () => {
     const accounts = ipcRenderer.sendSync('getAccounts');
@@ -38,12 +19,9 @@ class Accounts extends Component {
   };
 
   add = () => {
-    const { raw, activeSite } = this.state;
+    const { raw } = this.state;
     if (!raw.trim()) return;
-    // Tag new accounts with whichever tab is open — pasting while on the Target tab creates Target
-    // accounts, not untagged/Bandai ones. On the "All" tab, leave site blank (defaults to Bandai
-    // for display/dedup, same as any pre-existing untagged account).
-    const r = ipcRenderer.sendSync('addAccountsBulk', { raw, site: activeSite === 'all' ? '' : activeSite });
+    const r = ipcRenderer.sendSync('addAccountsBulk', { raw, site: 'target' });
     this.refresh();
     const bits = [];
     if (r.added) bits.push(`${r.added} added`);
@@ -57,15 +35,9 @@ class Accounts extends Component {
     this.refresh();
   };
 
-  // Copies just the emails (one per line) of whichever tab is currently open — real passwords are
-  // encrypted at rest and never sent to this renderer at all (see the class comment above), so
-  // there's no plaintext password to include here even for non-iCloud tabs. Mirrors render()'s own
-  // activeSite filtering rather than sharing state with it, since that filtered list only exists
-  // as a local inside render().
+  // Copies Target emails only. Real passwords are encrypted at rest and never sent to this renderer.
   copyAll = () => {
-    const allAccounts = this.props.accounts || [];
-    const { activeSite } = this.state;
-    const accounts = activeSite === 'all' ? allAccounts : allAccounts.filter(a => siteOf(a) === activeSite);
+    const accounts = (this.props.accounts || []).filter(isTargetAccount);
     if (!accounts.length) return;
     navigator.clipboard.writeText(accounts.map(a => a.email).join('\n'))
       .then(() => this.setState({ note: `Copied ${accounts.length} email${accounts.length !== 1 ? 's' : ''}` }))
@@ -88,11 +60,8 @@ class Accounts extends Component {
   };
 
   render() {
-    const allAccounts = this.props.accounts || [];
-    const { raw, adding, note, activeSite } = this.state;
-    const accounts = activeSite === 'all' ? allAccounts : allAccounts.filter(a => siteOf(a) === activeSite);
-    const counts = allAccounts.reduce((m, a) => { const s = siteOf(a); m[s] = (m[s] || 0) + 1; return m; }, {});
-    const siteTabs = SITE_TABS.filter(t => !t.devOnly || this.props.channel === 'dev');
+    const { raw, adding, note } = this.state;
+    const accounts = (this.props.accounts || []).filter(isTargetAccount);
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -111,7 +80,7 @@ class Accounts extends Component {
             <button
               className="btn btn-secondary btn-sm"
               disabled={accounts.length === 0}
-              title={activeSite === 'all' ? 'Copy all emails' : `Copy all ${SITE_TABS.find(t => t.value === activeSite).label} emails`}
+              title="Copy all Target emails"
               onClick={this.copyAll}
             >
               <i className="ion-md-copy" style={{ fontSize: 13 }} /> Copy All
@@ -122,25 +91,15 @@ class Accounts extends Component {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, padding: '12px 20px 0' }}>
-          {siteTabs.map(t => (
-            <button
-              key={t.value}
-              className="btn btn-sm"
-              onClick={() => this.setState({ activeSite: t.value })}
-              style={activeSite === t.value
-                ? { background: 'var(--accent-fill)', color: 'var(--accent-on)', border: 'none' }
-                : { background: 'var(--btn)', color: 'var(--text2)' }}
-            >
-              {t.emoji} {t.label}
-              {t.value !== 'all' && counts[t.value] ? ` (${counts[t.value]})` : ''}
-            </button>
-          ))}
-        </div>
-
         <div className="page-content" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {adding && (
             <div className="table-wrap" style={{ marginBottom: 12, padding: 12 }}>
+              <div className="form-group" style={{ maxWidth: 260 }}>
+                <label className="form-label">Site</label>
+                <select className="form-select" defaultValue="target" aria-label="Account site">
+                  <option value="target">Target</option>
+                </select>
+              </div>
               <textarea
                 className="proxy-editor-textarea"
                 style={{ width: '100%', minHeight: 130 }}
@@ -168,9 +127,7 @@ class Accounts extends Component {
             {accounts.length === 0 ? (
               <div className="table-empty">
                 <div className="table-empty-icon"><i className="ion-md-person" /></div>
-                <div className="table-empty-text">
-                  {activeSite === 'all' ? 'No accounts yet' : `No ${SITE_TABS.find(t => t.value === activeSite).label} accounts yet`}
-                </div>
+                <div className="table-empty-text">No Target accounts yet</div>
                 <div className="table-empty-sub">
                   Paste <span className="monospace">email:password</span> — each account auto-links to the
                   profile with the same email and logs in on its own.
@@ -224,4 +181,4 @@ class Accounts extends Component {
   }
 }
 
-export default connect(s => ({ accounts: s.accounts, profiles: s.profiles, channel: s.channel }))(Accounts);
+export default connect(s => ({ accounts: s.accounts, profiles: s.profiles }))(Accounts);
