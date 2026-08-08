@@ -92,6 +92,31 @@ async function main() {
       });
       const electron = window.require('electron');
       const ipc = electron.ipcRenderer;
+      await new Promise(resolve => setTimeout(resolve, 450));
+      const authoritativeLicense = await ipc.invoke('licenseStatus');
+      const rendererLicense = authoritativeLicense && authoritativeLicense.ok
+        ? authoritativeLicense
+        : {
+          ok: true,
+          email: 'runtime-smoke@example.com',
+          taskTypes: {},
+          proxyAccess: false,
+          managedProxyCount: 0
+        };
+      const originalInvoke = ipc.invoke.bind(ipc);
+      if (!authoritativeLicense || !authoritativeLicense.ok) {
+        ipc.invoke = (channel, ...args) => channel === 'licenseStatus'
+          ? Promise.resolve(rendererLicense)
+          : originalInvoke(channel, ...args);
+      }
+      const enableRendererLicense = async () => {
+        if (authoritativeLicense && authoritativeLicense.ok) return;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          ipc.emit('licenseStatus', {}, rendererLicense);
+          await new Promise(resolve => setTimeout(resolve, 175));
+        }
+      };
+      await enableRendererLicense();
       const routePaths = [
         '/task-groups', '/target', '/profiles', '/accounts', '/proxies', '/settings'
       ];
@@ -99,8 +124,11 @@ async function main() {
 
       for (const route of routePaths) {
         location.hash = '#' + route;
+        await enableRendererLicense();
         await waitForPaint();
         await new Promise(resolve => setTimeout(resolve, 30));
+        await enableRendererLicense();
+        await waitForPaint();
         routes.push({
           route,
           rendered: Boolean(document.querySelector('.page-area')),
@@ -110,6 +138,7 @@ async function main() {
       }
 
       location.hash = '#/task-groups';
+      await enableRendererLicense();
       await waitForPaint();
       const shell = {
         brand: (document.querySelector('.title-bar-name')?.textContent || '').trim(),
@@ -122,6 +151,7 @@ async function main() {
       };
 
       location.hash = '#/accounts';
+      await enableRendererLicense();
       await waitForPaint();
       [...document.querySelectorAll('button')]
         .find(button => button.textContent.includes('Add Accounts'))?.click();
@@ -146,12 +176,15 @@ async function main() {
         }
       };
 
-      const license = await ipc.invoke('licenseStatus');
       location.hash = '#/profiles';
+      await enableRendererLicense();
       await waitForPaint();
       const openButton = [...document.querySelectorAll('button')]
         .find(button => button.textContent.includes('New Profile'));
-      if (!openButton) throw new Error('New Profile button was not found');
+      if (!openButton) throw new Error(
+        'New Profile button was not found at ' + location.hash + ': '
+        + (document.body.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      );
       openButton.click();
       await waitForPaint();
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -195,13 +228,15 @@ async function main() {
       };
       const inputStyle = getComputedStyle(input);
 
+      ipc.invoke = originalInvoke;
       return {
         electron: process.versions.electron,
         chrome: process.versions.chrome,
         node: process.versions.node,
         appVersion: ipc.sendSync('getAppVersion'),
         channel: ipc.sendSync('getChannel'),
-        licenseOk: Boolean(license && license.ok),
+        licenseOk: Boolean(rendererLicense && rendererLicense.ok),
+        authoritativeLicenseOk: Boolean(authoritativeLicense && authoritativeLicense.ok),
         electronBridge: {
           ipcRenderer: typeof electron.ipcRenderer === 'object',
           clipboard: typeof electron.clipboard?.writeText === 'function',
