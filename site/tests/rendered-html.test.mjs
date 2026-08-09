@@ -2,15 +2,20 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function dispatch(pathname = "/", init = {}) {
+async function dispatch(pathname = "/", init = {}, origin = "http://localhost") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
+  const requestUrl = new URL(pathname, origin);
+  const requestHeaders = new Headers(init.headers);
+  if (!requestHeaders.has("accept")) requestHeaders.set("accept", "text/html");
+  if (!requestHeaders.has("x-forwarded-host")) requestHeaders.set("x-forwarded-host", requestUrl.host);
+  if (!requestHeaders.has("x-forwarded-proto")) requestHeaders.set("x-forwarded-proto", requestUrl.protocol.slice(0, -1));
 
   return worker.fetch(
-    new Request(`http://localhost${pathname}`, {
-      headers: { accept: "text/html" },
+    new Request(requestUrl, {
       ...init,
+      headers: requestHeaders,
     }),
     {
       ASSETS: {
@@ -24,8 +29,8 @@ async function dispatch(pathname = "/", init = {}) {
   );
 }
 
-async function render(pathname = "/") {
-  return dispatch(pathname);
+async function render(pathname = "/", init = {}, origin = "http://localhost") {
+  return dispatch(pathname, init, origin);
 }
 
 test("server-renders the Zyn product site", async () => {
@@ -41,7 +46,7 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /href="\/join"/);
   assert.doesNotMatch(html, /Request access/);
   assert.match(html, /mailto:hello@rcart\.app/);
-  assert.match(html, /https:\/\/rcart\.app\/og\.png/);
+  assert.match(html, /https:\/\/zynbot\.app\/og\.png/);
 });
 
 test("renders the branded waiting-list form and confirmation", async () => {
@@ -132,30 +137,83 @@ test("redeems the key server-side and stores only an HttpOnly download session",
   }
 });
 
-test("ships the Zyn identity and Cloudflare configuration", async () => {
-  const [page, download, layout, css, wrangler] = await Promise.all([
+test("publishes the Zyn canonical identity and keeps service traffic in the visitor's domain family", async () => {
+  const nativeFetch = globalThis.fetch;
+  let licenseRequest;
+  globalThis.fetch = async (input, init) => {
+    licenseRequest = { input: String(input), init };
+    if (licenseRequest.input.endsWith("/api/download/session")) {
+      return Response.json({ ok: true });
+    }
+    return Response.json({ ok: true }, { status: 202 });
+  };
+
+  try {
+    const home = await render("/", {}, "https://zynbot.app");
+    assert.equal(home.status, 200);
+    const homeHtml = await home.text();
+    assert.match(homeHtml, /https:\/\/zynbot\.app\/og\.png/);
+    assert.match(homeHtml, /href="https:\/\/zynbot\.app\/favicon\.png"/);
+    assert.match(homeHtml, /href="https:\/\/zynbot\.app\/manifest\.webmanifest"/);
+
+    const waitlist = await dispatch("/api/waitlist", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ email: "zyn@example.com" }),
+    }, "https://zynbot.app");
+    assert.equal(waitlist.status, 303);
+    assert.equal(waitlist.headers.get("location"), "https://zynbot.app/join?joined=1");
+    assert.equal(licenseRequest.input, "https://license.zynbot.app/api/waitlist");
+
+    const download = await render("/download", {
+      headers: { accept: "text/html", cookie: `rcart_download=${"s".repeat(43)}` },
+    }, "https://zynbot.app");
+    assert.equal(download.status, 200);
+    const downloadHtml = await download.text();
+    assert.equal(licenseRequest.input, "https://license.zynbot.app/api/download/session");
+    assert.match(downloadHtml, /https:\/\/updates\.zynbot\.app\/download\/mac\/arm64/);
+    assert.match(downloadHtml, /https:\/\/updates\.zynbot\.app\/download\/mac\/x64/);
+    assert.match(downloadHtml, /https:\/\/updates\.zynbot\.app\/download\/windows/);
+  } finally {
+    globalThis.fetch = nativeFetch;
+  }
+});
+
+test("ships the Zyn identity and both Cloudflare custom domains", async () => {
+  const [page, download, layout, css, domain, wrangler] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/download/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/domain.ts", import.meta.url), "utf8"),
     readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /rcart-symbol\.png/);
+  assert.match(page, /zyn-icon\.png/);
+  assert.doesNotMatch(page, /rcart-symbol\.png/);
   assert.match(download, /Download Zyn/);
   assert.match(download, /zyn-icon\.png/);
-  assert.match(download, /https:\/\/updates\.rcart\.app\/download\/mac\/arm64/);
-  assert.match(download, /https:\/\/updates\.rcart\.app\/download\/mac\/x64/);
+  assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
   assert.match(layout, /Zyn — Precision retail operations/);
-  assert.match(css, /--mint:/);
+  assert.match(layout, /manifest\.webmanifest/);
+  assert.match(css, /--zyn-orange:/);
+  assert.match(css, /--zyn-rose:/);
+  assert.match(css, /#e11d48/i);
+  assert.doesNotMatch(css, /99,\s*242,\s*206/);
+  assert.match(domain, /zynbot\.app/);
+  assert.match(domain, /rcart\.app/);
   assert.match(wrangler, /"name": "rcart-site"/);
   assert.match(wrangler, /vinext\/server\/app-router-entry/);
+  assert.match(wrangler, /"pattern": "rcart\.app"/);
+  assert.match(wrangler, /"pattern": "zynbot\.app"/);
   await access(new URL("../app/download/page.tsx", import.meta.url));
   await access(new URL("../app/api/download/redeem/route.ts", import.meta.url));
   await access(new URL("../app/join/page.tsx", import.meta.url));
   await access(new URL("../app/api/waitlist/route.ts", import.meta.url));
-  await access(new URL("../public/rcart-symbol.png", import.meta.url));
   await access(new URL("../public/zyn-icon.png", import.meta.url));
+  await access(new URL("../public/favicon.png", import.meta.url));
+  await access(new URL("../public/apple-touch-icon.png", import.meta.url));
+  await access(new URL("../public/manifest.webmanifest", import.meta.url));
   await access(new URL("../public/og.png", import.meta.url));
 });

@@ -1,0 +1,15 @@
+{
+  "name": "Zyn License Admin",
+  "short_name": "Zyn Admin",
+  "start_url": "/admin/",
+  "display": "standalone",
+  "background_color": "#0f1012",
+  "theme_color": "#121315",
+  "icons": [
+    {
+      "src": "/zyn-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -36,6 +36,15 @@ test('routes each Mac download to its own architecture feed', async () => {
   assert.equal(intel.headers.get('location'), 'https://updates.rcart.app/mac/x64/Zyn-1.6.79-x64.dmg');
 });
 
+test('keeps redirects on whichever Zyn domain served the request', async () => {
+  const env = { RELEASES: releaseStore({
+    'mac/arm64/latest-mac.yml': 'files:\n  - url: Zyn-1.6.79-arm64.dmg\n',
+  }) };
+  const response = await worker.fetch(new Request('https://updates.zynbot.app/download/mac/arm64'), env);
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://updates.zynbot.app/mac/arm64/Zyn-1.6.79-arm64.dmg');
+});
+
 test('keeps the legacy Mac download on Apple silicon', async () => {
   const env = { RELEASES: releaseStore({
     'mac/latest-mac.yml': 'files:\n  - url: Zyn-1.6.74-arm64.dmg\n',

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const features = [
@@ -29,7 +30,7 @@ export default function Home() {
     <main>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="Zyn home">
-          <img src="/rcart-symbol.png" alt="" width="44" height="44" />
+          <Image src="/zyn-icon.png" alt="" width={44} height={44} unoptimized />
           <span>Zyn</span>
         </a>
         <nav aria-label="Main navigation">
@@ -62,7 +63,7 @@ export default function Home() {
           <div className="stage-orbit stage-orbit-two" aria-hidden="true" />
           <div className="app-window">
             <div className="app-topbar">
-              <div className="app-brand"><img src="/rcart-symbol.png" alt="" /> Zyn</div>
+              <div className="app-brand"><Image src="/zyn-icon.png" alt="" width={24} height={24} unoptimized /> Zyn</div>
               <div className="window-state"><span /> Operations live</div>
               <div className="window-dots"><i /><i /><i /></div>
             </div>
@@ -84,7 +85,7 @@ export default function Home() {
                 </div>
                 <div className="metric-row">
                   <div><span>Ready</span><strong>18</strong><small>tasks configured</small></div>
-                  <div><span>Running</span><strong className="mint">06</strong><small>active now</small></div>
+                  <div><span>Running</span><strong className="warm">06</strong><small>active now</small></div>
                   <div><span>Success</span><strong>94%</strong><small>session health</small></div>
                 </div>
                 <div className="task-panel">
@@ -149,7 +150,7 @@ export default function Home() {
       </section>
 
       <section className="closing" id="access">
-        <img src="/rcart-symbol.png" alt="" width="160" height="160" />
+        <Image src="/zyn-icon.png" alt="" width={160} height={160} unoptimized />
         <p className="kicker">Zyn for desktop</p>
         <h2>Be ready before the moment arrives.</h2>
         <p>Built for operators who value speed, structure, and a workspace that gets out of the way.</p>
@@ -159,7 +160,7 @@ export default function Home() {
       </section>
 
       <footer>
-        <a className="brand" href="#top"><img src="/rcart-symbol.png" alt="" width="38" height="38" /><span>Zyn</span></a>
+        <a className="brand" href="#top"><Image src="/zyn-icon.png" alt="" width={38} height={38} unoptimized /><span>Zyn</span></a>
         <p>Precision retail operations.</p>
         <div><a href="mailto:hello@rcart.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>

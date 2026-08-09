@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { serviceOriginForHostname } from "../domain";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,6 @@ export const metadata: Metadata = {
 };
 
 const DOWNLOAD_COOKIE = "rcart_download";
-const LICENSE_ORIGIN = process.env.RCART_LICENSE_ORIGIN || "https://license.rcart.app";
 
 type SearchParams = Promise<{ key?: string | string[]; error?: string | string[] }>;
 
@@ -21,11 +21,11 @@ function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-async function hasDownloadSession() {
+async function hasDownloadSession(licenseOrigin: string) {
   const sessionToken = (await cookies()).get(DOWNLOAD_COOKIE)?.value;
   if (!sessionToken) return false;
   try {
-    const response = await fetch(`${LICENSE_ORIGIN}/api/download/session`, {
+    const response = await fetch(`${licenseOrigin}/api/download/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionToken }),
@@ -105,7 +105,7 @@ function LockedDownload({ accessKey, error }: { accessKey?: string; error?: stri
   );
 }
 
-function DownloadChooser() {
+function DownloadChooser({ updateOrigin }: { updateOrigin: string }) {
   return (
     <section className="download-chooser" aria-labelledby="download-title">
       <div className="download-intro">
@@ -130,7 +130,7 @@ function DownloadChooser() {
             <li>Verified runtime downloads securely after sign-in</li>
             <li>DMG installer</li>
           </ul>
-          <a className="button button-primary os-download" href="https://updates.rcart.app/download/mac/arm64">
+          <a className="button button-primary os-download" href={`${updateOrigin}/download/mac/arm64`}>
             Download for Apple silicon <span aria-hidden="true">↓</span>
           </a>
         </article>
@@ -148,7 +148,7 @@ function DownloadChooser() {
             <li>Verified runtime downloads securely after sign-in</li>
             <li>DMG installer</li>
           </ul>
-          <a className="button button-primary os-download" href="https://updates.rcart.app/download/mac/x64">
+          <a className="button button-primary os-download" href={`${updateOrigin}/download/mac/x64`}>
             Download for Intel Mac <span aria-hidden="true">↓</span>
           </a>
         </article>
@@ -166,7 +166,7 @@ function DownloadChooser() {
             <li>Managed Chromium and native checkout runtime</li>
             <li>NSIS setup installer</li>
           </ul>
-          <a className="button button-secondary os-download" href="https://updates.rcart.app/download/windows">
+          <a className="button button-secondary os-download" href={`${updateOrigin}/download/windows`}>
             Download for Windows <span aria-hidden="true">↓</span>
           </a>
           <p className="os-caution">Windows SmartScreen may ask you to confirm the first install.</p>
@@ -183,14 +183,20 @@ function DownloadChooser() {
 
 export default async function DownloadPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const authorized = await hasDownloadSession();
+  const requestHeaders = await headers();
+  const hostname = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "rcart.app";
+  const licenseOrigin = process.env.ZYN_LICENSE_ORIGIN
+    || process.env.RCART_LICENSE_ORIGIN
+    || serviceOriginForHostname(hostname, "license");
+  const updateOrigin = serviceOriginForHostname(hostname, "updates");
+  const authorized = await hasDownloadSession(licenseOrigin);
   const accessKey = first(params.key);
   const error = first(params.error);
 
   return (
     <main className="download-page">
       <DownloadHeader />
-      {authorized ? <DownloadChooser /> : <LockedDownload accessKey={accessKey} error={error} />}
+      {authorized ? <DownloadChooser updateOrigin={updateOrigin} /> : <LockedDownload accessKey={accessKey} error={error} />}
       <DownloadFooter />
     </main>
   );

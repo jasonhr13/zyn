@@ -8,6 +8,10 @@
     {
       "pattern": "license.rcart.app",
       "custom_domain": true
+    },
+    {
+      "pattern": "license.zynbot.app",
+      "custom_domain": true
     }
   ],
   "assets": {

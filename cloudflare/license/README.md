@@ -1,9 +1,11 @@
 # Zyn license service
 
-The production service is deployed at:
+The production service is deployed on both domain families during the Zyn migration:
 
-- Admin: <https://license.rcart.app/admin/>
-- API/health: <https://license.rcart.app/health>
+- Admin: <https://license.rcart.app/admin/> and <https://license.zynbot.app/admin/>
+- API/health: <https://license.rcart.app/health> and <https://license.zynbot.app/health>
+- Website: <https://rcart.app> and <https://zynbot.app>
+- Updates: <https://updates.rcart.app> and <https://updates.zynbot.app>
 - D1 database: `hope-license` (`a6aa8a05-ca0c-4d7d-beca-ba1ba0f906f8`)
 
 ## Admin access
@@ -38,7 +40,8 @@ unlock step so email and chat link-preview scanners cannot consume the key with 
 successful unlock replaces it with an HttpOnly, 24-hour browser session; disabling or deleting the
 account invalidates that session.
 
-The public website accepts waiting-list email addresses at <https://rcart.app/join>. Submissions are
+The public website accepts waiting-list email addresses at <https://rcart.app/join> and
+<https://zynbot.app/join>. Each site forwards to the matching license-service domain. Submissions are
 normalized and deduplicated in D1, and the public response does not reveal whether an address was
 already present. Inviting an entry in Admin creates its Zyn account when needed, generates a
 seven-day single-use download link, marks the waiting-list entry invited, and shows one copyable

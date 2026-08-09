@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import "./globals.css";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "rcart.app";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
+export function generateMetadata(): Metadata {
+  const origin = "https://zynbot.app";
 
   return {
     title: "Zyn — Precision retail operations",
     description: "Monitor products, organize tasks, and run checkout operations from one precise desktop workspace.",
     metadataBase: new URL(origin),
-    icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/favicon.png", type: "image/png", sizes: "64x64" },
+        { url: "/zyn-icon.png", type: "image/png", sizes: "1024x1024" },
+      ],
+      shortcut: "/favicon.png",
+      apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    },
     openGraph: {
       title: "Zyn — The checkout command center built for the drop.",
       description: "Monitor products, organize every task, and run checkout operations from one focused desktop workspace.",

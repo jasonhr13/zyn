@@ -22,7 +22,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
     <main className="join-page">
       <header className="site-header">
         <Link className="brand" href="/" aria-label="Zyn home">
-          <Image src="/rcart-symbol.png" alt="" width="44" height="44" />
+          <Image src="/zyn-icon.png" alt="" width="44" height="44" unoptimized />
           <span>Zyn</span>
         </Link>
         <nav aria-label="Waiting-list navigation"><Link href="/">Back to Zyn</Link></nav>
@@ -65,7 +65,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
       </section>
 
       <footer className="download-footer">
-        <Link className="brand" href="/"><Image src="/rcart-symbol.png" alt="" width="38" height="38" /><span>Zyn</span></Link>
+        <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
         <p>Precision retail operations.</p>
         <div><a href="mailto:hello@rcart.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>

@@ -726,7 +726,16 @@ async function audit(env, action, user = null, detail = '') {
   `).bind(crypto.randomUUID(), action, user && user.id, user && user.email, detail, Date.now()).run();
 }
 
-async function mintDownloadLink(env, user) {
+export function downloadSiteOrigin(request, env = {}) {
+  const configured = String(env.DOWNLOAD_SITE_ORIGIN || '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  const hostname = new URL(request.url).hostname.toLowerCase();
+  return hostname === 'zynbot.app' || hostname.endsWith('.zynbot.app')
+    ? 'https://zynbot.app'
+    : DOWNLOAD_SITE_ORIGIN;
+}
+
+async function mintDownloadLink(request, env, user) {
   if (!Number(user.active)) {
     const error = new Error('Enable this account before generating a download link.');
     error.code = 'ACCOUNT_DISABLED';
@@ -748,16 +757,16 @@ async function mintDownloadLink(env, user) {
     `).bind(crypto.randomUUID(), user.id, await sha256(token), now, expiresAt),
   ]);
   await audit(env, 'download_link_generated', user, String(expiresAt));
-  const origin = String(env.DOWNLOAD_SITE_ORIGIN || DOWNLOAD_SITE_ORIGIN).replace(/\/+$/, '');
+  const origin = downloadSiteOrigin(request, env);
   return {
     downloadUrl: `${origin}/download?key=${encodeURIComponent(token)}`,
     expiresAt,
   };
 }
 
-async function createDownloadLink(env, user) {
+async function createDownloadLink(request, env, user) {
   try {
-    return json({ ok: true, ...await mintDownloadLink(env, user) });
+    return json({ ok: true, ...await mintDownloadLink(request, env, user) });
   } catch (error) {
     if (error && error.code === 'ACCOUNT_DISABLED') return json({ ok: false, message: error.message }, 409);
     throw error;
@@ -957,7 +966,7 @@ async function adminWaitlist(env) {
   return json({ ok: true, entries: result.results || [] });
 }
 
-async function inviteWaitlistEntry(env, id) {
+async function inviteWaitlistEntry(request, env, id) {
   const entry = await env.DB.prepare(`
     SELECT id, email, invited_at, user_id FROM waitlist_entries WHERE id = ?
   `).bind(id).first();
@@ -978,7 +987,7 @@ async function inviteWaitlistEntry(env, id) {
     return json({ ok: false, message: 'This email already has a disabled account. Enable it before inviting.' }, 409);
   }
 
-  const download = await mintDownloadLink(env, user);
+  const download = await mintDownloadLink(request, env, user);
   const invitedAt = Date.now();
   await env.DB.prepare(`
     UPDATE waitlist_entries SET invited_at = ?, updated_at = ?, user_id = ? WHERE id = ?
@@ -1235,7 +1244,7 @@ async function adminRoute(request, env, url) {
 
   const waitlistMatch = url.pathname.match(/^\/api\/admin\/waitlist\/([0-9a-f-]+)(?:\/(invite))?$/i);
   if (waitlistMatch && waitlistMatch[2] === 'invite' && request.method === 'POST') {
-    return inviteWaitlistEntry(env, waitlistMatch[1]);
+    return inviteWaitlistEntry(request, env, waitlistMatch[1]);
   }
   if (waitlistMatch && !waitlistMatch[2] && request.method === 'DELETE') {
     return deleteWaitlistEntry(env, waitlistMatch[1]);
@@ -1248,7 +1257,7 @@ async function adminRoute(request, env, url) {
   if (!user) return json({ ok: false, message: 'User not found.' }, 404);
   if (match[2] === 'revoke' && request.method === 'POST') return revokeUser(env, user);
   if (match[2] === 'reset-password' && request.method === 'POST') return resetUserPassword(env, user);
-  if (match[2] === 'download-link' && request.method === 'POST') return createDownloadLink(env, user);
+  if (match[2] === 'download-link' && request.method === 'POST') return createDownloadLink(request, env, user);
   if (!match[2] && request.method === 'PATCH') return updateUser(request, env, user);
   if (!match[2] && request.method === 'DELETE') return deleteUser(env, user);
   return json({ ok: false, message: 'Method not allowed.' }, 405);
