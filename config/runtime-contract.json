@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.6",
+  "appRelease": "R8.7",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -10,12 +10,12 @@
     "profileImap": true,
     "managedProxies": true,
     "cloudBackup": false,
-    "taskScheduling": false,
+    "taskScheduling": true,
     "isolatedRenderer": false
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.80",
+    "version": "1.6.81",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -46,6 +46,9 @@
     "Contents/Resources/app/task-type-access.js",
     "Contents/Resources/app/task-type-ipc-guard.js",
     "Contents/Resources/app/task-group-store.js",
+    "Contents/Resources/app/task-group-schedule.js",
+    "Contents/Resources/app/task-group-scheduler.js",
+    "Contents/Resources/app/target-group-launch.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/app/imap-password.js",
     "Contents/Resources/app/imap-connection.js",

@@ -45,7 +45,7 @@ try {
     skus: '11111111',
     qty: 999,
     proxyListName: 'Local',
-    schedule: { startAt: 1 },
+    schedule: { startAt: 1735689660000, stopAt: 1735693260000 },
     tasks: [
       { id: 'task-a', accountId: 'acct-a', profileId: 'profile-a', cardId: 'card-a' },
       { id: 'task-a', accountId: 'acct-b' },
@@ -59,7 +59,7 @@ try {
   assert.equal(saved[0].qty, 99);
   assert.equal(saved[0].tasks.length, 1);
   assert.equal(saved[0].tasks[0].cardId, 'card-a');
-  assert.equal(Object.hasOwn(saved[0], 'schedule'), false, 'R2 accepted a future scheduling field');
+  assert.deepEqual(saved[0].schedule, { startAt: 1735689660000, stopAt: 1735693260000 });
   assert.deepEqual(store.load(), saved);
 
   const backups = fs.readdirSync(path.join(directory, 'backups'));

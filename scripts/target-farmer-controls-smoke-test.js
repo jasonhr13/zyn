@@ -46,6 +46,10 @@ assert.equal((engine.match(/const env = nodeEnvironment\(/g) || []).length, 3,
 assert.match(engine, /'--producer=true'/, 'packaged bridge is missing managed producer launch mode');
 assert.match(engine, /harvesters: Array\.isArray\(j\.harvesters\)/,
   'per-harvester telemetry is not forwarded to the renderer');
+assert.match(engine, /function isTaskRunning\(taskId\)/,
+  'scheduled task groups cannot inspect per-task runtime state');
+assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,
+  'scheduled task running-state helper is not exported');
 
 // The IPC bridge is applied while staging an app, so exercise that tracked patch against the
 // recovered baseline instead of depending on ignored extracted-file edits.

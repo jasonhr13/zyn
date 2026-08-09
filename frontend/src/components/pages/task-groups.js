@@ -3,6 +3,15 @@ import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
 import { sameTargetBank, targetBankPresentation } from '../target-bank-metrics.mjs';
+import {
+  buildScheduleFromDraft,
+  draftFromSchedule,
+  emptyScheduleDraft,
+  formatLocalTime,
+  normalizeSchedule,
+  scheduleDetailLine,
+  scheduleSummary,
+} from '../task-group-schedule.mjs';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -128,6 +137,10 @@ class TaskGroups extends Component {
     showGroupModal: false,
     editingGroupId: '',
     groupDraft: { ...EMPTY_GROUP },
+    showScheduleModal: false,
+    scheduleDraft: emptyScheduleDraft(),
+    scheduleError: '',
+    scheduleNow: Date.now(),
     showTaskModal: false,
     selectedAccounts: [],
     taskProxy: '',
@@ -149,6 +162,9 @@ class TaskGroups extends Component {
     this.loadGroups();
     this.pollBank();
     this.bankTimer = setInterval(this.pollBank, 5000);
+    this.scheduleClockTimer = setInterval(() => this.setState({ scheduleNow: Date.now() }), 30000);
+    this.onTaskGroupSchedule = () => this.loadGroups();
+    ipcRenderer.on('taskGroupSchedule', this.onTaskGroupSchedule);
   }
 
   componentDidUpdate(prevProps) {
@@ -173,6 +189,8 @@ class TaskGroups extends Component {
 
   componentWillUnmount() {
     clearInterval(this.bankTimer);
+    clearInterval(this.scheduleClockTimer);
+    try { ipcRenderer.removeListener('taskGroupSchedule', this.onTaskGroupSchedule); } catch {}
   }
 
   loadGroups = () => {
@@ -423,6 +441,60 @@ class TaskGroups extends Component {
 
   closeGroupModal = () => this.setState({ showGroupModal: false, editingGroupId: '' });
 
+  setScheduleDraft = patch => this.setState(previous => ({
+    scheduleDraft: { ...previous.scheduleDraft, ...patch },
+    scheduleError: '',
+  }));
+
+  openSchedule = group => this.setState({
+    showScheduleModal: true,
+    scheduleDraft: draftFromSchedule(group.schedule),
+    scheduleError: '',
+    scheduleNow: Date.now(),
+  });
+
+  closeSchedule = () => this.setState({ showScheduleModal: false, scheduleError: '' });
+
+  saveSchedule = group => {
+    const built = buildScheduleFromDraft(this.state.scheduleDraft);
+    if (built.error) {
+      this.setState({ scheduleError: built.error });
+      return;
+    }
+    const groups = this.state.groups.map(candidate => {
+      if (candidate.id !== group.id) return candidate;
+      if (!built.schedule) {
+        const { schedule: _schedule, ...rest } = candidate;
+        return { ...rest, updatedAt: Date.now() };
+      }
+      return { ...candidate, schedule: built.schedule, updatedAt: Date.now() };
+    });
+    this.persist(groups, () => this.setState({
+      showScheduleModal: false,
+      scheduleDraft: draftFromSchedule(built.schedule),
+      scheduleError: '',
+      scheduleNow: Date.now(),
+    }));
+  };
+
+  clearSchedule = group => {
+    if (!normalizeSchedule(group.schedule)) {
+      this.setState({ showScheduleModal: false, scheduleDraft: emptyScheduleDraft(), scheduleError: '' });
+      return;
+    }
+    if (!window.confirm(`Clear the schedule for “${group.name}”?`)) return;
+    const groups = this.state.groups.map(candidate => {
+      if (candidate.id !== group.id) return candidate;
+      const { schedule: _schedule, ...rest } = candidate;
+      return { ...rest, updatedAt: Date.now() };
+    });
+    this.persist(groups, () => this.setState({
+      showScheduleModal: false,
+      scheduleDraft: emptyScheduleDraft(),
+      scheduleError: '',
+    }));
+  };
+
   saveGroup = () => {
     const draft = this.state.groupDraft;
     const name = String(draft.name || '').trim();
@@ -664,6 +736,105 @@ class TaskGroups extends Component {
     if (!logs.length || !window.confirm(`Clear the log for “${this.accountLabel(task)}”?`)) return;
     this.props.dispatch({ type: 'targetSet', obj: { taskLogs: { ...taskLogs, [task.id]: [] } } });
   };
+
+  renderScheduleChip(group, now = this.state.scheduleNow) {
+    const summary = scheduleSummary(group.schedule, now);
+    if (!summary) return null;
+    return (
+      <span className="group-schedule-chip" title={scheduleDetailLine(group.schedule)}>
+        <Icon name="activity" size={11} /> {summary}
+      </span>
+    );
+  }
+
+  renderScheduleModal(group) {
+    if (!this.state.showScheduleModal) return null;
+    const draft = this.state.scheduleDraft || emptyScheduleDraft();
+    const preview = buildScheduleFromDraft(draft);
+    const armed = normalizeSchedule(group.schedule);
+    return (
+      <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeSchedule()}>
+        <div className="modal group-schedule-modal" onMouseDown={event => event.stopPropagation()}>
+          <div className="modal-header">
+            <div>
+              <div className="modal-title">Schedule “{group.name}”</div>
+              <p>{armed ? scheduleSummary(armed, this.state.scheduleNow) : 'Off — Zyn must stay open for timers to fire'}</p>
+            </div>
+            <button className="modal-close" onClick={this.closeSchedule}>×</button>
+          </div>
+          <div className="modal-body group-schedule-body">
+            <p className="group-schedule-help">
+              Start and/or stop this Target group at a local clock time or after a delay. Keep the Mac awake during drop windows.
+            </p>
+            <div className="group-schedule-grid">
+              <div className="group-schedule-leg">
+                <label className="form-label">Start group</label>
+                <div className="group-schedule-modes">
+                  {['off', 'at', 'in'].map(mode => (
+                    <label key={`start-${mode}`} className={draft.startMode === mode ? 'active' : ''}>
+                      <input type="radio" name="schedule-start" checked={draft.startMode === mode} onChange={() => this.setScheduleDraft({ startMode: mode })} />
+                      {mode === 'off' ? 'Off' : mode === 'at' ? 'At time' : 'In…'}
+                    </label>
+                  ))}
+                </div>
+                {draft.startMode === 'at' && (
+                  <input className="form-input" type="time" value={draft.startTime} onChange={event => this.setScheduleDraft({ startTime: event.target.value })} />
+                )}
+                {draft.startMode === 'in' && (
+                  <div className="group-schedule-interval">
+                    <input className="form-input" type="number" min="1" step="1" value={draft.startAmount} onChange={event => this.setScheduleDraft({ startAmount: event.target.value })} />
+                    <select className="form-select" value={draft.startUnit} onChange={event => this.setScheduleDraft({ startUnit: event.target.value })}>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="group-schedule-leg">
+                <label className="form-label">Stop group</label>
+                <div className="group-schedule-modes">
+                  {['off', 'at', 'in'].map(mode => (
+                    <label key={`stop-${mode}`} className={draft.stopMode === mode ? 'active' : ''}>
+                      <input type="radio" name="schedule-stop" checked={draft.stopMode === mode} onChange={() => this.setScheduleDraft({ stopMode: mode })} />
+                      {mode === 'off' ? 'Off' : mode === 'at' ? 'At time' : 'In…'}
+                    </label>
+                  ))}
+                </div>
+                {draft.stopMode === 'at' && (
+                  <input className="form-input" type="time" value={draft.stopTime} onChange={event => this.setScheduleDraft({ stopTime: event.target.value })} />
+                )}
+                {draft.stopMode === 'in' && (
+                  <div className="group-schedule-interval">
+                    <input className="form-input" type="number" min="1" step="1" value={draft.stopAmount} onChange={event => this.setScheduleDraft({ stopAmount: event.target.value })} />
+                    <select className="form-select" value={draft.stopUnit} onChange={event => this.setScheduleDraft({ stopUnit: event.target.value })}>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="group-schedule-preview">
+              {preview.error ? <span className="text-danger">{preview.error}</span> : preview.schedule ? (
+                <span>
+                  {preview.schedule.startAt != null && <>Starts <strong>{formatLocalTime(preview.schedule.startAt)}</strong></>}
+                  {preview.schedule.startAt != null && preview.schedule.stopAt != null && ' · '}
+                  {preview.schedule.stopAt != null && <>Stops <strong>{formatLocalTime(preview.schedule.stopAt)}</strong></>}
+                  {armed && scheduleDetailLine(armed) !== scheduleDetailLine(preview.schedule) && <em> — not saved yet</em>}
+                </span>
+              ) : <span className="text-muted">No start or stop selected</span>}
+              {this.state.scheduleError && <span className="text-danger"> {this.state.scheduleError}</span>}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary group-schedule-clear" onClick={() => this.clearSchedule(group)} disabled={!armed}>Clear schedule</button>
+            <button className="btn btn-secondary" onClick={this.closeSchedule}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => this.saveSchedule(group)}><Icon name="activity" size={13} /> Save Schedule</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   renderSharedEngineLog() {
     const target = this.props.target || {};
@@ -953,7 +1124,7 @@ class TaskGroups extends Component {
       >
         <div className="task-group-row-identity">
           <span className="site-mark"><Icon name="target" size={19} /></span>
-          <span><h3>{group.name}</h3><p>Target task group</p></span>
+          <span><h3>{group.name}</h3><p>Target task group</p>{this.renderScheduleChip(group)}</span>
         </div>
         <div className="task-group-row-stats">
           <span><strong>{stats.total}</strong>Tasks</span>
@@ -1166,9 +1337,10 @@ class TaskGroups extends Component {
         <div className="page-header task-view-header">
           <div>
             <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
-            <div className="page-title"><span className="page-title-dot" /> {group.name}</div>
+            <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
           </div>
           <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => this.openSchedule(group)}><Icon name="activity" size={12} /> Schedule</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={12} /> Edit Group</button>
             {stats.running ? (
               <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop All</button>
@@ -1207,6 +1379,7 @@ class TaskGroups extends Component {
           {this.renderSharedEngineLog()}
         </div>
         {this.renderHarvesterDrawer()}
+        {this.renderScheduleModal(group)}
         {this.renderGroupModal()}
         {this.renderTaskModal(group)}
         {this.renderHarvesterModal()}

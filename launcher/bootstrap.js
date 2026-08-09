@@ -11,6 +11,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
+const { createTaskGroupScheduler } = require('./task-group-scheduler');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
@@ -265,14 +266,17 @@ function installWindowSizePersistence() {
   });
 }
 
+let taskGroupStore = null;
+let taskGroupScheduler = null;
+
 function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
   const { ipcMain } = require('electron');
-  const store = createTaskGroupStore(app.getPath('userData'));
+  taskGroupStore = createTaskGroupStore(app.getPath('userData'));
 
   ipcMain.on('getTaskGroups', (event) => {
     try {
-      event.returnValue = store.load();
+      event.returnValue = taskGroupStore.load();
     } catch (error) {
       console.error(`Could not load Zyn task groups: ${error.message}`);
       event.returnValue = [];
@@ -280,12 +284,71 @@ function installTaskGroups() {
   });
   ipcMain.on('saveTaskGroups', (event, groups) => {
     try {
-      event.returnValue = store.save(groups);
+      taskGroupStore.save(groups);
+      taskGroupScheduler?.sync();
+      event.returnValue = taskGroupStore.load();
     } catch (error) {
       console.error(`Could not save Zyn task groups: ${error.message}`);
-      try { event.returnValue = store.load(); } catch { event.returnValue = []; }
+      try { event.returnValue = taskGroupStore.load(); } catch { event.returnValue = []; }
     }
   });
+}
+
+function pushTaskGroupSchedule(payload = {}) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+      window.webContents.send('taskGroupSchedule', payload);
+      if (payload.line) window.webContents.send('targetLog', { taskId: '', line: payload.line });
+    }
+  } catch {}
+}
+
+function validateScheduledTargetProxies(config, dataManager, managedProxyControl) {
+  const settings = dataManager.getSettings?.() || {};
+  const refs = [
+    ...(Array.isArray(config?.tasks) ? config.tasks.map(task => task.proxyListName) : []),
+    settings.targetHarvesterProxyList,
+    settings.targetThrottleFallbackGroup,
+    ...(Array.isArray(settings.targetHarvesters)
+      ? settings.targetHarvesters.map(harvester => harvester && harvester.proxyListName) : []),
+  ].map(value => String(value || '')).filter(value => value.startsWith('managed:'));
+  for (const ref of new Set(refs)) {
+    if (!managedProxyControl) throw new Error('Managed proxy access is unavailable.');
+    managedProxyControl.getProxyLines(ref);
+  }
+}
+
+function installTaskGroupScheduling(authority, managedProxyControl) {
+  if (!FEATURES.taskScheduling || !taskGroupStore) return null;
+  const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+  const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+  taskGroupScheduler = createTaskGroupScheduler({
+    getGroups: () => taskGroupStore.load(),
+    saveGroups: groups => taskGroupStore.save(groups),
+    getAccounts: () => dataManager.getAccounts?.() || [],
+    getProfiles: () => dataManager.getProfiles?.() || [],
+    isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
+    canStart: () => (!authority || authority.cached().ok === true)
+      && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),
+    startTarget: config => {
+      validateScheduledTargetProxies(config, dataManager, managedProxyControl);
+      const window = BrowserWindow.getAllWindows().find(candidate => !candidate.isDestroyed());
+      if (!window) throw new Error('The Zyn window is not ready.');
+      return targetEngine.startTarget(config, window);
+    },
+    stopTarget: taskId => targetEngine.stopTarget(taskId),
+    notify: pushTaskGroupSchedule,
+    log: line => console.info(line),
+  });
+  const syncWhenWindowReady = () => {
+    taskGroupScheduler?.sync();
+    const armed = taskGroupScheduler?.describeArmed() || [];
+    if (armed.length) console.info('[schedule] armed', armed.map(item => `${item.name}: ${item.detail}`).join(' | '));
+  };
+  if (BrowserWindow.getAllWindows().some(window => !window.isDestroyed())) syncWhenWindowReady();
+  else app.once('browser-window-created', () => setTimeout(syncWhenWindowReady, 0));
+  return taskGroupScheduler;
 }
 
 function installProfileImap() {
@@ -521,7 +584,10 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     safeStorage,
     onStatus: status => {
       pushLicenseStatus(status);
-      if (status && status.ok === true) beginRuntimeBootstrap();
+      if (status && status.ok === true) {
+        beginRuntimeBootstrap();
+        try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
+      }
     },
     onLock: stopAllRunningForLicense,
     onEntitlementsChanged: stopRemovedTaskTypes,
@@ -670,6 +736,7 @@ function runNativeEngineSelfTest() {
 // Wine keeps one server per prefix. Stop that private server after Zyn's own
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
+  try { taskGroupScheduler?.dispose(); } catch {}
   const prefix = winePrefix();
   const wineserver = wineserverPath();
   if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
@@ -701,6 +768,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine'
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();
   }
+  installTaskGroupScheduling(licenseAuthority, managedProxyControl);
   configureMacUpdater();
   configureAccountReporting(licenseAuthority);
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess

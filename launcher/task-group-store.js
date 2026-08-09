@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const TASK_GROUP_SCHEMA_VERSION = 1;
+const TASK_GROUP_SCHEMA_VERSION = 2;
 const TASK_GROUP_FILE = 'task-groups.json';
 const LEGACY_TARGET_FILE = 'target-tasks.json';
 const MAX_GROUPS = 200;
@@ -17,6 +17,18 @@ function boundedText(value, maximum, fallback = '') {
 
 function quantity(value) {
   return Math.max(1, Math.min(99, Number.parseInt(value, 10) || 2));
+}
+
+function normalizeSchedule(raw, site = 'target') {
+  if (String(site || '').toLowerCase() !== 'target' || !raw || typeof raw !== 'object') return null;
+  const epoch = value => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.floor(number) : null;
+  };
+  const startAt = epoch(raw.startAt);
+  let stopAt = epoch(raw.stopAt);
+  if (startAt != null && stopAt != null && stopAt <= startAt) stopAt = null;
+  return startAt == null && stopAt == null ? null : { startAt, stopAt };
 }
 
 function safeId(value, prefix, createId) {
@@ -53,6 +65,8 @@ function normalizeGroup(raw, index = 0, options = {}) {
     updatedAt: Number(group.updatedAt) > 0 ? Math.floor(Number(group.updatedAt)) : now,
     tasks: [],
   };
+  const schedule = normalizeSchedule(group.schedule, normalized.site);
+  if (schedule) normalized.schedule = schedule;
   normalized.tasks = (Array.isArray(group.tasks) ? group.tasks : [])
     .slice(0, MAX_TASKS_PER_GROUP)
     .map((task, taskIndex) => normalizeTask(task, normalized, taskIndex, createId))
@@ -164,6 +178,7 @@ function createTaskGroupStore(dataDirectory, options = {}) {
 
 module.exports = {
   TASK_GROUP_SCHEMA_VERSION,
+  normalizeSchedule,
   normalizeGroup,
   normalizeGroups,
   createTaskGroupStore,

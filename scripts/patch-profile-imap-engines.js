@@ -441,6 +441,12 @@ function sendStart(config) {
   taskProfileById.clear();
   toRenderer('targetDone'`, 'Target full task cleanup');
 
+  source = replaceOnce(source,
+    `function runningCount() { return runningTaskIds.size; }`,
+    `function isTaskRunning(taskId) { return runningTaskIds.has(String(taskId || '')); }
+function runningCount() { return runningTaskIds.size; }`,
+    'Target scheduled task running-state export');
+
   // A single broker owns :4727 and the shared bank. Every saved harvester runs as a producer-only
   // child, so browser, route, worker count, schedule, type, and lifecycle remain independent.
   source = replaceOnce(source, `let farmerProc = null;  // the Shape cookie farmer/broker (node bot/shape-farmer.mjs, port 4727)`, `let farmerProc = null;  // the Shape cookie farmer/broker (node bot/shape-farmer.mjs, port 4727)
@@ -551,7 +557,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
   brokerOnly = false;
   try { if (wss) wss.close(); } catch {}`, 'Target managed harvester shutdown');
 
-  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
+  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
 
   opened.source = source;
   saveSource(opened);

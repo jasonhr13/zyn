@@ -11,8 +11,8 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.6}"
-APP_VERSION="${ZYN_VERSION:-1.6.80}"
+APP_RELEASE="${ZYN_RELEASE:-R8.7}"
+APP_VERSION="${ZYN_VERSION:-1.6.81}"
 NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
@@ -137,7 +137,8 @@ cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpac
 for launcher_file in \
   bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
   checkout-reporting.js \
-  task-type-access.js task-type-ipc-guard.js task-group-store.js window-size-state.js \
+  task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js \
+  task-group-scheduler.js target-group-launch.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
   managed-proxy-ipc-guard.js; do
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"

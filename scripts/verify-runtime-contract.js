@@ -234,7 +234,7 @@ check('Target farmer New Headless launch contract', () => {
     const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
     assert.match(bootstrap, /waitForRuntime\(\['chromium'\]\)/,
       'Target launches do not wait for the remote Chromium component');
-    assert.match(bootstrap, /status && status\.ok === true\) beginRuntimeBootstrap\(\)/,
+    assert.match(bootstrap, /status && status\.ok === true\)[\s\S]{0,120}beginRuntimeBootstrap\(\)/,
       'runtime download does not begin after license sign-in');
   } else {
     assert.equal(
