@@ -1,8 +1,6 @@
 package pokemoncenter
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -11,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
 	"github.com/PolarAIO/Polar-AIO/backend/client"
 	"github.com/PolarAIO/Polar-AIO/backend/sites"
 	jsoniter "github.com/json-iterator/go"
@@ -190,29 +187,12 @@ func (t *PokemonCenterTask) GetIncapSensor() {
 		"ip":             t.IpInfo.Ip,
 		"acceptLanguage": "en-US,en;q=0.9",
 	}
-	payloadBytes, _ := jsonStd.Marshal(data)
-
-	Request := client.RequestStruct{
-		CTX: t.TaskContext.CTX,
-		Req: client.ReqStruct{
-			Method: "POST",
-			URL:    "https://incapsula.hypersolutions.co/reese84",
-			Data:   string(payloadBytes),
-		},
-		Headers: map[string][]string{
-			"content-type": {"application/json"},
-			"x-api-key":    {siteconfig.HyperAPIKey()},
-		},
-	}
-
-	response, body, err := client.MakeRequest(Request, t.Requests.ServerClient, &t.ClientID)
+	status, body, err := t.requestHyper("reese84", data)
 	if err != nil {
-		t.handleProxyRequestError("get-incap-sensor", "Proxy Failed", err)
+		t.setHyperError("get-incap-sensor", err)
 		return
 	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
-		t.Requests.Referer = Request.Req.URL
-		switch response.StatusCode {
+		switch status {
 		case 200:
 			var responseBody ReeseSolveHyperResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
@@ -222,8 +202,8 @@ func (t *PokemonCenterTask) GetIncapSensor() {
 			}
 			t.ReesePayload = responseBody.Payload
 		default:
-			t.AddUnkownResponse(Request.Req.URL, *response, body)
-			t.NextStep, t.Error = "get-incap-sensor", fmt.Errorf("error incap (%d)", response.StatusCode)
+			t.recordUnknownHyper("reese84", status, body)
+			t.NextStep, t.Error = "get-incap-sensor", fmt.Errorf("error incap (%d)", status)
 		}
 	}
 }
@@ -369,29 +349,12 @@ func (t *PokemonCenterTask) GetTagsSensor(payloadType string) {
 		"ip":             t.IpInfo.Ip,
 		"acceptLanguage": "en-US,en;q=0.9",
 	}
-	payloadBytes, _ := jsonStd.Marshal(data)
-
-	Request := client.RequestStruct{
-		CTX: t.TaskContext.CTX,
-		Req: client.ReqStruct{
-			Method: "POST",
-			URL:    "https://datadome.hypersolutions.co/tags",
-			Data:   string(payloadBytes),
-		},
-		Headers: map[string][]string{
-			"content-type": {"application/json"},
-			"x-api-key":    {siteconfig.HyperAPIKey()},
-		},
-	}
-
-	response, body, err := client.MakeRequest(Request, t.Requests.ServerClient, &t.ClientID)
+	status, body, err := t.requestHyper("datadome-tags", data)
 	if err != nil {
-		t.handleProxyRequestError("solve-datadome-ch", "Proxy Failed", err)
+		t.setHyperError("solve-datadome-ch", err)
 		return
 	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
-		t.Requests.Referer = Request.Req.URL
-		switch response.StatusCode {
+		switch status {
 		case 200:
 			var responseBody DatadomeTagsSolveHyperResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
@@ -401,8 +364,8 @@ func (t *PokemonCenterTask) GetTagsSensor(payloadType string) {
 			}
 			t.DatadomePayload = responseBody.Payload
 		default:
-			t.AddUnkownResponse(Request.Req.URL, *response, body)
-			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("error datadome (%d)", response.StatusCode)
+			t.recordUnknownHyper("datadome-tags", status, body)
+			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("error datadome (%d)", status)
 		}
 	}
 }
@@ -1455,29 +1418,12 @@ func (t *PokemonCenterTask) GetInterstitialSensor() {
 		"ip":             t.IpInfo.Ip,
 		"acceptLanguage": "en-US,en;q=0.9",
 	}
-	payloadBytes, _ := jsonStd.Marshal(data)
-
-	Request := client.RequestStruct{
-		CTX: t.TaskContext.CTX,
-		Req: client.ReqStruct{
-			Method: "POST",
-			URL:    "https://datadome.hypersolutions.co/interstitial",
-			Data:   string(payloadBytes),
-		},
-		Headers: map[string][]string{
-			"content-type": {"application/json"},
-			"x-api-key":    {siteconfig.HyperAPIKey()},
-		},
-	}
-
-	response, body, err := client.MakeRequest(Request, t.Requests.ServerClient, &t.ClientID)
+	status, body, err := t.requestHyper("datadome-interstitial", data)
 	if err != nil {
-		t.handleProxyRequestError("solve-datadome-ch", "datadome failed", err)
+		t.setHyperError("solve-datadome-ch", err)
 		return
 	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
-		t.Requests.Referer = Request.Req.URL
-		switch response.StatusCode {
+		switch status {
 		case 200:
 			var responseBody DatadomeInterstitialSolveHyperResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
@@ -1488,8 +1434,8 @@ func (t *PokemonCenterTask) GetInterstitialSensor() {
 			t.DatadomePayload = responseBody.Payload
 			t.DatadomeHeaders = responseBody.Headers
 		default:
-			t.AddUnkownResponse(Request.Req.URL, *response, body)
-			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("get datadome (%d)", response.StatusCode)
+			t.recordUnknownHyper("datadome-interstitial", status, body)
+			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("get datadome (%d)", status)
 		}
 	}
 }
@@ -1563,29 +1509,12 @@ func (t *PokemonCenterTask) GetSliderSensor() {
 		"ip":             t.IpInfo.Ip,
 		"acceptLanguage": "en-US,en;q=0.9",
 	}
-	payloadBytes, _ := jsonStd.Marshal(data)
-
-	Request := client.RequestStruct{
-		CTX: t.TaskContext.CTX,
-		Req: client.ReqStruct{
-			Method: "POST",
-			URL:    "https://datadome.hypersolutions.co/slider",
-			Data:   string(payloadBytes),
-		},
-		Headers: map[string][]string{
-			"content-type": {"application/json"},
-			"x-api-key":    {siteconfig.HyperAPIKey()},
-		},
-	}
-
-	response, body, err := client.MakeRequest(Request, t.Requests.ServerClient, &t.ClientID)
+	status, body, err := t.requestHyper("datadome-slider", data)
 	if err != nil {
-		t.handleProxyRequestError("solve-datadome-ch", "datadome failed", err)
+		t.setHyperError("solve-datadome-ch", err)
 		return
 	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
-		t.Requests.Referer = Request.Req.URL
-		switch response.StatusCode {
+		switch status {
 		case 200:
 			var responseBody DatadomeInterstitialSolveHyperResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
@@ -1596,8 +1525,8 @@ func (t *PokemonCenterTask) GetSliderSensor() {
 			t.DatadomePayload = responseBody.Payload
 			t.DatadomeHeaders = responseBody.Headers
 		default:
-			t.AddUnkownResponse(Request.Req.URL, *response, body)
-			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("get datadome (%d)", response.StatusCode)
+			t.recordUnknownHyper("datadome-slider", status, body)
+			t.NextStep, t.Error = "solve-datadome-ch", fmt.Errorf("get datadome (%d)", status)
 		}
 	}
 }
@@ -1719,35 +1648,12 @@ func (t *PokemonCenterTask) GetUTMVCSensor() {
 		"sessionIds": sessionIds,
 		"userAgent":  t.Requests.UserAgent.Useragent,
 	}
-	payloadBytes, _ := jsonStd.Marshal(data)
-
-	var gzipBuf bytes.Buffer
-	gz := gzip.NewWriter(&gzipBuf)
-	gz.Write(payloadBytes)
-	gz.Close()
-
-	Request := client.RequestStruct{
-		CTX:     t.TaskContext.CTX,
-		RawData: gzipBuf.Bytes(),
-		Req: client.ReqStruct{
-			Method: "POST",
-			URL:    "https://incapsula.hypersolutions.co/utmvc",
-		},
-		Headers: map[string][]string{
-			"content-type":     {"application/json"},
-			"content-encoding": {"gzip"},
-			"x-api-key":        {siteconfig.HyperAPIKey()},
-		},
-	}
-
-	response, body, err := client.MakeRequest(Request, t.Requests.ServerClient, &t.ClientID)
+	status, body, err := t.requestHyper("incapsula-utmvc", data)
 	if err != nil {
-		t.handleProxyRequestError("solve-utmvc", "Proxy Failed", err)
+		t.setHyperError("solve-utmvc", err)
 		return
 	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
-		t.Requests.Referer = Request.Req.URL
-		switch response.StatusCode {
+		switch status {
 		case 200:
 			var responseBody UtmvcHyperResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
@@ -1758,8 +1664,8 @@ func (t *PokemonCenterTask) GetUTMVCSensor() {
 			t.IncapPayload = responseBody.Payload
 			t.UtmvcParams = responseBody.Swhanedl
 		default:
-			t.AddUnkownResponse(Request.Req.URL, *response, body)
-			t.NextStep, t.Error = "solve-utmvc", fmt.Errorf("error incap (%d)", response.StatusCode)
+			t.recordUnknownHyper("incapsula-utmvc", status, body)
+			t.NextStep, t.Error = "solve-utmvc", fmt.Errorf("error incap (%d)", status)
 		}
 	}
 }

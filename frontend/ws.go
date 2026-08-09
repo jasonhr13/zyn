@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/captcha"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/hyperbroker"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
@@ -33,16 +35,108 @@ var (
 	watcherReadyMu          sync.Mutex
 	watcherReady            = map[string]chan struct{}{}
 	watcherSequence         atomic.Uint64
+	hyperPendingMu          sync.Mutex
+	hyperPending            = map[string]hyperWaiter{}
+	hyperSequence           atomic.Uint64
 )
+
+type hyperWaiter struct {
+	taskID string
+	ch     chan HyperResponseMessage
+}
 
 func ConnectFrontend(port string) {
 	task.SetMessageSender(SendMessage)
 	captcha.SetMessageSender(SendMessage)
+	hyperbroker.SetRequester(RequestHyper)
 	task.SetProductWebhookSender(webhook.SendProductCheckout)
 	imapcode.SetCodeRequester(RequestCode)
 	for {
 		connectAndLog(port)
 		time.Sleep(time.Second)
+	}
+}
+
+func RequestHyper(ctx context.Context, taskID, operation string, payload any) (hyperbroker.Result, error) {
+	switch operation {
+	case "reese84", "datadome-tags", "datadome-interstitial", "datadome-slider", "incapsula-utmvc":
+	default:
+		return hyperbroker.Result{}, errors.New("hyperbroker: unsupported operation")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+
+	requestID := "hyper-" + strconv.FormatUint(hyperSequence.Add(1), 10)
+	waiter := hyperWaiter{taskID: strings.TrimSpace(taskID), ch: make(chan HyperResponseMessage, 1)}
+	if waiter.taskID == "" {
+		return hyperbroker.Result{}, errors.New("hyperbroker: task ID is required")
+	}
+	hyperPendingMu.Lock()
+	hyperPending[requestID] = waiter
+	hyperPendingMu.Unlock()
+	defer func() {
+		hyperPendingMu.Lock()
+		if current, ok := hyperPending[requestID]; ok && current.ch == waiter.ch {
+			delete(hyperPending, requestID)
+		}
+		hyperPendingMu.Unlock()
+	}()
+
+	err := SendMessage(SentMessage{Type: "hyper-request", Messages: []any{map[string]any{
+		"requestId": requestID,
+		"taskId":    waiter.taskID,
+		"site":      "Pokemon Center US",
+		"operation": operation,
+		"payload":   payload,
+	}}})
+	if err != nil {
+		return hyperbroker.Result{}, err
+	}
+
+	select {
+	case response := <-waiter.ch:
+		result := hyperbroker.Result{Status: response.Status, Body: []byte(response.Body)}
+		if response.Status <= 0 {
+			if strings.TrimSpace(response.Error) == "" {
+				response.Error = "Hyper service request failed"
+			}
+			return result, errors.New(response.Error)
+		}
+		return result, nil
+	case <-ctx.Done():
+		return hyperbroker.Result{}, ctx.Err()
+	}
+}
+
+func deliverHyperResponse(response HyperResponseMessage) {
+	if !strings.EqualFold(strings.TrimSpace(response.Site), "Pokemon Center US") {
+		return
+	}
+	hyperPendingMu.Lock()
+	waiter, ok := hyperPending[strings.TrimSpace(response.RequestID)]
+	hyperPendingMu.Unlock()
+	if !ok || strings.TrimSpace(response.TaskID) != waiter.taskID {
+		return
+	}
+	select {
+	case waiter.ch <- response:
+	default:
+	}
+}
+
+func failPendingHyper(reason string) {
+	hyperPendingMu.Lock()
+	waiters := hyperPending
+	hyperPending = map[string]hyperWaiter{}
+	hyperPendingMu.Unlock()
+	for requestID, waiter := range waiters {
+		select {
+		case waiter.ch <- HyperResponseMessage{RequestID: requestID, TaskID: waiter.taskID, Error: reason}:
+		default:
+		}
 	}
 }
 
@@ -112,6 +206,7 @@ func connectAndLog(port string) {
 		frontendConnMu.Lock()
 		if frontendConn == c {
 			frontendConn = nil
+			failPendingHyper("frontend connection closed")
 		}
 		frontendConnMu.Unlock()
 	}()
@@ -247,6 +342,15 @@ func readMessage(c *websocket.Conn) error {
 			return nil
 		}
 		deliverWatcherReady(readyMessage.RequestID)
+	case "hyper-response":
+		for i, raw := range msg.Messages {
+			var response HyperResponseMessage
+			if err := json.Unmarshal(raw, &response); err != nil {
+				log.Printf("ConnectFrontend: hyper-response [%d] decode: %v", i, err)
+				continue
+			}
+			deliverHyperResponse(response)
+		}
 	default:
 		log.Printf("ConnectFrontend: unknown type %q", msg.Type)
 	}

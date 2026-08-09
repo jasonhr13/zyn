@@ -119,6 +119,16 @@ type CaptchaSolvePayload struct {
 	Token  string `json:"token"`
 }
 
+type HyperResponseMessage struct {
+	RequestID string `json:"requestId"`
+	TaskID    string `json:"taskId"`
+	Site      string `json:"site"`
+	OK        bool   `json:"ok"`
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	Error     string `json:"error"`
+}
+
 type ImapCodeResponse struct {
 	Email string `json:"email"`
 	Code  string `json:"code"`
