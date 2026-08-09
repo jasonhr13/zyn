@@ -44,6 +44,16 @@ assert.match(target, /onLog: \(line\) => log\(String\(line\), taskId\)/);
 assert.match(target, /Object\.assign\(sentConfigs\.proxies, buildProxyMap\(group\)\)/);
 assert.match(target, /buildProxyMap\(group\)\);\s+sendConfigs\(\);\s+}\s+return sendToEngine\(\{ type: 'set-task-proxy'/,
   'live proxy edits must configure the selected group before switching');
+assert.match(target, /function editTargetTasks\(config = \{\}\)/,
+  'Target bridge omits live task watch-list editing');
+assert.match(target, /type: 'edit-tasks', messages/,
+  'Target bridge does not use the native runtime-edit protocol');
+assert.match(target, /MONITOR_ID \+ '-edit-'/,
+  'shared-monitor mode does not scan newly edited SKUs locally');
+assert.match(target, /startsWith\(MONITOR_ID\)/,
+  'live-edit monitor status is not routed to the module log');
+assert.match(target, /startTarget, stopTarget, editTargetTasks/,
+  'live task editor is not exported to Electron');
 assert.doesNotMatch(target, /const otpInFlight = new Set\(\)/);
 assert.doesNotMatch(target, /log\(`\[otp\] code \$\{code\}/);
 assert.doesNotMatch(target, /function getImapConfig\(\) \{/);
@@ -62,4 +72,10 @@ const repeat = spawnSync(process.execPath, [path.join(__dirname, 'patch-profile-
 assert.notEqual(repeat.status, 0, 'hash gate accepted an already-modified engine');
 assert.match(`${repeat.stdout}${repeat.stderr}`, /does not match the reviewed R5 source/);
 
-console.log(JSON.stringify({ ok: true, hashGated: true, targetProfileRouting: true, walmartProfileRouting: true }, null, 2));
+console.log(JSON.stringify({
+  ok: true,
+  hashGated: true,
+  targetProfileRouting: true,
+  targetLiveSkuEditing: true,
+  walmartProfileRouting: true,
+}, null, 2));

@@ -183,12 +183,38 @@ async function main() {
       clickText('button', 'Start All');
       await wait(100);
       ipc.send = originalSend;
+      const runningGroup = (ipc.sendSync('getTaskGroups') || []).find(item => item.name === 'R2 Verification Drop');
+      const runningTaskId = runningGroup && runningGroup.tasks && runningGroup.tasks[0] && runningGroup.tasks[0].id;
+      ipc.emit('targetStatus', {}, {
+        taskId: runningTaskId,
+        state: 'monitoring',
+        label: 'Monitoring products',
+        color: '#65d6a6',
+        detail: 'Watching Target stock',
+        running: true,
+      });
+      await wait(100);
+      let liveEditPayload = null;
+      const originalSendSync = ipc.sendSync;
+      ipc.sendSync = (channel, ...args) => {
+        if (channel === 'editTargetTasks') {
+          liveEditPayload = args[0];
+          return { ok: true, updated: (liveEditPayload.tasks || []).length, watched: (liveEditPayload.skus || []).length };
+        }
+        return originalSendSync.call(ipc, channel, ...args);
+      };
       clickText('button', 'Edit Group');
       await wait(100);
       const editName = document.querySelector('.task-group-modal input.form-input');
+      const editSkus = document.querySelector('.task-group-modal textarea');
+      const editQty = document.querySelector('.task-group-modal input[type="number"]');
       setValue(editName, 'R2 Verified Drop');
+      setValue(editSkus, '11223344\n55667788');
+      setValue(editQty, '4');
       clickText('.task-group-modal button', 'Save Changes');
       await wait(300);
+      ipc.sendSync = originalSendSync;
+      ipc.emit('targetDone', {}, { taskId: runningTaskId });
       ipc.emit('targetLog', {}, { lines: ['ENGINE: shape farmer ready', 'MONITOR: watching 2 products'] });
       ipc.emit('targetStatus', {}, { state: 'monitoring', label: 'Monitoring products', color: '#65d6a6', detail: 'Watching Target stock' });
       await wait(150);
@@ -214,6 +240,10 @@ async function main() {
         launchSkuCount: launchPayload && launchPayload.skus ? launchPayload.skus.length : 0,
         launchQuantity: launchPayload && launchPayload.qty,
         launchProfileId: launchPayload && launchPayload.tasks && launchPayload.tasks[0] && launchPayload.tasks[0].profileId,
+        liveEditIntercepted: Boolean(liveEditPayload),
+        liveEditTaskCount: liveEditPayload && liveEditPayload.tasks ? liveEditPayload.tasks.length : 0,
+        liveEditSkus: liveEditPayload && liveEditPayload.skus,
+        liveEditQuantity: liveEditPayload && liveEditPayload.qty,
         backendLaunchPrevented: Boolean(launchPayload)
       };
     })()`,
@@ -260,6 +290,10 @@ async function main() {
     || report.launchSkuCount !== 2
     || report.launchQuantity !== 2
     || report.launchProfileId !== cleanup.profileId
+    || !report.liveEditIntercepted
+    || report.liveEditTaskCount !== 1
+    || JSON.stringify(report.liveEditSkus) !== JSON.stringify(['11223344', '55667788'])
+    || String(report.liveEditQuantity) !== '4'
     || !report.backendLaunchPrevented
     || report.rendererErrors
     || report.rendererExceptions) {

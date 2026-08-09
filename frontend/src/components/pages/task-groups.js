@@ -429,6 +429,22 @@ class TaskGroups extends Component {
     if (!name) return;
     const now = Date.now();
     let selectedGroupId = this.state.editingGroupId;
+    const previousGroup = selectedGroupId
+      ? this.state.groups.find(group => group.id === selectedGroupId)
+      : null;
+    const nextSkus = parseSkus(draft.skus);
+    const previousSkus = parseSkus(previousGroup && previousGroup.skus);
+    const liveTasks = previousGroup
+      ? (previousGroup.tasks || []).filter(task => statusKind(this.statusFor(task)) === 'running')
+      : [];
+    const liveWatchChanged = !!previousGroup && (
+      previousSkus.join(',') !== nextSkus.join(',')
+      || String(previousGroup.qty || 2) !== String(draft.qty || 2)
+    );
+    if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
+      window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
+      return;
+    }
     let groups;
     if (selectedGroupId) {
       groups = this.state.groups.map(group => group.id === selectedGroupId ? {
@@ -453,11 +469,32 @@ class TaskGroups extends Component {
         updatedAt: now,
       }];
     }
-    this.persist(groups, () => this.setState({
-      selectedGroupId,
-      showGroupModal: false,
-      editingGroupId: '',
-    }));
+    this.persist(groups, () => {
+      let liveEditError = '';
+      if (liveWatchChanged && liveTasks.length) {
+        try {
+          const result = ipcRenderer.sendSync('editTargetTasks', {
+            tasks: liveTasks,
+            skus: nextSkus,
+            qty: draft.qty || 2,
+          });
+          if (!result || result.ok !== true || result.updated < 1) {
+            liveEditError = (result && result.error) || 'The native engine did not accept the live watch-list update.';
+          }
+        } catch (error) {
+          liveEditError = (error && error.message) || 'The live watch-list update failed.';
+        }
+      }
+      this.setState({
+        selectedGroupId,
+        showGroupModal: false,
+        editingGroupId: '',
+      }, () => {
+        if (liveEditError) {
+          window.alert(`The group was saved, but its running tasks were not updated. Stop and restart them to apply the new SKUs.\n\n${liveEditError}`);
+        }
+      });
+    });
   };
 
   deleteGroup = (group) => {

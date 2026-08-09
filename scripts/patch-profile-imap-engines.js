@@ -263,6 +263,7 @@ const taskProfileById = new Map();`, 'Target task/profile map declaration');
   // nobody is waiting for.
   otpPending.clear();
   emitOtpPending();`, `  taskActive = false;
+  stopLiveEditMonitor();
   // The engine that asked for these is being killed. Abort the actual mailbox operations as well as
   // clearing the prompt so neither a socket timeout nor a late code can leak into a future run.
   cancelAllOtpFetches();`, 'Target full OTP cancellation');
@@ -278,8 +279,117 @@ const taskProfileById = new Map();`, 'Target task/profile map declaration');
   }
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group }] });`, 'Target live proxy config refresh');
 
+  source = replaceOnce(source, `function sendStart(config) {`, `let liveEditMonitorId = '';
+let liveEditMonitorTimer = null;
+let liveEditMonitorSequence = 0;
+let liveEditStoppedMainMonitor = false;
+
+function stopLiveEditMonitor() {
+  if (liveEditMonitorTimer) clearTimeout(liveEditMonitorTimer);
+  liveEditMonitorTimer = null;
+  const id = liveEditMonitorId;
+  liveEditMonitorId = '';
+  if (id && engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id }] });
+}
+
+// A group edit changes the restock inputs in-place. Checkout tasks drain runtime edits only at safe
+// step boundaries, so a task already carting or submitting keeps its selected TCIN; the new watch
+// list is used the next time it returns to restock selection.
+function editTargetTasks(config = {}) {
+  const skus = [...new Set((Array.isArray(config.skus) ? config.skus : [])
+    .map(value => String(value || '').trim())
+    .filter(value => /^\\d{6,}$/.test(value)))];
+  const qty = Math.max(1, parseInt(config.qty, 10) || 1);
+  const selected = (Array.isArray(config.tasks) ? config.tasks : [])
+    .filter(task => task && task.id && runningTaskIds.has(task.id));
+  if (!selected.length) return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'No selected Target tasks are running.' };
+
+  const makeItems = list => list.map(sku => ({
+    id: sku, monitorInput: sku, quantity: String(qty), color: '', sizes: [], maxPrice: '',
+  }));
+  let cappedTasks = 0;
+  const messages = selected.map(task => {
+    const accountId = task.accountId || taskAccountById.get(task.id) || '';
+    const eligible = accountId
+      ? skus.filter(sku => {
+        try { return !dm.targetOrderLimitReached(accountId, sku); } catch { return true; }
+      })
+      : skus.slice();
+    if (!eligible.length && skus.length) cappedTasks += 1;
+    if (eligible.length < skus.length) {
+      const capped = skus.filter(sku => !eligible.includes(sku));
+      log('[limit] live edit skipped ' + capped.join(', ') + ' for this account', task.id);
+    }
+    const items = makeItems(eligible);
+    return { id: task.id, type: 'Target', site: 'Target', item: items, monitorItems: items };
+  });
+
+  const sent = sendToEngine({ type: 'edit-tasks', messages });
+  if (!sent) return { ok: false, updated: 0, watched: 0, cappedTasks, error: 'The native Target engine is not connected.' };
+
+  const watched = [...new Set(messages.flatMap(message => message.monitorItems.map(item => item.monitorInput)))];
+  const monitorItems = makeItems(watched);
+  stopLiveEditMonitor();
+  let monitorRefreshed = true;
+  if (!sharedMonitorOnly()) {
+    if (!watched.length) {
+      monitorRefreshed = sendToEngine({ type: 'stop-tasks', messages: [{ id: MONITOR_ID }] });
+      liveEditStoppedMainMonitor = monitorRefreshed;
+    } else if (liveEditStoppedMainMonitor) {
+      const first = selected[0] || {};
+      monitorRefreshed = sendToEngine({ type: 'start-monitors', messages: [{
+        id: MONITOR_ID,
+        site: 'Target',
+        proxyGroup: String(first.proxyListName || '').trim() || 'Local',
+        monitorDelay: '4000',
+        items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: '' })),
+      }] });
+      if (monitorRefreshed) liveEditStoppedMainMonitor = false;
+    } else {
+      monitorRefreshed = sendToEngine({
+        type: 'edit-tasks',
+        messages: [{ id: MONITOR_ID, type: 'Target', site: 'Target', item: monitorItems, monitorItems }],
+      });
+    }
+  } else if (watched.length) {
+    const first = selected[0] || {};
+    const id = MONITOR_ID + '-edit-' + (++liveEditMonitorSequence);
+    liveEditMonitorId = id;
+    monitorRefreshed = sendToEngine({ type: 'start-monitors', messages: [{
+      id,
+      site: 'Target',
+      proxyGroup: String(first.proxyListName || '').trim() || 'Local',
+      monitorDelay: '4000',
+      items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: '' })),
+    }] });
+    if (monitorRefreshed) {
+      liveEditMonitorTimer = setTimeout(() => {
+        const finishedId = liveEditMonitorId;
+        liveEditMonitorId = '';
+        liveEditMonitorTimer = null;
+        if (finishedId && engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: finishedId }] });
+        log('[target] monitor: live-edit scan done — returning to the shared monitor');
+      }, 20000);
+      if (liveEditMonitorTimer && typeof liveEditMonitorTimer.unref === 'function') liveEditMonitorTimer.unref();
+    } else {
+      liveEditMonitorId = '';
+    }
+  }
+
+  log('[target] watch list updated for ' + messages.length + ' running task(s): '
+    + watched.length + ' SKU(s), qty ' + qty);
+  if (!monitorRefreshed) log('[target] monitor refresh failed; checkout tasks still received the new watch list');
+  return { ok: true, updated: messages.length, watched: watched.length, cappedTasks, monitorRefreshed };
+}
+
+function sendStart(config) {
+  liveEditStoppedMainMonitor = false;`, 'Target live task watch-list editing');
+
+  source = replaceOnce(source, `const id = m.taskID === MONITOR_ID ? '' : (m.taskID || '');`, `const id = String(m.taskID || '').startsWith(MONITOR_ID) ? '' : (m.taskID || '');`, 'Target live-edit monitor status routing');
+
   source = replaceOnce(source, `      taskActive = false;
       // The engine dying takes every task with it, so clear them all rather than a single id.`, `      taskActive = false;
+      stopLiveEditMonitor();
       cancelAllOtpFetches('Target engine exited');
       // The engine dying takes every task with it, so clear them all rather than a single id.`, 'Target engine-exit OTP cancellation');
 
@@ -441,7 +551,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
   brokerOnly = false;
   try { if (wss) wss.close(); } catch {}`, 'Target managed harvester shutdown');
 
-  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
+  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
 
   opened.source = source;
   saveSource(opened);

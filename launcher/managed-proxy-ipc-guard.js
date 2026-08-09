@@ -9,6 +9,7 @@ const START_CHANNELS = new Set([
   'startRound1',
   'startPokemonCenter',
   'startTarget',
+  'editTargetTasks',
   'setTargetTaskProxy',
   'startWalmart',
 ]);
@@ -42,7 +43,7 @@ function collectManagedRefs(channel, args, dataManager) {
     if (Array.isArray(first?.tasks)) first.tasks.forEach(walkTask);
     add(first?.harvesterProxyList);
     add(first?.targetHarvesterProxyList);
-    if (channel === 'startTarget') {
+    if (channel === 'startTarget' || channel === 'editTargetTasks') {
       const settings = dataManager.getSettings?.() || {};
       add(settings.targetHarvesterProxyList);
       add(settings.targetThrottleFallbackGroup);

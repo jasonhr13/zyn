@@ -30,6 +30,18 @@ ipcMain.on('syncTargetHarvesters', (e) => {
   if (!licensed()) { refuseUnlicensed('syncTargetHarvesters'); e.returnValue = false; return; }
   try { e.returnValue = targetEngine.syncTargetHarvesters(mainWindow); }
   catch (err) { log.warn('syncTargetHarvesters:', err.message); e.returnValue = false; }
+});
+
+// Runtime watch-list edits are synchronous so the group editor can distinguish an applied update
+// from one that was merely saved to disk and needs a task restart.
+ipcMain.on('editTargetTasks', (e, config) => {
+  if (moduleBlocked('target')) { refuseModule('Target'); e.returnValue = { ok: false, error: 'Target is unavailable.' }; return; }
+  if (!licensed()) { refuseUnlicensed('editTargetTasks'); e.returnValue = { ok: false, error: 'Zyn is not licensed.' }; return; }
+  try { e.returnValue = targetEngine.editTargetTasks(config || {}); }
+  catch (err) {
+    log.warn('editTargetTasks:', err.message);
+    e.returnValue = { ok: false, error: err.message || 'Target watch-list update failed.' };
+  }
 });`;
   return source
     .replace(cookieBankAnchor, harvesterIpc)

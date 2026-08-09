@@ -49,7 +49,7 @@ restore();
 const argsFor = channel => {
   if (channel === 'startTask') return [{ id: 'task-one' }];
   if (channel === 'setTargetTaskProxy') return ['target-one', ref];
-  if (channel === 'startTarget') return [{ tasks: [{ proxyListName: ref }] }];
+  if (channel === 'startTarget' || channel === 'editTargetTasks') return [{ tasks: [{ proxyListName: ref }] }];
   return [{ proxyListName: ref }];
 };
 const makeEvent = () => {
