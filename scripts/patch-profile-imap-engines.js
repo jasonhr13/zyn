@@ -76,7 +76,8 @@ const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Targe
 
   source = replaceOnce(source, `const skuTitles = require('./sku-titles');`, `const skuTitles = require('./sku-titles');
 const engineContract = require('./native-engine-contract');
-const nativeHyperBroker = require('./native-hyper-broker');`, 'shared native-engine contract import');
+const nativeHyperBroker = require('./native-hyper-broker');
+const manualCaptchaManager = require('./manual-captcha-manager');`, 'shared native-engine contract import');
 
   source = replaceOnce(source, `        const tid = (m && m.taskID) || '';
         log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, `        const tid = (m && m.taskID) || '';
@@ -250,7 +251,18 @@ const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/pr
   source = replaceOnce(source, `function handleEngineMessage(data) {`, `function handleEngineMessage(data, connection) {`, 'native-engine connection-scoped message handler');
 
   source = replaceOnce(source, `    default:
-      // stuckInCart / account-cookie / update-input / update-status variants: ignore for the UI`, `    case 'hyper-request':
+      // stuckInCart / account-cookie / update-input / update-status variants: ignore for the UI`, `    case 'solve-captcha':
+      // Manual-only solver: Electron owns the isolated Pokemon Center window and returns the
+      // completed token over this same authenticated engine connection.
+      manualCaptchaManager.handleEnvelope(msg, {
+        registry: engineTaskSites,
+        send: sendToEngine,
+        isActive: () => engineConn === connection,
+        parent: win,
+        logger: { warn: message => log(String(message)) },
+      });
+      break;
+    case 'hyper-request':
       // The native process receives neither the license bearer nor the Hyper credential. Its
       // correlated request is resolved here through the main-process license authority.
       nativeHyperBroker.handleEnvelope(msg, {
@@ -269,12 +281,14 @@ const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/pr
       if (engineConn === ws) {
         engineConn = null;
         nativeHyperBroker.cancelPending();
+        manualCaptchaManager.cancelPending();
       }
     });`, 'native engine connection-scoped broker lifecycle');
 
   source = replaceOnce(source, `  engineConn = null;
 }`, `  engineConn = null;
   nativeHyperBroker.cancelPending();
+  manualCaptchaManager.cancelPending();
 }`, 'native broker shutdown cancellation');
 
   source = replaceOnce(source, `  const addr = String(email || '').trim();
@@ -477,6 +491,7 @@ function sendStart(config) {
       toRenderer('targetDone'`, `      runningTaskIds.clear();
       engineTaskSites.clear();
       taskProfileById.clear();
+      manualCaptchaManager.cancelPending();
       toRenderer('targetDone'`, 'Target exit task cleanup');
   source = replaceOnce(source, `    runningTaskIds.add(t.id);
     taskAccountById.set(t.id, t.accountId || '');`, `    runningTaskIds.add(t.id);
@@ -492,11 +507,13 @@ function sendStart(config) {
     engineTaskSites.remove(taskId);
     taskProfileById.delete(taskId);
     cancelOtpForTask(taskId);
+    manualCaptchaManager.cancelTask(taskId);
     toRenderer('targetDone'`, 'Target stopped task cleanup');
   source = replaceOnce(source, `  runningTaskIds.clear();
   toRenderer('targetDone'`, `  runningTaskIds.clear();
   engineTaskSites.clear();
   taskProfileById.clear();
+  manualCaptchaManager.cancelPending();
   toRenderer('targetDone'`, 'Target full task cleanup');
 
   source = replaceOnce(source,
@@ -680,7 +697,7 @@ function patchPlainLog() {
 }
 
 try {
-  for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js']) {
+  for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js', 'manual-captcha-manager.js']) {
     fs.copyFileSync(
       path.join(__dirname, '..', 'launcher', filename),
       path.join(helperDirectory, filename),

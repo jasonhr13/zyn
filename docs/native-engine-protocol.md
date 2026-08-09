@@ -140,7 +140,10 @@ Electron returns `received-token` with the same `taskId`. One solve may be pendi
 different tasks may solve concurrently. Stopping a task, disconnecting the engine, or quitting the
 app cancels and closes its solver without delivering a late token. The recovered Pokemon Center
 emitter currently omits `site`; Electron resolves it from the task registry until the Go adapter adds
-the optional field.
+the optional field. Version 1 is manual-only: Electron serves a constrained hCaptcha document at the
+real `https://www.pokemoncenter.com/` origin in a per-solve, sandboxed session, applies the task's
+assigned HTTP proxy (including proxy authentication), and polls only for the user-completed token.
+No provider API key, automatic image classifier, or autosolver is part of this path.
 
 ## Hyper broker contract
 

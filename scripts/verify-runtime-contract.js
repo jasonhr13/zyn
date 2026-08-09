@@ -137,6 +137,10 @@ check('Zyn runtime branding', () => {
     archive,
     'public/helpers/native-hyper-broker.js',
   ).toString('utf8');
+  const manualCaptchaManager = asar.extractFile(
+    archive,
+    'public/helpers/manual-captcha-manager.js',
+  ).toString('utf8');
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
@@ -149,8 +153,14 @@ check('Zyn runtime branding', () => {
     'packaged Target bridge does not track site ownership for shared-engine tasks');
   assert.match(targetEngine, /nativeHyperBroker\.handleEnvelope\(msg/,
     'packaged native engine bridge does not route Hyper requests');
+  assert.match(targetEngine, /manualCaptchaManager\.handleEnvelope\(msg/,
+    'packaged native engine bridge does not route manual captcha requests');
   assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
     'packaged Hyper bridge bypasses the main-process license authority');
+  assert.match(manualCaptchaManager, /manual captcha is restricted to Pokemon Center US/,
+    'packaged captcha manager does not constrain manual solves to Pokemon Center US');
+  assert.match(manualCaptchaManager, /nodeIntegration: false/,
+    'packaged captcha window enables renderer Node integration');
   assert.match(nativeEngineContract, /const PROTOCOL_VERSION = 1;/,
     'packaged native-engine protocol version is missing');
   assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,
