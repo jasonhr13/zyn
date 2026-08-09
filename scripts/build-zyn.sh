@@ -38,7 +38,7 @@ if [[ ! -x "$ASAR_BIN" ]]; then
   exit 1
 fi
 if [[ ! -x "$NATIVE_BACKEND" ]]; then
-  echo "Missing native Target backend: $NATIVE_BACKEND" >&2
+  echo "Missing native checkout backend: $NATIVE_BACKEND" >&2
   echo "Run ./scripts/build-native-target-engine.sh $APP_ARCH first." >&2
   exit 1
 fi
@@ -48,7 +48,7 @@ EXPECTED_BACKEND_SHA="$(node -e '
 ' "$PROJECT_DIR/config/runtime-contract.json" "$APP_ARCH")"
 ACTUAL_BACKEND_SHA="$(shasum -a 256 "$NATIVE_BACKEND" | awk '{print $1}')"
 if [[ -z "$EXPECTED_BACKEND_SHA" || "$ACTUAL_BACKEND_SHA" != "$EXPECTED_BACKEND_SHA" ]]; then
-  echo "Native Target backend does not match config/runtime-contract.json for $APP_ARCH." >&2
+  echo "Native checkout backend does not match config/runtime-contract.json for $APP_ARCH." >&2
   echo "Expected: ${EXPECTED_BACKEND_SHA:-missing}" >&2
   echo "Actual:   $ACTUAL_BACKEND_SHA" >&2
   exit 1

@@ -25,11 +25,11 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "7c2e8ff2c25d0ad3a306c63e8888bbf4761dff90d2cc1e8d14fe70120d0342cb"
+      "sha256": "8a39072e44399f6ab82e04d40a64d0fa334f28829890c5183327fd8b3bab6744"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "b5fdcaf7854b0361160141b3d266548ee220217bd1c3f0c239a8f35da5636dc8"
+      "sha256": "fb538c3ef15a4abf84fcd5c732a1f088cbadfed0ec943bfce0ec52b427260ad0"
     }
   },
   "requiredResources": [

@@ -20,7 +20,7 @@ let child;
 const timeout = setTimeout(() => {
   try { child?.kill('SIGKILL'); } catch {}
   try { server.close(); } catch {}
-  console.error('native Target protocol smoke test timed out');
+  console.error('native checkout protocol smoke test timed out');
   process.exit(124);
 }, 10000);
 
@@ -70,6 +70,27 @@ async function main() {
   child.once('error', error => { throw error; });
 
   const socket = await connected;
+  const pokemonCenterDispatch = new Promise((resolve, reject) => {
+    const expected = 'Pokemon Center US task pc-protocol-smoke: missing profileId';
+    const timer = setTimeout(() => reject(new Error(`native engine did not dispatch Pokemon Center US\n${stderr}`)), 3000);
+    const inspect = chunk => {
+      if (!String(chunk).includes(expected)) return;
+      clearTimeout(timer);
+      child.stdout.off('data', inspect);
+      child.stderr.off('data', inspect);
+      resolve();
+    };
+    child.stdout.on('data', inspect);
+    child.stderr.on('data', inspect);
+  });
+  socket.send(JSON.stringify({
+    type: 'start-tasks',
+    messages: [{
+      id: 'pc-protocol-smoke', type: 'Pokemon Center US', site: 'Pokemon Center US',
+      profileId: '', mode: 'Default', item: [], monitorItems: [], running: true,
+    }],
+  }));
+  await pokemonCenterDispatch;
   socket.send(JSON.stringify({
     type: 'stock-ping',
     messages: [{ site: 'Target', productKey: '12345', inStock: true, from: 'protocol-smoke' }],
@@ -82,7 +103,9 @@ async function main() {
   socket.close();
   await new Promise(resolve => server.close(resolve));
   clearTimeout(timeout);
-  console.log(JSON.stringify({ ok: true, arch, authenticatedBridge: true, parentWatch: true }, null, 2));
+  console.log(JSON.stringify({
+    ok: true, arch, authenticatedBridge: true, parentWatch: true, pokemonCenterDispatch: true,
+  }, null, 2));
 }
 
 main().catch(error => {
