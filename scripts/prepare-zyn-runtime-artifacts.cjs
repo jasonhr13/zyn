@@ -7,9 +7,11 @@ const { execFileSync } = require('child_process');
 
 const projectRoot = path.join(__dirname, '..');
 const requested = String(process.argv[2] || 'all').toLowerCase();
-const architectures = requested === 'all' ? ['arm64', 'x64'] : [requested === 'x86_64' ? 'x64' : requested];
-if (architectures.some(arch => !['arm64', 'x64'].includes(arch))) {
-  console.error('Usage: node scripts/prepare-zyn-runtime-artifacts.cjs [arm64|x64|all]');
+const normalized = requested === 'windows' || requested === 'win-x64' ? 'windows-x64'
+  : (requested === 'x86_64' ? 'x64' : requested);
+const architectures = normalized === 'all' ? ['arm64', 'x64', 'windows-x64'] : [normalized];
+if (architectures.some(arch => !['arm64', 'x64', 'windows-x64'].includes(arch))) {
+  console.error('Usage: node scripts/prepare-zyn-runtime-artifacts.cjs [arm64|x64|windows-x64|all]');
   process.exit(2);
 }
 
@@ -39,14 +41,43 @@ function notarizeAndStaple(appPath, arch) {
   fs.rmSync(archive, { force: true });
 }
 
-const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
-if (!identities.includes(identity)) {
-  throw new Error(`Missing signing identity: ${identity}. Import its certificate and private key into this Mac's login keychain.`);
+if (architectures.some(arch => arch !== 'windows-x64')) {
+  const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
+  if (!identities.includes(identity)) {
+    throw new Error(`Missing signing identity: ${identity}. Import its certificate and private key into this Mac's login keychain.`);
+  }
 }
 
 fs.mkdirSync(artifactsRoot, { recursive: true });
 
 for (const arch of architectures) {
+  if (arch === 'windows-x64') {
+    const source = path.join(
+      projectRoot,
+      'dist',
+      'Zyn-Runtime-Base.app',
+      'Contents',
+      'Resources',
+      'vendor',
+      'ms-playwright',
+      `chromium-${chromiumRevision}`,
+    );
+    const stage = path.join(stagingRoot, arch, 'chromium');
+    const destination = path.join(stage, 'ms-playwright', `chromium-${chromiumRevision}`);
+    if (!fs.existsSync(path.join(source, 'chrome-win64', 'chrome.exe'))) {
+      throw new Error(`Missing Windows Chromium source: ${source}`);
+    }
+    fs.rmSync(stage, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.cpSync(source, destination, { recursive: true });
+    const archiveName = `chromium-playwright-${playwrightVersion}-${chromiumRevision}-windows-x64.tar.gz`;
+    const archive = path.join(artifactsRoot, archiveName);
+    fs.rmSync(archive, { force: true });
+    run('/usr/bin/tar', ['-czf', archive, '-C', stage, 'ms-playwright']);
+    console.log(`Prepared ${archiveName} (${(fs.statSync(archive).size / 1048576).toFixed(1)} MiB)`);
+    continue;
+  }
+
   const sourceRoot = path.join(projectRoot, 'vendor', `ms-playwright-mac-${arch}`);
   const chromiumSource = path.join(sourceRoot, `chromium-${chromiumRevision}`);
   if (!fs.existsSync(chromiumSource)) throw new Error(`Missing native Chromium source: ${chromiumSource}`);

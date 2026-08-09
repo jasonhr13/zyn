@@ -99,6 +99,7 @@ async function main() {
       platforms: {
         'darwin-arm64': { chromium: browserItem },
         'darwin-x64': { chromium: browserItem },
+        'win32-x64': { chromium: browserItem },
       },
     };
     manifest = {
@@ -159,7 +160,23 @@ async function main() {
     assert.equal(armStatus.ready, true);
     assert.deepEqual(Object.keys(armStatus.items), ['chromium']);
 
-    console.log('Zyn runtime manager download, resume, verification, install, and dual-architecture smoke test passed');
+    const windowsManager = new RuntimeManager({
+      enabled: true,
+      platform: 'win32',
+      arch: 'x64',
+      root,
+      origin,
+      manifestUrl: `${origin}/runtimes/manifest.json`,
+      publicKey: publicPem,
+      log: { warn() {}, error() {} },
+      verifyArtifact: async ({ entry }) => assert.equal(fs.existsSync(entry), true),
+    });
+    await windowsManager.initialize();
+    const windowsStatus = await windowsManager.ensureAll();
+    assert.equal(windowsStatus.ready, true);
+    assert.deepEqual(Object.keys(windowsStatus.items), ['chromium']);
+
+    console.log('Zyn runtime manager download, resume, verification, install, and Mac/Windows smoke test passed');
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     await fsp.rm(temporary, { recursive: true, force: true });

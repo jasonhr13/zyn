@@ -1,8 +1,8 @@
 'use strict';
 
 // The original Electron application is kept byte-for-byte in app-original.asar.
-// This small bootstrap only translates launches of its bundled Windows binaries
-// into equivalent launches through the Wine runtime carried in the app bundle.
+// This bootstrap supplies Zyn's cross-platform licensing, scheduling, native-engine,
+// runtime-download, and update integration while preserving the reviewed application shell.
 
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -34,6 +34,7 @@ Object.defineProperty(global, '__zynApp', {
 const resources = process.resourcesPath;
 const bundledWine = path.join(resources, 'wine', 'bin', 'wine');
 const originalAsar = path.join(resources, 'app-original.asar');
+const nativeBackend = path.join(resources, 'engine', process.platform === 'win32' ? 'backend.exe' : 'backend');
 const originalSpawn = childProcess.spawn.bind(childProcess);
 const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
 const localDeveloperIdentity = process.env.ZYN_DEVELOPER_EMAIL || 'developer@localhost';
@@ -167,6 +168,7 @@ function wineEnvironment(environment) {
 }
 
 function shouldUseWine(command) {
+  if (process.platform === 'win32') return false;
   if (typeof command !== 'string') return false;
   const normalized = path.normalize(path.resolve(command));
   return windowsLaunchers.has(normalized);
@@ -183,7 +185,7 @@ childProcess.spawn = function spawnWithBundledWine(command, args, options) {
   return originalSpawn(winePath(), launchArgs, launchOptions);
 };
 
-function configureMacUpdater() {
+function configureUpdater() {
   try {
     const { autoUpdater } = require(path.join(
       originalAsar,
@@ -191,7 +193,9 @@ function configureMacUpdater() {
       'electron-updater',
     ));
     const updateArch = process.arch === 'x64' ? 'x64' : 'arm64';
-    const updateUrl = `https://updates.rcart.app/mac/${updateArch}`;
+    const updateUrl = process.platform === 'win32'
+      ? 'https://updates.rcart.app/windows'
+      : `https://updates.rcart.app/mac/${updateArch}`;
     autoUpdater.setFeedURL({ provider: 'generic', url: updateUrl });
     console.info(`Zyn auto-update feed: ${updateUrl}`);
   } catch (error) {
@@ -751,9 +755,8 @@ function configureAccountReporting(licenseAuthority) {
 
 function runNativeEngineSelfTest() {
   app.whenReady().then(async () => {
-    const backend = path.join(resources, 'engine', 'backend');
-    const child = childProcess.spawn(backend, ['-h'], {
-      cwd: path.dirname(backend),
+    const child = childProcess.spawn(nativeBackend, ['-h'], {
+      cwd: path.dirname(nativeBackend),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
@@ -781,6 +784,7 @@ function runNativeEngineSelfTest() {
 app.on('will-quit', () => {
   try { taskGroupScheduler?.dispose(); } catch {}
   try { pokemonQueueEvents?.dispose(); } catch {}
+  if (process.platform === 'win32') return;
   const prefix = winePrefix();
   const wineserver = wineserverPath();
   if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
@@ -793,8 +797,8 @@ app.on('will-quit', () => {
   } catch {}
 });
 
-if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine', 'backend'))) {
-  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'native Target backend';
+if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
+  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'native checkout backend';
   dialog.showErrorBox('Zyn could not start', `The ${missing} is missing from the app bundle.`);
   app.quit();
 } else if (process.env.ZYN_ENGINE_SELFTEST === '1' || process.env.ZYN_WINE_SELFTEST === '1') {
@@ -815,7 +819,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine'
     enableLocalDeveloperLicense();
   }
   installTaskGroupScheduling(licenseAuthority, managedProxyControl);
-  configureMacUpdater();
+  configureUpdater();
   configureAccountReporting(licenseAuthority);
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
     ? installTaskTypeIpcGuard({

@@ -21,7 +21,10 @@ const MANIFEST_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAbxrlW2wsfr/+kl/nA6KVcK6AExOHXJPCRgwyQ461C2w=
 -----END PUBLIC KEY-----`;
 
-const PLATFORM_COMPONENTS = Object.freeze({ darwin: ['chromium'] });
+const PLATFORM_COMPONENTS = Object.freeze({
+  darwin: ['chromium'],
+  win32: ['chromium'],
+});
 const EXPECTED_CHROMIUM_REVISION = '1228';
 const RUNTIME_NAMES = new Set(['chromium']);
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
@@ -438,7 +441,8 @@ class RuntimeManager {
   async extractAndVerify(name, item, archive) {
     const format = item.format || 'tar.xz';
     const listArgs = format === 'tar.gz' ? ['-tzf', archive] : ['-tJf', archive];
-    const listing = await exec('/usr/bin/tar', listArgs);
+    const tar = this.platform === 'win32' ? 'tar.exe' : '/usr/bin/tar';
+    const listing = await exec(tar, listArgs);
     const entries = listing.stdout.split(/\r?\n/).filter(Boolean);
     if (!entries.length || entries.some((entry) => path.isAbsolute(entry)
       || entry.split(/[\\/]+/).some((part) => part === '..'))) {
@@ -452,7 +456,7 @@ class RuntimeManager {
       const extractArgs = format === 'tar.gz'
         ? ['-xzf', archive, '-C', staging]
         : ['-xJf', archive, '-C', staging];
-      await exec('/usr/bin/tar', extractArgs);
+      await exec(tar, extractArgs);
       const entry = path.join(staging, item.entry);
       const verifyTarget = path.join(staging, item.verify);
       if (!fs.existsSync(entry) || !fs.existsSync(verifyTarget)) {
@@ -461,6 +465,16 @@ class RuntimeManager {
 
       if (this.verifyArtifact) {
         await this.verifyArtifact({ name, item, entry, verifyTarget, staging });
+      } else if (this.platform === 'win32') {
+        // Windows releases are intentionally unsigned for now. The signed Ed25519 manifest pins
+        // the complete archive hash; this PE header check prevents a malformed archive from being
+        // marked ready after extraction while preserving the expected SmartScreen warning.
+        const handle = await fsp.open(entry, 'r');
+        const header = Buffer.alloc(2);
+        try { await handle.read(header, 0, header.length, 0); } finally { await handle.close(); }
+        if (!header.equals(Buffer.from('MZ'))) {
+          throw new Error(`${item.label || name} executable is not a Windows PE file.`);
+        }
       } else {
         await exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', verifyTarget]);
         const details = await exec('/usr/bin/codesign', ['-dvvv', verifyTarget]);

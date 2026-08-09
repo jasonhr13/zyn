@@ -16,6 +16,9 @@ const playwrightVersion = '1.61.0';
 const chromiumRevision = '1228';
 
 function chromiumName(arch) {
+  if (arch === 'windows-x64') {
+    return `chromium-playwright-${playwrightVersion}-${chromiumRevision}-windows-x64.tar.gz`;
+  }
   return `chromium-playwright-${playwrightVersion}-${chromiumRevision}-macos-${arch}.tar.xz`;
 }
 
@@ -55,9 +58,11 @@ if (process.argv.includes('--verify-key')) {
 
 const chromiumArm = fileInfo(chromiumName('arm64'));
 const chromiumX64 = fileInfo(chromiumName('x64'));
+const chromiumWindowsX64 = fileInfo(chromiumName('windows-x64'));
 
 function chromium(arch, info) {
-  const folder = arch === 'x64' ? 'chrome-mac-x64' : 'chrome-mac-arm64';
+  const windows = arch === 'windows-x64';
+  const folder = windows ? 'chrome-win64' : (arch === 'x64' ? 'chrome-mac-x64' : 'chrome-mac-arm64');
   const archive = chromiumName(arch);
   return {
     label: 'Chromium',
@@ -67,9 +72,13 @@ function chromium(arch, info) {
     size: info.size,
     sha256: info.sha256,
     root: 'ms-playwright',
-    entry: `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-    verify: `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app`,
-    format: 'tar.xz',
+    entry: windows
+      ? `ms-playwright/chromium-${chromiumRevision}/${folder}/chrome.exe`
+      : `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    verify: windows
+      ? `ms-playwright/chromium-${chromiumRevision}/${folder}/chrome.exe`
+      : `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app`,
+    format: windows ? 'tar.gz' : 'tar.xz',
   };
 }
 
@@ -78,6 +87,7 @@ const payload = {
   platforms: {
     'darwin-arm64': { chromium: chromium('arm64', chromiumArm) },
     'darwin-x64': { chromium: chromium('x64', chromiumX64) },
+    'win32-x64': { chromium: chromium('windows-x64', chromiumWindowsX64) },
   },
 };
 const document = {
@@ -90,3 +100,4 @@ fs.writeFileSync(output, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600
 console.log(`Signed Zyn runtime manifest: ${output}`);
 console.log(`ARM runtime ${chromiumArm.size / 1048576 | 0} MiB`);
 console.log(`Intel runtime ${chromiumX64.size / 1048576 | 0} MiB`);
+console.log(`Windows runtime ${chromiumWindowsX64.size / 1048576 | 0} MiB`);

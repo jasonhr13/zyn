@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.7",
+  "appRelease": "R8.8",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -15,10 +15,11 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.81",
+    "version": "1.6.82",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
+    "supportedPlatforms": ["darwin", "win32"],
     "supportedArchitectures": ["arm64", "x64"]
   },
   "immutableResources": [],
@@ -30,6 +31,10 @@
     "x64": {
       "path": "Contents/Resources/engine/backend",
       "sha256": "2bba2f794a826a6ef64b0ff83971859f890d6dc7fb91ddc5849a9e9f1645cc6c"
+    },
+    "windows-x64": {
+      "path": "resources/engine/backend.exe",
+      "sha256": "38ffb40c2f3dfb6b226341e7a08ac5f737ba184d5fd8e6432e153a6540df3b9b"
     }
   },
   "requiredResources": [

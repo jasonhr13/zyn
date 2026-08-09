@@ -1,0 +1,9 @@
+{
+  "name": "zyn-release-tools",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "electron-builder": "26.15.3",
+    "rcedit": "4.0.1"
+  }
+}

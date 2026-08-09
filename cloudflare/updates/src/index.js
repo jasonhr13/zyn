@@ -1,7 +1,7 @@
 const CHANNELS = new Set(['mac', 'windows', 'runtimes']);
 const MAC_ARCHES = new Set(['arm64', 'x64']);
 const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
-const CURRENT_MAC_VERSION = '1.6.81';
+const CURRENT_MAC_VERSION = '1.6.82';
 
 function emptyMacFeed(key) {
   if (!/^mac\/(arm64|x64)\/latest-mac\.yml$/.test(key)) return null;
@@ -158,7 +158,12 @@ export default {
 
     if (url.pathname === '/health') {
       return Response.json(
-        { service: 'zyn-updates', status: 'ok', macArchitectures: [...MAC_ARCHES] },
+        {
+          service: 'zyn-updates',
+          status: 'ok',
+          macArchitectures: [...MAC_ARCHES],
+          windowsArchitectures: ['x64'],
+        },
         { headers: { 'cache-control': 'no-store' } },
       );
     }
