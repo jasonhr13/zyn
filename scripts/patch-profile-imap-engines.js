@@ -746,7 +746,8 @@ ${harvesterConfig}`, 'Target managed harvester config');
       for (const m of items) {
         if (!m || engineTaskSites.resolve(m) !== POKEMON_SITE) continue;
         const decoded = decodeNativeTaskLog(m.data);
-        pokemonLog(devLogs() ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
+        const queueMonitorLog = decoded.startsWith('[queue-monitor]');
+        pokemonLog(devLogs() || queueMonitorLog ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
       }
       break;
     case 'request-code':`, 'Pokemon Center input and diagnostic routing');

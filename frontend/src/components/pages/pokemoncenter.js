@@ -374,7 +374,8 @@ class PokemonCenter extends Component {
                 </label>
               </div>
               <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 10.5, lineHeight: 1.4 }}>
-                Wait for queue keeps tasks idle until Railway reports a Pokémon Center queue or other site protection, then starts checkout automatically.
+                Wait for queue checks the HTTPS queue-status endpoint every three seconds. Open a task’s Log to see the first healthy response,
+                30-second heartbeats, failures/recovery, and the event that moves it into the queue.
               </div>
             </div>
 

@@ -162,6 +162,8 @@ check('Zyn runtime branding', () => {
     'packaged Pokémon Center bridge drops per-product quantities');
   assert.match(targetEngine, /billingFirstName: billingFirst/,
     'packaged profile bridge drops the separate billing address');
+  assert.match(targetEngine, /const queueMonitorLog = decoded\.startsWith\('\[queue-monitor\]'\)/,
+    'packaged Pokémon Center bridge hides safe queue-monitor health logs');
   assert.match(dataManager, /products: Array\.isArray/,
     'packaged Pokémon Center storage omits product rows');
   assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
@@ -247,6 +249,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Add product/, 'packaged Pokémon Center UI omits product rows');
   assert.match(rendererBundle, /Edit task products/, 'packaged Pokémon Center UI omits per-task product editing');
   assert.match(rendererBundle, /Save & update task/, 'packaged Pokémon Center UI cannot apply queued-task product edits');
+  assert.match(rendererBundle, /HTTPS queue-status endpoint every three seconds/,
+    'packaged Pokémon Center UI does not explain queue-monitor health logging');
   assert.match(rendererBundle, /Cookies per page load/, 'packaged Settings omits cookies-per-page');
   assert.match(rendererBundle, /Page loads per browser/, 'packaged Settings omits browser reuse');
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');

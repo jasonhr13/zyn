@@ -91,6 +91,7 @@ assert.match(target, /type: 'edit-tasks', messages/);
 assert.match(target, /toRenderer\('pokemonStatus'/);
 assert.match(target, /toRenderer\('pokemonInput'/);
 assert.match(target, /toRenderer\('pokemonDone'/);
+assert.match(target, /const queueMonitorLog = decoded\.startsWith\('\[queue-monitor\]'\)/);
 assert.match(target, /startPokemonCenter, stopPokemonCenter, editPokemonCenter/);
 assert.doesNotMatch(target, /const otpInFlight = new Set\(\)/);
 assert.doesNotMatch(target, /log\(`\[otp\] code \$\{code\}/);

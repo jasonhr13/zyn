@@ -176,7 +176,8 @@ assert.match(page, /Tasks per profile/);
 assert.match(page, /Loop checkout/);
 assert.match(page, /Require all in stock/);
 assert.match(page, /Wait for queue \(24\/7\)/);
-assert.match(page, /keeps tasks idle until Railway reports/);
+assert.match(page, /HTTPS queue-status endpoint every three seconds/);
+assert.match(page, /30-second heartbeats, failures\/recovery/);
 assert.match(page, /editPokemonCenter/);
 assert.match(page, /setPokemonCenterTaskProxy/);
 assert.match(routes, /path="\/pokemoncenter"/);
@@ -199,6 +200,9 @@ assert.doesNotMatch([page, profilesPage, createProfile].join('\n'), /\bPolar\b/i
 assert.match(pokemonCheckout, /case "handle-queue"/);
 assert.match(pokemonCheckout, /DrainPendingRuntimeEdits/,
   'Pokémon Center checkout does not drain task edits while progressing through the queue');
+assert.match(pokemonCheckout, /\[queue-monitor\] HTTPS poll healthy/);
+assert.match(pokemonCheckout, /\[queue-monitor\] queue or site protection detected/);
+assert.match(pokemonCheckout, /time\.Since\(lastHealthLog\) < 30\*time\.Second/);
 assert.match(pokemonEdit, /t\.Inputs = newInputs/);
 assert.match(pokemonEdit, /case "get-product", "get-availability", "add-to-cart"/,
   'live product edits do not reset product discovery before carting');
