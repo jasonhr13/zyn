@@ -5,8 +5,8 @@ export function generateMetadata(): Metadata {
   const origin = "https://zynbot.app";
 
   return {
-    title: "Zyn — Peak Target Checkout Performance",
-    description: "Target monitoring, cookie harvesting, and checkout automation in one focused desktop app. Join the free beta.",
+    title: "Zyn — Target + Pokémon Center US Automation",
+    description: "Focused Target and Pokémon Center US monitoring and checkout automation in one desktop app. Join the free beta.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -18,22 +18,22 @@ export function generateMetadata(): Metadata {
       apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     },
     openGraph: {
-      title: "Zyn — Peak Target Checkout Performance",
-      description: "Target automation built to move from restock to confirmed order. Join the free beta and get one year free after paid access launches.",
+      title: "Zyn — Target + Pokémon Center US Automation",
+      description: "Focused checkout automation for Target and Pokémon Center US. Join the free beta and get one year free after paid access launches.",
       type: "website",
       url: origin,
       images: [{
-        url: `${origin}/og-target-beta.png`,
+        url: `${origin}/og-retailers-beta.png`,
         width: 1200,
         height: 630,
-        alt: "Zyn — Peak Target Checkout Performance",
+        alt: "Zyn — Target and Pokémon Center US automation",
       }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Zyn — Peak Target Checkout Performance",
-      description: "Target automation for desktop. Free during beta, plus one year free for every beta user.",
-      images: [`${origin}/og-target-beta.png`],
+      title: "Zyn — Target + Pokémon Center US Automation",
+      description: "Target and Pokémon Center US automation for desktop. Free during beta, plus one year free for every beta user.",
+      images: [`${origin}/og-retailers-beta.png`],
     },
   };
 }

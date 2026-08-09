@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Join the free Zyn beta",
-  description: "Join the free Zyn Target automation beta. Beta users receive one year free after paid access launches.",
+  description: "Join the free Zyn beta for Target and Pokémon Center US automation. Beta users receive one year free after paid access launches.",
 };
 
 type SearchParams = Promise<{ joined?: string | string[]; error?: string | string[] }>;
@@ -32,7 +32,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
         <div className="join-orbit join-orbit-one" aria-hidden="true" />
         <div className="join-orbit join-orbit-two" aria-hidden="true" />
         <div className="join-card">
-          <div className="status-pill"><span /> Free Target automation beta</div>
+          <div className="status-pill"><span /> Free retailer automation beta</div>
           {joined ? (
             <>
               <p className="kicker">Request received</p>
@@ -42,9 +42,9 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
             </>
           ) : (
             <>
-              <p className="kicker">Target beta access</p>
+              <p className="kicker">Target + Pokémon Center US</p>
               <h1 id="join-title">Join the free beta.</h1>
-              <p className="join-lede">Get early access to Zyn’s Target automation app. The beta is free, and every beta user gets 12 months free after paid access launches.</p>
+              <p className="join-lede">Get early access to Zyn for Target and Pokémon Center US. The beta is free, and every beta user gets 12 months free after paid access launches.</p>
               <form className="join-form" action="/api/waitlist" method="post">
                 <label htmlFor="waitlist-email">Email address</label>
                 <div className="join-form-row">
@@ -66,7 +66,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
 
       <footer className="download-footer">
         <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
-        <p>Target automation. Nothing generic.</p>
+        <p>Target + Pokémon Center US automation.</p>
         <div><a href="mailto:hello@rcart.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>
