@@ -199,7 +199,6 @@ type safeTaskChannels struct {
 	bases map[string]*BaseTask
 }
 
-
 func (s *safeTaskChannels) GetAllBases() map[string]*BaseTask {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -252,11 +251,26 @@ type statusMessage struct {
 }
 
 type NotificationMessage struct {
-	Type         string `json:"type"`
-	ProductName  string `json:"productName"`
-	ProductImage string `json:"productImage"`
-	ProfileName  string `json:"profileName"`
-	GroupID      string `json:"groupID"`
+	Type         string  `json:"type"`
+	ProductName  string  `json:"productName"`
+	ProductImage string  `json:"productImage"`
+	ProfileName  string  `json:"profileName"`
+	GroupID      string  `json:"groupID"`
+	TaskID       string  `json:"taskID,omitempty"`
+	SKU          string  `json:"sku,omitempty"`
+	Price        float64 `json:"price,omitempty"`
+	OrderNumber  string  `json:"orderNumber,omitempty"`
+	AccountID    string  `json:"accountId,omitempty"`
+	Source       string  `json:"source,omitempty"`
+}
+
+type NotificationDetails struct {
+	TaskID      string
+	SKU         string
+	Price       float64
+	OrderNumber string
+	AccountID   string
+	Source      string
 }
 
 type UpdateCookieMessage struct {

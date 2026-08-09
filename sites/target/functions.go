@@ -206,6 +206,62 @@ func (t *TargetTask) resetCheckoutState() {
 	t.FillerOrders = nil
 	t.NeedCancelFiller = false
 	t.CanceledFillerItem = false
+	t.tmxStartedForCheckout = false
+}
+
+func (t *TargetTask) notificationDetails() task.NotificationDetails {
+	sku := strings.TrimSpace(t.RestockTCIN)
+	if sku == "" {
+		sku = strings.TrimSpace(t.CartData.Tcin)
+	}
+	if sku == "" {
+		sku = strings.TrimSpace(t.StockPing.ProductKey)
+	}
+	return task.NotificationDetails{
+		TaskID:      t.ID,
+		SKU:         sku,
+		Price:       t.CartToalPrice,
+		OrderNumber: t.OrderNumber,
+		AccountID:   t.AccountID,
+		Source:      t.ShapeMethod,
+	}
+}
+
+func isCardPaymentExistsError(err error) bool {
+	return err != nil && strings.Contains(strings.ToUpper(err.Error()), "CARD_PAYMENT_EXISTS")
+}
+
+func paymentInstructionID(instructions []PaymentInstructionsBlock) string {
+	for _, instruction := range instructions {
+		if id := strings.TrimSpace(instruction.PaymentInstId); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func (t *TargetTask) recoverExistingPaymentInstruction() {
+	if !isCardPaymentExistsError(t.Error) {
+		return
+	}
+
+	originalErr := t.Error
+	if strings.TrimSpace(t.PaymentInstId) == "" {
+		t.Error = nil
+		t.GetCart()
+		if t.Error != nil {
+			t.Error = originalErr
+			return
+		}
+	}
+
+	if strings.TrimSpace(t.PaymentInstId) == "" {
+		t.Error = originalErr
+		return
+	}
+
+	t.Error = nil
+	t.SubmitPayment(true)
 }
 
 func (t *TargetTask) fraudStatusIsSuccess(status string) bool {

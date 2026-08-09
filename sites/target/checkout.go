@@ -486,24 +486,28 @@ func (t *TargetTask) HandleTask() {
 				t.UpdateStatus("Submitting Payment", constants.Colors.BLUE)
 				t.UpdateStatus("Submitting CVV", constants.Colors.BLUE)
 
-				tmxConfig := &tmx.TMXConfig{
-					SessionID:  t.PrepCheckoutData.ReferanceID,
-					SiteID:     "9p00aymw",
-					Domain:     "img9.target.com",
-					Client:     t.Requests.Client,
-					CurrentUrl: "https://www.target.com/checkout",
-					PrevUrl:    "https://www.target.com/cart",
-					UserAgent:  t.Requests.UserAgent.Useragent,
-					IPv4:       t.Requests.IPv4,
-					SendM1M2:   true,
-					SendKClear: true,
-					SendJF:     true,
+				if !t.tmxStartedForCheckout {
+					t.tmxStartedForCheckout = true
+					tmxConfig := &tmx.TMXConfig{
+						SessionID:  t.PrepCheckoutData.ReferanceID,
+						SiteID:     "9p00aymw",
+						Domain:     "img9.target.com",
+						Client:     t.Requests.Client,
+						CurrentUrl: "https://www.target.com/checkout",
+						PrevUrl:    "https://www.target.com/cart",
+						UserAgent:  t.Requests.UserAgent.Useragent,
+						IPv4:       t.Requests.IPv4,
+						SendM1M2:   true,
+						SendKClear: true,
+						SendJF:     true,
+					}
+					safego.Go(func() { tmx.SolveTMX(tmxConfig) })
 				}
-				safego.Go(func() { tmx.SolveTMX(tmxConfig) })
 				if t.UsedAlternateCartFlow {
 					go t.PrepareCheckout()
 				}
 				t.SubmitPayment(false)
+				t.recoverExistingPaymentInstruction()
 				if t.UseFillerItem && t.Error != nil && strings.Contains(t.Error.Error(), "400") && t.PaymentInstId != "" {
 					t.Error = nil
 					t.SubmitPayment(true)
@@ -597,7 +601,7 @@ func (t *TargetTask) HandleTask() {
 				t.TaskState = constants.StatusSteps.CheckedOut
 				t.UpdateStatus("Successful", constants.Colors.GREEN)
 				if len(t.Products) > 0 {
-					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, true)
+					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, true, t.notificationDetails())
 				}
 				extraFields := map[string]string{
 					"Fraud Status": t.FraudStatus,
@@ -634,7 +638,7 @@ func (t *TargetTask) HandleTask() {
 				t.TaskState = constants.StatusSteps.Declined
 				t.UpdateStatus("Payment Declined", constants.Colors.RED)
 				if len(t.Products) > 0 {
-					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, false)
+					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, false, t.notificationDetails())
 				}
 				webhookData := task.ProductWebhookData{
 					Success:          false,

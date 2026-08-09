@@ -56,6 +56,8 @@ type TargetTask struct {
 	CanceledFillerItem     bool
 	PassedCartErrors       int
 	emailCodeWaiter        *imapcode.Waiter
+	tmxStartedForCheckout  bool
+	throttleFallbackTried  bool
 }
 
 type FillerOrderState struct {

@@ -1,6 +1,7 @@
 package target
 
 import (
+	"sort"
 	"time"
 
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
@@ -98,7 +99,20 @@ func (t *TargetMonitorTask) Monitor() {
 				byTcin := make(map[string]ProductSummary, len(t.ProductStock))
 				for _, stock := range t.ProductStock {
 					byTcin[stock.Tcin] = stock
+					delete(t.missingTcins, stock.Tcin)
 				}
+				titles := make(map[string]string, len(byTcin))
+				for tcin, stock := range byTcin {
+					if title := stock.Item.ProductDescription.Title; title != "" {
+						titles[tcin] = title
+					}
+				}
+				missing := make([]string, 0, len(t.missingTcins))
+				for tcin := range t.missingTcins {
+					missing = append(missing, tcin)
+				}
+				sort.Strings(missing)
+				task.SendProductTitles(titles, missing)
 
 				anyInStock := false
 				for _, input := range t.MonitorInputs {

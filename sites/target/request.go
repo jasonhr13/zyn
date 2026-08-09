@@ -81,6 +81,16 @@ func (t *TargetTask) GetSession() {
 }
 
 func (t *TargetTask) GetShape(CookieType string) {
+	if brokerURL := hopeShapeBrokerURL(); brokerURL != "" {
+		responseBody, err := fetchHopeShape(t.TaskContext.CTX, brokerURL, os.Getenv("HOPE_SHAPE_TOKEN"), CookieType, nil)
+		if err != nil {
+			log.Printf("[GetShape] Hope broker error: %v", err)
+			return
+		}
+		t.applyShapeResponse(responseBody)
+		return
+	}
+
 	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
 	shapeURL := strings.TrimSpace(os.Getenv("POLAR_TARGET_SHAPE_URL"))
 	if shapeURL == "" {
@@ -140,13 +150,7 @@ func (t *TargetTask) GetShape(CookieType string) {
 		return
 	}
 
-	t.ShapeHeaders = responseBody.Cookie.Headers
-	t.ShapeProxy = responseBody.Cookie.Proxy
-	t.ShapeMethod = responseBody.Cookie.Source
-	if !t.ShapeHeaders.Valid() {
-		t.ShapeHeaders = ShapeHeaders{}
-		t.ShapeMethod = ""
-	}
+	t.applyShapeResponse(responseBody)
 }
 
 func (t *TargetTask) GetLoginSession() {
@@ -1562,7 +1566,7 @@ func (t *TargetTask) GetCart() {
 		CTX: t.TaskContext.CTX,
 		Req: client.ReqStruct{
 			Method: "PUT",
-			URL:    "https://carts.target.com/web_checkouts/v1/cart?cart_type=REGULAR&field_groups=ADDRESSES%2CCART%2CCART_ITEMS%2CFINANCE_PROVIDERS%2CPROMOTION_CODES%2CSUMMARY&key=e59ce3b531b2c39afb2e2b8a71ff10113aac2a14",
+			URL:    "https://carts.target.com/web_checkouts/v1/cart?cart_type=REGULAR&field_groups=CART%2CCART_ITEMS%2CPAYMENT_INSTRUCTIONS%2CSUMMARY&key=e59ce3b531b2c39afb2e2b8a71ff10113aac2a14",
 			Data:   string(payloadBytes),
 		},
 		Headers: map[string][]string{
@@ -1605,6 +1609,7 @@ func (t *TargetTask) GetCart() {
 			}
 
 			t.CartID = responseBody.CartID
+			t.PaymentInstId = paymentInstructionID(responseBody.PaymentInstructions)
 			t.CartedItems = nil
 			for i := range responseBody.CartItems {
 				t.CartedItems = append(t.CartedItems, responseBody.CartItems[i])

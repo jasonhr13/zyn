@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,8 +18,10 @@ import (
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/webhook"
+	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
 	"github.com/gorilla/websocket"
 )
 
@@ -90,7 +95,11 @@ func deliverWatcherReady(requestID string) {
 
 func connectAndLog(port string) {
 	url := "ws://127.0.0.1:" + port + "/"
-	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	headers := http.Header{}
+	if token := strings.TrimSpace(os.Getenv("HOPE_SHAPE_TOKEN")); token != "" {
+		headers.Set("x-hope-token", token)
+	}
+	c, _, err := websocket.DefaultDialer.Dial(url, headers)
 	if err != nil {
 		log.Printf("ConnectFrontend: dial %s: %v", url, err)
 		return
@@ -137,6 +146,8 @@ func readMessage(c *websocket.Conn) error {
 		_ = json.Unmarshal([]byte(configMessage.Settings), &s)
 		Webhooks = s.Webhooks
 		webhook.SetURLs(s.Webhooks.Checkout, s.Webhooks.Decline)
+		siteconfig.SetShapeMethod(s.ShapeMethod)
+		siteconfig.SetThrottleFallbackGroup(s.ThrottleFallbackGroup)
 
 		profiles.SetProfilesFromJSON([]byte(configMessage.ProfileList))
 		proxy.SetProxiesFromJSON([]byte(configMessage.ProxyListRaw))
@@ -180,6 +191,33 @@ func readMessage(c *websocket.Conn) error {
 			}
 			safego.Go(func() { EditTask(taskMessage) })
 		}
+	case "stock-ping":
+		for i, raw := range msg.Messages {
+			var incoming StockPingMessage
+			if err := json.Unmarshal(raw, &incoming); err != nil {
+				log.Printf("ConnectFrontend: stock-ping [%d] decode: %v", i, err)
+				continue
+			}
+			ping, ok := normalizeStockPing(incoming)
+			if ok {
+				monitorhub.Default.Publish(ping)
+			}
+		}
+	case "set-task-proxy":
+		for i, raw := range msg.Messages {
+			var incoming SetTaskProxyMessage
+			if err := json.Unmarshal(raw, &incoming); err != nil {
+				log.Printf("ConnectFrontend: set-task-proxy [%d] decode: %v", i, err)
+				continue
+			}
+			group := strings.TrimSpace(incoming.ProxyGroup)
+			if group == "" || strings.EqualFold(group, "Local") {
+				group = "Local"
+			}
+			if !task.EnqueueRuntimeEdit(strings.TrimSpace(incoming.ID), task.RuntimeEditPayload{ProxyGroup: &group}) {
+				log.Printf("ConnectFrontend: set-task-proxy [%d] task unavailable", i)
+			}
+		}
 
 	//captcha sovles
 	case "received-token":
@@ -213,6 +251,28 @@ func readMessage(c *websocket.Conn) error {
 		log.Printf("ConnectFrontend: unknown type %q", msg.Type)
 	}
 	return nil
+}
+
+func normalizeStockPing(in StockPingMessage) (monitorhub.StockPing, bool) {
+	productKey := strings.TrimSpace(in.ProductKey)
+	if productKey == "" {
+		return monitorhub.StockPing{}, false
+	}
+	site := strings.TrimSpace(in.Site)
+	if site == "" || strings.EqualFold(site, "Target") {
+		site = "Target"
+	}
+	return monitorhub.StockPing{
+		Site:       site,
+		ProductKey: productKey,
+		Name:       in.Name,
+		Image:      in.Image,
+		Price:      in.Price,
+		StockLevel: in.StockLevel,
+		InStock:    in.InStock,
+		From:       in.From,
+		At:         time.Now(),
+	}, true
 }
 
 func SendMessage(v any) error {

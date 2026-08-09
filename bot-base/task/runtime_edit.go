@@ -5,6 +5,7 @@ import "github.com/PolarAIO/Polar-AIO/backend/sites"
 type RuntimeEditPayload struct {
 	Input        sites.TaskInput
 	MonitorItems []sites.Item
+	ProxyGroup   *string
 }
 
 type RuntimeEditSink interface {

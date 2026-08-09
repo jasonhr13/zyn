@@ -396,13 +396,14 @@ func (t *BaseTask) SendProductNoti(productName, productImage string) {
 			ProductImage: productImage,
 			ProfileName:  t.Profile.ProfileName,
 			GroupID:      t.GroupID,
+			TaskID:       t.ID,
 		}},
 	})
 	markProductSent(productName)
 
 }
 
-func (t *BaseTask) SendCheckoutDeclineNoti(productName, productImage string, checkout bool) {
+func (t *BaseTask) SendCheckoutDeclineNoti(productName, productImage string, checkout bool, details ...NotificationDetails) {
 	if sendMessage == nil {
 		return
 	}
@@ -410,18 +411,42 @@ func (t *BaseTask) SendCheckoutDeclineNoti(productName, productImage string, che
 	if checkout {
 		notiType = "checkout"
 	}
+	message := NotificationMessage{
+		Type:         notiType,
+		ProductName:  productName,
+		ProductImage: productImage,
+		ProfileName:  t.Profile.ProfileName,
+		GroupID:      t.GroupID,
+		TaskID:       t.ID,
+	}
+	if len(details) > 0 {
+		detail := details[0]
+		message.TaskID = detail.TaskID
+		message.SKU = detail.SKU
+		message.Price = detail.Price
+		message.OrderNumber = detail.OrderNumber
+		message.AccountID = detail.AccountID
+		message.Source = detail.Source
+	}
 	_ = sendMessage(statusMessage{
-		Type: "task-notification",
-		Messages: []NotificationMessage{{
-			Type:         notiType,
-			ProductName:  productName,
-			ProductImage: productImage,
-			ProfileName:  t.Profile.ProfileName,
-			GroupID:      t.GroupID,
-		}},
+		Type:     "task-notification",
+		Messages: []NotificationMessage{message},
 	})
 	markProductSent(productName)
 
+}
+
+func SendProductTitles(titles map[string]string, missing []string) {
+	if sendMessage == nil || (len(titles) == 0 && len(missing) == 0) {
+		return
+	}
+	_ = sendMessage(statusMessage{
+		Type: "product-titles",
+		Messages: []any{map[string]any{
+			"titles":  titles,
+			"missing": missing,
+		}},
+	})
 }
 
 // Sleep the task but stop the sleep if the task is stopped or edited.
