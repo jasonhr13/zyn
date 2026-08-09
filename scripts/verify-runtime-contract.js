@@ -142,6 +142,10 @@ check('Zyn runtime branding', () => {
     archive,
     'public/helpers/manual-captcha-manager.js',
   ).toString('utf8');
+  const queueEvents = fs.readFileSync(
+    path.join(appPath, 'Contents', 'Resources', 'app', 'pokemon-queue-events.js'),
+    'utf8',
+  );
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
@@ -164,6 +168,10 @@ check('Zyn runtime branding', () => {
     'packaged profile bridge drops the separate billing address');
   assert.match(targetEngine, /const queueMonitorLog = decoded\.startsWith\('\[queue-monitor\]'\)/,
     'packaged Pokémon Center bridge hides safe queue-monitor health logs');
+  assert.match(targetEngine, /function publishPokemonQueueProtection/,
+    'packaged Pokémon Center bridge omits normalized push events');
+  assert.match(targetEngine, /function setPokemonQueueStreamHealth/,
+    'packaged Pokémon Center bridge omits push-stream health logs');
   assert.match(dataManager, /products: Array\.isArray/,
     'packaged Pokémon Center storage omits product rows');
   assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
@@ -176,6 +184,10 @@ check('Zyn runtime branding', () => {
     'packaged native-engine protocol version is missing');
   assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,
     'packaged native-engine contract omits Pokemon Center US');
+  assert.match(queueEvents, /authority\.openPokemonQueueEvents/,
+    'packaged queue event client bypasses the license authority');
+  assert.doesNotMatch(queueEvents, /polar-wss-production|licenseKey|siteConfigs/,
+    'packaged queue event client contains upstream secrets or unrelated cloud handling');
 });
 
 check('build receipt', () => {

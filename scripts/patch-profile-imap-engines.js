@@ -79,6 +79,13 @@ const engineContract = require('./native-engine-contract');
 const nativeHyperBroker = require('./native-hyper-broker');
 const manualCaptchaManager = require('./manual-captcha-manager');`, 'shared native-engine contract import');
 
+  source = replaceOnce(
+    source,
+    `      from: 'discord-monitor',`,
+    `      from: String(p.from || 'discord-monitor').slice(0, 80),`,
+    'native stock-ping source label',
+  );
+
   source = replaceOnce(source, `        const tid = (m && m.taskID) || '';
         log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, `        const tid = (m && m.taskID) || '';
         // The native engine waits for this acknowledgement before it starts its own OTP timeout.
@@ -871,7 +878,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
 
   source = replaceOnce(source,
     `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
-    `module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
+    `module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, setPokemonQueueStreamHealth, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
     'Pokemon Center native exports');
 
   opened.source = source;

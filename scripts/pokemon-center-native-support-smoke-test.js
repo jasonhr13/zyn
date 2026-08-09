@@ -53,6 +53,9 @@ assert.match(engine, /loopCheckout:/);
 assert.match(engine, /QueueEntryDelay:/);
 assert.match(engine, /manualCaptchaManager\.handleEnvelope/);
 assert.match(engine, /nativeHyperBroker\.handleEnvelope/);
+assert.match(engine, /function setPokemonQueueStreamHealth/);
+assert.match(engine, /function publishPokemonQueueProtection/);
+assert.match(engine, /from: String\(p\.from \|\| 'discord-monitor'\)/);
 
 const productAdapter = engine.slice(
   engine.indexOf('function normalizePokemonInput'),
@@ -103,6 +106,7 @@ const bridgeFragment = engine.slice(
   engine.indexOf('function handleEngineMessage'),
 );
 let editedEnvelope = null;
+let queuePing = null;
 const editSandbox = {
   Buffer,
   URL,
@@ -118,6 +122,7 @@ const editSandbox = {
   buildProfileMap: () => ({}),
   sendConfigs: () => true,
   sendToEngine: value => { editedEnvelope = value; return true; },
+  sendStockPing: value => { queuePing = value; return true; },
   runningTaskIds: new Set(),
   nativeHyperBroker: { cancelPending: () => {} },
   manualCaptchaManager: { cancelPending: () => {}, cancelTask: () => {} },
@@ -133,7 +138,8 @@ result = editPokemonCenter({ tasks: [{
     { input: '10-33333-333', quantity: '2' },
     { input: '10-44444-444', quantity: '4' },
   ], monitorDelay: '3000', retryDelay: '3000', waitForQueue: true,
-}] });`, editSandbox);
+}] });
+publishPokemonQueueProtection({ kind: 'captcha' });`, editSandbox);
 assert.equal(editSandbox.result.ok, true, 'queued task product edit was rejected');
 assert.equal(editedEnvelope.type, 'edit-tasks');
 assert.deepEqual(
@@ -144,6 +150,9 @@ assert.deepEqual(
   ],
   'queued placeholder task did not receive its replacement products',
 );
+assert.deepEqual(JSON.parse(JSON.stringify(queuePing)), {
+  site: 'PokemonCenter', sku: 'queue', name: 'Site captcha protection detected', from: 'zyn-event-stream',
+});
 
 assert.match(electron, /targetEngine\.startPokemonCenter/);
 assert.match(electron, /targetEngine\.editPokemonCenter/);

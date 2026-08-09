@@ -25,6 +25,7 @@ The admin page can:
 - generate a seven-day, single-use link to the private Zyn download page;
 - create and edit encrypted managed proxy lists;
 - save, replace, or remove the server-side Hyper API key without exposing it back to the browser;
+- save, replace, or remove the server-side Pokémon Center queue-event license;
 - grant or remove a user's access to all managed proxy lists;
 - enable optional task types globally or override Pokémon Center/Round1 access per user;
 - revoke all active licenses for a user;
@@ -95,6 +96,17 @@ Broker callers always submit JSON; the Worker applies the gzip content encoding 
 Incapsula UTMVC endpoint.
 The initial limit is 1,200 broker requests per user per minute and can be tightened after observing
 real Pokémon Center task traffic.
+
+The Pokémon Center queue-event license uses the same AES-256-GCM service-configuration storage and
+is exposed in admin only as a short fingerprint and update time. A single Durable Object maintains
+the upstream receive-only WebSocket while licensed Zyn clients are connected. Its upstream URL has
+only the required `key` and fixed `version` query parameters; it supplies no custom headers and sends
+no application messages, presence, task data, products, profile names, device identifiers, or
+telemetry. The Worker decrypts incoming frames, discards configuration/user/stock data, and forwards
+only normalized Pokémon Center `queue` or `captcha` events plus connection health. Desktop bearer
+and device headers terminate at the Worker and are not forwarded into the Durable Object connector.
+The native three-second HTTPS watcher remains active whenever the push stream is configured,
+disconnected, or unavailable.
 
 Encrypted account backups use a private object bucket plus D1 metadata. The desktop gzip-compresses
 the portable data bundle, encrypts it with AES-256-GCM using a locally held recovery key, and uploads

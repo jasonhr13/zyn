@@ -93,6 +93,8 @@ assert.match(target, /toRenderer\('pokemonInput'/);
 assert.match(target, /toRenderer\('pokemonDone'/);
 assert.match(target, /const queueMonitorLog = decoded\.startsWith\('\[queue-monitor\]'\)/);
 assert.match(target, /startPokemonCenter, stopPokemonCenter, editPokemonCenter/);
+assert.match(target, /setPokemonQueueStreamHealth, publishPokemonQueueProtection/);
+assert.match(target, /from: String\(p\.from \|\| 'discord-monitor'\)/);
 assert.doesNotMatch(target, /const otpInFlight = new Set\(\)/);
 assert.doesNotMatch(target, /log\(`\[otp\] code \$\{code\}/);
 assert.doesNotMatch(target, /function getImapConfig\(\) \{/);

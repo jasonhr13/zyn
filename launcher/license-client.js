@@ -7,9 +7,11 @@ const http = require('http');
 const https = require('https');
 const { execFileSync } = require('child_process');
 const { URL } = require('url');
+const WebSocket = require('ws');
 
 const DEFAULT_API_BASE = 'https://license.rcart.app';
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+const MAX_QUEUE_EVENT_BYTES = 64 * 1024;
 // Preserve the established device namespace so existing license/device bindings survive rebranding.
 const DEVICE_NAMESPACE = String.fromCharCode(104, 111, 112, 101);
 
@@ -142,6 +144,33 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
         rawResponse: true,
         headers: { 'x-rcart-device-id': deviceId },
       });
+    },
+    queueEvents(token, handlers = {}) {
+      const target = new URL('/api/services/pokemon-center/queue-events', `${apiBase.replace(/\/$/, '')}/`);
+      target.protocol = target.protocol === 'http:' ? 'ws:' : 'wss:';
+      const socket = new WebSocket(target, {
+        headers: {
+          authorization: `Bearer ${String(token || '')}`,
+          'x-rcart-device-id': deviceId,
+        },
+        followRedirects: false,
+        handshakeTimeout: 15000,
+        maxPayload: MAX_QUEUE_EVENT_BYTES,
+        perMessageDeflate: false,
+      });
+      if (typeof handlers.open === 'function') socket.on('open', handlers.open);
+      if (typeof handlers.close === 'function') socket.on('close', handlers.close);
+      if (typeof handlers.error === 'function') socket.on('error', handlers.error);
+      if (typeof handlers.message === 'function') {
+        socket.on('message', (data) => {
+          const bytes = Buffer.from(data);
+          if (bytes.length > MAX_QUEUE_EVENT_BYTES) return;
+          let message;
+          try { message = JSON.parse(bytes.toString('utf8')); } catch { return; }
+          if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);
+        });
+      }
+      return socket;
     },
     listBackups(token) {
       return requestApi(apiBase, '/api/backups', {

@@ -4,6 +4,8 @@ const pokemonTaskIds = new Set();
 const pokemonTaskConfigs = new Map();
 const pendingPokemonStarts = [];
 let pokemonStartSeq = 0;
+let pokemonQueueStreamHealth = { configured: false, connected: false, connecting: false };
+let pokemonQueueStreamLogKey = '';
 
 function pokemonStatus(state, color, detail, taskId, taskState, running) {
   toRenderer('pokemonStatus', {
@@ -23,6 +25,45 @@ function pokemonLog(line, taskId = '') {
 
 function pokemonDone(taskId = '') {
   toRenderer('pokemonDone', { taskId: String(taskId || '') });
+}
+
+function pokemonQueueStreamLine() {
+  if (pokemonQueueStreamHealth.connected) {
+    return '[queue-monitor] push event stream connected; HTTPS fallback remains active';
+  }
+  if (pokemonQueueStreamHealth.connecting) {
+    return '[queue-monitor] push event stream reconnecting; HTTPS fallback remains active';
+  }
+  if (!pokemonQueueStreamHealth.configured) {
+    return '[queue-monitor] push event stream is not configured; HTTPS fallback remains active';
+  }
+  return '[queue-monitor] push event stream unavailable; HTTPS fallback remains active';
+}
+
+function setPokemonQueueStreamHealth(next = {}) {
+  pokemonQueueStreamHealth = {
+    configured: next.configured === true,
+    connected: next.connected === true,
+    connecting: next.connecting === true,
+  };
+  const line = pokemonQueueStreamLine();
+  if (line === pokemonQueueStreamLogKey) return;
+  pokemonQueueStreamLogKey = line;
+  for (const id of pokemonTaskIds) pokemonLog(line, id);
+}
+
+function publishPokemonQueueProtection(event = {}) {
+  const kind = String(event.kind || '').toLowerCase() === 'captcha' ? 'captcha' : 'queue';
+  const sent = sendStockPing({
+    site: 'PokemonCenter',
+    sku: 'queue',
+    name: kind === 'captcha' ? 'Site captcha protection detected' : 'Site queue detected',
+    from: 'zyn-event-stream',
+  });
+  if (sent) {
+    for (const id of pokemonTaskIds) pokemonLog(`[queue-monitor] push event received (${kind})`, id);
+  }
+  return sent;
 }
 
 function normalizePokemonInput(value) {
@@ -170,7 +211,10 @@ function flushPokemonStarts() {
     if (!valid.length) continue;
     if (sendToEngine({ type: 'start-tasks', messages: valid })) {
       started += valid.length;
-      for (const message of valid) pokemonLog('Pokémon Center task started', message.id);
+      for (const message of valid) {
+        pokemonLog('Pokémon Center task started', message.id);
+        pokemonLog(pokemonQueueStreamLine(), message.id);
+      }
     }
   }
   taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;

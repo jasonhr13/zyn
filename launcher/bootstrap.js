@@ -20,6 +20,7 @@ const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
+const { createPokemonQueueEvents } = require('./pokemon-queue-events');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
@@ -268,6 +269,7 @@ function installWindowSizePersistence() {
 
 let taskGroupStore = null;
 let taskGroupScheduler = null;
+let pokemonQueueEvents = null;
 
 function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
@@ -597,6 +599,7 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     safeStorage,
     onStatus: status => {
       pushLicenseStatus(status);
+      try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
       if (status && status.ok === true) {
         beginRuntimeBootstrap();
         try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
@@ -648,6 +651,23 @@ function installNativeHyperAuthority(authority) {
     broker.setAuthority(authority);
   } catch (error) {
     console.error(`Could not connect the native Hyper broker to the license authority: ${error.message}`);
+  }
+}
+
+function installPokemonQueueEventStream(authority) {
+  if (!authority) return null;
+  try {
+    const engine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const monitor = createPokemonQueueEvents({
+      authority,
+      setHealth: health => engine.setPokemonQueueStreamHealth?.(health),
+      publish: event => engine.publishPokemonQueueProtection?.(event) === true,
+    });
+    monitor.update(authority.cached());
+    return monitor;
+  } catch (error) {
+    console.error(`Could not start the Pokémon Center queue event stream: ${error.message}`);
+    return null;
   }
 }
 
@@ -760,6 +780,7 @@ function runNativeEngineSelfTest() {
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
   try { taskGroupScheduler?.dispose(); } catch {}
+  try { pokemonQueueEvents?.dispose(); } catch {}
   const prefix = winePrefix();
   const wineserver = wineserverPath();
   if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
@@ -787,6 +808,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine'
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   installNativeHyperAuthority(licenseAuthority);
+  pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);
   installProfileImapIpc(licenseAuthority);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();

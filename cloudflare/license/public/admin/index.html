@@ -103,6 +103,27 @@
           </form>
         </section>
 
+        <section class="card service-config-card">
+          <div class="table-heading">
+            <div>
+              <h2>Pokémon Center queue events</h2>
+              <p>The upstream license stays encrypted in the license Worker. Installed apps receive only normalized queue and captcha events.</p>
+            </div>
+            <span id="pokemon-queue-status" class="badge">Not configured</span>
+          </div>
+          <form id="pokemon-queue-form" class="service-config-form">
+            <div>
+              <label for="pokemon-queue-license">Queue event license</label>
+              <input id="pokemon-queue-license" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Enter a new license" required>
+              <p id="pokemon-queue-meta" class="meta">No license is stored.</p>
+            </div>
+            <div class="row compact-row">
+              <button id="clear-pokemon-queue" type="button" class="danger hidden">Remove license</button>
+              <button type="submit">Save license</button>
+            </div>
+          </form>
+        </section>
+
         <section class="card proxy-card">
           <div class="table-heading">
             <div>

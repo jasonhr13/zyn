@@ -111,8 +111,12 @@ A site adapter may add fields, but the bridge treats these as common:
 }
 ```
 
-Pokemon Center US uses profiles and guest checkout; it does not require an account ID. The initial
-release retains the recovered Polar Railway queue-status calls.
+Pokemon Center US uses profiles and guest checkout; it does not require an account ID. Queue
+protection is detected through two independent paths: a licensed Zyn event stream publishes
+normalized `stock-ping` messages with product key `queue`, while the native engine keeps polling the
+HTTPS queue-status endpoint every three seconds as a fallback. The upstream event-stream credential
+and wire decoder exist only in Zyn's Cloudflare Durable Object; installed apps receive health plus
+`queue`/`captcha` events and cannot read the saved credential.
 
 ## Manual captcha contract
 

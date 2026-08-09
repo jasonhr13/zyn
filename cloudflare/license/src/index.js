@@ -26,6 +26,13 @@ const MAX_STORED_PROXY_CHARS = 1800000;
 const COMPRESSED_PROXY_PREFIX = 'gz1:';
 const DOWNLOAD_SITE_ORIGIN = 'https://rcart.app';
 const HYPER_SERVICE_NAME = 'hyper';
+const POKEMON_QUEUE_SERVICE_NAME = 'pokemon-queue-events';
+const POKEMON_QUEUE_UPSTREAM = 'wss://polar-wss-production.up.railway.app';
+const POKEMON_QUEUE_UPSTREAM_VERSION = 'v0.0.45';
+const POKEMON_QUEUE_WIRE_KEY_HEX = '7011fb72b65c75f8212859f17b895cc76613b093eff302f79a27eda1b51d4ebb';
+const POKEMON_QUEUE_ROTATE_MS = 10 * 60 * 1000;
+const POKEMON_QUEUE_RECONNECT_MAX_MS = 30 * 1000;
+const POKEMON_QUEUE_MAX_MESSAGE_BYTES = 1024 * 1024;
 const HYPER_UPSTREAMS = Object.freeze({
   reese84: 'https://incapsula.hypersolutions.co/reese84',
   'datadome-tags': 'https://datadome.hypersolutions.co/tags',
@@ -122,6 +129,14 @@ function hyperCredentialInput(body) {
   return { apiKey };
 }
 
+function pokemonQueueCredentialInput(body) {
+  const licenseKey = String(body && body.licenseKey || '').trim();
+  if (licenseKey.length < 8 || licenseKey.length > 128 || /[\0\r\n]/.test(licenseKey)) {
+    return { error: 'Enter a valid queue event license between 8 and 128 characters.' };
+  }
+  return { licenseKey };
+}
+
 function serviceCredentialJson(row) {
   return {
     configured: Boolean(row),
@@ -140,6 +155,298 @@ async function serviceCredentialRow(env, name) {
 async function serviceCredentialValue(env, name) {
   const row = await serviceCredentialRow(env, name);
   return row ? decryptServiceCredential(row, env) : '';
+}
+
+function hexToBytes(value) {
+  if (!/^(?:[a-f0-9]{2})+$/i.test(String(value || ''))) throw new Error('Invalid hexadecimal value.');
+  return Uint8Array.from(String(value).match(/.{2}/g), (pair) => Number.parseInt(pair, 16));
+}
+
+function pokemonQueueUpstreamUrl(licenseKey) {
+  const url = new URL(POKEMON_QUEUE_UPSTREAM);
+  // Privacy boundary: the upstream protocol requires these two query parameters. Do not add
+  // user, device, task, product, presence, telemetry, cookie, Origin, or custom-header data.
+  url.searchParams.set('key', String(licenseKey || ''));
+  url.searchParams.set('version', POKEMON_QUEUE_UPSTREAM_VERSION);
+  return url.toString();
+}
+
+function pokemonQueueMessageData(message) {
+  let data = message && message.data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch { return null; }
+  }
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+}
+
+function normalizePokemonQueueEvent(message) {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  const envelopeType = String(message.type || '').trim().toLowerCase();
+  const data = pokemonQueueMessageData(message);
+  if (!data) return null;
+
+  if (envelopeType === 'cloud-ping') {
+    const site = String(data.site || '').replace(/[\s_-]/g, '').toLowerCase();
+    const eventType = String(data.type || '').trim().toLowerCase();
+    if (site !== 'pokemoncenter') return null;
+    if (eventType === 'queue is up!') return { kind: 'queue' };
+    if (eventType === 'hcaptcha is up (stage 2)') return { kind: 'captcha' };
+    return null;
+  }
+
+  if (envelopeType === 'zephyr-ping') {
+    const eventType = String(data.type || '').trim().toLowerCase();
+    if (eventType === 'pokemon_center_queue') return { kind: 'queue' };
+    if (eventType === 'pokemon_center_captcha') return { kind: 'captcha' };
+  }
+  return null;
+}
+
+async function pokemonQueueMessageBytes(value) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return new Uint8Array(await value.arrayBuffer());
+  return null;
+}
+
+async function decodePokemonQueueMessage(value, subtle = crypto.subtle) {
+  const bytes = await pokemonQueueMessageBytes(value);
+  if (!bytes || bytes.length < 29 || bytes.length > POKEMON_QUEUE_MAX_MESSAGE_BYTES) return null;
+  const key = await subtle.importKey('raw', hexToBytes(POKEMON_QUEUE_WIRE_KEY_HEX), 'AES-GCM', false, ['decrypt']);
+  let plain;
+  try {
+    plain = await subtle.decrypt(
+      { name: 'AES-GCM', iv: bytes.subarray(0, 12), tagLength: 128 },
+      key,
+      bytes.subarray(12),
+    );
+  } catch { return null; }
+  try {
+    const parsed = JSON.parse(decoder.decode(plain));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+}
+
+function pokemonQueueReconnectDelay(attempt) {
+  return Math.min(POKEMON_QUEUE_RECONNECT_MAX_MS, 1000 * (2 ** Math.min(5, Math.max(0, attempt))));
+}
+
+export class PokemonQueueRelay {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+    this.upstream = null;
+    this.candidate = null;
+    this.endedSockets = new WeakSet();
+    this.reconnectAttempt = 0;
+    this.sequence = 0;
+    this.health = {
+      configured: false,
+      connected: false,
+      connecting: false,
+      lastConnectedAt: 0,
+      lastMessageAt: 0,
+      lastEventAt: 0,
+    };
+  }
+
+  publicHealth() {
+    return {
+      type: 'pokemon-center-queue-health',
+      configured: this.health.configured === true,
+      connected: this.health.connected === true,
+      connecting: this.health.connecting === true,
+      lastConnectedAt: Number(this.health.lastConnectedAt) || 0,
+      lastMessageAt: Number(this.health.lastMessageAt) || 0,
+      lastEventAt: Number(this.health.lastEventAt) || 0,
+    };
+  }
+
+  clients() {
+    return this.state.getWebSockets().filter((socket) => socket.readyState === 1);
+  }
+
+  broadcast(payload) {
+    const encoded = JSON.stringify(payload);
+    for (const socket of this.clients()) {
+      try { socket.send(encoded); } catch {}
+    }
+  }
+
+  async scheduleAlarm(delay) {
+    await this.state.storage.setAlarm(Date.now() + Math.max(1000, Number(delay) || 1000));
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === '/client') {
+      if (String(request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
+        return new Response('WebSocket upgrade required.', { status: 426 });
+      }
+      const [client, server] = Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      server.serializeAttachment({ role: 'licensed-client' });
+      server.send(JSON.stringify(this.publicHealth()));
+      this.ensureUpstream().catch(() => this.upstreamEnded(this.candidate));
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    if (url.pathname === '/reconfigure' && request.method === 'POST') {
+      await this.ensureUpstream({ replace: true });
+      return new Response(JSON.stringify(this.publicHealth()), {
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
+    }
+    return new Response('Not found.', { status: 404 });
+  }
+
+  async ensureUpstream({ replace = false } = {}) {
+    const activeClients = this.clients().length;
+    let licenseKey = '';
+    try { licenseKey = await serviceCredentialValue(this.env, POKEMON_QUEUE_SERVICE_NAME); }
+    catch {
+      this.health.configured = false;
+      this.health.connecting = false;
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    this.health.configured = Boolean(licenseKey);
+    if (!licenseKey) {
+      await this.stopUpstream();
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    if (!activeClients) {
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    if (this.candidate && (this.candidate.readyState === 0 || this.candidate.readyState === 1)) return;
+    if (!replace && this.upstream && this.upstream.readyState === 1) return;
+
+    let socket;
+    try {
+      // The Web Standard constructor has no custom-header option. This connector also never calls
+      // send(), making it receive-only apart from automatic WebSocket control frames.
+      socket = new WebSocket(pokemonQueueUpstreamUrl(licenseKey));
+    } catch {
+      this.health.connected = false;
+      this.health.connecting = false;
+      this.broadcast(this.publicHealth());
+      await this.scheduleReconnect();
+      return;
+    }
+    this.candidate = socket;
+    this.health.connecting = true;
+    this.broadcast(this.publicHealth());
+
+    socket.addEventListener('open', () => {
+      if (this.candidate !== socket) {
+        try { socket.close(1000); } catch {}
+        return;
+      }
+      const previous = this.upstream;
+      this.candidate = null;
+      this.upstream = socket;
+      this.reconnectAttempt = 0;
+      this.health.connected = true;
+      this.health.connecting = false;
+      this.health.lastConnectedAt = Date.now();
+      this.broadcast(this.publicHealth());
+      this.scheduleAlarm(POKEMON_QUEUE_ROTATE_MS).catch(() => {});
+      if (previous && previous !== socket) {
+        try { previous.close(1000); } catch {}
+      }
+    });
+    socket.addEventListener('message', (event) => {
+      this.handleUpstreamMessage(socket, event.data).catch(() => {});
+    });
+    socket.addEventListener('error', () => this.upstreamEnded(socket));
+    socket.addEventListener('close', () => this.upstreamEnded(socket));
+  }
+
+  async handleUpstreamMessage(socket, value) {
+    if (socket !== this.upstream) return;
+    const message = await decodePokemonQueueMessage(value);
+    if (!message) return;
+    this.health.lastMessageAt = Date.now();
+    const event = normalizePokemonQueueEvent(message);
+    if (!event) {
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    this.health.lastEventAt = Date.now();
+    this.sequence += 1;
+    this.broadcast({
+      type: 'pokemon-center-protection',
+      kind: event.kind,
+      detectedAt: this.health.lastEventAt,
+      sequence: this.sequence,
+    });
+  }
+
+  async scheduleReconnect() {
+    if (!this.clients().length || !this.health.configured) return;
+    const delay = pokemonQueueReconnectDelay(this.reconnectAttempt);
+    this.reconnectAttempt += 1;
+    await this.scheduleAlarm(delay);
+  }
+
+  upstreamEnded(socket) {
+    if (!socket || this.endedSockets.has(socket)) return;
+    this.endedSockets.add(socket);
+    const wasCandidate = this.candidate === socket;
+    const wasUpstream = this.upstream === socket;
+    if (wasCandidate) this.candidate = null;
+    if (wasUpstream) this.upstream = null;
+    if (!wasCandidate && !wasUpstream) return;
+    if (this.upstream && this.upstream.readyState === 1) {
+      this.health.connected = true;
+      this.health.connecting = false;
+      this.scheduleAlarm(60 * 1000).catch(() => {});
+      return;
+    }
+    this.health.connected = false;
+    this.health.connecting = false;
+    this.broadcast(this.publicHealth());
+    this.scheduleReconnect().catch(() => {});
+  }
+
+  async stopUpstream() {
+    const sockets = [this.candidate, this.upstream].filter(Boolean);
+    this.candidate = null;
+    this.upstream = null;
+    this.health.connected = false;
+    this.health.connecting = false;
+    for (const socket of sockets) {
+      this.endedSockets.add(socket);
+      try { socket.close(1000); } catch {}
+    }
+    try { await this.state.storage.deleteAlarm(); } catch {}
+  }
+
+  async alarm() {
+    if (!this.clients().length) {
+      await this.stopUpstream();
+      return;
+    }
+    if (this.upstream && this.upstream.readyState === 1) {
+      await this.ensureUpstream({ replace: true });
+      return;
+    }
+    await this.ensureUpstream();
+  }
+
+  webSocketMessage() {
+    // Licensed clients are receive-only. In particular, their messages are never forwarded to the
+    // upstream connection.
+  }
+
+  async webSocketClose() {
+    if (!this.clients().length) await this.stopUpstream();
+  }
+
+  async webSocketError() {
+    if (!this.clients().length) await this.stopUpstream();
+  }
 }
 
 function brokerError(message, status, code) {
@@ -809,6 +1116,50 @@ async function brokerHyper(request, env, operation, dependencies = {}) {
   return new Response(responseBody, { status: response.status, headers: apiHeaders(headers) });
 }
 
+function pokemonQueueRelayStub(env) {
+  if (!env.POKEMON_QUEUE_RELAY) return null;
+  const id = env.POKEMON_QUEUE_RELAY.idFromName('pokemon-center-us');
+  return env.POKEMON_QUEUE_RELAY.get(id);
+}
+
+async function notifyPokemonQueueRelay(env) {
+  const stub = pokemonQueueRelayStub(env);
+  if (!stub) return;
+  try {
+    await stub.fetch(new Request('https://queue-relay.internal/reconfigure', { method: 'POST' }));
+  } catch {
+    // Saving or removing the credential remains authoritative. A licensed client connection will
+    // also wake and reconfigure the Durable Object, so a transient notification failure is safe.
+  }
+}
+
+async function brokerPokemonQueueEvents(request, env, dependencies = {}) {
+  if (request.method !== 'GET') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  if (String(request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
+    return json({ ok: false, code: 'websocket_required', message: 'WebSocket upgrade required.' }, 426);
+  }
+  const authenticate = dependencies.authenticate || authenticatedLicense;
+  const entitlementsFor = dependencies.entitlements || taskTypeEntitlements;
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to monitor Pokémon Center.' }, 401);
+  }
+  const entitlements = await entitlementsFor(env, identity);
+  if (!entitlements.pokemoncenter) {
+    return json({ ok: false, code: 'task_type_denied', message: 'Pokémon Center access is not enabled.' }, 403);
+  }
+  const stub = dependencies.stub || pokemonQueueRelayStub(env);
+  if (!stub) {
+    return json({ ok: false, code: 'service_unavailable', message: 'Queue event monitoring is unavailable.' }, 503);
+  }
+  // The authenticated device headers terminate here. Constructing a new internal request prevents
+  // the bearer token, device ID, user agent, IP metadata, or any other client header from reaching
+  // the upstream connector.
+  return stub.fetch(new Request('https://queue-relay.internal/client', {
+    headers: { Upgrade: 'websocket' },
+  }));
+}
+
 function backupJson(row) {
   return {
     id: row.id,
@@ -1457,6 +1808,57 @@ async function deleteHyperCredential(env) {
   return json({ ok: true, ...serviceCredentialJson(null) });
 }
 
+async function adminPokemonQueueCredential(env) {
+  return json({
+    ok: true,
+    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+    ...serviceCredentialJson(await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME)),
+  });
+}
+
+async function putPokemonQueueCredential(request, env) {
+  const input = pokemonQueueCredentialInput(await bodyJson(request));
+  if (input.error) return json({ ok: false, message: input.error }, 400);
+  const encrypted = await encryptServiceCredential(POKEMON_QUEUE_SERVICE_NAME, input.licenseKey, env);
+  const now = Date.now();
+  await env.DB.prepare(`
+    INSERT INTO service_config
+      (name, encrypted_value, iv, fingerprint, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      encrypted_value = excluded.encrypted_value,
+      iv = excluded.iv,
+      fingerprint = excluded.fingerprint,
+      updated_at = excluded.updated_at
+  `).bind(
+    POKEMON_QUEUE_SERVICE_NAME,
+    encrypted.encryptedValue,
+    encrypted.iv,
+    encrypted.fingerprint,
+    now,
+    now,
+  ).run();
+  await audit(env, 'service_credential_updated', null, `${POKEMON_QUEUE_SERVICE_NAME}:${encrypted.fingerprint}`);
+  await notifyPokemonQueueRelay(env);
+  return json({
+    ok: true,
+    configured: true,
+    fingerprint: encrypted.fingerprint,
+    updatedAt: now,
+    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+  });
+}
+
+async function deletePokemonQueueCredential(env) {
+  const current = await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME);
+  if (current) {
+    await env.DB.prepare('DELETE FROM service_config WHERE name = ?').bind(POKEMON_QUEUE_SERVICE_NAME).run();
+    await audit(env, 'service_credential_deleted', null, `${POKEMON_QUEUE_SERVICE_NAME}:${current.fingerprint}`);
+  }
+  await notifyPokemonQueueRelay(env);
+  return json({ ok: true, version: POKEMON_QUEUE_UPSTREAM_VERSION, ...serviceCredentialJson(null) });
+}
+
 async function createProxyList(request, env) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS count FROM managed_proxy_lists').first();
   if (Number(count && count.count) >= MAX_MANAGED_LISTS) {
@@ -1541,6 +1943,18 @@ async function adminRoute(request, env, url) {
   if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'PUT') return putHyperCredential(request, env);
   if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'DELETE') return deleteHyperCredential(env);
   if (url.pathname === '/api/admin/service-config/hyper') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'GET') {
+    return adminPokemonQueueCredential(env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'PUT') {
+    return putPokemonQueueCredential(request, env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'DELETE') {
+    return deletePokemonQueueCredential(env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events') {
+    return json({ ok: false, message: 'Method not allowed.' }, 405);
+  }
 
   const proxyMatch = url.pathname.match(/^\/api\/admin\/proxy-lists\/([0-9a-f-]+)$/i);
   if (proxyMatch && request.method === 'PUT') return updateProxyList(request, env, proxyMatch[1]);
@@ -1576,6 +1990,9 @@ async function api(request, env, url) {
   if (url.pathname.startsWith('/api/admin/')) return adminRoute(request, env, url);
   const hyperMatch = url.pathname.match(/^\/api\/services\/hyper\/([a-z0-9-]+)$/i);
   if (hyperMatch) return brokerHyper(request, env, hyperMatch[1].toLowerCase());
+  if (url.pathname === '/api/services/pokemon-center/queue-events') {
+    return brokerPokemonQueueEvents(request, env);
+  }
   if (url.pathname === '/api/waitlist' && request.method === 'POST') return joinWaitlist(request, env);
   if (url.pathname === '/api/download/redeem' && request.method === 'POST') return redeemDownloadAccess(request, env);
   if (url.pathname === '/api/download/session' && request.method === 'POST') return validateDownloadSession(request, env);
@@ -1603,10 +2020,16 @@ function secureAsset(response) {
 
 export const __test = Object.freeze({
   HYPER_UPSTREAMS,
+  POKEMON_QUEUE_UPSTREAM_VERSION,
+  brokerPokemonQueueEvents,
   brokerHyper,
+  decodePokemonQueueMessage,
   decryptServiceCredential,
   encryptServiceCredential,
   hyperCredentialInput,
+  normalizePokemonQueueEvent,
+  pokemonQueueCredentialInput,
+  pokemonQueueUpstreamUrl,
   serviceCredentialJson,
 });
 

@@ -137,6 +137,7 @@ cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpac
 for launcher_file in \
   bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
   checkout-reporting.js \
+  pokemon-queue-events.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js \
   task-group-scheduler.js target-group-launch.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
@@ -145,7 +146,8 @@ for launcher_file in \
 done
 cp "$PROJECT_DIR/launcher/runtime-manager.js" "$RESOURCES/app/runtime-manager.js"
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
-cp -R "$PROJECT_DIR/launcher/node_modules" "$RESOURCES/app/node_modules"
+mkdir -p "$RESOURCES/app/node_modules"
+cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/app/node_modules/"
 
 PLIST="$CONTENTS/Info.plist"
 CURRENT_EXECUTABLE="$(plutil -extract CFBundleExecutable raw "$PLIST")"

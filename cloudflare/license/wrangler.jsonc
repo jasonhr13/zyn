@@ -27,6 +27,20 @@
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "POKEMON_QUEUE_RELAY",
+        "class_name": "PokemonQueueRelay"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PokemonQueueRelay"]
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "BACKUPS",

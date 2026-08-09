@@ -430,6 +430,26 @@ async function loadHyperCredential() {
   }
 }
 
+function renderPokemonQueueCredential(config) {
+  const configured = Boolean(config && config.configured);
+  const status = $('#pokemon-queue-status');
+  status.textContent = configured ? 'Configured' : 'Not configured';
+  status.className = `badge${configured ? ' good' : ''}`;
+  $('#pokemon-queue-meta').textContent = configured
+    ? `Fingerprint ${config.fingerprint} · version ${config.version || 'v0.0.45'} · updated ${formatDate(config.updatedAt)}. The saved license is never returned here.`
+    : `No license is stored. Event stream version ${config && config.version || 'v0.0.45'}.`;
+  $('#clear-pokemon-queue').classList.toggle('hidden', !configured);
+}
+
+async function loadPokemonQueueCredential() {
+  try {
+    renderPokemonQueueCredential(await request('/api/admin/service-config/pokemon-queue-events'));
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
+}
+
 function showLogin() {
   loginCard.classList.remove('hidden');
   admin.classList.add('hidden');
@@ -445,6 +465,7 @@ function showAdmin() {
   loadWaitlist();
   loadProxyLists();
   loadHyperCredential();
+  loadPokemonQueueCredential();
 }
 
 $('#login-form').addEventListener('submit', async (event) => {
@@ -514,6 +535,30 @@ $('#clear-hyper').addEventListener('click', async () => {
   } catch (error) { toast(error.message, true); }
 });
 
+$('#pokemon-queue-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const licenseKey = $('#pokemon-queue-license').value.trim();
+  try {
+    const result = await request('/api/admin/service-config/pokemon-queue-events', {
+      method: 'PUT',
+      body: JSON.stringify({ licenseKey }),
+    });
+    $('#pokemon-queue-license').value = '';
+    renderPokemonQueueCredential(result);
+    toast('Queue event license encrypted and saved.');
+  } catch (error) { toast(error.message, true); }
+});
+
+$('#clear-pokemon-queue').addEventListener('click', async () => {
+  if (!confirm('Remove the queue event license? HTTPS fallback monitoring will remain available.')) return;
+  try {
+    const result = await request('/api/admin/service-config/pokemon-queue-events', { method: 'DELETE' });
+    $('#pokemon-queue-license').value = '';
+    renderPokemonQueueCredential(result);
+    toast('Queue event license removed.');
+  } catch (error) { toast(error.message, true); }
+});
+
 $('#copy-credential').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText($('#credential-value').textContent);
@@ -521,7 +566,13 @@ $('#copy-credential').addEventListener('click', async () => {
   } catch { toast('Could not copy automatically.', true); }
 });
 $('#close-modal').addEventListener('click', () => $('#credential-modal').classList.add('hidden'));
-$('#refresh').addEventListener('click', () => { loadUsers(); loadWaitlist(); loadProxyLists(); loadHyperCredential(); });
+$('#refresh').addEventListener('click', () => {
+  loadUsers();
+  loadWaitlist();
+  loadProxyLists();
+  loadHyperCredential();
+  loadPokemonQueueCredential();
+});
 logout.addEventListener('click', async () => {
   try { await request('/api/admin/logout', { method: 'POST' }); } catch {}
   showLogin();

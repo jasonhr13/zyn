@@ -353,6 +353,14 @@ function createLicenseAuthority({
         return { ok: false, status: 502, body: '', error: 'Hyper service is unavailable.' };
       }
     },
+    openPokemonQueueEvents(handlers = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');
+      if (!normalizeTaskTypes(licenseState.taskTypes).pokemoncenter) {
+        throw new Error('Pokémon Center access is not enabled.');
+      }
+      return licenseApi.queueEvents(licenseToken, handlers);
+    },
     async logout() {
       loadSession();
       const token = licenseToken;

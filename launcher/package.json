@@ -5,6 +5,7 @@
   "private": true,
   "main": "bootstrap.js",
   "dependencies": {
-    "imapflow": "1.6.5"
+    "imapflow": "1.6.5",
+    "ws": "8.21.3"
   }
 }
