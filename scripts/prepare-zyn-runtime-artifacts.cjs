@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const projectRoot = path.join(__dirname, '..');
-const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
 const requested = String(process.argv[2] || 'all').toLowerCase();
 const architectures = requested === 'all' ? ['arm64', 'x64'] : [requested === 'x86_64' ? 'x64' : requested];
 if (architectures.some(arch => !['arm64', 'x64'].includes(arch))) {
@@ -24,30 +22,10 @@ const identity = identityName.startsWith('Developer ID Application:')
   : `Developer ID Application: ${identityName}`;
 const playwrightVersion = '1.61.0';
 const chromiumRevision = '1228';
-const wineName = 'wine-stable-11.0_1-macos-x64.tar.xz';
-const wineUrl = `https://updates.rcart.app/runtimes/${wineName}`;
-const wineSha256 = 'b84ecd14bfb23929b195c874cc2ae45c9218dc7fed002af8c0d108774c9677f9';
-const wineSize = 204981544;
 
 function run(command, args, options = {}) {
   console.log(`$ ${command} ${args.map(arg => JSON.stringify(arg)).join(' ')}`);
   execFileSync(command, args, { cwd: projectRoot, stdio: 'inherit', ...options });
-}
-
-function sha256(file) {
-  const hash = crypto.createHash('sha256');
-  const descriptor = fs.openSync(file, 'r');
-  const buffer = Buffer.allocUnsafe(4 * 1024 * 1024);
-  try {
-    let read = 0;
-    do {
-      read = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (read) hash.update(buffer.subarray(0, read));
-    } while (read);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  return hash.digest('hex');
 }
 
 function notarizeAndStaple(appPath, arch) {
@@ -97,27 +75,4 @@ for (const arch of architectures) {
   console.log(`Prepared ${archiveName} (${(fs.statSync(archive).size / 1048576).toFixed(1)} MiB)`);
 }
 
-const wineArchive = path.join(artifactsRoot, wineName);
-if (!fs.existsSync(wineArchive) || fs.statSync(wineArchive).size !== wineSize || sha256(wineArchive) !== wineSha256) {
-  fs.rmSync(wineArchive, { force: true });
-  run('/usr/bin/curl', ['--fail', '--location', '--show-error', wineUrl, '-o', wineArchive]);
-}
-if (fs.statSync(wineArchive).size !== wineSize || sha256(wineArchive) !== wineSha256) {
-  throw new Error('The established signed Wine archive failed its pinned size/SHA-256 check.');
-}
-
-const engineSource = path.join(projectRoot, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'engine', 'backend.exe');
-const expectedBackend = contract.immutableResources.find(item => item.path.endsWith('/engine/backend.exe'))?.sha256;
-if (!fs.existsSync(engineSource) || sha256(engineSource) !== expectedBackend) {
-  throw new Error('The runtime base backend.exe does not match the frozen Zyn contract.');
-}
-const engineStage = path.join(stagingRoot, 'engine');
-fs.rmSync(engineStage, { recursive: true, force: true });
-fs.mkdirSync(path.join(engineStage, 'engine'), { recursive: true });
-fs.copyFileSync(engineSource, path.join(engineStage, 'engine', 'backend.exe'));
-const engineName = `checkout-engine-${expectedBackend.slice(0, 16)}-windows-x64.tar.gz`;
-const engineArchive = path.join(artifactsRoot, engineName);
-fs.rmSync(engineArchive, { force: true });
-run('/usr/bin/tar', ['-czf', engineArchive, '-C', engineStage, 'engine']);
-console.log(`Prepared ${engineName} (${(fs.statSync(engineArchive).size / 1048576).toFixed(1)} MiB)`);
-console.log('Zyn runtime artifacts are ready for manifest signing.');
+console.log('Zyn Chromium runtime artifacts are ready for manifest signing.');

@@ -72,20 +72,16 @@ function patchTarget() {
 
   source = replaceOnce(source, `const plat = require('./platform');`, `const plat = require('./platform');
 // Packaged bot scripts reuse Electron as native Node.
-// backend.exe resolves through the launcher, including the verified on-demand runtime path.
 const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
 
-  source = replaceOnce(source, `function enginePath() {
-  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
-  if (packed && fs.existsSync(packed)) return packed;
-  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
-}`, `function enginePath() {
-  const downloaded = process.env.ZYN_ENGINE_PATH;
-  if (downloaded && fs.existsSync(downloaded)) return downloaded;
-  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
-  if (packed && fs.existsSync(packed)) return packed;
-  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
-}`, 'Target downloaded engine path');
+  source = replaceOnce(source, `        const tid = (m && m.taskID) || '';
+        log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, `        const tid = (m && m.taskID) || '';
+        // The native engine waits for this acknowledgement before it starts its own OTP timeout.
+        // Acknowledge synchronously so mailbox latency cannot consume that readiness window.
+        if (m && m.requestId) {
+          sendToEngine({ type: 'code-watcher-ready', messages: [{ requestId: String(m.requestId) }] });
+        }
+        log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, 'Target OTP watcher readiness acknowledgement');
 
   source = replaceOnce(source, `function findNodeExe() {
   if (isPackaged()) {

@@ -99,6 +99,13 @@ check('Zyn executable architecture', () => {
   const description = fileDescription(path.join(appPath, 'Contents', 'MacOS', 'Zyn'));
   assert.match(description, appArch === 'x64' ? /x86_64/ : /arm64/);
 });
+const nativeEngine = contract.nativeEngines[appArch];
+check('native Target backend', () => {
+  assert.ok(nativeEngine, `no native backend contract for ${appArch}`);
+  const file = path.join(appPath, nativeEngine.path);
+  assert.equal(sha256(file), nativeEngine.sha256, 'SHA-256 does not match the architecture contract');
+  assert.match(fileDescription(file), appArch === 'x64' ? /Mach-O.*x86_64/ : /Mach-O.*arm64/);
+});
 
 check('feature flags', () => {
   const flagsPath = path.join(appPath, 'Contents', 'Resources', 'app', 'feature-flags.js');
@@ -135,7 +142,7 @@ check('build receipt', () => {
   assert.equal(receipt.release, contract.appRelease);
   assert.equal(receipt.product.bundleIdentifier, product.bundleIdentifier);
   assert.equal(receipt.product.arch, appArch);
-  assert.equal(receipt.runtime.backendSha256, contract.immutableResources[0].sha256);
+  assert.equal(receipt.runtime.backendSha256, nativeEngine.sha256);
   assert.equal(receipt.runtime.delivery || 'bundled', runtimeMode);
   assert.equal(receipt.runtime.manifest || '', remoteRuntime ? contract.remoteRuntime.manifest : '');
   assert.deepEqual(receipt.features, contract.features);
@@ -163,9 +170,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(targetEngine, /'--headless=true'/, 'Zyn does not request headless mode');
   assert.doesNotMatch(targetEngine, /'--headless=false'/, 'Zyn still requests headed mode');
   assert.match(targetEngine, /const findNodeExe = nodeExecutable/, 'Target farmer does not use native Node boundary');
-  if (remoteRuntime) {
-    assert.match(targetEngine, /process\.env\.ZYN_ENGINE_PATH/, 'Target engine does not resolve the verified downloaded backend');
-  }
+  assert.match(targetEngine, /process\.resourcesPath[\s\S]{0,160}'engine'/,
+    'Target engine does not resolve the bundled native backend');
   assert.match(targetEngine, /nodeEnvironment\(\{ FORCE_COLOR/, 'Target farmer does not use native environment');
   assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/, 'packaged farmer does not reuse Electron as Node');
   assert.match(targetEngine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/, 'Zyn omits cookies-per-page');
@@ -213,10 +219,12 @@ check('Target farmer New Headless launch contract', () => {
     assert.match(manager, /zyn-manifest-v1\.json/, 'remote runtime manager uses the wrong manifest protocol');
     assert.match(manager, /verifyManifest/, 'remote runtime manager does not verify signed manifests');
     assert.match(manager, /bytes=\$\{existing\}-/, 'remote runtime manager does not resume partial downloads');
-    assert.match(manager, /process\.env\.ZYN_ENGINE_PATH/, 'remote runtime manager does not activate backend.exe');
+    assert.match(manager, /darwin: \['chromium'\]/, 'remote runtime downloads more than native Chromium');
+    assert.doesNotMatch(manager, /EXPECTED_ENGINE_SHA256|EXPECTED_WINE_VERSION/,
+      'remote runtime still pins the Windows engine or Wine');
     const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
-    assert.match(bootstrap, /waitForRuntime\(\['chromium', 'wine', 'engine'\]\)/,
-      'Target launches do not wait for all remote runtime components');
+    assert.match(bootstrap, /waitForRuntime\(\['chromium'\]\)/,
+      'Target launches do not wait for the remote Chromium component');
     assert.match(bootstrap, /status && status\.ok === true\) beginRuntimeBootstrap\(\)/,
       'runtime download does not begin after license sign-in');
   } else {

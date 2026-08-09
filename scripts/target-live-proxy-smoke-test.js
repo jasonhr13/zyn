@@ -21,7 +21,7 @@ const bridge = source('extracted/asar/public/helpers/target-engine.js');
 const farmer = source('native-farmer/shape-farmer.mjs');
 const engine = fs.readFileSync(path.join(
   root,
-  'dist/Zyn-Runtime-Base.app/Contents/Resources/engine/backend.exe',
+  `native-backend/darwin-${process.arch === 'x64' ? 'x64' : 'arm64'}/backend`,
 ));
 
 assert.match(ui, /ipcRenderer\.sendSync\('setTargetTaskProxy', id, proxyListName\)/,
@@ -38,7 +38,7 @@ assert.match(taskGroups, /targetHarvesterProxyList/,
   'task groups must migrate the former shared farmer proxy setting');
 assert.match(taskGroups, /targetThrottleFallbackGroup/,
   'task groups must expose and persist the post-cart throttle fallback setting');
-assert.match(taskGroups, />HARVESTERS</,
+assert.match(taskGroups, />Cookie Harvesters</,
   'task groups must render the global harvester manager summary');
 assert.match(taskGroups, />FALLBACK</,
   'task groups must render the global fallback selector');
@@ -77,15 +77,11 @@ assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'logi
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',
-  'github.com/secretlair/backend/frontend.EditTask',
-  'github.com/secretlair/backend/bot-base/task.EnqueueRuntimeEdit',
-  'github.com/secretlair/backend/sites/target.(*TargetTask).applyRuntimeEdit',
-  'github.com/secretlair/backend/sites/target.(*TargetTask).applyProxyEdit',
-  'Switched To Local (home IP)',
-  'Could Not Clear Proxy',
-  'Could Not Switch To ',
-  'Switched To ',
-  ' (applies after carting)',
+  'github.com/PolarAIO/Polar-AIO/backend/bot-base/task.EnqueueRuntimeEdit',
+  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeEdit',
+  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeProxy',
+  'Proxy Updated',
+  'Proxy Switch Failed',
 ]) {
   assert.equal(engine.includes(Buffer.from(marker)), true, `backend is missing live-proxy marker: ${marker}`);
 }

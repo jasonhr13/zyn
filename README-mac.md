@@ -1,9 +1,8 @@
 # Zyn for macOS
 
-Zyn is an Apple silicon and Intel Electron application that runs its existing Windows backend through
-an on-demand Wine runtime. The React interface, native Target farmer, licensing,
-per-profile IMAP, managed proxy lists, and Target task groups are packaged together without
-changing `backend.exe`.
+Zyn is an Apple silicon and Intel Electron application with a native Go Target checkout engine.
+The React interface, native Target farmer, licensing, per-profile IMAP, managed proxy lists, and
+Target task groups are packaged together without Wine or Rosetta.
 
 ## Run the current build
 
@@ -20,9 +19,15 @@ The first branded launch copies existing application data into
 ## Build
 
 The build uses `dist/Zyn-Runtime-Base.app` as its source base. Release builds keep Electron and the
-application shell in the app, while Chromium, Wine, and `backend.exe` are installed after sign-in
-from an architecture-aware signed manifest. The old Windows Chromium/Node payload is not needed by
-the Target-only native farmer and is omitted entirely.
+application shell and architecture-matched Target engine in the app, while Chromium is installed
+after sign-in from an architecture-aware signed manifest. The old Windows backend, Wine,
+Chromium, and Node payloads are not needed by the Target-only native path and are omitted entirely.
+
+Rebuild the native engines before packaging whenever `polar-backend-source` changes:
+
+```bash
+POLAR_BACKEND_SOURCE=../polar-backend-source ./scripts/build-native-target-engine.sh all
+```
 
 ```bash
 ZYN_ARCH=arm64 ZYN_RUNTIME_MODE=remote ./scripts/build-zyn.sh
@@ -40,7 +45,7 @@ ZYN_OUTPUT_APP=/path/to/Zyn-Test.app \
 
 The builder compiles the React interface, patches the reviewed engine integration, writes the
 `com.thwebco.zyn` identity and icon, removes heavyweight runtime payloads in remote mode, signs the
-app ad hoc for local testing, updates deep links to `zyn://`, and verifies the frozen backend/Wine
+app ad hoc for local testing, updates deep links to `zyn://`, and verifies the native backend
 contract plus the remote-runtime boundary. Use `ZYN_RUNTIME_MODE=bundled` only for recovery/debug
 builds; that mode installs the matching native farmer browser, and the release script refuses to
 publish it. Ad-hoc bundles are never uploaded as production updates.
@@ -50,8 +55,8 @@ publish it. Ad-hoc bundles are never uploaded as production updates.
 The runtime manager is ported from the established GitHub implementation rather than rebuilt. It starts only after a
 valid Zyn account sign-in, resumes interrupted HTTP range downloads, verifies an Ed25519-signed
 manifest and every archive SHA-256, rejects unsafe archive paths, installs atomically under Zyn's
-user-data directory, and caches the verified runtime for offline use. Target launches wait for the
-three required components without blocking profile/account setup.
+user-data directory, and caches the verified runtime for offline use. Target launches wait only for
+the Chromium component; the native checkout engine is already inside the signed app.
 
 Production runtime preparation is:
 
@@ -67,9 +72,9 @@ node ./scripts/zyn-production-runtime-install-smoke.cjs x64
 node ./scripts/verify-zyn-public-release.cjs
 ```
 
-`prepare-zyn-runtime-artifacts.cjs` signs and notarizes the ARM and Intel Chromium bundles, reuses
-the already signed/notarized Wine 11.0_1 archive after pinned size/SHA-256 verification, and packages
-the frozen `backend.exe`. Manifest signing uses Keychain service
+`prepare-zyn-runtime-artifacts.cjs` signs and notarizes the ARM and Intel Chromium bundles. The
+native Target engines are pinned separately in `config/runtime-contract.json` and packaged by
+`build-zyn.sh`. Manifest signing uses Keychain service
 `com.thwebco.zyn.runtime-signing`; the private key must never enter the repository. Runtime uploads
 reuse the Cloudflare R2 multipart channel and publish the signed manifest last.
 When Cloudflare restricts authenticated POSTs on the custom download domain, set
@@ -115,6 +120,7 @@ node ./scripts/zyn-packaged-brand-smoke-test.js ./dist/Zyn-mac-arm64.app ./dist/
 node ./scripts/target-only-ui-smoke-test.js
 node ./scripts/target-farmer-controls-smoke-test.js
 node ./scripts/target-farmer-new-headless-smoke-test.js
+node ./scripts/native-target-engine-protocol-smoke.js
 node ./scripts/runtime-manager-smoke.js
 ```
 

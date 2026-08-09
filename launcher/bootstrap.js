@@ -139,8 +139,6 @@ function wineserverPath() {
 }
 
 const windowsLaunchers = new Set([
-  path.normalize(path.join(resources, 'engine', 'backend')),
-  path.normalize(path.join(resources, 'engine', 'backend.exe')),
   path.normalize(path.join(resources, 'vendor', 'node')),
   path.normalize(path.join(resources, 'vendor', 'node.exe')),
 ]);
@@ -168,10 +166,7 @@ function wineEnvironment(environment) {
 function shouldUseWine(command) {
   if (typeof command !== 'string') return false;
   const normalized = path.normalize(path.resolve(command));
-  const remoteEngine = process.env.ZYN_ENGINE_PATH
-    ? path.normalize(path.resolve(process.env.ZYN_ENGINE_PATH))
-    : '';
-  return windowsLaunchers.has(normalized) || (remoteEngine && normalized === remoteEngine);
+  return windowsLaunchers.has(normalized);
 }
 
 childProcess.spawn = function spawnWithBundledWine(command, args, options) {
@@ -426,10 +421,10 @@ async function launchTargetAfterRuntime(original, args, authority) {
       config,
       'Preparing Runtime',
       '#f5c96b',
-      status.state === 'downloading' ? `Downloading runtime · ${status.percent || 0}%` : 'Preparing Chromium, Wine, and checkout engine…',
+      status.state === 'downloading' ? `Downloading runtime · ${status.percent || 0}%` : 'Preparing Chromium…',
     );
   }
-  const ready = await waitForRuntime(['chromium', 'wine', 'engine']);
+  const ready = await waitForRuntime(['chromium']);
   if (generation !== pendingTargetRuntimeLaunch || authority.cached().ok !== true) return undefined;
   if (!ready) {
     pushTargetRuntimeState(config, 'Runtime Error', '#ff7b83', 'Runtime setup is paused. Use Retry above.');
@@ -656,19 +651,9 @@ function configureDeveloperReporting() {
   }
 }
 
-function runWineSelfTest() {
+function runNativeEngineSelfTest() {
   app.whenReady().then(async () => {
-    if (runtimeManager.enabled) {
-      try {
-        await runtimeInitialization;
-        await runtimeManager.waitFor(['wine', 'engine']);
-      } catch (error) {
-        console.error(`ZYN_WINE_SELFTEST runtime setup failed: ${error.message}`);
-        app.exit(1);
-        return;
-      }
-    }
-    const backend = process.env.ZYN_ENGINE_PATH || path.join(resources, 'engine', 'backend');
+    const backend = path.join(resources, 'engine', 'backend');
     const child = childProcess.spawn(backend, ['-h'], {
       cwd: path.dirname(backend),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -677,17 +662,17 @@ function runWineSelfTest() {
     child.stdout.on('data', (data) => { output += data; });
     child.stderr.on('data', (data) => { output += data; });
     child.on('error', (error) => {
-      console.error(`ZYN_WINE_SELFTEST failed: ${error.message}`);
+      console.error(`ZYN_ENGINE_SELFTEST failed: ${error.message}`);
       app.exit(1);
     });
     child.on('exit', (code) => {
       console.log(output.trim());
-      console.log(`ZYN_WINE_SELFTEST exit=${code}`);
+      console.log(`ZYN_ENGINE_SELFTEST exit=${code}`);
       app.exit(code || 0);
     });
     setTimeout(() => {
       try { child.kill('SIGKILL'); } catch {}
-      console.error('ZYN_WINE_SELFTEST timed out');
+      console.error('ZYN_ENGINE_SELFTEST timed out');
       app.exit(124);
     }, 30000).unref();
   });
@@ -708,12 +693,12 @@ app.on('will-quit', () => {
   } catch {}
 });
 
-if (!fs.existsSync(originalAsar) || (runtimeMode === 'bundled' && !fs.existsSync(bundledWine))) {
-  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'bundled Wine runtime';
+if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine', 'backend'))) {
+  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'native Target backend';
   dialog.showErrorBox('Zyn could not start', `The ${missing} is missing from the app bundle.`);
   app.quit();
-} else if (process.env.ZYN_WINE_SELFTEST === '1') {
-  runWineSelfTest();
+} else if (process.env.ZYN_ENGINE_SELFTEST === '1' || process.env.ZYN_WINE_SELFTEST === '1') {
+  runNativeEngineSelfTest();
 } else {
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();

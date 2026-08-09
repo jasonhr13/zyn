@@ -38,6 +38,8 @@ assert.match(target, /const otpFetches = new Map\(\)/);
 assert.match(target, /receivedAfter/);
 assert.match(target, /cancelOtpForTask\(taskId\)/);
 assert.match(target, /cancelAllOtpFetches\('Target engine exited'\)/);
+assert.match(target, /type: 'code-watcher-ready'/,
+  'Target bridge does not acknowledge native OTP watcher readiness');
 assert.match(target, /onLog: \(line\) => log\(String\(line\), taskId\)/);
 assert.match(target, /Object\.assign\(sentConfigs\.proxies, buildProxyMap\(group\)\)/);
 assert.match(target, /buildProxyMap\(group\)\);\s+sendConfigs\(\);\s+}\s+return sendToEngine\(\{ type: 'set-task-proxy'/,
