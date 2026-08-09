@@ -74,6 +74,9 @@ function patchTarget() {
 // Packaged bot scripts reuse Electron as native Node.
 const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
 
+  source = replaceOnce(source, `const skuTitles = require('./sku-titles');`, `const skuTitles = require('./sku-titles');
+const engineContract = require('./native-engine-contract');`, 'shared native-engine contract import');
+
   source = replaceOnce(source, `        const tid = (m && m.taskID) || '';
         log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, `        const tid = (m && m.taskID) || '';
         // The native engine waits for this acknowledgement before it starts its own OTP timeout.
@@ -222,7 +225,26 @@ function getImapConfig(profileId, email) {
 
   source = replaceOnce(source, 'const taskAccountById = new Map();', `const taskAccountById = new Map();
 // taskId -> profileId, retained for request-code messages that arrive after startTarget returned.
-const taskProfileById = new Map();`, 'Target task/profile map declaration');
+const taskProfileById = new Map();
+// Site ownership belongs to the shared transport. Pokemon Center registers into this same map and
+// process later; legacy taskID/taskId/id spellings remain unchanged on the wire.
+const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/profile map declaration');
+
+  source = replaceOnce(source, `function sendToEngine(obj) {
+  try {`, `function sendToEngine(obj) {
+  let envelope;
+  try { envelope = engineContract.parseEnvelope(obj); }
+  catch (e) { log('[target] invalid engine message: ' + e.message); return false; }
+  try {`, 'native-engine outbound envelope validation');
+  source = replaceOnce(source, `      engineConn.send(JSON.stringify(obj));`, `      engineConn.send(JSON.stringify(envelope));`, 'native-engine outbound envelope serialization');
+  source = replaceOnce(source, `  log(\`[target] engine not connected — dropped "\${obj && obj.type}"\`);`, `  log(\`[target] engine not connected — dropped "\${envelope.type}"\`);`, 'native-engine dropped-message type');
+  source = replaceOnce(source, `function handleEngineMessage(data) {
+  let msg;
+  try { msg = JSON.parse(data.toString()); } catch { return; }
+  const items = Array.isArray(msg.messages) ? msg.messages : [];`, `function handleEngineMessage(data) {
+  let msg;
+  try { msg = engineContract.parseEnvelope(data); } catch { return; }
+  const items = msg.messages;`, 'native-engine inbound envelope validation');
 
   source = replaceOnce(source, `  const addr = String(email || '').trim();
   if (!addr) return;
@@ -417,14 +439,17 @@ function sendStart(config) {
 
   source = replaceOnce(source, `      runningTaskIds.delete(t.id);
       status('Limit Reached'`, `      runningTaskIds.delete(t.id);
+      engineTaskSites.remove(t.id);
       taskProfileById.delete(t.id);
       status('Limit Reached'`, 'Target capped task cleanup');
   source = replaceOnce(source, `      runningTaskIds.clear();
       toRenderer('targetDone'`, `      runningTaskIds.clear();
+      engineTaskSites.clear();
       taskProfileById.clear();
       toRenderer('targetDone'`, 'Target exit task cleanup');
   source = replaceOnce(source, `    runningTaskIds.add(t.id);
     taskAccountById.set(t.id, t.accountId || '');`, `    runningTaskIds.add(t.id);
+    engineTaskSites.register(t.id, engineContract.SITES.TARGET);
     taskAccountById.set(t.id, t.accountId || '');
     taskProfileById.set(t.id, t.profileId || '');`, 'Target task/profile association');
   source = replaceOnce(source, `      accountId: first.accountId || '',
@@ -433,11 +458,13 @@ function sendStart(config) {
       sku:`, 'Target farmer profile association');
   source = replaceOnce(source, `    runningTaskIds.delete(taskId);
     toRenderer('targetDone'`, `    runningTaskIds.delete(taskId);
+    engineTaskSites.remove(taskId);
     taskProfileById.delete(taskId);
     cancelOtpForTask(taskId);
     toRenderer('targetDone'`, 'Target stopped task cleanup');
   source = replaceOnce(source, `  runningTaskIds.clear();
   toRenderer('targetDone'`, `  runningTaskIds.clear();
+  engineTaskSites.clear();
   taskProfileById.clear();
   toRenderer('targetDone'`, 'Target full task cleanup');
 
@@ -622,6 +649,10 @@ function patchPlainLog() {
 }
 
 try {
+  fs.copyFileSync(
+    path.join(__dirname, '..', 'launcher', 'native-engine-contract.js'),
+    path.join(helperDirectory, 'native-engine-contract.js'),
+  );
   patchTarget();
   patchWalmart();
   patchPlainLog();

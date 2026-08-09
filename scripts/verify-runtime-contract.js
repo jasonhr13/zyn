@@ -128,12 +128,25 @@ check('Zyn runtime branding', () => {
   const archive = path.join(appPath, 'Contents', 'Resources', 'app-original.asar');
   const electronMain = asar.extractFile(archive, 'public/electron.js').toString('utf8');
   const discordMonitor = asar.extractFile(archive, 'public/helpers/discord-monitor.js').toString('utf8');
+  const targetEngine = asar.extractFile(archive, 'public/helpers/target-engine.js').toString('utf8');
+  const nativeEngineContract = asar.extractFile(
+    archive,
+    'public/helpers/native-engine-contract.js',
+  ).toString('utf8');
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
   assert.doesNotMatch(electronMain, /\bHope\b|hope:\/\//i);
   assert.match(discordMonitor, /\[monitor\] connected on/);
   assert.doesNotMatch(discordMonitor, /listening as/);
+  assert.match(targetEngine, /require\('\.\/native-engine-contract'\)/,
+    'packaged Target bridge does not use the shared native-engine contract');
+  assert.match(targetEngine, /new engineContract\.TaskSiteRegistry\(\)/,
+    'packaged Target bridge does not track site ownership for shared-engine tasks');
+  assert.match(nativeEngineContract, /const PROTOCOL_VERSION = 1;/,
+    'packaged native-engine protocol version is missing');
+  assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,
+    'packaged native-engine contract omits Pokemon Center US');
 });
 
 check('build receipt', () => {
