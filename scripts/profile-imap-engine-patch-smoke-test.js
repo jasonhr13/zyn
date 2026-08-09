@@ -5,6 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const vm = require('vm');
 const { execFileSync, spawnSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
@@ -56,6 +57,57 @@ assert.match(target, /function latestBankedAt\(\)/);
 assert.match(target, /lastBankedAt: latestBankedAt\(\)/);
 assert.match(target, /taskProfileById\.set\(t\.id, t\.profileId/);
 assert.match(target, /useOtpLogin: otpEnabled\(t\.profileId\)/);
+assert.match(target, /loopCheckout: \(t\.loopCheckout != null/,
+  'Target task payload does not carry the loop-checkout contract flag');
+assert.match(target, /endless: \(t\.loopCheckout != null/,
+  'Target task payload does not activate the native Target checkout loop');
+assert.match(target, /function enforceTargetLoopCheckout\(/,
+  'Target looping tasks can bypass the per-account order cap');
+assert.match(target, /type: 'edit-tasks',[\s\S]{0,220}monitorItems: items/,
+  'Target looping tasks do not remove capped SKUs');
+assert.match(target, /taskCheckoutConfigById\.delete\(/,
+  'Target loop launch state is not released when a task stops');
+assert.match(target, /qty: Number\(\(taskCheckoutConfigById\.get\(tid\)/,
+  'Target loop checkout reports do not preserve the configured quantity');
+
+const loopStart = target.indexOf('function enforceTargetLoopCheckout(');
+const loopEnd = target.indexOf('\nfunction sendStart(config)', loopStart);
+assert.ok(loopStart >= 0 && loopEnd > loopStart, 'could not isolate Target loop enforcement for behavior testing');
+const loopEvents = { logs: [], sent: [], stopped: [], statuses: [] };
+const loopOrders = { '11111111': 1, '22222222': 0 };
+const loopContext = {
+  taskCheckoutConfigById: new Map([['loop-task', {
+    skus: ['11111111', '22222222'], qty: 2, loopCheckout: true,
+  }]]),
+  dm: {
+    ORDER_LIMIT_MAX: 2,
+    targetOrderLimitReached: (_accountId, sku) => loopOrders[sku] >= 2,
+    recentTargetOrders: (_accountId, sku) => Array.from({ length: loopOrders[sku] || 0 }),
+  },
+  log: (...args) => loopEvents.logs.push(args),
+  sendToEngine: envelope => { loopEvents.sent.push(envelope); return true; },
+  status: (...args) => loopEvents.statuses.push(args),
+  stopTarget: taskId => loopEvents.stopped.push(taskId),
+};
+vm.runInNewContext(`${target.slice(loopStart, loopEnd)}\nglobalThis.runTargetLoopCheck = enforceTargetLoopCheckout;`, loopContext);
+
+loopContext.runTargetLoopCheck('loop-task', 'account-1', '11111111');
+assert.equal(loopEvents.sent.length, 0, 'looping task edited its watch list before a SKU reached the cap');
+assert.equal(loopEvents.stopped.length, 0, 'looping task stopped after its first permitted order');
+
+loopOrders['11111111'] = 2;
+loopContext.runTargetLoopCheck('loop-task', 'account-1', '11111111');
+assert.equal(loopEvents.sent.length, 1, 'looping task did not remove a newly capped SKU');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(loopEvents.sent[0].messages[0].monitorItems.map(item => item.monitorInput))),
+  ['22222222'],
+);
+assert.equal(loopEvents.stopped.length, 0, 'looping task stopped while another watched SKU remained eligible');
+
+loopOrders['22222222'] = 2;
+loopContext.runTargetLoopCheck('loop-task', 'account-1', '22222222');
+assert.deepEqual(loopEvents.stopped, ['loop-task'], 'looping task did not stop after every watched SKU reached the cap');
+assert.equal(loopEvents.statuses.length, 1, 'looping task did not publish its terminal order-limit status');
 assert.match(target, /const b = p\.billingSameShipping === false \? \(p\.billing \|\| \{\}\) : s/);
 assert.match(target, /billingFirstName: billingFirst, billingLastName: billingLast/);
 assert.match(target, /billingAddress1: b\.address/);

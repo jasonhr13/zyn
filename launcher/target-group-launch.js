@@ -50,7 +50,9 @@ function buildTargetGroupLaunch(group, { accounts = [], profiles = [] } = {}) {
       accountId: String(task.accountId || ''),
       profileId: String(profile.id),
       proxyListName: String(task.proxyListName || candidate.proxyListName || ''),
-      repeatCheckout: task.repeatCheckout === true,
+      loopCheckout: task.loopCheckout != null
+        ? task.loopCheckout === true
+        : task.repeatCheckout === true,
     });
   }
   if (!tasks.length) {

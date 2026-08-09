@@ -20,6 +20,7 @@ const EMPTY_GROUP = Object.freeze({
   skus: '',
   qty: 2,
   proxyListName: '',
+  loopCheckout: false,
 });
 
 const EMPTY_HARVESTER = Object.freeze({
@@ -144,6 +145,7 @@ class TaskGroups extends Component {
     showTaskModal: false,
     selectedAccounts: [],
     taskProxy: '',
+    taskLoopCheckout: false,
     copiedEngine: false,
     copiedTask: false,
     bank: null,
@@ -437,6 +439,7 @@ class TaskGroups extends Component {
       skus: group.skus || '',
       qty: group.qty || 2,
       proxyListName: group.proxyListName || '',
+      loopCheckout: group.loopCheckout === true,
     },
   });
 
@@ -514,6 +517,9 @@ class TaskGroups extends Component {
       previousSkus.join(',') !== nextSkus.join(',')
       || String(previousGroup.qty || 2) !== String(draft.qty || 2)
     );
+    const loopCheckout = draft.loopCheckout === true;
+    const liveLoopChanged = !!previousGroup
+      && (previousGroup.loopCheckout === true) !== loopCheckout;
     if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
       window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
       return;
@@ -526,6 +532,10 @@ class TaskGroups extends Component {
         skus: draft.skus,
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        loopCheckout,
+        tasks: liveLoopChanged
+          ? (group.tasks || []).map(task => ({ ...task, loopCheckout }))
+          : group.tasks,
         updatedAt: now,
       } : group);
     } else {
@@ -537,6 +547,7 @@ class TaskGroups extends Component {
         skus: draft.skus,
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        loopCheckout,
         tasks: [],
         createdAt: now,
         updatedAt: now,
@@ -565,6 +576,8 @@ class TaskGroups extends Component {
       }, () => {
         if (liveEditError) {
           window.alert(`The group was saved, but its running tasks were not updated. Stop and restart them to apply the new SKUs.\n\n${liveEditError}`);
+        } else if (liveLoopChanged && liveTasks.length) {
+          window.alert('The loop-checkout setting was saved. Stop and restart the running tasks to apply it.');
         }
       });
     });
@@ -585,6 +598,7 @@ class TaskGroups extends Component {
     showTaskModal: true,
     selectedAccounts: [],
     taskProxy: group.proxyListName || '',
+    taskLoopCheckout: group.loopCheckout === true,
   });
 
   toggleAccount = (accountId) => this.setState(({ selectedAccounts }) => ({
@@ -606,6 +620,7 @@ class TaskGroups extends Component {
         profileId: '',
         proxyListName: this.state.taskProxy,
         cardId: '',
+        loopCheckout: this.state.taskLoopCheckout === true,
         createdAt: now,
       }));
     const groups = this.state.groups.map(item => item.id === group.id ? {
@@ -634,6 +649,17 @@ class TaskGroups extends Component {
         });
       }
     } catch {}
+  };
+
+  updateTaskLoopCheckout = (group, task, loopCheckout) => {
+    const groups = this.state.groups.map(item => item.id === group.id ? {
+      ...item,
+      tasks: item.tasks.map(candidate => candidate.id === task.id
+        ? { ...candidate, loopCheckout: loopCheckout === true }
+        : candidate),
+      updatedAt: Date.now(),
+    } : item);
+    this.persist(groups);
   };
 
   deleteTask = (group, task) => {
@@ -1221,6 +1247,20 @@ class TaskGroups extends Component {
           <option value="">Local</option>
           {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
         </select>
+        <label
+          className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
+          title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
+          onClick={event => event.stopPropagation()}
+          onKeyDown={event => event.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={task.loopCheckout === true}
+            disabled={running}
+            onChange={event => this.updateTaskLoopCheckout(group, task, event.target.checked)}
+          />
+          {task.loopCheckout ? 'On' : 'Off'}
+        </label>
         <StatusBadge status={displayStatus} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
         <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
@@ -1293,6 +1333,7 @@ class TaskGroups extends Component {
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
                 <div><dt>Watch list</dt><dd>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
                 <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
                 <div><dt>Task ID</dt><dd>{task.id}</dd></div>
               </dl>
@@ -1358,6 +1399,7 @@ class TaskGroups extends Component {
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
             <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
+            <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
           </div>
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
@@ -1371,7 +1413,7 @@ class TaskGroups extends Component {
               <div className="group-tasks-empty"><span><Icon name="user" size={19} /></span><h3>No account tasks yet</h3><p>Add Target accounts to this group. Their checkout profiles are matched automatically by email.</p><button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}>Add Tasks</button></div>
             ) : (
               <div>
-                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Status</span><span>Created</span><span>Actions</span></div>
+                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Status</span><span>Created</span><span>Actions</span></div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
               </div>
@@ -1513,6 +1555,10 @@ class TaskGroups extends Component {
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
               <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
             </div>
+            <label className={`task-repeat-toggle task-repeat-toggle-modal${draft.loopCheckout ? ' enabled' : ''}`}>
+              <input type="checkbox" checked={draft.loopCheckout === true} onChange={event => this.setState({ groupDraft: { ...draft, loopCheckout: event.target.checked } })} />
+              <span><strong>Loop checkout by default</strong><small>When changed, this applies to every task in the group. Individual tasks can be overridden afterward. Looping stops as each account reaches two orders per SKU in four hours.</small></span>
+            </label>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary" onClick={this.closeGroupModal}>Cancel</button><button className="btn btn-primary" disabled={!String(draft.name || '').trim()} onClick={this.saveGroup}><Icon name="check" size={12} /> {editing ? 'Save Changes' : 'Create Group'}</button></div>
         </div>
@@ -1531,6 +1577,10 @@ class TaskGroups extends Component {
           <div className="modal-body">
             <div className="task-create-summary"><span><Icon name="user" size={14} /> {this.state.selectedAccounts.length} selected</span><strong>{accounts.length} Target accounts</strong></div>
             <div className="form-group"><label className="form-label">Proxy group for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
+            <label className={`task-repeat-toggle task-repeat-toggle-modal${this.state.taskLoopCheckout ? ' enabled' : ''}`}>
+              <input type="checkbox" checked={this.state.taskLoopCheckout === true} onChange={event => this.setState({ taskLoopCheckout: event.target.checked })} />
+              <span><strong>Loop checkout for these tasks</strong><small>After a checkout or decline, keep trying eligible SKUs. Confirmed orders stop at two per account, per SKU, within four hours.</small></span>
+            </label>
             <div className="form-label">Accounts</div>
             <div className="task-account-picker">
               {!accounts.length && <div className="task-account-empty">No accounts are tagged Target. Add them from Accounts first.</div>}

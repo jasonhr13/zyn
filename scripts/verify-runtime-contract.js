@@ -172,6 +172,12 @@ check('Zyn runtime branding', () => {
     'packaged Pokémon Center bridge omits normalized push events');
   assert.match(targetEngine, /function setPokemonQueueStreamHealth/,
     'packaged Pokémon Center bridge omits push-stream health logs');
+  assert.match(targetEngine, /loopCheckout: \(t\.loopCheckout != null/,
+    'packaged Target bridge drops the loop-checkout contract flag');
+  assert.match(targetEngine, /endless: \(t\.loopCheckout != null/,
+    'packaged Target bridge does not activate native continuous checkout');
+  assert.match(targetEngine, /function enforceTargetLoopCheckout\(/,
+    'packaged Target bridge lets looping tasks bypass the order cap');
   assert.match(dataManager, /products: Array\.isArray/,
     'packaged Pokémon Center storage omits product rows');
   assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
@@ -249,6 +255,12 @@ check('Target farmer New Headless launch contract', () => {
     'Target bridge does not send native runtime edits');
   assert.match(targetEngine, /MONITOR_ID \+ '-edit-'/,
     'Target bridge does not refresh newly edited SKUs in shared-monitor mode');
+  assert.match(targetEngine, /loopCheckout: \(t\.loopCheckout != null/,
+    'Target bridge drops the loop-checkout contract flag');
+  assert.match(targetEngine, /endless: \(t\.loopCheckout != null/,
+    'Target bridge does not activate native continuous checkout');
+  assert.match(targetEngine, /function enforceTargetLoopCheckout\(/,
+    'Target bridge lets looping tasks bypass the order cap');
 
   const manifest = JSON.parse(asar.extractFile(path.join(resources, 'app-original.asar'), 'build/asset-manifest.json').toString('utf8'));
   const rendererBundlePath = `build/${manifest.files['main.js'].replace(/^\.\//, '')}`;
@@ -269,6 +281,7 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Starting broker/, 'packaged task groups omit broker startup state');
   assert.match(rendererBundle, /only this task/, 'packaged task groups omit per-task logs');
   assert.match(rendererBundle, /editTargetTasks/, 'packaged task groups omit live SKU editing');
+  assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
   assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');
   assert.match(rendererBundle, /Broker online/, 'packaged task groups do not distinguish broker reachability');

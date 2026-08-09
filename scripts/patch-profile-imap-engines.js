@@ -235,6 +235,9 @@ function getImapConfig(profileId, email) {
   source = replaceOnce(source, 'const taskAccountById = new Map();', `const taskAccountById = new Map();
 // taskId -> profileId, retained for request-code messages that arrive after startTarget returned.
 const taskProfileById = new Map();
+// Target's native implementation names continuous checkout Endless, while the public task
+// contract calls it loopCheckout. Retain each launch so confirmed orders can prune capped SKUs.
+const taskCheckoutConfigById = new Map(); // taskId -> { skus, qty, loopCheckout }
 // Site ownership belongs to the shared transport. Pokemon Center registers into this same map and
 // process later; legacy taskID/taskId/id spellings remain unchanged on the wire.
 const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/profile map declaration');
@@ -459,6 +462,63 @@ function editTargetTasks(config = {}) {
 function sendStart(config) {
   liveEditStoppedMainMonitor = false;`, 'Target live task watch-list editing');
 
+  source = replaceOnce(source, `function sendStart(config) {
+  liveEditStoppedMainMonitor = false;`, `// Continue a looping Target task only while this account still has an eligible watched SKU.
+// The native task loops internally, so the launch-time cap alone cannot prevent a third order.
+function enforceTargetLoopCheckout(taskId, accountId, purchasedTcin) {
+  const config = taskCheckoutConfigById.get(taskId);
+  if (!config || !config.loopCheckout) return;
+  if (!accountId || !purchasedTcin || !config.skus.includes(purchasedTcin)) {
+    log('[loop] stopped for safety — checkout result did not identify a watched account/SKU', taskId);
+    stopTarget(taskId);
+    return;
+  }
+
+  const eligible = config.skus.filter(sku => !dm.targetOrderLimitReached(accountId, sku));
+  const used = dm.recentTargetOrders(accountId, purchasedTcin).length;
+  if (eligible.length === config.skus.length) {
+    log('[loop] order ' + used + '/' + dm.ORDER_LIMIT_MAX + ' recorded for ' + purchasedTcin + ' — continuing', taskId);
+    return;
+  }
+  if (!eligible.length) {
+    log('[loop] every watched SKU reached the ' + dm.ORDER_LIMIT_MAX + '-order limit — stopping', taskId);
+    status('Limit Reached', '#f59e0b', dm.ORDER_LIMIT_MAX + ' orders per SKU in the last 4h', taskId, undefined, false);
+    stopTarget(taskId);
+    return;
+  }
+
+  const items = eligible.map(sku => ({
+    id: sku, monitorInput: sku, quantity: String(config.qty), color: '', sizes: [], maxPrice: '',
+  }));
+  if (!sendToEngine({
+    type: 'edit-tasks',
+    messages: [{ id: taskId, type: 'Target', site: 'Target', item: items, monitorItems: items }],
+  })) {
+    log('[loop] could not remove capped SKUs — stopping for safety', taskId);
+    stopTarget(taskId);
+    return;
+  }
+  const capped = config.skus.filter(sku => !eligible.includes(sku));
+  log('[loop] capped ' + capped.join(', ') + ' — continuing on ' + eligible.join(', '), taskId);
+}
+
+function sendStart(config) {
+  liveEditStoppedMainMonitor = false;`, 'Target looping order-cap enforcement');
+
+  source = replaceOnce(source,
+    `            qty: 1,
+            sku: String(m.sku || ''),`,
+    `            qty: Number((taskCheckoutConfigById.get(tid) || {}).qty) || 1,
+            sku: String(m.sku || ''),`,
+    'Target checkout report quantity');
+  source = replaceOnce(source,
+    `            if (acct && tcin) dm.recordTargetOrder(acct, tcin);
+            else log(\`[cap] not counted — \${acct ? 'no TCIN on the notification' : 'no account for task ' + tid}\`, tid);`,
+    `            if (acct && tcin) dm.recordTargetOrder(acct, tcin);
+            else log(\`[cap] not counted — \${acct ? 'no TCIN on the notification' : 'no account for task ' + tid}\`, tid);
+            enforceTargetLoopCheckout(tid, acct, tcin);`,
+    'Target loop-checkout result enforcement');
+
   source = replaceOnce(source, `const id = m.taskID === MONITOR_ID ? '' : (m.taskID || '');`, `const id = String(m.taskID || '').startsWith(MONITOR_ID) ? '' : (m.taskID || '');`, 'Target live-edit monitor status routing');
 
   source = replaceOnce(source, `      taskActive = false;
@@ -489,22 +549,46 @@ function sendStart(config) {
   source = replaceOnce(source, `  const loginMode = otpEnabled() ? 'otp' : 'password';`, `  const loginMode = otpEnabled(config.profileId, accountEmail) ? 'otp' : 'password';`, 'Target farmer login mode');
   source = replaceOnce(source, `    useOtpLogin: otpEnabled(), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, `    useOtpLogin: otpEnabled(t.profileId), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, 'Target task OTP mode');
 
+  source = replaceOnce(source,
+    `    loopCheckout: false, waitForQueue: false, QueueEntryDelay: '0',`,
+    `    loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true, waitForQueue: false, QueueEntryDelay: '0',`,
+    'Target loop-checkout contract flag');
+  source = replaceOnce(source,
+    `    endless: !!config.endless, useFillerItem: !!config.useFillerItem,`,
+    `    // Target currently reads Endless for repeat behavior. Send both fields so a native update
+    // can adopt LoopCheckout without changing the app-side contract again.
+    endless: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true, useFillerItem: !!config.useFillerItem,`,
+    'Target loop-checkout implementation flag');
+  source = replaceOnce(source,
+    `  // Enforced here rather than after checkout because endless is off: a task stops the moment it
+  // checks out, so the only way to exceed the cap is to start again — which is exactly this path.`,
+    `  // Enforced here before the first order. Looping tasks also re-check after every confirmed
+  // checkout, remove newly capped SKUs, and stop when no eligible watched SKU remains.`,
+    'Target looping order-cap comment');
+
   source = replaceOnce(source, `      runningTaskIds.delete(t.id);
       status('Limit Reached'`, `      runningTaskIds.delete(t.id);
       engineTaskSites.remove(t.id);
       taskProfileById.delete(t.id);
+      taskCheckoutConfigById.delete(t.id);
       status('Limit Reached'`, 'Target capped task cleanup');
   source = replaceOnce(source, `      runningTaskIds.clear();
       toRenderer('targetDone'`, `      runningTaskIds.clear();
       engineTaskSites.clear();
       taskProfileById.clear();
+      taskCheckoutConfigById.clear();
       manualCaptchaManager.cancelPending();
       toRenderer('targetDone'`, 'Target exit task cleanup');
   source = replaceOnce(source, `    runningTaskIds.add(t.id);
     taskAccountById.set(t.id, t.accountId || '');`, `    runningTaskIds.add(t.id);
     engineTaskSites.register(t.id, engineContract.SITES.TARGET);
     taskAccountById.set(t.id, t.accountId || '');
-    taskProfileById.set(t.id, t.profileId || '');`, 'Target task/profile association');
+    taskProfileById.set(t.id, t.profileId || '');
+    taskCheckoutConfigById.set(t.id, {
+      skus: [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))],
+      qty: Math.max(1, parseInt(config.qty, 10) || 2),
+      loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
+    });`, 'Target task/profile association');
   source = replaceOnce(source, `      accountId: first.accountId || '',
       sku:`, `      accountId: first.accountId || '',
       profileId: first.profileId || '',
@@ -513,6 +597,7 @@ function sendStart(config) {
     toRenderer('targetDone'`, `    runningTaskIds.delete(taskId);
     engineTaskSites.remove(taskId);
     taskProfileById.delete(taskId);
+    taskCheckoutConfigById.delete(taskId);
     cancelOtpForTask(taskId);
     manualCaptchaManager.cancelTask(taskId);
     toRenderer('targetDone'`, 'Target stopped task cleanup');
@@ -520,6 +605,7 @@ function sendStart(config) {
   toRenderer('targetDone'`, `  runningTaskIds.clear();
   engineTaskSites.clear();
   taskProfileById.clear();
+  taskCheckoutConfigById.clear();
   manualCaptchaManager.cancelPending();
   toRenderer('targetDone'`, 'Target full task cleanup');
 
@@ -792,6 +878,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
       runningTaskIds.clear();
       engineTaskSites.clear();
       taskProfileById.clear();
+      taskCheckoutConfigById.clear();
       manualCaptchaManager.cancelPending();
       toRenderer('targetDone', { taskId: '' });
     }`, `    if (taskActive || runningTaskIds.size || pokemonTaskIds.size) {
@@ -807,6 +894,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
       pendingPokemonStarts.length = 0;
       engineTaskSites.clear();
       taskProfileById.clear();
+      taskCheckoutConfigById.clear();
       manualCaptchaManager.cancelPending();
       nativeHyperBroker.cancelPending();
       toRenderer('targetDone', { taskId: '' });
@@ -819,6 +907,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
     runningTaskIds.delete(requestedId);
     engineTaskSites.remove(requestedId);
     taskProfileById.delete(requestedId);
+    taskCheckoutConfigById.delete(requestedId);
     taskAccountById.delete(requestedId);
     cancelOtpForTask(requestedId);
     manualCaptchaManager.cancelTask(requestedId);
@@ -840,11 +929,13 @@ ${harvesterConfig}`, 'Target managed harvester config');
   for (const id of runningTaskIds) {
     engineTaskSites.remove(id);
     taskProfileById.delete(id);
+    taskCheckoutConfigById.delete(id);
     taskAccountById.delete(id);
     manualCaptchaManager.cancelTask(id);
     toRenderer('targetDone', { taskId: id });
   }
   runningTaskIds.clear();
+  taskCheckoutConfigById.clear();
   toRenderer('targetDone', { taskId: '' });
 
   if (!managedHarvesterMode()) {

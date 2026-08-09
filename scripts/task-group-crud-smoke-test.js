@@ -154,9 +154,11 @@ async function main() {
       await wait(100);
       const name = document.querySelector('.task-group-modal input.form-input');
       const skus = document.querySelector('.task-group-modal textarea');
-      if (!name || !skus) throw new Error('Task group editor did not open');
+      const groupLoop = document.querySelector('.task-group-modal .task-repeat-toggle input[type="checkbox"]');
+      if (!name || !skus || !groupLoop) throw new Error('Task group editor did not open');
       setValue(name, 'R2 Verification Drop');
       setValue(skus, '12345678\\nhttps://www.target.com/p/example/-/A-87654321');
+      groupLoop.click();
       clickText('.task-group-modal button', 'Create Group');
       await wait(300);
       if (!document.querySelector('.page-title')?.textContent.includes('R2 Verification Drop')) {
@@ -164,6 +166,8 @@ async function main() {
       }
       clickText('button', 'Add Tasks');
       await wait(120);
+      const newTaskLoop = document.querySelector('.task-create-modal .task-repeat-toggle input[type="checkbox"]');
+      if (!newTaskLoop || !newTaskLoop.checked) throw new Error('New tasks did not inherit the group loop-checkout default');
       const account = [...document.querySelectorAll('.task-account-picker button')]
         .find(node => node.textContent.includes('r2-smoke@example.com'));
       if (!account || account.disabled) throw new Error('Smoke-test Target account was not selectable');
@@ -240,6 +244,9 @@ async function main() {
         launchSkuCount: launchPayload && launchPayload.skus ? launchPayload.skus.length : 0,
         launchQuantity: launchPayload && launchPayload.qty,
         launchProfileId: launchPayload && launchPayload.tasks && launchPayload.tasks[0] && launchPayload.tasks[0].profileId,
+        launchLoopCheckout: launchPayload && launchPayload.tasks && launchPayload.tasks[0] && launchPayload.tasks[0].loopCheckout,
+        persistedLoopCheckout: group && group.loopCheckout,
+        persistedTaskLoopCheckout: group && group.tasks && group.tasks[0] && group.tasks[0].loopCheckout,
         liveEditIntercepted: Boolean(liveEditPayload),
         liveEditTaskCount: liveEditPayload && liveEditPayload.tasks ? liveEditPayload.tasks.length : 0,
         liveEditSkus: liveEditPayload && liveEditPayload.skus,
@@ -290,6 +297,9 @@ async function main() {
     || report.launchSkuCount !== 2
     || report.launchQuantity !== 2
     || report.launchProfileId !== cleanup.profileId
+    || report.launchLoopCheckout !== true
+    || report.persistedLoopCheckout !== true
+    || report.persistedTaskLoopCheckout !== true
     || !report.liveEditIntercepted
     || report.liveEditTaskCount !== 1
     || JSON.stringify(report.liveEditSkus) !== JSON.stringify(['11223344', '55667788'])

@@ -35,13 +35,14 @@ const baseGroup = {
   site: 'target',
   skus: '12345678\nhttps://www.target.com/p/example/-/A-87654321',
   qty: 2,
-  tasks: [{ id: 'task-1', accountId: 'account-1', proxyListName: 'Local' }],
+  tasks: [{ id: 'task-1', accountId: 'account-1', proxyListName: 'Local', loopCheckout: true }],
 };
 
 const launch = buildTargetGroupLaunch(baseGroup, { accounts, profiles });
 assert.equal(launch.ok, true);
 assert.deepEqual(launch.config.skus, ['12345678', '87654321']);
 assert.equal(launch.config.tasks[0].profileId, 'profile-1');
+assert.equal(launch.config.tasks[0].loopCheckout, true);
 
 const fakeSetTimeout = (callback, delay) => ({ callback, delay, unref() {} });
 const fakeClearTimeout = () => {};
@@ -119,6 +120,9 @@ assert.match(bootstrap, /webContents\.send\('taskGroupSchedule'/,
   'timer actions do not refresh the renderer');
 assert.match(taskGroupsPage, /> Schedule<\/button>/);
 assert.match(taskGroupsPage, /ipcRenderer\.on\('taskGroupSchedule'/);
+assert.match(taskGroupsPage, /Loop checkout by default/);
+assert.match(taskGroupsPage, /Loop checkout for these tasks/);
+assert.match(taskGroupsPage, /updateTaskLoopCheckout/);
 
 (async () => {
   const renderer = await import('../frontend/src/components/task-group-schedule.mjs');

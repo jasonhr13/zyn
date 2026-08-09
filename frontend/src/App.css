@@ -1198,7 +1198,7 @@ body.theme-night .form-select {
 
 .group-task-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(110px, .8fr) minmax(135px, .9fr) minmax(92px, .65fr) minmax(120px, .8fr) 72px;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(110px, .8fr) minmax(135px, .9fr) minmax(58px, .45fr) minmax(92px, .65fr) minmax(105px, .7fr) 72px;
   gap: 12px;
   align-items: center;
   min-height: 58px;
@@ -1441,8 +1441,9 @@ body.theme-night .form-select {
   .group-config-strip > div:nth-child(3) { border-right: 0; }
   .group-config-strip > div:nth-child(n+4) { border-top: 1px solid var(--panel-border); }
   .task-detail-grid { grid-template-columns: 1fr; }
-  .group-task-row { grid-template-columns: minmax(175px, 1.35fr) minmax(120px, .9fr) minmax(86px, .6fr) minmax(110px, .75fr) 72px; }
-  .group-task-row > span:nth-child(2) { display: none; }
+  .group-task-row { grid-template-columns: minmax(175px, 1.35fr) minmax(120px, .9fr) minmax(68px, .5fr) minmax(100px, .75fr) 72px; }
+  .group-task-row > span:nth-child(2),
+  .group-task-row > span:nth-child(6) { display: none; }
   .cookie-bank-copy em { display: none; }
   .cookie-bank-counts > span { min-width: 48px; padding-left: 7px; padding-right: 7px; }
 }
@@ -1579,7 +1580,7 @@ body.theme-night .form-select {
   grid-template-columns: minmax(235px, 1.05fr) minmax(190px, .75fr) minmax(205px, .8fr) auto;
   grid-template-areas: "identity stats runtime actions";
 }
-.group-config-strip-r2 { grid-template-columns: .65fr .55fr 1.25fr 1fr; }
+.group-config-strip-r2 { grid-template-columns: .6fr .5fr 1.15fr 1fr .85fr; }
 .task-group-r2-boundary {
   display: flex;
   align-items: center;
