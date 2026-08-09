@@ -1,0 +1,8 @@
+{
+  "name": "zyn-license-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/domain.test.mjs"
+  }
+}

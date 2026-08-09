@@ -4,6 +4,7 @@ const path = require('path');
 
 const projectRoot = path.join(__dirname, '..');
 const config = path.join(projectRoot, 'cloudflare', 'license', 'wrangler.jsonc');
+const wrangler = path.join(projectRoot, 'site', 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const keychainService = 'com.thwebco.hope.license-api';
 
 function keychainValue(account, bytes) {
@@ -29,7 +30,7 @@ const secrets = {
 };
 
 for (const [name, value] of Object.entries(secrets)) {
-  execFileSync('wrangler', ['secret', 'put', name, '--config', config], {
+  execFileSync(process.execPath, [wrangler, 'secret', 'put', name, '--config', config], {
     cwd: projectRoot,
     input: `${value}\n`,
     stdio: ['pipe', 'inherit', 'inherit'],
