@@ -1260,9 +1260,8 @@ class TaskGroups extends Component {
                 <label className="form-label">ATC mode</label>
                 <select className="form-select" value={draft.atcMode} onChange={event => setDraft({ atcMode: event.target.value })}>
                   <option value="v1">Standard — Live Target product page</option>
-                  <option value="v2">ATC+ — Synthetic product page (Recommended)</option>
+                  <option value="v2">ATC+</option>
                 </select>
-                <div className="form-hint">ATC+ substitutes the recovered synthetic PDP at the selected product URL, waits for Target SSX, then captures the cart request.</div>
               </div>
             )}
             {draft.type !== 'login' && (
