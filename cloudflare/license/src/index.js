@@ -15,11 +15,24 @@ const MAX_PROXY_LINES = 50000;
 const MAX_MANAGED_LISTS = 20;
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const BACKUP_RETENTION = 10;
+const MAX_HYPER_REQUEST_BYTES = 2 * 1024 * 1024;
+const MAX_HYPER_RESPONSE_BYTES = 4 * 1024 * 1024;
+const HYPER_TIMEOUT_MS = 30 * 1000;
+const HYPER_RATE_WINDOW_MS = 60 * 1000;
+const HYPER_RATE_MAX_REQUESTS = 1200;
 // D1 limits both a string and a complete row to 2,000,000 bytes. Keep headroom for the remaining
 // columns and AES-GCM/base64 overhead; unusually incompressible pools get a useful split-list error.
 const MAX_STORED_PROXY_CHARS = 1800000;
 const COMPRESSED_PROXY_PREFIX = 'gz1:';
 const DOWNLOAD_SITE_ORIGIN = 'https://rcart.app';
+const HYPER_SERVICE_NAME = 'hyper';
+const HYPER_UPSTREAMS = Object.freeze({
+  reese84: 'https://incapsula.hypersolutions.co/reese84',
+  'datadome-tags': 'https://datadome.hypersolutions.co/tags',
+  'datadome-interstitial': 'https://datadome.hypersolutions.co/interstitial',
+  'datadome-slider': 'https://datadome.hypersolutions.co/slider',
+  'incapsula-utmvc': 'https://incapsula.hypersolutions.co/utmvc',
+});
 // Target is the always-available base module. Optional task types are registered here and inserted
 // into D1 on first use, so adding a future module does not require another schema redesign.
 const TASK_TYPE_REGISTRY = Object.freeze([
@@ -61,6 +74,124 @@ async function proxyEncryptionKey(env) {
   const bytes = base64UrlToBytes(String(env.PROXY_ENCRYPTION_KEY || ''));
   if (bytes.length !== 32) throw new Error('Managed proxy encryption key is not configured.');
   return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function serviceConfigEncryptionKey(env) {
+  const bytes = base64UrlToBytes(String(env.SERVICE_CONFIG_ENCRYPTION_KEY || ''));
+  if (bytes.length !== 32) throw new Error('Service configuration encryption key is not configured.');
+  return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+function serviceConfigAdditionalData(name) {
+  return encoder.encode(`zyn-service-config:${name}:v1`);
+}
+
+async function encryptServiceCredential(name, value, env) {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: serviceConfigAdditionalData(name) },
+    await serviceConfigEncryptionKey(env),
+    encoder.encode(value),
+  );
+  return {
+    encryptedValue: bytesToBase64Url(new Uint8Array(encrypted)),
+    iv: bytesToBase64Url(iv),
+    fingerprint: (await sha256(value)).slice(0, 16),
+  };
+}
+
+async function decryptServiceCredential(row, env) {
+  const plain = await crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: base64UrlToBytes(String(row.iv || '')),
+      additionalData: serviceConfigAdditionalData(String(row.name || '')),
+    },
+    await serviceConfigEncryptionKey(env),
+    base64UrlToBytes(String(row.encrypted_value || '')),
+  );
+  return decoder.decode(plain);
+}
+
+function hyperCredentialInput(body) {
+  const apiKey = String(body && body.apiKey || '').trim();
+  if (apiKey.length < 8 || apiKey.length > 512 || /[\0\r\n]/.test(apiKey)) {
+    return { error: 'Enter a valid Hyper API key between 8 and 512 characters.' };
+  }
+  return { apiKey };
+}
+
+function serviceCredentialJson(row) {
+  return {
+    configured: Boolean(row),
+    fingerprint: row ? String(row.fingerprint || '') : '',
+    updatedAt: row ? Number(row.updated_at) || 0 : 0,
+  };
+}
+
+async function serviceCredentialRow(env, name) {
+  return env.DB.prepare(`
+    SELECT name, encrypted_value, iv, fingerprint, created_at, updated_at
+    FROM service_config WHERE name = ?
+  `).bind(name).first();
+}
+
+async function serviceCredentialValue(env, name) {
+  const row = await serviceCredentialRow(env, name);
+  return row ? decryptServiceCredential(row, env) : '';
+}
+
+function brokerError(message, status, code) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+async function boundedBodyBytes(body, maximum, tooLargeMessage, status = 413, code = 'request_too_large') {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks = [];
+  let length = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+    length += chunk.length;
+    if (length > maximum) {
+      await reader.cancel(tooLargeMessage);
+      throw brokerError(tooLargeMessage, status, code);
+    }
+    chunks.push(chunk);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
+async function hyperRequestBody(request) {
+  const type = String(request.headers.get('content-type') || '').toLowerCase();
+  if (!type.includes('application/json')) {
+    throw brokerError('Hyper requests require a JSON body.', 415, 'json_required');
+  }
+  const declared = request.headers.get('content-length');
+  if (declared && (!/^\d+$/.test(declared) || Number(declared) > MAX_HYPER_REQUEST_BYTES)) {
+    throw brokerError('Hyper request body is too large.', 413, 'request_too_large');
+  }
+  const bytes = await boundedBodyBytes(request.body, MAX_HYPER_REQUEST_BYTES, 'Hyper request body is too large.');
+  if (!bytes.length) throw brokerError('Hyper requests require a JSON body.', 400, 'invalid_json');
+  try {
+    const parsed = JSON.parse(decoder.decode(bytes));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('object required');
+  } catch {
+    throw brokerError('Hyper request body must be a JSON object.', 400, 'invalid_json');
+  }
+  return bytes;
 }
 
 async function gzipBytes(bytes) {
@@ -541,6 +672,141 @@ async function authenticatedLicense(request, env) {
   `).bind(tokenHash).first();
   if (!row || !row.active || row.device_id !== deviceId || Number(row.expires_at) <= now) return null;
   return row;
+}
+
+async function consumeHyperQuota(env, userId, now = Date.now()) {
+  const windowStartedAt = Math.floor(now / HYPER_RATE_WINDOW_MS) * HYPER_RATE_WINDOW_MS;
+  await env.DB.prepare(`
+    INSERT INTO service_rate_windows
+      (user_id, service, window_started_at, request_count, updated_at)
+    VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(user_id, service) DO UPDATE SET
+      request_count = CASE
+        WHEN service_rate_windows.window_started_at = excluded.window_started_at
+          THEN service_rate_windows.request_count + 1
+        ELSE 1
+      END,
+      window_started_at = excluded.window_started_at,
+      updated_at = excluded.updated_at
+  `).bind(userId, HYPER_SERVICE_NAME, windowStartedAt, now).run();
+  const row = await env.DB.prepare(`
+    SELECT request_count FROM service_rate_windows WHERE user_id = ? AND service = ?
+  `).bind(userId, HYPER_SERVICE_NAME).first();
+  const count = Number(row && row.request_count) || 1;
+  return {
+    allowed: count <= HYPER_RATE_MAX_REQUESTS,
+    count,
+    retryAfter: Math.max(1, Math.ceil((windowStartedAt + HYPER_RATE_WINDOW_MS - now) / 1000)),
+  };
+}
+
+function safeHyperResponseType(response) {
+  const type = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (type === 'application/json' || type.endsWith('+json')) return `${type}; charset=utf-8`;
+  if (type === 'text/plain') return 'text/plain; charset=utf-8';
+  return 'application/octet-stream';
+}
+
+async function hyperResponseBody(response, apiKey) {
+  const declared = response.headers.get('content-length');
+  if (declared && /^\d+$/.test(declared) && Number(declared) > MAX_HYPER_RESPONSE_BYTES) {
+    if (response.body) await response.body.cancel('Hyper response body is too large.');
+    throw brokerError('Hyper returned an oversized response.', 502, 'upstream_response_too_large');
+  }
+  const bytes = await boundedBodyBytes(
+    response.body,
+    MAX_HYPER_RESPONSE_BYTES,
+    'Hyper returned an oversized response.',
+    502,
+    'upstream_response_too_large',
+  );
+  const raw = decoder.decode(bytes);
+  return raw.includes(apiKey) ? encoder.encode(raw.replaceAll(apiKey, '[redacted]')) : bytes;
+}
+
+async function hyperUpstreamRequest(operation, requestBody, apiKey) {
+  const headers = { 'content-type': 'application/json', 'x-api-key': apiKey };
+  if (operation === 'incapsula-utmvc') {
+    headers['content-encoding'] = 'gzip';
+    return { headers, body: await gzipBytes(requestBody) };
+  }
+  return { headers, body: requestBody };
+}
+
+async function brokerHyper(request, env, operation, dependencies = {}) {
+  const upstream = HYPER_UPSTREAMS[operation];
+  if (!upstream) return json({ ok: false, code: 'operation_not_found', message: 'Hyper operation not found.' }, 404);
+  if (request.method !== 'POST') return json({ ok: false, message: 'Method not allowed.' }, 405);
+
+  const authenticate = dependencies.authenticate || authenticatedLicense;
+  const entitlementsFor = dependencies.entitlements || taskTypeEntitlements;
+  const credentialFor = dependencies.credential || serviceCredentialValue;
+  const rateLimit = dependencies.rateLimit || consumeHyperQuota;
+  const upstreamFetch = dependencies.fetch || fetch;
+
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to use Pokémon Center.' }, 401);
+  }
+  const entitlements = await entitlementsFor(env, identity);
+  if (!entitlements.pokemoncenter) {
+    return json({ ok: false, code: 'task_type_denied', message: 'Pokémon Center access is not enabled.' }, 403);
+  }
+
+  let requestBody;
+  try {
+    requestBody = await hyperRequestBody(request);
+  } catch (error) {
+    return json({ ok: false, code: error.code || 'invalid_request', message: error.message }, error.status || 400);
+  }
+
+  let apiKey;
+  try {
+    apiKey = await credentialFor(env, HYPER_SERVICE_NAME);
+  } catch (error) {
+    console.error('Hyper credential could not be decrypted', error && error.message);
+    return json({ ok: false, code: 'service_unavailable', message: 'Hyper service configuration is unavailable.' }, 503);
+  }
+  if (!apiKey) {
+    return json({ ok: false, code: 'service_unconfigured', message: 'Hyper service is not configured.' }, 503);
+  }
+
+  const quota = await rateLimit(env, identity.user_id);
+  if (!quota.allowed) {
+    return json(
+      { ok: false, code: 'service_rate_limited', message: 'Hyper request limit reached. Try again shortly.' },
+      429,
+      { 'retry-after': String(quota.retryAfter) },
+    );
+  }
+
+  let response;
+  try {
+    const upstreamRequest = await hyperUpstreamRequest(operation, requestBody, apiKey);
+    response = await upstreamFetch(upstream, {
+      method: 'POST',
+      ...upstreamRequest,
+      signal: AbortSignal.timeout(HYPER_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const timedOut = error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+    return json({
+      ok: false,
+      code: timedOut ? 'upstream_timeout' : 'upstream_unavailable',
+      message: timedOut ? 'Hyper request timed out.' : 'Hyper service is unavailable.',
+    }, timedOut ? 504 : 502);
+  }
+
+  let responseBody;
+  try {
+    responseBody = await hyperResponseBody(response, apiKey);
+  } catch (error) {
+    return json({ ok: false, code: error.code || 'upstream_error', message: error.message }, error.status || 502);
+  }
+  const headers = { 'content-type': safeHyperResponseType(response) };
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) headers['retry-after'] = retryAfter;
+  return new Response(responseBody, { status: response.status, headers: apiHeaders(headers) });
 }
 
 function backupJson(row) {
@@ -1152,6 +1418,45 @@ async function adminProxyLists(env) {
   return json({ ok: true, proxyLists: lists });
 }
 
+async function adminHyperCredential(env) {
+  return json({ ok: true, ...serviceCredentialJson(await serviceCredentialRow(env, HYPER_SERVICE_NAME)) });
+}
+
+async function putHyperCredential(request, env) {
+  const input = hyperCredentialInput(await bodyJson(request));
+  if (input.error) return json({ ok: false, message: input.error }, 400);
+  const encrypted = await encryptServiceCredential(HYPER_SERVICE_NAME, input.apiKey, env);
+  const now = Date.now();
+  await env.DB.prepare(`
+    INSERT INTO service_config
+      (name, encrypted_value, iv, fingerprint, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      encrypted_value = excluded.encrypted_value,
+      iv = excluded.iv,
+      fingerprint = excluded.fingerprint,
+      updated_at = excluded.updated_at
+  `).bind(
+    HYPER_SERVICE_NAME,
+    encrypted.encryptedValue,
+    encrypted.iv,
+    encrypted.fingerprint,
+    now,
+    now,
+  ).run();
+  await audit(env, 'service_credential_updated', null, `${HYPER_SERVICE_NAME}:${encrypted.fingerprint}`);
+  return json({ ok: true, configured: true, fingerprint: encrypted.fingerprint, updatedAt: now });
+}
+
+async function deleteHyperCredential(env) {
+  const current = await serviceCredentialRow(env, HYPER_SERVICE_NAME);
+  if (current) {
+    await env.DB.prepare('DELETE FROM service_config WHERE name = ?').bind(HYPER_SERVICE_NAME).run();
+    await audit(env, 'service_credential_deleted', null, `${HYPER_SERVICE_NAME}:${current.fingerprint}`);
+  }
+  return json({ ok: true, ...serviceCredentialJson(null) });
+}
+
 async function createProxyList(request, env) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS count FROM managed_proxy_lists').first();
   if (Number(count && count.count) >= MAX_MANAGED_LISTS) {
@@ -1232,6 +1537,10 @@ async function adminRoute(request, env, url) {
   if (url.pathname === '/api/admin/task-types' && request.method === 'GET') return adminTaskTypes(env);
   if (url.pathname === '/api/admin/proxy-lists' && request.method === 'GET') return adminProxyLists(env);
   if (url.pathname === '/api/admin/proxy-lists' && request.method === 'POST') return createProxyList(request, env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'GET') return adminHyperCredential(env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'PUT') return putHyperCredential(request, env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'DELETE') return deleteHyperCredential(env);
+  if (url.pathname === '/api/admin/service-config/hyper') return json({ ok: false, message: 'Method not allowed.' }, 405);
 
   const proxyMatch = url.pathname.match(/^\/api\/admin\/proxy-lists\/([0-9a-f-]+)$/i);
   if (proxyMatch && request.method === 'PUT') return updateProxyList(request, env, proxyMatch[1]);
@@ -1265,6 +1574,8 @@ async function adminRoute(request, env, url) {
 
 async function api(request, env, url) {
   if (url.pathname.startsWith('/api/admin/')) return adminRoute(request, env, url);
+  const hyperMatch = url.pathname.match(/^\/api\/services\/hyper\/([a-z0-9-]+)$/i);
+  if (hyperMatch) return brokerHyper(request, env, hyperMatch[1].toLowerCase());
   if (url.pathname === '/api/waitlist' && request.method === 'POST') return joinWaitlist(request, env);
   if (url.pathname === '/api/download/redeem' && request.method === 'POST') return redeemDownloadAccess(request, env);
   if (url.pathname === '/api/download/session' && request.method === 'POST') return validateDownloadSession(request, env);
@@ -1289,6 +1600,15 @@ function secureAsset(response) {
   headers.set('x-frame-options', 'DENY');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
+
+export const __test = Object.freeze({
+  HYPER_UPSTREAMS,
+  brokerHyper,
+  decryptServiceCredential,
+  encryptServiceCredential,
+  hyperCredentialInput,
+  serviceCredentialJson,
+});
 
 export default {
   async fetch(request, env) {

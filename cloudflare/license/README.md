@@ -24,6 +24,7 @@ The admin page can:
 - create a user and generate a one-time temporary password;
 - generate a seven-day, single-use link to the private Zyn download page;
 - create and edit encrypted managed proxy lists;
+- save, replace, or remove the server-side Hyper API key without exposing it back to the browser;
 - grant or remove a user's access to all managed proxy lists;
 - enable optional task types globally or override Pokémon Center/Round1 access per user;
 - revoke all active licenses for a user;
@@ -83,6 +84,18 @@ Passwords use PBKDF2-SHA256 plus a Worker-only pepper. D1 stores only hashes of 
 tokens, license bearer tokens, download keys, and download sessions. The desktop bearer token is
 encrypted with Electron `safeStorage` and never enters renderer settings or exports.
 
+The Hyper API key is encrypted with AES-256-GCM before D1 storage using the separate Worker-only
+`SERVICE_CONFIG_ENCRYPTION_KEY`. Admin responses contain only its short SHA-256 fingerprint and
+update time; neither the admin page nor an installed desktop can read the saved key. A licensed,
+device-bound desktop with effective Pokémon Center access can POST to five fixed broker operations:
+`reese84`, `datadome-tags`, `datadome-interstitial`, `datadome-slider`, and `incapsula-utmvc`. The
+Worker applies the key to the corresponding Hyper Solutions request, enforces body/response limits,
+a 30-second timeout, and a per-user request window, and never accepts a caller-supplied upstream URL.
+Broker callers always submit JSON; the Worker applies the gzip content encoding required by the
+Incapsula UTMVC endpoint.
+The initial limit is 1,200 broker requests per user per minute and can be tightened after observing
+real Pokémon Center task traffic.
+
 Encrypted account backups use a private object bucket plus D1 metadata. The desktop gzip-compresses
 the portable data bundle, encrypts it with AES-256-GCM using a locally held recovery key, and uploads
 only the encrypted envelope. Recovery keys are protected locally with Electron `safeStorage` and are
@@ -93,6 +106,9 @@ never sent to the service. Objects are scoped by user UUID and the newest ten re
 From the repository root:
 
 ```sh
+# Sync Worker secrets directly (the script preserves existing Keychain values):
+node scripts/configure-license-service.cjs
+
 # First deployment only:
 npm run license:storage:create
 
@@ -103,7 +119,8 @@ npm run license:verify
 ```
 
 - `license:configure` preserves existing Keychain values, generating only missing secrets, and syncs
-  them to Cloudflare.
+  them to Cloudflare. The direct `node` command above performs the same configuration in source-only
+  checkouts that do not contain the historical root package scripts.
 - `license:storage:create` creates the private encrypted-backup bucket. Run it once; later runs will
   report that the bucket already exists.
 - `license:migrate` applies pending D1 migrations remotely.

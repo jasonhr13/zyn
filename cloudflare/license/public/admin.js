@@ -410,6 +410,26 @@ async function loadProxyLists() {
   }
 }
 
+function renderHyperCredential(config) {
+  const configured = Boolean(config && config.configured);
+  const status = $('#hyper-status');
+  status.textContent = configured ? 'Configured' : 'Not configured';
+  status.className = `badge${configured ? ' good' : ''}`;
+  $('#hyper-meta').textContent = configured
+    ? `Fingerprint ${config.fingerprint} · updated ${formatDate(config.updatedAt)}. The saved key is never returned here.`
+    : 'No key is stored.';
+  $('#clear-hyper').classList.toggle('hidden', !configured);
+}
+
+async function loadHyperCredential() {
+  try {
+    renderHyperCredential(await request('/api/admin/service-config/hyper'));
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
+}
+
 function showLogin() {
   loginCard.classList.remove('hidden');
   admin.classList.add('hidden');
@@ -424,6 +444,7 @@ function showAdmin() {
   loadUsers();
   loadWaitlist();
   loadProxyLists();
+  loadHyperCredential();
 }
 
 $('#login-form').addEventListener('submit', async (event) => {
@@ -469,6 +490,30 @@ $('#proxy-form').addEventListener('submit', async (event) => {
 
 $('#cancel-proxy').addEventListener('click', resetProxyForm);
 
+$('#hyper-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const apiKey = $('#hyper-api-key').value.trim();
+  try {
+    const result = await request('/api/admin/service-config/hyper', {
+      method: 'PUT',
+      body: JSON.stringify({ apiKey }),
+    });
+    $('#hyper-api-key').value = '';
+    renderHyperCredential(result);
+    toast('Hyper API key encrypted and saved.');
+  } catch (error) { toast(error.message, true); }
+});
+
+$('#clear-hyper').addEventListener('click', async () => {
+  if (!confirm('Remove the Hyper API key? Pokémon Center requests will stop until a new key is saved.')) return;
+  try {
+    const result = await request('/api/admin/service-config/hyper', { method: 'DELETE' });
+    $('#hyper-api-key').value = '';
+    renderHyperCredential(result);
+    toast('Hyper API key removed.');
+  } catch (error) { toast(error.message, true); }
+});
+
 $('#copy-credential').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText($('#credential-value').textContent);
@@ -476,7 +521,7 @@ $('#copy-credential').addEventListener('click', async () => {
   } catch { toast('Could not copy automatically.', true); }
 });
 $('#close-modal').addEventListener('click', () => $('#credential-modal').classList.add('hidden'));
-$('#refresh').addEventListener('click', () => { loadUsers(); loadWaitlist(); loadProxyLists(); });
+$('#refresh').addEventListener('click', () => { loadUsers(); loadWaitlist(); loadProxyLists(); loadHyperCredential(); });
 logout.addEventListener('click', async () => {
   try { await request('/api/admin/logout', { method: 'POST' }); } catch {}
   showLogin();

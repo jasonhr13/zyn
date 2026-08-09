@@ -82,6 +82,27 @@
           <div id="task-types" class="task-type-grid"></div>
         </section>
 
+        <section class="card service-config-card">
+          <div class="table-heading">
+            <div>
+              <h2>Hyper service</h2>
+              <p>The API key stays encrypted in the license Worker. Installed apps only call the licensed Pokémon Center broker.</p>
+            </div>
+            <span id="hyper-status" class="badge">Not configured</span>
+          </div>
+          <form id="hyper-form" class="service-config-form">
+            <div>
+              <label for="hyper-api-key">Hyper API key</label>
+              <input id="hyper-api-key" type="password" minlength="8" maxlength="512" autocomplete="new-password" placeholder="Enter a new key" required>
+              <p id="hyper-meta" class="meta">No key is stored.</p>
+            </div>
+            <div class="row compact-row">
+              <button id="clear-hyper" type="button" class="danger hidden">Remove key</button>
+              <button type="submit">Save key</button>
+            </div>
+          </form>
+        </section>
+
         <section class="card proxy-card">
           <div class="table-heading">
             <div>
