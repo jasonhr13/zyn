@@ -1,8 +1,8 @@
 # Zyn for macOS
 
-Zyn is an Apple silicon and Intel Electron application with a native Go Target checkout engine.
-The React interface, native Target farmer, licensing, per-profile IMAP, managed proxy lists, and
-Target task groups are packaged together without Wine or Rosetta.
+Zyn is an Apple silicon and Intel Electron application with native Go Target and Pokémon Center US
+checkout support. The React interface, native Target farmer, licensing, per-profile IMAP, managed
+proxy lists, and task workspaces are packaged together without Wine or Rosetta.
 
 ## Run the current build
 
@@ -19,9 +19,9 @@ The first branded launch copies existing application data into
 ## Build
 
 The build uses `dist/Zyn-Runtime-Base.app` as its source base. Release builds keep Electron and the
-application shell and architecture-matched Target engine in the app, while Chromium is installed
+application shell and architecture-matched checkout engine in the app, while Chromium is installed
 after sign-in from an architecture-aware signed manifest. The old Windows backend, Wine,
-Chromium, and Node payloads are not needed by the Target-only native path and are omitted entirely.
+Chromium, and Node payloads are not needed by the native paths and are omitted entirely.
 
 Rebuild the native engines before packaging whenever `polar-backend-source` changes:
 
@@ -73,7 +73,7 @@ node ./scripts/verify-zyn-public-release.cjs
 ```
 
 `prepare-zyn-runtime-artifacts.cjs` signs and notarizes the ARM and Intel Chromium bundles. The
-native Target engines are pinned separately in `config/runtime-contract.json` and packaged by
+native checkout engines are pinned separately in `config/runtime-contract.json` and packaged by
 `build-zyn.sh`. Manifest signing uses Keychain service
 `com.thwebco.zyn.runtime-signing`; the private key must never enter the repository. Runtime uploads
 reuse the Cloudflare R2 multipart channel and publish the signed manifest last.
@@ -118,6 +118,7 @@ node ./scripts/verify-runtime-contract.js ./dist/Zyn-mac-x64.app
 node ./scripts/zyn-brand-smoke-test.js
 node ./scripts/zyn-packaged-brand-smoke-test.js ./dist/Zyn-mac-arm64.app ./dist/Zyn-mac-x64.app
 node ./scripts/target-only-ui-smoke-test.js
+node ./scripts/pokemon-center-native-support-smoke-test.js
 node ./scripts/target-farmer-controls-smoke-test.js
 node ./scripts/target-farmer-new-headless-smoke-test.js
 node ./scripts/native-target-engine-protocol-smoke.js

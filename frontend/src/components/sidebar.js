@@ -8,9 +8,9 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
-const MODULE_ROUTES = ['/task-groups', '/target'];
+const MODULE_ROUTES = ['/modules', '/task-groups', '/target', '/pokemoncenter'];
 const NAV_ITEMS = [
-  { to: '/task-groups', icon: 'layers', label: 'Tasks', section: null, modules: true },
+  { to: '/modules', icon: 'layers', label: 'Tasks', section: null, modules: true },
   { to: '/profiles', icon: 'user', label: 'Profiles', section: 'Workspace' },
   { to: '/accounts', icon: 'key', label: 'Accounts', section: 'Workspace' },
   { to: '/proxies', icon: 'network', label: 'Proxies', section: 'Workspace' },

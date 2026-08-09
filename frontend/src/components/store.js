@@ -86,15 +86,22 @@ const defaultState = {
     connection: 'none',
     qty: 1, profileId: '', useVpn: true, inHousePool: '1', turbo: false, headless: false, drop: false, interval: 15, watchlist: 'N2903432003',
   },
-  // Pokemon Center: one task, one browser — join the queue, then hold for a live SKU. Same
-  // page-unmount concern as pbandai above, so this lives in the store rather than page state.
+  // Pokemon Center US: profile-based guest checkout tasks driven by the shared native Go engine.
+  // Runtime state stays here so switching pages never loses task status or logs.
   pokemon: {
-    instance: null,   // { state, detail } | null (not running)
+    inputs: '',
+    tasks: [],
+    taskStatus: {},
+    taskInputs: {},
+    taskLogs: {},
     logs: [],
-    proxyListName: '',
-    accountId: '',
-    queueUrl: 'https://www.pokemoncenter.com/',
-    sku: '',
+    quantity: '1',
+    monitorDelay: '3000',
+    retryDelay: '3000',
+    loopCheckout: false,
+    waitForQueue: false,
+    queueEntryDelay: '0',
+    allInstock: false,
   },
   // Target: one compiled Go engine instance driving MANY checkout tasks plus a single shared
   // monitor. Lives in the store (not page state) for the same reason as pokemon above — the page
@@ -239,17 +246,61 @@ export function reducer(state = defaultState, action) {
     case 'pokemonSet':
       return { ...state, pokemon: { ...state.pokemon, ...action.obj } };
 
-    case 'pokemonLaunch':
-      return { ...state, pokemon: { ...state.pokemon, instance: { state: 'starting', detail: '' } } };
+    case 'pokemonTasksAdd':
+      return { ...state, pokemon: { ...state.pokemon,
+        tasks: [...state.pokemon.tasks, ...(action.tasks || [])] } };
 
-    case 'pokemonLog':
-      return { ...state, pokemon: { ...state.pokemon, logs: [...state.pokemon.logs.slice(-800), action.line] } };
+    case 'pokemonTaskUpdate':
+      return { ...state, pokemon: { ...state.pokemon,
+        tasks: state.pokemon.tasks.map(task => task.id === action.id ? { ...task, ...action.obj } : task) } };
 
-    case 'pokemonStatus':
-      return { ...state, pokemon: { ...state.pokemon, instance: { state: action.state, detail: action.detail } } };
+    case 'pokemonTaskDelete': {
+      const taskStatus = { ...state.pokemon.taskStatus }; delete taskStatus[action.id];
+      const taskInputs = { ...state.pokemon.taskInputs }; delete taskInputs[action.id];
+      const taskLogs = { ...state.pokemon.taskLogs }; delete taskLogs[action.id];
+      return { ...state, pokemon: { ...state.pokemon,
+        tasks: state.pokemon.tasks.filter(task => task.id !== action.id), taskStatus, taskInputs, taskLogs } };
+    }
 
-    case 'pokemonDone':
-      return { ...state, pokemon: { ...state.pokemon, instance: null } };
+    case 'pokemonLaunch': {
+      const ids = action.taskIds || [];
+      const taskStatus = { ...state.pokemon.taskStatus };
+      for (const id of ids) taskStatus[id] = { state: 'Starting', label: 'Starting', color: '#868686', detail: '', running: true };
+      return { ...state, pokemon: { ...state.pokemon, taskStatus } };
+    }
+
+    case 'pokemonLog': {
+      const incoming = Array.isArray(action.lines) ? action.lines : (action.line != null ? [action.line] : []);
+      if (!incoming.length) return state;
+      if (!action.taskId) return { ...state, pokemon: { ...state.pokemon,
+        logs: [...state.pokemon.logs, ...incoming].slice(-800) } };
+      const previous = state.pokemon.taskLogs[action.taskId] || [];
+      return { ...state, pokemon: { ...state.pokemon, taskLogs: { ...state.pokemon.taskLogs,
+        [action.taskId]: [...previous, ...incoming].slice(-400) } } };
+    }
+
+    case 'pokemonStatus': {
+      if (!action.taskId) return state;
+      const previous = state.pokemon.taskStatus[action.taskId] || {};
+      return { ...state, pokemon: { ...state.pokemon, taskStatus: { ...state.pokemon.taskStatus,
+        [action.taskId]: {
+          ...previous, state: action.state, label: action.label || action.state,
+          color: action.color || '#6DACFF', detail: action.detail || '',
+          taskState: action.taskState === undefined ? previous.taskState : action.taskState,
+          running: action.running === undefined ? previous.running : action.running,
+        } } } };
+    }
+
+    case 'pokemonInput':
+      if (!action.taskId) return state;
+      return { ...state, pokemon: { ...state.pokemon, taskInputs: { ...state.pokemon.taskInputs,
+        [action.taskId]: { productName: action.productName || '', productSize: action.productSize || '' } } } };
+
+    case 'pokemonDone': {
+      if (!action.taskId) return state;
+      const taskStatus = { ...state.pokemon.taskStatus }; delete taskStatus[action.taskId];
+      return { ...state, pokemon: { ...state.pokemon, taskStatus } };
+    }
 
     // ── Target ────────────────────────────────────────────────────────────────
     case 'targetSet':

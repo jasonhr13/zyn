@@ -634,6 +634,219 @@ ${harvesterConfig}`, 'Target managed harvester config');
 
   source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
 
+  // Pokemon Center uses the same authenticated WebSocket and Go process as Target. Keep its adapter
+  // in a standalone fragment so the reviewed recovered engine remains hash-gated and the added code
+  // can be syntax-checked directly.
+  const pokemonBridge = fs.readFileSync(path.join(__dirname, 'pokemon-center-engine-bridge.fragment.js'), 'utf8').trimEnd();
+  source = replaceOnce(
+    source,
+    `    profileGroup: p.group || '',`,
+    `    profileGroup: p.group || (Array.isArray(p.groups) ? p.groups[0] : '') || '',`,
+    'native profile-group mapping',
+  );
+  source = replaceOnce(
+    source,
+    `function handleEngineMessage(data, connection) {`,
+    `${pokemonBridge}\n\nfunction handleEngineMessage(data, connection) {`,
+    'Pokemon Center native bridge',
+  );
+
+  source = replaceOnce(source, `  const die = () => { rendererDead = true; try { if (taskActive || engineProc || farmerProc) stopTarget(); } catch {} };`, `  const die = () => {
+    rendererDead = true;
+    try { if (taskActive || engineProc || farmerProc) stopTarget(); } catch {}
+    try { if (pokemonTaskIds.size) stopPokemonCenter(); } catch {}
+  };`, 'shared native window teardown');
+
+  source = replaceOnce(source, `        const id = String(m.taskID || '').startsWith(MONITOR_ID) ? '' : (m.taskID || '');
+        status(st, m.color, '', id, m.state, m.running);
+        // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
+        // state is already shown live next to "Engine Log", so logging it as well just buries the
+        // checkout task's own lines. Failures still come through (KEEP_IN_QUIET).
+        const monitorChatter = !id && !verboseLogs() && !KEEP_IN_QUIET.test(st);
+        if (!monitorChatter) log(st, id);`, `        const rawId = m.taskID || '';
+        const id = String(rawId).startsWith(MONITOR_ID) ? '' : rawId;
+        if (engineTaskSites.resolve(m) === POKEMON_SITE) {
+          pokemonStatus(st, m.color, '', id, m.state, m.running);
+          pokemonLog(st, id);
+          if (m.running === false && id) {
+            pokemonTaskIds.delete(id);
+            pokemonTaskConfigs.delete(id);
+            engineTaskSites.remove(id);
+            manualCaptchaManager.cancelTask(id);
+            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+          }
+          continue;
+        }
+        status(st, m.color, '', id, m.state, m.running);
+        // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
+        // state is already shown live next to "Engine Log", so logging it as well just buries the
+        // checkout task's own lines. Failures still come through (KEEP_IN_QUIET).
+        const monitorChatter = !id && !verboseLogs() && !KEEP_IN_QUIET.test(st);
+        if (!monitorChatter) log(st, id);`, 'site-aware native status routing');
+
+  source = replaceOnce(source, `    case 'task-notification':
+      for (const m of items) {
+        log('[notify] ' + (typeof m === 'string' ? m : JSON.stringify(m)));
+        if (!m || typeof m === 'string') continue;`, `    case 'task-notification':
+      for (const m of items) {
+        if (!m || typeof m === 'string') { log('[notify] ' + String(m || '')); continue; }
+        const notificationTaskId = m.taskID || '';
+        if (engineTaskSites.resolve(m) === POKEMON_SITE) {
+          pokemonLog('[notify] ' + String(m.type || 'event') + (m.productName ? ': ' + m.productName : ''), notificationTaskId);
+          if (m.type === 'checkout' || m.type === 'declined') {
+            const ok = m.type === 'checkout';
+            pokemonStatus(ok ? 'Successful' : 'Payment Declined', ok ? '#34ca6e' : '#fb5454', m.productName || '', notificationTaskId, ok ? 3 : 4);
+            try {
+              reporter.report({
+                site: 'pokemoncenter', status: ok ? 'success' : 'failed',
+                product: String(m.productName || '').slice(0, 200), price: Number(m.price) || 0,
+                account: m.profileName || '', order: String(m.orderNumber || '').slice(0, 60), qty: 1,
+              });
+            } catch (e) { pokemonLog('[report] ' + e.message, notificationTaskId); }
+          }
+          continue;
+        }
+        log('[notify] ' + JSON.stringify(m));`, 'site-aware native notification routing');
+
+  source = replaceOnce(source, `    case 'request-code':`, `    case 'update-input':
+      for (const m of items) {
+        if (!m || engineTaskSites.resolve(m) !== POKEMON_SITE) continue;
+        toRenderer('pokemonInput', {
+          taskId: m.taskID || '', productName: m.productName || '', productSize: m.productSize || '',
+        });
+      }
+      break;
+    case 'task-log':
+      for (const m of items) {
+        if (!m || engineTaskSites.resolve(m) !== POKEMON_SITE) continue;
+        const decoded = decodeNativeTaskLog(m.data);
+        pokemonLog(devLogs() ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
+      }
+      break;
+    case 'request-code':`, 'Pokemon Center input and diagnostic routing');
+
+  source = replaceOnce(source, `    if (pendingStart) flushStart();
+    // An engine that reconnects — or a respawned one — comes up with empty profile/account/proxy
+    // maps, because they live in that process and nothing on this side re-sent them. Any task still
+    // running would fail its next rotation with "invalid group". Push what it should already have.
+    else if (Object.keys(sentConfigs.proxies).length || Object.keys(sentConfigs.accounts).length) {
+      vlog('engine reconnected — re-sending configs');
+      sendConfigs();
+    }`, `    let flushed = false;
+    if (pendingStart) { flushStart(); flushed = true; }
+    if (pendingPokemonStarts.length) { flushPokemonStarts(); flushed = true; }
+    // An engine that reconnects — or a respawned one — comes up with empty profile/account/proxy
+    // maps, because they live in that process and nothing on this side re-sent them. Any task still
+    // running would fail its next rotation with "invalid group". Push what it should already have.
+    if (!flushed && (Object.keys(sentConfigs.profiles).length || Object.keys(sentConfigs.proxies).length || Object.keys(sentConfigs.accounts).length)) {
+      vlog('engine reconnected — re-sending configs');
+      sendConfigs();
+    }`, 'shared native pending-start flush');
+
+  source = replaceOnce(source, `    for (const id of runningTaskIds) status('Error', '#fb5454', 'engine bridge: ' + err.code, id);
+    status('Error', '#fb5454', 'ws server: ' + err.code);`, `    for (const id of runningTaskIds) status('Error', '#fb5454', 'engine bridge: ' + err.code, id);
+    for (const id of pokemonTaskIds) pokemonStatus('Error', '#fb5454', 'engine bridge: ' + err.code, id, 0, false);
+    status('Error', '#fb5454', 'ws server: ' + err.code);`, 'shared native bridge errors');
+
+  source = replaceOnce(source, `    if (taskActive) {
+      log('engine exited (code ' + code + ')');
+      taskActive = false;
+      stopLiveEditMonitor();
+      cancelAllOtpFetches('Target engine exited');
+      // The engine dying takes every task with it, so clear them all rather than a single id.
+      for (const id of runningTaskIds) toRenderer('targetDone', { taskId: id });
+      runningTaskIds.clear();
+      engineTaskSites.clear();
+      taskProfileById.clear();
+      manualCaptchaManager.cancelPending();
+      toRenderer('targetDone', { taskId: '' });
+    }`, `    if (taskActive || runningTaskIds.size || pokemonTaskIds.size) {
+      log('engine exited (code ' + code + ')');
+      taskActive = false;
+      stopLiveEditMonitor();
+      cancelAllOtpFetches('Native engine exited');
+      for (const id of runningTaskIds) toRenderer('targetDone', { taskId: id });
+      for (const id of pokemonTaskIds) pokemonDone(id);
+      runningTaskIds.clear();
+      pokemonTaskIds.clear();
+      pokemonTaskConfigs.clear();
+      pendingPokemonStarts.length = 0;
+      engineTaskSites.clear();
+      taskProfileById.clear();
+      manualCaptchaManager.cancelPending();
+      nativeHyperBroker.cancelPending();
+      toRenderer('targetDone', { taskId: '' });
+    }`, 'shared native engine-exit cleanup');
+
+  const sharedStopTarget = `function stopTarget(taskId) {
+  const requestedId = String(taskId || '');
+  if (requestedId) {
+    if (engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: requestedId }] });
+    runningTaskIds.delete(requestedId);
+    engineTaskSites.remove(requestedId);
+    taskProfileById.delete(requestedId);
+    taskAccountById.delete(requestedId);
+    cancelOtpForTask(requestedId);
+    manualCaptchaManager.cancelTask(requestedId);
+    toRenderer('targetDone', { taskId: requestedId });
+    flushLogs();
+    if (runningTaskIds.size) return;
+  }
+
+  startSeq += 1;
+  pendingStart = null;
+  if (engineConn) {
+    const ids = [...runningTaskIds].map(id => ({ id }));
+    if (ids.length) sendToEngine({ type: 'stop-tasks', messages: ids });
+    sendToEngine({ type: 'stop-tasks', messages: [{ id: MONITOR_ID }] });
+  }
+  stopLiveEditMonitor();
+  cancelAllOtpFetches();
+  flushLogs();
+  for (const id of runningTaskIds) {
+    engineTaskSites.remove(id);
+    taskProfileById.delete(id);
+    taskAccountById.delete(id);
+    manualCaptchaManager.cancelTask(id);
+    toRenderer('targetDone', { taskId: id });
+  }
+  runningTaskIds.clear();
+  toRenderer('targetDone', { taskId: '' });
+
+  if (!managedHarvesterMode()) {
+    const deadFarmerPid = farmerProc && farmerProc.pid;
+    killTree(farmerProc);
+    farmerProc = null;
+    sweepOrphanHarvesters(deadFarmerPid);
+    brokerOnly = false;
+  }
+  if (!quitting) ensureHarvesterBroker();
+  if (pokemonTaskIds.size) { taskActive = true; return; }
+
+  taskActive = false;
+  nativeHyperBroker.cancelPending();
+  manualCaptchaManager.cancelPending();
+  killTree(engineProc);
+  engineProc = null;
+}`;
+  source = replaceSection(
+    source,
+    `function stopTarget(taskId) {`,
+    `// Called from the app's quit handler.`,
+    `${sharedStopTarget}\n\n`,
+    'shared native Target stop lifecycle',
+  );
+
+  source = replaceOnce(source, `  try { stopTarget(); } catch {}
+  if (harvesterSyncTimer)`, `  try { stopTarget(); } catch {}
+  try { stopPokemonCenter(); } catch {}
+  if (harvesterSyncTimer)`, 'shared native shutdown');
+
+  source = replaceOnce(source,
+    `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
+    `module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
+    'Pokemon Center native exports');
+
   opened.source = source;
   saveSource(opened);
 }

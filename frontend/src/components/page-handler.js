@@ -8,8 +8,10 @@ import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
 import RuntimeBanner from './runtime-banner';
 import { isTargetProxyStatus } from './target-proxy-status';
+import Modules from './pages/modules';
 import TaskGroups from './pages/task-groups';
 import Target from './pages/target';
+import PokemonCenter from './pages/pokemoncenter';
 import Profiles from './pages/profiles';
 import Accounts from './pages/accounts';
 import Proxies from './pages/proxies';
@@ -80,6 +82,19 @@ class PageHandler extends Component {
       this.props.dispatch({ type: 'targetOtp', pending: pending || [] });
     });
 
+    ipcRenderer.on('pokemonLog', (e, { line, lines, taskId } = {}) => {
+      this.props.dispatch({ type: 'pokemonLog', line, lines, taskId });
+    });
+    ipcRenderer.on('pokemonStatus', (e, payload = {}) => {
+      this.props.dispatch({ type: 'pokemonStatus', ...payload });
+    });
+    ipcRenderer.on('pokemonInput', (e, payload = {}) => {
+      this.props.dispatch({ type: 'pokemonInput', ...payload });
+    });
+    ipcRenderer.on('pokemonDone', (e, { taskId } = {}) => {
+      this.props.dispatch({ type: 'pokemonDone', taskId });
+    });
+
     // Update status → redux, so the sidebar badge and the Settings "Check for updates" button
     // read one shared source instead of each keeping their own copy.
     ipcRenderer.on('updateStatus', (e, update) => {
@@ -100,6 +115,10 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('targetStatus');
     ipcRenderer.removeAllListeners('targetDone');
     ipcRenderer.removeAllListeners('targetOtp');
+    ipcRenderer.removeAllListeners('pokemonLog');
+    ipcRenderer.removeAllListeners('pokemonStatus');
+    ipcRenderer.removeAllListeners('pokemonInput');
+    ipcRenderer.removeAllListeners('pokemonDone');
     ipcRenderer.removeAllListeners('updateStatus');
   }
 
@@ -134,13 +153,16 @@ class PageHandler extends Component {
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
+                <Route exact path="/modules" render={() => <Modules taskTypes={license.taskTypes || {}} />} />
                 <Route path="/task-groups" component={TaskGroups} />
                 <Route path="/target" component={Target} />
+                <Route path="/pokemoncenter" render={() => license.taskTypes && license.taskTypes.pokemoncenter
+                  ? <PokemonCenter /> : <Redirect to="/modules" />} />
                 <Route path="/profiles" component={Profiles} />
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />
                 <Route path="/settings" component={Settings} />
-                <Redirect to="/task-groups" />
+                <Redirect to="/modules" />
               </Switch>
             </ErrorBoundary>
           </div>

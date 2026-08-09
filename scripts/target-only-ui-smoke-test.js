@@ -18,15 +18,18 @@ assert.match(accounts, /addAccountsBulk'[\s\S]*site:\s*'target'/);
 assert.match(accounts, /<option value="target">Target<\/option>/);
 assert.match(accounts, /filter\(isTargetAccount\)/);
 
-assert.match(sidebar, /to:\s*'\/task-groups'[\s\S]*label:\s*'Tasks'/);
-assert.doesNotMatch(sidebar, /label:\s*'Generate'|to:\s*'\/modules'/);
+assert.match(sidebar, /to:\s*'\/modules'[\s\S]*label:\s*'Tasks'/);
+assert.doesNotMatch(sidebar, /label:\s*'Generate'/);
 
-for (const retired of ['modules', 'tasks', 'generate', 'pbandai', 'round1', 'riotgames', 'pokemoncenter', 'walmart']) {
+for (const retired of ['tasks', 'generate', 'pbandai', 'round1', 'riotgames', 'walmart']) {
   assert.doesNotMatch(routes, new RegExp(`(?:pages/|path=")${retired}`));
 }
-assert.match(routes, /<Redirect to="\/task-groups" \/>/);
+assert.match(routes, /pages\/modules/);
+assert.match(routes, /pages\/pokemoncenter/);
+assert.match(routes, /license\.taskTypes[\s\S]*pokemoncenter/);
+assert.match(routes, /<Redirect to="\/modules" \/>/);
 
 assert.match(settings, /Target workspace/);
 assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);
 
-console.log('Target-only UI smoke test passed');
+console.log('Target and Pokemon Center UI smoke test passed');

@@ -424,7 +424,11 @@ function stopAllRunningForLicense() {
       try { taskHandler[name]?.(); } catch {}
     }
   } catch {}
-  try { require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopTarget(); } catch {}
+  try {
+    const nativeEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    nativeEngine.stopTarget?.();
+    nativeEngine.stopPokemonCenter?.();
+  } catch {}
   try { require(path.join(originalAsar, 'public', 'helpers', 'walmart-engine.js')).stopWalmart(); } catch {}
   try {
     const { BrowserWindow } = require('electron');
@@ -445,6 +449,9 @@ function stopRemovedTaskTypes({ removed = [] } = {}) {
     if (taskType === 'pokemoncenter') {
       console.warn('[license] Pokémon Center access removed; stopping its running tasks');
       try { taskHandler?.stopAllPokemonCenter?.(); } catch {}
+      try {
+        require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopPokemonCenter?.();
+      } catch {}
     }
   }
 }
@@ -535,12 +542,18 @@ function guardTaskHelpers(authority) {
     console.error(`Could not guard task helpers with the replacement license: ${error.message}`);
   }
 
-  for (const [file, method] of [['target-engine.js', 'startTarget'], ['walmart-engine.js', 'startWalmart']]) {
+  for (const [file, method, taskType] of [
+    ['target-engine.js', 'startTarget', ''],
+    ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
+    ['walmart-engine.js', 'startWalmart', ''],
+  ]) {
     try {
       const engine = require(path.join(originalAsar, 'public', 'helpers', file));
+      if (typeof engine[method] !== 'function') continue;
       const original = engine[method].bind(engine);
       engine[method] = (...args) => {
         if (!allowed()) { blocked(method); return undefined; }
+        if (taskType && !entitled(taskType)) { blocked(method, taskType); return undefined; }
         if (method === 'startTarget' && runtimeManager.enabled) {
           return launchTargetAfterRuntime(original, args, authority);
         }

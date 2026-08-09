@@ -167,21 +167,22 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
   socket.close();
 
-  const expectedCards = [];
+  const deniedCardsExpected = ['Target'];
+  const allowedCardsExpected = ['Target', 'Pokémon Center'];
   const exact = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
   const compactSettingsAccess = report.settingsAccess.replace(/\s+/g, '');
   if (report.authoritative.ok !== false
     || !exact(report.authoritative.taskTypes, { pokemoncenter: false, round1: false })
     || report.gateBadge !== 'ZYN'
-    || !exact(report.deniedCards, expectedCards)
-    || !report.deniedRound1Route.hash.endsWith('/task-groups')
-    || !report.deniedPokemonRoute.hash.endsWith('/task-groups')
-    || !exact(report.allowedCards, expectedCards)
-    || !report.allowedRound1Route.hash.endsWith('/task-groups')
-    || !report.allowedPokemonRoute.hash.endsWith('/task-groups')
+    || !exact(report.deniedCards, deniedCardsExpected)
+    || !report.deniedRound1Route.hash.endsWith('/modules')
+    || !report.deniedPokemonRoute.hash.endsWith('/modules')
+    || !exact(report.allowedCards, allowedCardsExpected)
+    || !report.allowedRound1Route.hash.endsWith('/modules')
+    || !report.allowedPokemonRoute.hash.endsWith('/pokemoncenter')
     || !compactSettingsAccess.includes('TargetworkspaceEnabled')
     || /Pokémon|Round1/i.test(report.settingsAccess)
-    || !report.removalRedirect.endsWith('/task-groups')
+    || !report.removalRedirect.endsWith('/modules')
     || report.launchBoundary.round1Accepted !== false
     || report.launchBoundary.denialPushes < 2
     || report.launchBoundary.authoritativeOk !== false
