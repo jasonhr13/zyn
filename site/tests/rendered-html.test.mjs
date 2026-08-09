@@ -39,22 +39,24 @@ test("server-renders the Zyn product site", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Zyn — Precision retail operations<\/title>/i);
-  assert.match(html, /The checkout command center built for the drop\./);
-  assert.match(html, /Less noise\./);
-  assert.match(html, /Join waiting list/);
+  assert.match(html, /<title>Zyn — Peak Target Checkout Performance<\/title>/i);
+  assert.match(html, /Peak Target/);
+  assert.match(html, /checkout performance\./);
+  assert.match(html, /Shared Shape cookie bank/);
+  assert.match(html, /Every beta user gets one full year free/);
+  assert.match(html, /Join the free beta/);
   assert.match(html, /href="\/join"/);
   assert.doesNotMatch(html, /Request access/);
   assert.match(html, /mailto:hello@rcart\.app/);
-  assert.match(html, /https:\/\/zynbot\.app\/og\.png/);
+  assert.match(html, /https:\/\/zynbot\.app\/og-target-beta\.png/);
 });
 
 test("renders the branded waiting-list form and confirmation", async () => {
   const form = await render("/join");
   assert.equal(form.status, 200);
   const formHtml = await form.text();
-  assert.match(formHtml, /<title>Join the Zyn waiting list<\/title>/i);
-  assert.match(formHtml, /Join the waiting list\./);
+  assert.match(formHtml, /<title>Join the free Zyn beta<\/title>/i);
+  assert.match(formHtml, /Join the free beta\./);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
@@ -152,7 +154,7 @@ test("publishes the Zyn canonical identity and keeps service traffic in the visi
     const home = await render("/", {}, "https://zynbot.app");
     assert.equal(home.status, 200);
     const homeHtml = await home.text();
-    assert.match(homeHtml, /https:\/\/zynbot\.app\/og\.png/);
+    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-target-beta\.png/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/favicon\.png"/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/manifest\.webmanifest"/);
 
@@ -195,7 +197,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
-  assert.match(layout, /Zyn — Precision retail operations/);
+  assert.match(layout, /Zyn — Peak Target Checkout Performance/);
   assert.match(layout, /manifest\.webmanifest/);
   assert.match(css, /--zyn-orange:/);
   assert.match(css, /--zyn-rose:/);
@@ -215,5 +217,5 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   await access(new URL("../public/favicon.png", import.meta.url));
   await access(new URL("../public/apple-touch-icon.png", import.meta.url));
   await access(new URL("../public/manifest.webmanifest", import.meta.url));
-  await access(new URL("../public/og.png", import.meta.url));
+  await access(new URL("../public/og-target-beta.png", import.meta.url));
 });

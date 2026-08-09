@@ -1,167 +1,125 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const features = [
-  {
-    eyebrow: "Signal",
-    title: "Know when it matters.",
-    body: "Keep product targets, store activity, and task readiness visible in one focused workspace.",
-  },
-  {
-    eyebrow: "Structure",
-    title: "Every run, organized.",
-    body: "Group profiles, accounts, proxies, and checkout tasks so launch-day preparation stays calm and repeatable.",
-  },
-  {
-    eyebrow: "Control",
-    title: "Move with confidence.",
-    body: "Launch, pause, and inspect activity from a live operations view built for speed without sacrificing clarity.",
-  },
-];
-
-const steps = [
-  ["01", "Prepare", "Set up profiles, accounts, and routing once."],
-  ["02", "Target", "Define the product and store workflow you want to run."],
-  ["03", "Launch", "Start task groups and follow every state in real time."],
+const checkoutFlow = [
+  ["01", "Stock signal received", "Detected"],
+  ["02", "Shape cookie assigned", "Ready"],
+  ["03", "Checkout task launched", "Running"],
+  ["04", "Order confirmed", "Success"],
 ];
 
 export default function Home() {
   return (
-    <main>
-      <header className="site-header">
+    <main className="home-page">
+      <header className="site-header home-header">
         <a className="brand" href="#top" aria-label="Zyn home">
           <Image src="/zyn-icon.png" alt="" width={44} height={44} unoptimized />
           <span>Zyn</span>
         </a>
         <nav aria-label="Main navigation">
-          <a href="#product">Product</a>
-          <a href="#workflow">Workflow</a>
+          <a href="#beta">Free beta</a>
           <Link className="nav-cta" href="/join">Join waiting list</Link>
         </nav>
       </header>
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <div className="status-pill"><span /> Built for high-velocity retail</div>
-          <h1>The checkout command center built for the drop.</h1>
-          <p className="hero-lede">
-            Monitor products, organize every task, and run checkout operations from one precise desktop workspace.
+      <section className="target-hero" id="top">
+        <div className="target-hero-copy">
+          <div className="target-chip"><i aria-hidden="true" /> Target automation for desktop</div>
+          <h1>Peak Target<br />checkout performance.</h1>
+          <p className="target-lede">
+            Zyn is built for one job: moving from Target restock to confirmed order with less delay,
+            less overhead, and complete control.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/join">
-              Join waiting list <span aria-hidden="true">↗</span>
+              Join the free beta <span aria-hidden="true">→</span>
             </Link>
-            <a className="button button-secondary" href="#product">Explore Zyn</a>
+            <a className="button button-secondary" href="#beta">Beta details</a>
           </div>
-          <div className="hero-note">
-            <span>Desktop native</span><span>Live task control</span><span>Focused by design</span>
+          <p className="beta-promise">
+            <strong>Free during beta.</strong> Every beta user gets one full year free after paid access launches.
+          </p>
+          <div className="target-capabilities" aria-label="Core Target automation capabilities">
+            <span>Product monitors</span>
+            <span>Shared Shape cookie bank</span>
+            <span>Checkout task groups</span>
           </div>
         </div>
 
-        <div className="product-stage" aria-label="Stylized preview of the Zyn desktop workspace">
-          <div className="stage-orbit stage-orbit-one" aria-hidden="true" />
-          <div className="stage-orbit stage-orbit-two" aria-hidden="true" />
-          <div className="app-window">
-            <div className="app-topbar">
-              <div className="app-brand"><Image src="/zyn-icon.png" alt="" width={24} height={24} unoptimized /> Zyn</div>
-              <div className="window-state"><span /> Operations live</div>
-              <div className="window-dots"><i /><i /><i /></div>
+        <div className="performance-stage" aria-label="Preview of Zyn Target automation">
+          <div className="performance-halo" aria-hidden="true" />
+          <div className="target-console">
+            <div className="console-bar">
+              <div className="console-brand">
+                <Image src="/zyn-icon.png" alt="" width={26} height={26} unoptimized />
+                <div><strong>Zyn</strong><span>Target engine</span></div>
+              </div>
+              <div className="engine-status"><i /> Engine online</div>
             </div>
-            <div className="app-body">
-              <aside className="app-sidebar" aria-hidden="true">
-                <div className="sidebar-label">Workspace</div>
-                <div className="sidebar-item active"><b>⌁</b> Tasks</div>
-                <div className="sidebar-item"><b>◎</b> Profiles</div>
-                <div className="sidebar-item"><b>◇</b> Accounts</div>
-                <div className="sidebar-label">System</div>
-                <div className="sidebar-item"><b>↯</b> Proxies</div>
-                <div className="sidebar-item"><b>≡</b> Settings</div>
-                <div className="sidebar-version">Zyn / online</div>
-              </aside>
-              <div className="app-content">
-                <div className="content-heading">
-                  <div><span>Operations</span><strong>Task groups</strong></div>
-                  <button type="button" tabIndex={-1}>+ New group</button>
-                </div>
-                <div className="metric-row">
-                  <div><span>Ready</span><strong>18</strong><small>tasks configured</small></div>
-                  <div><span>Running</span><strong className="warm">06</strong><small>active now</small></div>
-                  <div><span>Success</span><strong>94%</strong><small>session health</small></div>
-                </div>
-                <div className="task-panel">
-                  <div className="panel-heading"><strong>Launch group</strong><span>6 tasks</span></div>
-                  <div className="task-row">
-                    <div className="task-mark">T</div><div><strong>Primary monitor</strong><span>Waiting for product</span></div>
-                    <em className="state watching"><i /> Watching</em>
+
+            <div className="console-content">
+              <div className="console-heading">
+                <div><span>Live checkout</span><strong>Zebra &amp; Baby weighted pillow</strong></div>
+                <em>TCIN 94826467</em>
+              </div>
+
+              <div className="console-metrics">
+                <div><span>Monitor</span><strong>Watching</strong></div>
+                <div><span>Cookie bank</span><strong>Ready</strong></div>
+                <div><span>Tasks</span><strong>Armed</strong></div>
+              </div>
+
+              <div className="checkout-flow">
+                <div className="flow-header"><span>Checkout pipeline</span><span>Live</span></div>
+                {checkoutFlow.map(([number, label, state], index) => (
+                  <div className="flow-row" key={number}>
+                    <span className="flow-number">{number}</span>
+                    <div className="flow-line" aria-hidden="true"><i className={index === checkoutFlow.length - 1 ? "complete" : ""} /></div>
+                    <strong>{label}</strong>
+                    <em className={state.toLowerCase()}>{state}</em>
                   </div>
-                  <div className="task-row">
-                    <div className="task-mark blue">R</div><div><strong>Checkout group 01</strong><span>Profile set / US</span></div>
-                    <em className="state ready"><i /> Ready</em>
-                  </div>
-                  <div className="task-row">
-                    <div className="task-mark gold">A</div><div><strong>Checkout group 02</strong><span>Profile set / US</span></div>
-                    <em className="state live"><i /> Running</em>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
+
+            <div className="console-footer">
+              <span>Native Target checkout engine</span>
+              <span>macOS · Apple Silicon + Intel</span>
+            </div>
           </div>
-          <div className="stage-tag tag-signal"><span>Signal</span><strong>Locked</strong></div>
-          <div className="stage-tag tag-latency"><span>Response</span><strong>142 ms</strong></div>
+          <div className="performance-tag tag-native"><span>Target engine</span><strong>Native</strong></div>
+          <div className="performance-tag tag-confirmed"><span>Checkout</span><strong>Confirmed</strong></div>
         </div>
       </section>
 
-      <section className="manifesto" aria-label="Zyn principles">
-        <p>Monitor.</p><span /> <p>Prepare.</p><span /> <p>Launch.</p><span /> <p>Observe.</p>
-      </section>
-
-      <section className="product-section" id="product">
-        <div className="section-intro">
-          <p className="kicker">One operational view</p>
-          <h2>Less noise.<br />More control.</h2>
-          <p>Zyn brings the moving parts of a checkout run into a single interface that stays readable under pressure.</p>
+      <section className="beta-section" id="beta">
+        <div className="beta-copy">
+          <p className="kicker">The beta deal</p>
+          <h2>Free now.<br />Free for your first year.</h2>
+          <p>
+            Pricing for the full release is coming soon. Join the beta and your first 12 months of
+            full access stay free—even after paid plans roll out.
+          </p>
         </div>
-        <div className="feature-grid">
-          {features.map((feature, index) => (
-            <article className="feature-card" key={feature.title}>
-              <div className={`feature-glyph glyph-${index + 1}`} aria-hidden="true"><i /><i /><i /></div>
-              <p>{feature.eyebrow}</p>
-              <h3>{feature.title}</h3>
-              <span>{feature.body}</span>
-            </article>
-          ))}
+
+        <div className="beta-offer">
+          <div className="offer-topline"><span>Beta access</span><em>Limited rollout</em></div>
+          <div className="offer-price"><strong>$0</strong><span>during beta</span></div>
+          <ul>
+            <li><i aria-hidden="true">01</i><span><strong>Target-focused automation</strong>Monitors, cookie harvesting, and checkout task groups in one desktop app.</span></li>
+            <li><i aria-hidden="true">02</i><span><strong>Full beta access</strong>Use the complete beta without a subscription fee.</span></li>
+            <li><i aria-hidden="true">03</i><span><strong>One-year beta promise</strong>Every beta user receives 12 months free after paid access launches.</span></li>
+          </ul>
+          <Link className="button button-primary offer-button" href="/join">
+            Join the waiting list <span aria-hidden="true">→</span>
+          </Link>
+          <p>No payment required to join. We’ll email you when your beta spot is ready.</p>
         </div>
       </section>
 
-      <section className="workflow-section" id="workflow">
-        <div className="workflow-heading">
-          <p className="kicker">A repeatable rhythm</p>
-          <h2>From setup to signal in three moves.</h2>
-        </div>
-        <ol className="workflow-list">
-          {steps.map(([number, title, body]) => (
-            <li key={number}>
-              <span>{number}</span>
-              <h3>{title}</h3>
-              <p>{body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="closing" id="access">
-        <Image src="/zyn-icon.png" alt="" width={160} height={160} unoptimized />
-        <p className="kicker">Zyn for desktop</p>
-        <h2>Be ready before the moment arrives.</h2>
-        <p>Built for operators who value speed, structure, and a workspace that gets out of the way.</p>
-        <Link className="button button-primary" href="/join">
-          Join waiting list <span aria-hidden="true">↗</span>
-        </Link>
-      </section>
-
-      <footer>
+      <footer className="home-footer">
         <a className="brand" href="#top"><Image src="/zyn-icon.png" alt="" width={38} height={38} unoptimized /><span>Zyn</span></a>
-        <p>Precision retail operations.</p>
+        <p>Target automation. Nothing generic.</p>
         <div><a href="mailto:hello@rcart.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

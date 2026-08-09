@@ -5,8 +5,8 @@ export function generateMetadata(): Metadata {
   const origin = "https://zynbot.app";
 
   return {
-    title: "Zyn — Precision retail operations",
-    description: "Monitor products, organize tasks, and run checkout operations from one precise desktop workspace.",
+    title: "Zyn — Peak Target Checkout Performance",
+    description: "Target monitoring, cookie harvesting, and checkout automation in one focused desktop app. Join the free beta.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -18,22 +18,22 @@ export function generateMetadata(): Metadata {
       apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     },
     openGraph: {
-      title: "Zyn — The checkout command center built for the drop.",
-      description: "Monitor products, organize every task, and run checkout operations from one focused desktop workspace.",
+      title: "Zyn — Peak Target Checkout Performance",
+      description: "Target automation built to move from restock to confirmed order. Join the free beta and get one year free after paid access launches.",
       type: "website",
       url: origin,
       images: [{
-        url: `${origin}/og.png`,
+        url: `${origin}/og-target-beta.png`,
         width: 1200,
         height: 630,
-        alt: "Zyn — The checkout command center built for the drop.",
+        alt: "Zyn — Peak Target Checkout Performance",
       }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Zyn — The checkout command center built for the drop.",
-      description: "Precision retail operations from one focused desktop workspace.",
-      images: [`${origin}/og.png`],
+      title: "Zyn — Peak Target Checkout Performance",
+      description: "Target automation for desktop. Free during beta, plus one year free for every beta user.",
+      images: [`${origin}/og-target-beta.png`],
     },
   };
 }
