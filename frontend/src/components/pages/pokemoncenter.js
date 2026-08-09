@@ -77,6 +77,9 @@ function Status({ value }) {
 }
 
 class PokemonCenter extends Component {
+  taskLogRef = React.createRef();
+  engineLogRef = React.createRef();
+
   state = {
     draftProfiles: [], draftProxy: '', draftCount: '2', expanded: null, notice: '',
     editingProductsTask: null, productDraft: [],
@@ -98,7 +101,26 @@ class PokemonCenter extends Component {
     } catch {}
   }
 
+  componentDidUpdate(prevProps, prevState) {
+    const taskId = this.state.expanded;
+    const previousTaskLogs = taskId ? (prevProps.pokemon.taskLogs[taskId] || []) : [];
+    const taskLogs = taskId ? (this.props.pokemon.taskLogs[taskId] || []) : [];
+
+    if (taskId && (prevState.expanded !== taskId || previousTaskLogs !== taskLogs)) {
+      this.scrollLogToBottom(this.taskLogRef);
+    }
+
+    if ((prevProps.pokemon.logs || []) !== (this.props.pokemon.logs || [])) {
+      this.scrollLogToBottom(this.engineLogRef);
+    }
+  }
+
   componentWillUnmount() { clearTimeout(this.editTimer); clearTimeout(this.noticeTimer); }
+
+  scrollLogToBottom = ref => {
+    const node = ref.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  };
 
   persist = (over = {}) => {
     const payload = { ...this.props.pokemon, ...over };
@@ -462,7 +484,7 @@ class PokemonCenter extends Component {
                     </span>
                   </div>
                   {open && <div style={{ padding: '0 12px 12px' }}>
-                    <div style={{ background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 7, padding: 9, minHeight: 52, maxHeight: 180, overflowY: 'auto' }}>
+                    <div ref={this.taskLogRef} style={{ background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 7, padding: 9, minHeight: 52, maxHeight: 180, overflowY: 'auto' }}>
                       {!logs.length ? <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>
                         : logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
                     </div>
@@ -474,7 +496,7 @@ class PokemonCenter extends Component {
 
           {pokemon.logs.length > 0 && <div className="panel" style={{ marginTop: 14, padding: 12 }}>
             <strong style={{ fontSize: 11 }}>Engine log</strong>
-            <div style={{ marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
+            <div ref={this.engineLogRef} style={{ marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
               {pokemon.logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
             </div>
           </div>}
