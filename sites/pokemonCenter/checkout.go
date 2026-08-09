@@ -719,6 +719,28 @@ func (t *PokemonCenterTask) HandleTask() {
 func (t *PokemonCenterTask) awaitQueue() bool {
 	t.UpdateStatus("Waiting For Queue", constants.Colors.YELLOW)
 	ensureStatusWatcher()
+	lastHealthState := ""
+	lastHealthLog := time.Time{}
+	logWatcherHealth := func(force bool) {
+		health := getStatusWatcherHealth()
+		state := "connecting"
+		message := "[queue-monitor] HTTPS polling active (every 3s); waiting for the first response"
+		if health.Failed {
+			state = "failed"
+			message = fmt.Sprintf("[queue-monitor] HTTPS status poll failed at %s; retrying every 3s", health.LastAttempt.Format("15:04:05"))
+		} else if !health.LastSuccess.IsZero() {
+			state = "healthy"
+			message = fmt.Sprintf("[queue-monitor] HTTPS poll healthy at %s (queue=%t, unlocked=%t)",
+				health.LastSuccess.Format("15:04:05"), health.QueueUp, health.Unlocked)
+		}
+		if !force && state == lastHealthState && time.Since(lastHealthLog) < 30*time.Second {
+			return
+		}
+		t.AddLog(message)
+		lastHealthState = state
+		lastHealthLog = time.Now()
+	}
+	logWatcherHealth(true)
 	queueKeys := []string{"queue"}
 	since := time.Now()
 	matches := func(ping monitorhub.StockPing) bool {
@@ -727,6 +749,7 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 			ping.At.After(since)
 	}
 	enterQueue := func() {
+		t.AddLog("[queue-monitor] queue or site protection detected; entering the queue flow")
 		t.FoundQueue = true
 		t.NextStep = "get-homepage"
 		if t.QueueEntryDelay != 0 {
@@ -759,6 +782,7 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 			}
 		case <-poll.C:
 			// Wake periodically so runtime edits (including disabling Wait For Queue) are applied.
+			logWatcherHealth(false)
 		case <-t.TaskContext.CTX.Done():
 			return true
 		}

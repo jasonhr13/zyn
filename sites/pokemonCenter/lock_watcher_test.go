@@ -29,3 +29,24 @@ func TestStatusPingsPublishesQueueAndUnlockIndependently(t *testing.T) {
 		t.Fatalf("unexpected status ping ordering: %#v", pings)
 	}
 }
+
+func TestStatusWatcherHealthTracksFailureAndRecovery(t *testing.T) {
+	statusWatcherState.Lock()
+	statusWatcherState.value = statusWatcherHealth{}
+	statusWatcherState.Unlock()
+
+	attempt := time.Unix(500, 0)
+	setStatusWatcherAttempt(attempt)
+	setStatusWatcherFailure()
+	failed := getStatusWatcherHealth()
+	if !failed.Failed || !failed.LastAttempt.Equal(attempt) || !failed.LastSuccess.IsZero() {
+		t.Fatalf("unexpected failed watcher health: %#v", failed)
+	}
+
+	recoveredAt := time.Unix(503, 0)
+	setStatusWatcherSuccess(CheckStatusResponse{QueueUp: true, Unlocked: false}, recoveredAt)
+	healthy := getStatusWatcherHealth()
+	if healthy.Failed || !healthy.LastSuccess.Equal(recoveredAt) || !healthy.QueueUp || healthy.Unlocked {
+		t.Fatalf("unexpected recovered watcher health: %#v", healthy)
+	}
+}
