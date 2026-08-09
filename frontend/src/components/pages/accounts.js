@@ -54,7 +54,8 @@ class Accounts extends Component {
 
   // Mirrors the main process: explicit link wins, else match on email.
   matchedProfile = (acct) => {
-    const profiles = this.props.profiles || [];
+    const profiles = (this.props.profiles || [])
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
     if (acct.profileId) return profiles.find(p => p.id === acct.profileId) || null;
     return profiles.find(p => (p.email || '').toLowerCase() === (acct.email || '').toLowerCase()) || null;
   };

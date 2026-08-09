@@ -4,7 +4,10 @@ import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
 const uid = () => 'pc_' + Math.random().toString(36).slice(2, 10);
+const productUid = () => 'pc_product_' + Math.random().toString(36).slice(2, 10);
 const MAX_PRODUCTS = 3;
+const blankProduct = () => ({ id: productUid(), input: '', quantity: '1' });
+const normalizeQuantity = value => String(Math.max(1, parseInt(value, 10) || 1));
 function normalizeProductInput(value) {
   const input = String(value || '').trim();
   if (!input) return '';
@@ -20,19 +23,43 @@ function normalizeProductInput(value) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input) ? input : '';
 }
 
+function migrateProductRows(products, legacyInputs = '', legacyQuantity = '1') {
+  if (Array.isArray(products) && products.length) {
+    return products.slice(0, MAX_PRODUCTS).map(product => ({
+      id: String((product && product.id) || productUid()),
+      input: String((product && product.input) || ''),
+      quantity: normalizeQuantity(product && product.quantity),
+    }));
+  }
+  const legacy = String(legacyInputs || '').split(/[\n,]/).map(input => input.trim()).filter(Boolean);
+  return legacy.length
+    ? legacy.slice(0, MAX_PRODUCTS).map(input => ({ id: productUid(), input, quantity: normalizeQuantity(legacyQuantity) }))
+    : [blankProduct()];
+}
+
 function validateProducts(value) {
-  const entries = String(value || '').split(/[\n,]/).map(line => line.trim()).filter(Boolean);
-  const normalized = entries.map(normalizeProductInput);
+  const rows = Array.isArray(value) ? value : [];
+  const entries = rows.map(row => ({ row: row || {}, input: String((row && row.input) || '').trim() }))
+    .filter(entry => entry.input);
+  const normalized = entries.map(entry => normalizeProductInput(entry.input));
+  const seen = new Set();
+  const products = [];
+  entries.forEach((entry, index) => {
+    const input = normalized[index];
+    if (!input || seen.has(input)) return;
+    seen.add(input);
+    products.push({ input, quantity: normalizeQuantity(entry.row.quantity) });
+  });
   return {
-    inputs: [...new Set(normalized.filter(Boolean))],
-    invalid: entries.filter((entry, index) => !normalized[index]),
+    products,
+    invalid: entries.filter((entry, index) => !normalized[index]).map(entry => entry.input),
+    tooMany: entries.length > MAX_PRODUCTS || products.length > MAX_PRODUCTS,
   };
 }
 
-const parseInputs = value => validateProducts(value).inputs;
-
 function profileList(profiles) {
-  return (profiles && (profiles.list || profiles.profiles)) || (Array.isArray(profiles) ? profiles : []);
+  const value = (profiles && (profiles.list || profiles.profiles)) || (Array.isArray(profiles) ? profiles : []);
+  return value.filter(profile => profile && profile.profileType === 'pokemoncenter');
 }
 
 function profileName(profile) {
@@ -56,9 +83,8 @@ class PokemonCenter extends Component {
     try {
       const saved = ipcRenderer.sendSync('getPokemonCenterTasks') || {};
       this.props.dispatch({ type: 'pokemonSet', obj: {
-        inputs: typeof saved.inputs === 'string' ? saved.inputs : '',
+        products: migrateProductRows(saved.products, saved.inputs, saved.quantity),
         tasks: Array.isArray(saved.tasks) ? saved.tasks : [],
-        quantity: String(saved.quantity || '1'),
         monitorDelay: String(saved.monitorDelay || '3000'),
         retryDelay: String(saved.retryDelay || '3000'),
         loopCheckout: !!saved.loopCheckout,
@@ -74,7 +100,7 @@ class PokemonCenter extends Component {
   persist = (over = {}) => {
     const payload = { ...this.props.pokemon, ...over };
     const saved = {
-      inputs: payload.inputs, tasks: payload.tasks, quantity: payload.quantity,
+      products: payload.products, tasks: payload.tasks,
       monitorDelay: payload.monitorDelay, retryDelay: payload.retryDelay,
       loopCheckout: payload.loopCheckout, waitForQueue: payload.waitForQueue,
       queueEntryDelay: payload.queueEntryDelay, allInstock: payload.allInstock,
@@ -88,10 +114,25 @@ class PokemonCenter extends Component {
     if (live) this.queueLiveEdit({ [key]: value });
   };
 
+  updateProduct = (id, obj) => {
+    const products = this.props.pokemon.products.map(product => product.id === id ? { ...product, ...obj } : product);
+    this.setModule('products', products);
+  };
+
+  addProduct = () => {
+    if (this.props.pokemon.products.length >= MAX_PRODUCTS) return;
+    this.setModule('products', [...this.props.pokemon.products, blankProduct()]);
+  };
+
+  removeProduct = id => {
+    const products = this.props.pokemon.products.filter(product => product.id !== id);
+    this.setModule('products', products.length ? products : [blankProduct()]);
+  };
+
   sharedConfig = (over = {}) => {
     const p = { ...this.props.pokemon, ...over };
     return {
-      inputs: parseInputs(p.inputs).slice(0, MAX_PRODUCTS), quantity: String(p.quantity || '1'),
+      products: validateProducts(p.products).products.slice(0, MAX_PRODUCTS),
       monitorDelay: String(p.monitorDelay || '3000'), retryDelay: String(p.retryDelay || '3000'),
       loopCheckout: !!p.loopCheckout, waitForQueue: !!p.waitForQueue,
       queueEntryDelay: String(p.queueEntryDelay || '0'), allInstock: !!p.allInstock,
@@ -108,12 +149,12 @@ class PokemonCenter extends Component {
     this.editTimer = setTimeout(() => {
       const tasks = this.runningTasks();
       if (!tasks.length) return;
-      const validation = validateProducts(({ ...this.props.pokemon, ...over }).inputs);
+      const validation = validateProducts(({ ...this.props.pokemon, ...over }).products);
       if (validation.invalid.length) {
         this.flash('Use a Pokémon Center SKU, product URL, or placeholder');
         return;
       }
-      if (validation.inputs.length > MAX_PRODUCTS) {
+      if (validation.tooMany) {
         this.flash(`Pokémon Center supports up to ${MAX_PRODUCTS} products per task`);
         return;
       }
@@ -172,11 +213,11 @@ class PokemonCenter extends Component {
   };
 
   start = tasks => {
-    const validation = validateProducts(this.props.pokemon.inputs);
-    const inputs = validation.inputs;
+    const validation = validateProducts(this.props.pokemon.products);
+    const products = validation.products;
     if (validation.invalid.length) { this.flash('Use a Pokémon Center SKU, product URL, or placeholder'); return; }
-    if (!inputs.length) { this.flash('Add at least one product slug or URL'); return; }
-    if (inputs.length > MAX_PRODUCTS) { this.flash(`Use no more than ${MAX_PRODUCTS} products per task`); return; }
+    if (!products.length) { this.flash('Add at least one product SKU or URL'); return; }
+    if (validation.tooMany) { this.flash(`Use no more than ${MAX_PRODUCTS} products per task`); return; }
     const profiles = profileList(this.props.profiles);
     const validIds = new Set(profiles.map(profile => String(profile.id)));
     const launch = tasks.filter(task => validIds.has(String(task.profileId)));
@@ -193,7 +234,8 @@ class PokemonCenter extends Component {
     const { draftProfiles, draftProxy, draftCount, expanded, notice } = this.state;
     const list = profileList(profiles);
     const proxyLists = (proxies && proxies.lists) || [];
-    const inputs = parseInputs(pokemon.inputs);
+    const productValidation = validateProducts(pokemon.products);
+    const products = productValidation.products;
 
     return (
       <div className="page" style={{ padding: '16px 20px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -216,26 +258,41 @@ class PokemonCenter extends Component {
             <div className="panel" style={{ margin: 0, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <strong style={{ fontSize: 12 }}>Products</strong>
-                <span style={{ fontSize: 11, color: inputs.length > MAX_PRODUCTS ? '#fb5454' : 'var(--muted)' }}>
-                  {inputs.length}/{MAX_PRODUCTS} products
-                </span>
+                <button className="btn btn-secondary btn-sm" onClick={this.addProduct} disabled={pokemon.products.length >= MAX_PRODUCTS}>
+                  <i className="ion-md-add" style={{ marginRight: 5 }} />Add product
+                </button>
               </div>
-              <textarea
-                className="form-input"
-                value={pokemon.inputs}
-                onChange={event => this.setModule('inputs', event.target.value)}
-                placeholder={'10-10451-115\nhttps://www.pokemoncenter.com/product/10-10451-115\nplaceholder'}
-                style={{ minHeight: 128, resize: 'vertical', fontFamily: 'monospace', fontSize: 11 }}
-              />
+              <div style={{ display: 'grid', gap: 8 }}>
+                {pokemon.products.map((product, index) => (
+                  <div key={product.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px 30px', gap: 7, alignItems: 'end' }}>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">SKU or product URL {index + 1}</span>
+                      <input
+                        className="form-input"
+                        value={product.input}
+                        onChange={event => this.updateProduct(product.id, { input: event.target.value })}
+                        placeholder={index === 0 ? '10-10451-115' : 'SKU, URL, or placeholder'}
+                      />
+                    </label>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">Qty</span>
+                      <input
+                        className="form-input"
+                        inputMode="numeric"
+                        value={product.quantity}
+                        onChange={event => this.updateProduct(product.id, { quantity: event.target.value.replace(/\D/g, '').slice(0, 4) || '1' })}
+                      />
+                    </label>
+                    <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeProduct(product.id)} title="Remove product">
+                      <i className="ion-md-trash" />
+                    </button>
+                  </div>
+                ))}
+              </div>
               <div style={{ marginTop: 7, fontSize: 10.5, lineHeight: 1.45, color: 'var(--muted)' }}>
-                SKU, full product URL, or <b>placeholder</b>. Placeholder passes the queue and waits for a live edit. Multi-cart supports up to three products.
-                Requested quantity is automatically reduced to the product's purchase limit.
+                Add up to three SKUs, full product URLs, or <b>placeholder</b>. Each product has its own quantity; the engine reduces it to the site's purchase limit when necessary.
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
-                <label className="form-group" style={{ margin: 0 }}>
-                  <span className="form-label">Quantity</span>
-                  <input className="form-input" value={pokemon.quantity} onChange={e => this.setModule('quantity', e.target.value.replace(/\D/g, '').slice(0, 4) || '1')} />
-                </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 12 }}>
                 <label className="form-group" style={{ margin: 0 }}>
                   <span className="form-label">Monitor ms</span>
                   <input className="form-input" value={pokemon.monitorDelay} onChange={e => this.setModule('monitorDelay', e.target.value.replace(/\D/g, '').slice(0, 6))} />
@@ -246,7 +303,7 @@ class PokemonCenter extends Component {
                 </label>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', marginTop: 12, fontSize: 11 }}>
-                <label title="Idle until the existing Polar queue-status service detects a queue or site protection."><input type="checkbox" checked={pokemon.waitForQueue} onChange={e => this.setModule('waitForQueue', e.target.checked)} /> Wait for queue (24/7)</label>
+                <label title="Idle until the queue-status service detects a queue or site protection."><input type="checkbox" checked={pokemon.waitForQueue} onChange={e => this.setModule('waitForQueue', e.target.checked)} /> Wait for queue (24/7)</label>
                 <label title="With multiple inputs, do not cart until every product is in stock."><input type="checkbox" checked={pokemon.allInstock} onChange={e => this.setModule('allInstock', e.target.checked)} /> Require all in stock</label>
                 <label title="After checkout or decline, rotate to another profile in the selected profile's first group."><input type="checkbox" checked={pokemon.loopCheckout} onChange={e => this.setModule('loopCheckout', e.target.checked)} /> Loop checkout</label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -293,7 +350,7 @@ class PokemonCenter extends Component {
                   <span className="form-label" style={{ display: 'block', marginTop: 10 }}>Tasks per profile</span>
                   <input className="form-input" value={draftCount} onChange={e => this.setState({ draftCount: e.target.value.replace(/\D/g, '').slice(0, 2) || '1' })} />
                   <span style={{ display: 'block', marginTop: 9, color: 'var(--muted)', fontSize: 10.5, lineHeight: 1.45 }}>
-                    Polar recommends 2–6 tasks per profile. Loop Checkout rotates through the profile's first group. No Pokémon Center account is required.
+                    Recommended: 2–6 tasks per profile. Loop Checkout rotates through the profile's first group. No Pokémon Center account is required.
                   </span>
                 </label>
               </div>
@@ -301,7 +358,7 @@ class PokemonCenter extends Component {
           </div>
 
           <div className="panel" style={{ margin: 0, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 112px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 150px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>
               <span>PROFILE</span><span>PRODUCT</span><span>PROXY</span><span>STATUS</span><span>ACTIONS</span>
             </div>
             {!pokemon.tasks.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>No Pokémon Center tasks yet.</div>}
@@ -314,13 +371,13 @@ class PokemonCenter extends Component {
               const open = expanded === task.id;
               return (
                 <div key={task.id} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 112px', gap: 10, padding: '10px 12px', alignItems: 'center', fontSize: 11 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 150px', gap: 10, padding: '10px 12px', alignItems: 'center', fontSize: 11 }}>
                     <select className="form-select" value={task.profileId} onChange={e => this.updateTask(task, { profileId: e.target.value })}>
                       <option value="">Select profile</option>
                       {list.map(value => <option key={value.id} value={value.id}>{profileName(value)}</option>)}
                     </select>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(input && input.productName) || ''}>
-                      {(input && input.productName) || `${inputs.length} product${inputs.length === 1 ? '' : 's'} watched`}
+                      {(input && input.productName) || `${products.length} product${products.length === 1 ? '' : 's'} watched`}
                     </span>
                     <select className="form-select" value={task.proxyListName || ''} onChange={e => this.updateTask(task, { proxyListName: e.target.value })}>
                       <option value="">Local (no proxy)</option>
@@ -332,7 +389,7 @@ class PokemonCenter extends Component {
                         ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
                         : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!profile}>Start</button>}
                       <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => this.removeTask(task)} title="Delete task">×</button>
+                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
                     </span>
                   </div>
                   {open && <div style={{ padding: '0 12px 12px' }}>

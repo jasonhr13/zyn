@@ -378,7 +378,8 @@ class TaskGroups extends Component {
 
   profileList = () => {
     const value = this.props.profiles || [];
-    return value.list || value.profiles || (Array.isArray(value) ? value : []);
+    return (value.list || value.profiles || (Array.isArray(value) ? value : []))
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
   };
 
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');

@@ -89,13 +89,12 @@ const defaultState = {
   // Pokemon Center US: profile-based guest checkout tasks driven by the shared native Go engine.
   // Runtime state stays here so switching pages never loses task status or logs.
   pokemon: {
-    inputs: '',
+    products: [{ id: 'pc_product_1', input: '', quantity: '1' }],
     tasks: [],
     taskStatus: {},
     taskInputs: {},
     taskLogs: {},
     logs: [],
-    quantity: '1',
     monitorDelay: '3000',
     retryDelay: '3000',
     loopCheckout: false,

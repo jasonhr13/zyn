@@ -56,6 +56,9 @@ assert.match(target, /function latestBankedAt\(\)/);
 assert.match(target, /lastBankedAt: latestBankedAt\(\)/);
 assert.match(target, /taskProfileById\.set\(t\.id, t\.profileId/);
 assert.match(target, /useOtpLogin: otpEnabled\(t\.profileId\)/);
+assert.match(target, /const b = p\.billingSameShipping === false \? \(p\.billing \|\| \{\}\) : s/);
+assert.match(target, /billingFirstName: billingFirst, billingLastName: billingLast/);
+assert.match(target, /billingAddress1: b\.address/);
 assert.match(target, /profileId: first\.profileId/);
 assert.match(target, /const otpFetches = new Map\(\)/);
 assert.match(target, /receivedAfter/);
@@ -78,6 +81,8 @@ assert.match(target, /startsWith\(MONITOR_ID\)/,
 assert.match(target, /startTarget, stopTarget, editTargetTasks/,
   'live task editor is not exported to Electron');
 assert.match(target, /function startPokemonCenter\(config = \{\}, mainWindow\)/);
+assert.match(target, /function validatePokemonProducts\(/);
+assert.match(target, /quantity: product\.quantity/);
 assert.match(target, /function editPokemonCenter\(config = \{\}\)/);
 assert.match(target, /function stopPokemonCenter\(taskId\)/);
 assert.match(target, /engineTaskSites\.register\(id, POKEMON_SITE\)/);

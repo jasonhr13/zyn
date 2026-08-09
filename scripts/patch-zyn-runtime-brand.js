@@ -99,7 +99,7 @@ if (fs.existsSync(path.join(root, 'public/helpers/data-manager.js'))) rewrite('p
   const pokemonStorage = `// ── Pokemon Center tasks ───────────────────────────────────────────────────────────────
 function getPokemonCenterTasks() {
   return readJSON('pokemon-center-tasks.json', {
-    inputs: '', tasks: [], quantity: '1', monitorDelay: '3000', retryDelay: '3000',
+    products: [{ id: 'pc_product_1', input: '', quantity: '1' }], tasks: [], monitorDelay: '3000', retryDelay: '3000',
     loopCheckout: false, waitForQueue: false, queueEntryDelay: '0', allInstock: false,
   });
 }
@@ -109,7 +109,7 @@ function savePokemonCenterTasks(data) {
   const next = {
     ...current,
     ...(data && typeof data === 'object' ? data : {}),
-    inputs: data && typeof data.inputs === 'string' ? data.inputs : current.inputs,
+    products: Array.isArray(data && data.products) ? data.products : current.products,
     tasks: Array.isArray(data && data.tasks) ? data.tasks : current.tasks,
   };
   writeJSON('pokemon-center-tasks.json', next);
@@ -118,6 +118,14 @@ function savePokemonCenterTasks(data) {
 
 ${actualTargetAnchor}`;
   source = source.replace(actualTargetAnchor, pokemonStorage);
+  const accountProfileLinks = [
+    `const match = profiles.find(p => (p.email || '').toLowerCase() === email.toLowerCase());`,
+    `const match = profiles.find(p => (p.email || '').toLowerCase() === (email || '').toLowerCase());`,
+  ];
+  for (const before of accountProfileLinks) {
+    if (!source.includes(before)) throw new Error('Target account profile-link anchor is missing');
+    source = source.replace(before, before.replace('profiles.find(p =>', "profiles.find(p => p.profileType !== 'pokemoncenter' &&"));
+  }
   const exportsAnchor = `  getTargetTasks, saveTargetTasks,`;
   if (!source.includes(exportsAnchor)) throw new Error('Target task storage export anchor is missing');
   return source.replace(exportsAnchor, `  getPokemonCenterTasks, savePokemonCenterTasks,\n${exportsAnchor}`);

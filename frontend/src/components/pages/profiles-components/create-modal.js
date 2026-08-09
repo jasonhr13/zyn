@@ -15,11 +15,15 @@ const sanitizeImapPassword = (value) => String(value ?? '')
   .replace(/[\p{Cc}\p{Cf}\u034F]/gu, '');
 
 const BLANK = {
+  profileType: 'target',
   profileName: '', email: '', phone: '',
   imapProvider: '', imapHostCustom: '', imapUser: '', imapPass: '', showImapPass: false,
   imapTesting: false, imapTestResult: null,
   firstName: '', lastName: '',
   address: '', address2: '', city: '', state: '', zipcode: '', country: 'US',
+  billingSameShipping: true,
+  billingFirstName: '', billingLastName: '',
+  billingAddress: '', billingAddress2: '', billingCity: '', billingState: '', billingZipcode: '', billingCountry: 'US',
   cardName: '', cardNumber: '', cardMonth: '', cardYear: '', cardCvv: '',
 };
 
@@ -81,35 +85,68 @@ class CreateProfileModal extends Component {
   };
 
   handleSubmit = () => {
-    const { profileName, email, firstName, lastName, address, city, state, zipcode, cardNumber, cardMonth, cardYear, cardCvv } = this.state;
-    if (!profileName || !email || !firstName || !lastName || !address || !city || !state || !zipcode || !cardNumber || !cardMonth || !cardYear || !cardCvv) return;
+    const {
+      profileType, profileName, email, phone, firstName, lastName, address, city, state, zipcode,
+      billingSameShipping, billingFirstName, billingLastName, billingAddress, billingCity, billingState, billingZipcode,
+      cardNumber, cardMonth, cardYear, cardCvv,
+    } = this.state;
+    const pokemonCenter = profileType === 'pokemoncenter';
+    if (!profileName || !email || !firstName || !lastName || !address || !city || !state || !zipcode
+      || !cardNumber || !cardMonth || !cardYear || !cardCvv) {
+      window.alert('Complete every required profile, shipping, and payment field.');
+      return;
+    }
+    if (pokemonCenter && !phone.trim()) {
+      window.alert('Pokémon Center profiles require a phone number.');
+      return;
+    }
+    if (pokemonCenter && !billingSameShipping
+      && (!billingFirstName || !billingLastName || !billingAddress || !billingCity || !billingState || !billingZipcode)) {
+      window.alert('Complete every required billing-address field.');
+      return;
+    }
 
     const imapHost = this.resolvedImapHost();
-    if (this.state.imapProvider && (!imapHost || !this.state.imapUser.trim() || !this.state.imapPass)) {
+    if (!pokemonCenter && this.state.imapProvider && (!imapHost || !this.state.imapUser.trim() || !this.state.imapPass)) {
       window.alert('Complete the IMAP host, mailbox user, and app password, or select “No automatic mailbox”.');
       return;
     }
 
+    const shipping = {
+      firstName: this.state.firstName,
+      lastName: this.state.lastName,
+      address: this.state.address,
+      address2: this.state.address2,
+      city: this.state.city,
+      state: this.state.state,
+      zipcode: this.state.zipcode,
+      country: this.state.country,
+    };
+    const billing = billingSameShipping ? { ...shipping } : {
+      firstName: this.state.billingFirstName,
+      lastName: this.state.billingLastName,
+      address: this.state.billingAddress,
+      address2: this.state.billingAddress2,
+      city: this.state.billingCity,
+      state: this.state.billingState,
+      zipcode: this.state.billingZipcode,
+      country: this.state.billingCountry,
+    };
+
     const profile = {
+      profileType,
       profileName: this.state.profileName,
       email: this.state.email,
       phone: this.state.phone,
-      imap: this.state.imapProvider ? {
+      imap: !pokemonCenter && this.state.imapProvider ? {
         host: imapHost,
         port: 993,
         user: this.state.imapUser.trim(),
         password: this.state.imapPass,
       } : null,
-      shipping: {
-        firstName: this.state.firstName,
-        lastName: this.state.lastName,
-        address: this.state.address,
-        address2: this.state.address2,
-        city: this.state.city,
-        state: this.state.state,
-        zipcode: this.state.zipcode,
-        country: this.state.country,
-      },
+      shipping,
+      billingSameShipping,
+      billing,
       payment: {
         cardName: this.state.cardName || `${this.state.firstName} ${this.state.lastName}`,
         cardNumber: this.state.cardNumber.replace(/\s/g, ''),
@@ -147,6 +184,18 @@ class CreateProfileModal extends Component {
           <div className="modal-body">
             {/* General */}
             <div className="form-section-title">General</div>
+            <div className="form-group">
+              <label className="form-label">Profile Type *</label>
+              <select className="form-select" value={this.state.profileType} onChange={e => this.set('profileType', e.target.value)}>
+                <option value="target">Target</option>
+                <option value="pokemoncenter">Pokémon Center</option>
+              </select>
+              <span className="form-hint">
+                {this.state.profileType === 'pokemoncenter'
+                  ? 'Guest checkout profile with shipping and billing addresses. No mailbox configuration is needed.'
+                  : 'Target account profile with optional email OTP mailbox configuration.'}
+              </span>
+            </div>
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Profile Name *</label>
@@ -158,11 +207,12 @@ class CreateProfileModal extends Component {
               </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Phone</label>
+              <label className="form-label">Phone{this.state.profileType === 'pokemoncenter' ? ' *' : ''}</label>
               {this.input('phone', '5551234567')}
             </div>
 
-            <hr className="form-divider" />
+            {this.state.profileType === 'target' && <>
+              <hr className="form-divider" />
 
             {/* Profile-owned IMAP configuration. */}
             <div className="form-section-title">Email OTP Mailbox</div>
@@ -235,6 +285,7 @@ class CreateProfileModal extends Component {
                 </div>
               </>
             )}
+            </>}
 
             <hr className="form-divider" />
 
@@ -285,6 +336,66 @@ class CreateProfileModal extends Component {
                 </select>
               </div>
             </div>
+
+            {this.state.profileType === 'pokemoncenter' && <>
+              <hr className="form-divider" />
+              <div className="form-section-title">Billing Address</div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginBottom: 12, fontSize: 11 }}>
+                <input
+                  type="checkbox"
+                  checked={this.state.billingSameShipping}
+                  onChange={e => this.set('billingSameShipping', e.target.checked)}
+                />
+                Billing address is the same as shipping
+              </label>
+              {!this.state.billingSameShipping && <>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">First Name *</label>
+                    {this.input('billingFirstName', 'John')}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Last Name *</label>
+                    {this.input('billingLastName', 'Doe')}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Address *</label>
+                  {this.input('billingAddress', '123 Main St')}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Address 2</label>
+                  {this.input('billingAddress2', 'Apt 4B (optional)')}
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">City *</label>
+                    {this.input('billingCity', 'New York')}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">State *</label>
+                    {this.input('billingState', 'NY')}
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Zip Code *</label>
+                    {this.input('billingZipcode', '10001')}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Country</label>
+                    <select className="form-select" value={this.state.billingCountry} onChange={e => this.set('billingCountry', e.target.value)}>
+                      <option value="US">United States</option>
+                      <option value="GB">United Kingdom</option>
+                      <option value="CA">Canada</option>
+                      <option value="AU">Australia</option>
+                      <option value="DE">Germany</option>
+                      <option value="FR">France</option>
+                    </select>
+                  </div>
+                </div>
+              </>}
+            </>}
 
             <hr className="form-divider" />
 

@@ -135,8 +135,9 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
     const profiles = getProfiles();
     const wantedId = String(profileId || '');
     const wantedEmail = String(email || '').trim().toLowerCase();
-    const profile = (wantedId && profiles.find(item => String(item.id) === wantedId))
-      || (wantedEmail && profiles.find(item => String(item.email || '').trim().toLowerCase() === wantedEmail));
+    const targetProfiles = profiles.filter(item => item && item.profileType !== 'pokemoncenter');
+    const profile = (wantedId && targetProfiles.find(item => String(item.id) === wantedId))
+      || (wantedEmail && targetProfiles.find(item => String(item.email || '').trim().toLowerCase() === wantedEmail));
     const configured = normalizeImapConfig(profile && profile.imap);
     if (imapConfigured(configured)) {
       return { ...configured, profileId: profile.id, profileName: profile.profileName || profile.email || '' };

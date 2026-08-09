@@ -12,7 +12,8 @@ function parseSkus(raw) {
 
 function profileList(profiles) {
   const value = profiles || {};
-  return value.list || value.profiles || (Array.isArray(value) ? value : []);
+  return (value.list || value.profiles || (Array.isArray(value) ? value : []))
+    .filter(profile => profile && profile.profileType !== 'pokemoncenter');
 }
 
 function resolveProfileForTask(task, accounts, profiles) {

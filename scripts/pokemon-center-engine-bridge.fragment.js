@@ -55,17 +55,43 @@ function pokemonInputs(value) {
   return validatePokemonInputs(value).inputs;
 }
 
-function pokemonItems(inputs, quantity) {
-  const qty = String(Math.max(1, parseInt(quantity, 10) || 1));
-  return pokemonInputs(inputs).map(input => ({
-    id: input, monitorInput: input, quantity: qty, maxPrice: '', color: '', sizes: [],
+function validatePokemonProducts(products, legacyInputs, legacyQuantity) {
+  const rows = Array.isArray(products)
+    ? products
+    : pokemonInputs(legacyInputs).map(input => ({ input, quantity: legacyQuantity }));
+  const populated = rows.map(row => ({
+    input: String((row && (row.input || row.monitorInput || row.id)) || '').trim(),
+    quantity: String(Math.max(1, parseInt(row && row.quantity, 10) || 1)),
+  })).filter(row => row.input);
+  const normalized = populated.map(row => normalizePokemonInput(row.input));
+  const seen = new Set();
+  const valid = [];
+  populated.forEach((row, index) => {
+    const input = normalized[index];
+    if (!input || seen.has(input)) return;
+    seen.add(input);
+    valid.push({ input, quantity: row.quantity });
+  });
+  return {
+    products: valid.slice(0, 3),
+    invalid: populated.filter((row, index) => !normalized[index]).map(row => row.input),
+    tooMany: valid.length > 3 || populated.length > 3,
+  };
+}
+
+function pokemonItems(products) {
+  return products.map(product => ({
+    id: product.input, monitorInput: product.input, quantity: product.quantity, maxPrice: '', color: '', sizes: [],
   }));
 }
 
 function pokemonMessage(task = {}, shared = {}) {
-  const inputs = pokemonInputs(task.inputs != null ? task.inputs : shared.inputs);
-  const quantity = task.quantity != null ? task.quantity : shared.quantity;
-  const items = pokemonItems(inputs, quantity);
+  const products = validatePokemonProducts(
+    task.products != null ? task.products : shared.products,
+    task.inputs != null ? task.inputs : shared.inputs,
+    task.quantity != null ? task.quantity : shared.quantity,
+  ).products;
+  const items = pokemonItems(products);
   return engineContract.normalizeStartTask({
     id: String(task.id || ''), type: POKEMON_SITE, site: POKEMON_SITE,
     taskGroup: '',
@@ -88,7 +114,11 @@ function pokemonMessage(task = {}, shared = {}) {
 function rememberPokemonConfig(task, shared) {
   const merged = {
     ...shared, ...task,
-    inputs: pokemonInputs(task.inputs != null ? task.inputs : shared.inputs),
+    products: validatePokemonProducts(
+      task.products != null ? task.products : shared.products,
+      task.inputs != null ? task.inputs : shared.inputs,
+      task.quantity != null ? task.quantity : shared.quantity,
+    ).products,
   };
   pokemonTaskConfigs.set(String(task.id), merged);
   return merged;
@@ -99,7 +129,9 @@ function rememberPokemonConfig(task, shared) {
 // own an initial task.
 function addPokemonRotationProfiles(tasks) {
   let profiles = [];
-  try { profiles = dm.getProfiles() || []; } catch {}
+  try {
+    profiles = (dm.getProfiles() || []).filter(profile => profile && profile.profileType === 'pokemoncenter');
+  } catch {}
   const groups = new Set();
   for (const task of tasks) {
     if (!task.loopCheckout) continue;
@@ -147,18 +179,28 @@ function flushPokemonStarts() {
 
 function startPokemonCenter(config = {}, mainWindow) {
   attachWindow(mainWindow);
-  const sharedValidation = validatePokemonInputs(config.inputs);
+  const sharedValidation = validatePokemonProducts(config.products, config.inputs, config.quantity);
   const invalidTask = (Array.isArray(config.tasks) ? config.tasks : [config]).some(task => {
-    const validation = validatePokemonInputs(task && task.inputs != null ? task.inputs : config.inputs);
+    const validation = validatePokemonProducts(
+      task && task.products != null ? task.products : config.products,
+      task && task.inputs != null ? task.inputs : config.inputs,
+      task && task.quantity != null ? task.quantity : config.quantity,
+    );
     return validation.invalid.length || validation.tooMany;
   });
   if (sharedValidation.invalid.length || sharedValidation.tooMany || invalidTask) return false;
+  let validProfileIds = new Set();
+  try {
+    validProfileIds = new Set((dm.getProfiles() || [])
+      .filter(profile => profile && profile.profileType === 'pokemoncenter')
+      .map(profile => String(profile.id)));
+  } catch {}
   const tasks = (Array.isArray(config.tasks) ? config.tasks : [config])
-    .filter(task => task && task.id && task.profileId);
-  const inputs = sharedValidation.inputs;
-  if (!tasks.length || !inputs.length) return false;
+    .filter(task => task && task.id && validProfileIds.has(String(task.profileId)));
+  const products = sharedValidation.products;
+  if (!tasks.length || !products.length) return false;
 
-  const batch = { ...config, inputs, tasks: tasks.map(task => rememberPokemonConfig(task, { ...config, inputs })) };
+  const batch = { ...config, products, tasks: tasks.map(task => rememberPokemonConfig(task, { ...config, products })) };
   pendingPokemonStarts.push(batch);
   for (const task of batch.tasks) {
     const id = String(task.id);
@@ -185,8 +227,11 @@ function editPokemonCenter(config = {}) {
 
   const invalidInput = selected.some(update => {
     const previous = pokemonTaskConfigs.get(String(update.id)) || {};
-    const value = update.inputs != null ? update.inputs : (config.inputs != null ? config.inputs : previous.inputs);
-    const validation = validatePokemonInputs(value);
+    const products = update.products != null ? update.products
+      : (config.products != null ? config.products : previous.products);
+    const inputs = update.inputs != null ? update.inputs : (config.inputs != null ? config.inputs : previous.inputs);
+    const quantity = update.quantity != null ? update.quantity : (config.quantity != null ? config.quantity : previous.quantity);
+    const validation = validatePokemonProducts(products, inputs, quantity);
     return validation.invalid.length || validation.tooMany;
   });
   if (invalidInput) {

@@ -15,7 +15,14 @@ function maskCard(num) {
 function flatten(p) {
   const knownImapHosts = new Set(['imap.gmail.com', 'outlook.office365.com', 'imap.mail.yahoo.com', 'imap.mail.me.com']);
   const imapHost = p.imap?.host || '';
+  const shipping = p.shipping || {};
+  const billing = p.billing || shipping;
+  const fields = ['firstName', 'lastName', 'address', 'address2', 'city', 'state', 'zipcode', 'country'];
+  const billingSameShipping = typeof p.billingSameShipping === 'boolean'
+    ? p.billingSameShipping
+    : fields.every(field => String(billing[field] || '') === String(shipping[field] || ''));
   return {
+    profileType: p.profileType || 'target',
     profileName: p.profileName || '',
     email: p.email || '',
     phone: p.phone || '',
@@ -31,6 +38,15 @@ function flatten(p) {
     state: p.shipping?.state || p.state || '',
     zipcode: p.shipping?.zipcode || p.zipcode || '',
     country: p.shipping?.country || p.country || 'US',
+    billingSameShipping,
+    billingFirstName: billing.firstName || '',
+    billingLastName: billing.lastName || '',
+    billingAddress: billing.address || '',
+    billingAddress2: billing.address2 || '',
+    billingCity: billing.city || '',
+    billingState: billing.state || '',
+    billingZipcode: billing.zipcode || billing.zip || '',
+    billingCountry: billing.country || 'US',
     cardName: p.payment?.cardName || p.cardName || '',
     cardNumber: p.payment?.cardNumber || p.cardNumber || '',
     cardMonth: p.payment?.cardMonth || p.cardMonth || '',
@@ -97,7 +113,9 @@ class Profiles extends Component {
   createForAccounts = (base) => {
     const accounts = this.props.accounts || [];
     if (!accounts.length) { window.alert('No accounts yet — add them on the Accounts page first.'); return; }
-    const existing = new Set(this.props.profiles.map(p => (p.email || '').trim().toLowerCase()).filter(Boolean));
+    const existing = new Set(this.props.profiles
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter')
+      .map(profile => (profile.email || '').trim().toLowerCase()).filter(Boolean));
     const toCreate = [];
     for (const a of accounts) {
       const email = (a.email || '').trim();
@@ -156,7 +174,10 @@ class Profiles extends Component {
     const { profiles, targetTasks } = this.props;
     // Profiles currently attached to a Target task. Read from the store rather than tracked on the
     // profile itself, so deleting a task frees its profile with no bookkeeping to get out of sync.
-    const usedProfileIds = new Set((targetTasks || []).map(t => String(t.profileId || '')).filter(Boolean));
+    const usedProfileIds = new Set([
+      ...(targetTasks || []).map(t => String(t.profileId || '')),
+      ...((this.props.pokemonTasks || []).map(t => String(t.profileId || ''))),
+    ].filter(Boolean));
     const { showCreate, editProfile, duplicateInitial, selected, tab, query } = this.state;
 
     // One search box over everything you might remember a profile by. Matching on the JOINED
@@ -170,7 +191,7 @@ class Profiles extends Component {
         p.profileName, p.email, p.phone,
         sh.firstName || p.firstName, sh.lastName || p.lastName,
         sh.address || p.address, sh.city, sh.state, sh.zipcode,
-        ...(p.groups || []), p.group,
+        p.profileType || 'target', ...(p.groups || []), p.group,
       ].filter(Boolean).join(' ').toLowerCase();
       return terms.every((t) => hay.includes(t));
     });
@@ -286,6 +307,7 @@ class Profiles extends Component {
                 const state = p.shipping?.state || p.state || '';
                 const cardNum = p.payment?.cardNumber || p.cardNumber || '';
                 const isSelected = selected.includes(p.id);
+                const pokemonCenter = p.profileType === 'pokemoncenter';
 
                 return (
                   <div
@@ -295,9 +317,14 @@ class Profiles extends Component {
                   >
                     <div className="profile-card-name">
                       {p.profileName || `${name} ${last}`}
-                      {/* A profile attached to a Target task is spent — deleting or editing it under a
-                          running task changes what that task will charge. Say so on the card rather
-                          than making someone cross-reference the Target page. */}
+                      <span style={{
+                        marginLeft: 6, fontSize: 9.5, fontWeight: 650, letterSpacing: .25,
+                        padding: '1px 6px', borderRadius: 999,
+                        color: pokemonCenter ? 'var(--accent)' : 'var(--muted)',
+                        border: `1px solid ${pokemonCenter ? 'var(--accent)' : 'var(--field-border)'}`,
+                      }}>{pokemonCenter ? 'POKÉMON CENTER' : 'TARGET'}</span>
+                      {/* A profile attached to a task is in use. Say so on the card rather than making
+                          someone cross-reference the retailer workspace. */}
                       {usedProfileIds.has(String(p.id)) && (
                         <span
                           title="Attached to a Target task"
@@ -314,10 +341,14 @@ class Profiles extends Component {
                       {addr}{city ? `, ${city}` : ''}{state ? `, ${state}` : ''}
                     </div>
                     <div className="profile-card-card">{maskCard(cardNum)}</div>
-                    <div style={{ fontSize: 10, color: p.imap?.user ? 'var(--ok)' : 'var(--muted)', marginTop: 4 }}>
-                      <i className="ion-md-mail" style={{ marginRight: 5 }} />
-                      {p.imap?.user ? `OTP: ${p.imap.user}` : 'OTP mailbox not configured'}
-                    </div>
+                    {pokemonCenter
+                      ? <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                          <i className="ion-md-cart" style={{ marginRight: 5 }} />Guest checkout
+                        </div>
+                      : <div style={{ fontSize: 10, color: p.imap?.user ? 'var(--ok)' : 'var(--muted)', marginTop: 4 }}>
+                          <i className="ion-md-mail" style={{ marginRight: 5 }} />
+                          {p.imap?.user ? `OTP: ${p.imap.user}` : 'OTP mailbox not configured'}
+                        </div>}
                     <div className="profile-card-actions">
                       <button
                         className="btn btn-sm btn-secondary btn-icon"
@@ -333,7 +364,7 @@ class Profiles extends Component {
                       >
                         <i className="ion-md-copy" style={{ fontSize: 12 }} />
                       </button>
-                      <button
+                      {!pokemonCenter && <button
                         className="btn btn-sm btn-icon"
                         title="Create a profile for every account email under this profile (copies card + address; skips accounts that already have one)"
                         onClick={e => { e.stopPropagation(); this.createForAccounts(p); }}
@@ -341,7 +372,7 @@ class Profiles extends Component {
                       >
                         <i className="ion-md-copy" style={{ fontSize: 12 }} />
                         <i className="ion-md-key" style={{ fontSize: 10, marginLeft: 2 }} />
-                      </button>
+                      </button>}
                       <button
                         className="btn btn-sm btn-danger btn-icon"
                         title="Delete"
@@ -374,4 +405,9 @@ class Profiles extends Component {
   }
 }
 
-export default connect(s => ({ profiles: s.profiles, accounts: s.accounts, targetTasks: (s.target && s.target.tasks) || [] }))(Profiles);
+export default connect(s => ({
+  profiles: s.profiles,
+  accounts: s.accounts,
+  targetTasks: (s.target && s.target.tasks) || [],
+  pokemonTasks: (s.pokemon && s.pokemon.tasks) || [],
+}))(Profiles);

@@ -65,6 +65,13 @@ assert.deepEqual(dataManager.getProfileImap('one', ''), {
   profileId: 'one', profileName: 'One',
 });
 assert.equal(dataManager.getProfileImap('two', '').password, 'two secret');
+const pokemonProfile = dataManager.createProfile({
+  profileType: 'pokemoncenter', profileName: 'Guest checkout', email: 'two@example.com',
+  imap: { host: 'imap.should-not-run.example', port: 993, user: 'hidden@example.com', password: 'not for Target' },
+});
+assert.deepEqual(dataManager.getProfileImap(pokemonProfile.id, ''), {
+  host: '', port: 993, user: '', password: '',
+}, 'Pokémon Center profiles must never be used for Target mailbox lookup');
 const distinctRaw = fs.readFileSync(path.join(directory, 'profiles.json'), 'utf8');
 assert.equal(distinctRaw.includes('one secret'), false);
 assert.equal(distinctRaw.includes('two secret'), false);

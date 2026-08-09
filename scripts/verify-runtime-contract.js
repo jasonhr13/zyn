@@ -129,6 +129,7 @@ check('Zyn runtime branding', () => {
   const electronMain = asar.extractFile(archive, 'public/electron.js').toString('utf8');
   const discordMonitor = asar.extractFile(archive, 'public/helpers/discord-monitor.js').toString('utf8');
   const targetEngine = asar.extractFile(archive, 'public/helpers/target-engine.js').toString('utf8');
+  const dataManager = asar.extractFile(archive, 'public/helpers/data-manager.js').toString('utf8');
   const nativeEngineContract = asar.extractFile(
     archive,
     'public/helpers/native-engine-contract.js',
@@ -155,6 +156,14 @@ check('Zyn runtime branding', () => {
     'packaged native engine bridge does not route Hyper requests');
   assert.match(targetEngine, /manualCaptchaManager\.handleEnvelope\(msg/,
     'packaged native engine bridge does not route manual captcha requests');
+  assert.match(targetEngine, /function validatePokemonProducts\(/,
+    'packaged Pokémon Center bridge omits per-product quantities');
+  assert.match(targetEngine, /quantity: product\.quantity/,
+    'packaged Pokémon Center bridge drops per-product quantities');
+  assert.match(targetEngine, /billingFirstName: billingFirst/,
+    'packaged profile bridge drops the separate billing address');
+  assert.match(dataManager, /products: Array\.isArray/,
+    'packaged Pokémon Center storage omits product rows');
   assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
     'packaged Hyper bridge bypasses the main-process license authority');
   assert.match(manualCaptchaManager, /manual captcha is restricted to Pokemon Center US/,
@@ -231,7 +240,11 @@ check('Target farmer New Headless launch contract', () => {
   const rendererBundlePath = `build/${manifest.files['main.js'].replace(/^\.\//, '')}`;
   const rendererBundle = asar.extractFile(path.join(resources, 'app-original.asar'), rendererBundlePath).toString('utf8');
   assert.match(rendererBundle, /Zyn/, 'packaged renderer omits the Zyn brand');
-  assert.doesNotMatch(rendererBundle, /\bHope\b|control[ -]plane/i, 'packaged renderer retains retired branding');
+  assert.doesNotMatch(rendererBundle, /\bHope\b|\bPolar\b|control[ -]plane/i, 'packaged renderer retains retired branding');
+  assert.match(rendererBundle, /Profile Type/, 'packaged Profiles UI omits retailer-specific profile types');
+  assert.match(rendererBundle, /Billing address is the same as shipping/,
+    'packaged Profiles UI omits the billing-address control');
+  assert.match(rendererBundle, /Add product/, 'packaged Pokémon Center UI omits product rows');
   assert.match(rendererBundle, /Cookies per page load/, 'packaged Settings omits cookies-per-page');
   assert.match(rendererBundle, /Page loads per browser/, 'packaged Settings omits browser reuse');
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');

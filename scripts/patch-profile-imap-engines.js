@@ -588,6 +588,32 @@ ${harvesterConfig}`, 'Target managed harvester config');
 
 // ── config translation: data-manager shapes -> engine JSON ───────────────────────`, 'Target managed harvester producers');
 
+  source = replaceOnce(source, `  const s = p.shipping || {};
+  const pay = p.payment || {};
+  const country = normalizeCountry(s.country);
+  const first = s.firstName || '';
+  const last = s.lastName || '';
+  const zip = s.zipcode || s.zip || '';
+  const state = normalizeState(s.state);`, `  const s = p.shipping || {};
+  const b = p.billingSameShipping === false ? (p.billing || {}) : s;
+  const pay = p.payment || {};
+  const country = normalizeCountry(s.country);
+  const first = s.firstName || '';
+  const last = s.lastName || '';
+  const zip = s.zipcode || s.zip || '';
+  const state = normalizeState(s.state);
+  const billingCountry = normalizeCountry(b.country);
+  const billingFirst = b.firstName || '';
+  const billingLast = b.lastName || '';
+  const billingZip = b.zipcode || b.zip || '';
+  const billingState = normalizeState(b.state);`, 'separate profile billing address preparation');
+
+  source = replaceOnce(source, `    billingFirstName: first, billingLastName: last,
+    billingAddress1: s.address || '', billingAddress2: s.address2 || '',
+    billingCity: s.city || '', billingState: state, billingZip: zip, billingCountry: country,`, `    billingFirstName: billingFirst, billingLastName: billingLast,
+    billingAddress1: b.address || '', billingAddress2: b.address2 || '',
+    billingCity: b.city || '', billingState, billingZip, billingCountry,`, 'separate profile billing address mapping');
+
   source = replaceOnce(source, `    startFarmer({
       proxyListName: harvesterPool,
       accountId: first.accountId || '',
