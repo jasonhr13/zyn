@@ -18,6 +18,7 @@ const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
+const { installCheckoutReporting } = require('./checkout-reporting');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
@@ -33,7 +34,7 @@ const bundledWine = path.join(resources, 'wine', 'bin', 'wine');
 const originalAsar = path.join(resources, 'app-original.asar');
 const originalSpawn = childProcess.spawn.bind(childProcess);
 const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
-const developerIdentity = 'seaniepokie';
+const localDeveloperIdentity = process.env.ZYN_DEVELOPER_EMAIL || 'developer@localhost';
 const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac');
 if (fs.existsSync(nativePlaywrightBrowsers)) {
   // The native farmer reuses this signed Electron executable as Node. Point Playwright at the
@@ -577,7 +578,7 @@ function enableLocalDeveloperLicense() {
     ok: true,
     reason: 'local developer mode',
     expires: null,
-    discord: { username: developerIdentity, id: '' },
+    discord: { username: localDeveloperIdentity, id: '' },
     at: now(),
     lastGood: now(),
   });
@@ -603,7 +604,7 @@ function enableLocalDeveloperLicense() {
         hwid: 'local-development',
         start: async () => {
           active = true;
-          if (onIdentity) onIdentity({ username: developerIdentity, id: '' });
+          if (onIdentity) onIdentity({ username: localDeveloperIdentity, id: '' });
           if (onFleetControl) onFleetControl({ disabledModules: [], notice: '' });
           return 'ok';
         },
@@ -618,37 +619,25 @@ function enableLocalDeveloperLicense() {
 
 }
 
-function configureDeveloperReporting() {
-  // Central Target/Walmart reporting. Always discard credentials belonging to the retired license
-  // service and preserve the requested development identity independently of license authority.
+function configureAccountReporting(licenseAuthority) {
+  let reporter = null;
+  let taskHandler = null;
   try {
-    const reporter = require(path.join(originalAsar, 'public', 'helpers', 'checkout-reporter.js'));
-    const configureReporter = reporter.configure.bind(reporter);
-    reporter.configure = (next = {}) => configureReporter({
-      ...next,
-      key: '',
-      token: '',
-      discord: developerIdentity,
-      discordId: '',
-    });
-    reporter.configure();
+    reporter = require(path.join(originalAsar, 'public', 'helpers', 'checkout-reporter.js'));
   } catch (error) {
-    console.error(`Could not configure the local reporter identity: ${error.message}`);
+    console.error(`Could not load the central checkout reporter: ${error.message}`);
+  }
+  try {
+    taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
+  } catch (error) {
+    console.error(`Could not load the P-Bandai checkout reporter: ${error.message}`);
   }
 
-  // P-Bandai reports from its Windows Node child instead of checkout-reporter, so enforce the same
-  // identity at that process boundary as well.
-  try {
-    const taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
-    const startPbandai = taskHandler.startPbandai.bind(taskHandler);
-    taskHandler.startPbandai = (options, ...rest) => startPbandai({
-      ...(options || {}),
-      buyerDiscord: developerIdentity,
-      dashboardKey: '',
-    }, ...rest);
-  } catch (error) {
-    console.error(`Could not configure the P-Bandai reporter identity: ${error.message}`);
-  }
+  installCheckoutReporting({
+    reporter,
+    taskHandler,
+    getLicenseStatus: () => licenseAuthority ? licenseAuthority.cached() : null,
+  });
 }
 
 function runNativeEngineSelfTest() {
@@ -713,7 +702,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine'
     enableLocalDeveloperLicense();
   }
   configureMacUpdater();
-  configureDeveloperReporting();
+  configureAccountReporting(licenseAuthority);
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
     ? installTaskTypeIpcGuard({
         ipcMain: require('electron').ipcMain,

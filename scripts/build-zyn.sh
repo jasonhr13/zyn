@@ -136,6 +136,7 @@ cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpac
 
 for launcher_file in \
   bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
+  checkout-reporting.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
   managed-proxy-ipc-guard.js; do
