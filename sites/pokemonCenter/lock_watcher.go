@@ -14,42 +14,66 @@ import (
 )
 
 const (
-	unlockProductKey = "unlock"
-	lockPollInterval = 3 * time.Second
+	unlockProductKey   = "unlock"
+	statusPollInterval = 3 * time.Second
 )
 
-var lockWatcherOnce sync.Once
+var statusWatcherOnce sync.Once
 
-func ensureLockWatcher() {
-	lockWatcherOnce.Do(func() {
-		safego.Go(runLockWatcher)
+func ensureStatusWatcher() {
+	statusWatcherOnce.Do(func() {
+		safego.Go(runStatusWatcher)
 	})
 }
 
-func runLockWatcher() {
-	hc, err := client.CreateNewTLSClient("")
-	if err != nil {
-		log.Printf("lock watcher: failed to create client: %v", err)
-		return
-	}
-
-	ticker := time.NewTicker(lockPollInterval)
+func runStatusWatcher() {
+	var hc client.HttpClient
+	ticker := time.NewTicker(statusPollInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		unlocked, err := fetchUnlocked(hc)
-		if err != nil || !unlocked {
+		if hc == nil {
+			var err error
+			hc, err = client.CreateNewTLSClient("")
+			if err != nil {
+				log.Printf("status watcher: failed to create client: %v", err)
+				continue
+			}
+		}
+		status, err := fetchStatus(hc)
+		if err != nil {
 			continue
 		}
-		monitorhub.Default.Publish(monitorhub.StockPing{
-			Site:       "PokemonCenter",
-			ProductKey: unlockProductKey,
-			InStock:    true,
-			At:         time.Now(),
-		})
+		for _, ping := range statusPings(status, time.Now()) {
+			monitorhub.Default.Publish(ping)
+		}
 	}
 }
 
-func fetchUnlocked(hc client.HttpClient) (bool, error) {
+func statusPings(status CheckStatusResponse, at time.Time) []monitorhub.StockPing {
+	pings := make([]monitorhub.StockPing, 0, 2)
+	if status.QueueUp {
+		pings = append(pings, monitorhub.StockPing{
+			Site:       "PokemonCenter",
+			ProductKey: "queue",
+			Name:       "Railway queue/site protection status",
+			InStock:    true,
+			At:         at,
+			From:       "Railway",
+		})
+	}
+	if status.Unlocked {
+		pings = append(pings, monitorhub.StockPing{
+			Site:       "PokemonCenter",
+			ProductKey: unlockProductKey,
+			InStock:    true,
+			At:         at,
+			From:       "Railway",
+		})
+	}
+	return pings
+}
+
+func fetchStatus(hc client.HttpClient) (CheckStatusResponse, error) {
 	Request := client.RequestStruct{
 		CTX: context.Background(),
 		Req: client.ReqStruct{
@@ -60,14 +84,14 @@ func fetchUnlocked(hc client.HttpClient) (bool, error) {
 	}
 	response, body, err := client.MakeRequest(Request, hc, nil)
 	if err != nil {
-		return false, err
+		return CheckStatusResponse{}, err
 	}
 	if response.StatusCode != 200 {
-		return false, fmt.Errorf("failed get status (%s)", response.Status)
+		return CheckStatusResponse{}, fmt.Errorf("failed get status (%s)", response.Status)
 	}
 	var responseBody CheckStatusResponse
 	if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
-		return false, err
+		return CheckStatusResponse{}, err
 	}
-	return responseBody.Unlocked, nil
+	return responseBody, nil
 }

@@ -718,12 +718,22 @@ func (t *PokemonCenterTask) HandleTask() {
 
 func (t *PokemonCenterTask) awaitQueue() bool {
 	t.UpdateStatus("Waiting For Queue", constants.Colors.YELLOW)
+	ensureStatusWatcher()
 	queueKeys := []string{"queue"}
 	since := time.Now()
 	matches := func(ping monitorhub.StockPing) bool {
 		return strings.EqualFold(ping.Site, "PokemonCenter") &&
 			ping.ProductKey == "queue" &&
 			ping.At.After(since)
+	}
+	enterQueue := func() {
+		t.FoundQueue = true
+		t.NextStep = "get-homepage"
+		if t.QueueEntryDelay != 0 {
+			status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
+			t.UpdateStatus(status, constants.Colors.BLUE)
+			t.SleepTask(t.QueueEntryDelay)
+		}
 	}
 	sub := monitorhub.Default.Subscribe()
 	defer sub.Close()
@@ -738,28 +748,17 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 			return false
 		}
 		if ping, ok := monitorhub.Default.Match("PokemonCenter", queueKeys, since); ok && matches(ping) {
-			t.FoundQueue = true
-			t.NextStep = "get-homepage"
-			if t.QueueEntryDelay != 0 {
-				status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
-				t.UpdateStatus(status, constants.Colors.BLUE)
-				t.SleepTask(t.QueueEntryDelay)
-			}
+			enterQueue()
 			return false
 		}
 		select {
 		case ping := <-sub.C:
 			if matches(ping) {
-				t.FoundQueue = true
-				t.NextStep = "get-homepage"
-				if t.QueueEntryDelay != 0 {
-					status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
-					t.UpdateStatus(status, constants.Colors.BLUE)
-					t.SleepTask(t.QueueEntryDelay)
-				}
+				enterQueue()
 				return false
 			}
 		case <-poll.C:
+			// Wake periodically so runtime edits (including disabling Wait For Queue) are applied.
 		case <-t.TaskContext.CTX.Done():
 			return true
 		}
@@ -767,7 +766,7 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 	return false
 }
 func (t *PokemonCenterTask) awaitUnlock() bool {
-	ensureLockWatcher()
+	ensureStatusWatcher()
 	unlockKeys := []string{unlockProductKey}
 	since := time.Now()
 	matches := func(ping monitorhub.StockPing) bool {
