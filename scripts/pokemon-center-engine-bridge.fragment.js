@@ -179,26 +179,28 @@ function flushPokemonStarts() {
 
 function startPokemonCenter(config = {}, mainWindow) {
   attachWindow(mainWindow);
+  const requestedTasks = Array.isArray(config.tasks) ? config.tasks : [config];
   const sharedValidation = validatePokemonProducts(config.products, config.inputs, config.quantity);
-  const invalidTask = (Array.isArray(config.tasks) ? config.tasks : [config]).some(task => {
+  const usesSharedProducts = requestedTasks.some(task => !task || task.products == null);
+  const invalidTask = requestedTasks.some(task => {
     const validation = validatePokemonProducts(
       task && task.products != null ? task.products : config.products,
       task && task.inputs != null ? task.inputs : config.inputs,
       task && task.quantity != null ? task.quantity : config.quantity,
     );
-    return validation.invalid.length || validation.tooMany;
+    return validation.invalid.length || validation.tooMany || !validation.products.length;
   });
-  if (sharedValidation.invalid.length || sharedValidation.tooMany || invalidTask) return false;
+  if ((usesSharedProducts && (sharedValidation.invalid.length || sharedValidation.tooMany || !sharedValidation.products.length)) || invalidTask) return false;
   let validProfileIds = new Set();
   try {
     validProfileIds = new Set((dm.getProfiles() || [])
       .filter(profile => profile && profile.profileType === 'pokemoncenter')
       .map(profile => String(profile.id)));
   } catch {}
-  const tasks = (Array.isArray(config.tasks) ? config.tasks : [config])
+  const tasks = requestedTasks
     .filter(task => task && task.id && validProfileIds.has(String(task.profileId)));
   const products = sharedValidation.products;
-  if (!tasks.length || !products.length) return false;
+  if (!tasks.length) return false;
 
   const batch = { ...config, products, tasks: tasks.map(task => rememberPokemonConfig(task, { ...config, products })) };
   pendingPokemonStarts.push(batch);

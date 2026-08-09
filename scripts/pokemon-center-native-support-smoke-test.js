@@ -28,6 +28,8 @@ const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/page
 const accounts = fs.readFileSync(path.join(root, 'frontend/src/components/pages/accounts.js'), 'utf8');
 const targetLaunch = fs.readFileSync(path.join(root, 'launcher/target-group-launch.js'), 'utf8');
 const profileImap = fs.readFileSync(path.join(root, 'launcher/profile-imap-control.js'), 'utf8');
+const pokemonCheckout = fs.readFileSync(path.join(root, '../polar-backend-source/sites/pokemonCenter/checkout.go'), 'utf8');
+const pokemonEdit = fs.readFileSync(path.join(root, '../polar-backend-source/sites/pokemonCenter/edit.go'), 'utf8');
 const routes = fs.readFileSync(path.join(root, 'frontend/src/components/page-handler.js'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'frontend/src/components/store.js'), 'utf8');
 
@@ -96,6 +98,53 @@ assert.equal(profileSandbox.result.billingFirstName, 'Bill');
 assert.equal(profileSandbox.result.billingAddress1, '2 Bill St');
 assert.equal(profileSandbox.result.billingState, 'NY');
 
+const bridgeFragment = engine.slice(
+  engine.indexOf('const POKEMON_SITE = engineContract.SITES.POKEMON_CENTER_US'),
+  engine.indexOf('function handleEngineMessage'),
+);
+let editedEnvelope = null;
+const editSandbox = {
+  Buffer,
+  URL,
+  LOG_LINE_MAX: 1000,
+  redactProxies: value => value,
+  toRenderer: () => {},
+  engineContract: {
+    SITES: { POKEMON_CENTER_US: 'Pokemon Center US' },
+    normalizeStartTask: value => value,
+  },
+  dm: { getProfiles: () => [{ id: 'profile-1', profileType: 'pokemoncenter' }] },
+  sentConfigs: { profiles: {}, proxies: {} },
+  buildProfileMap: () => ({}),
+  sendConfigs: () => true,
+  sendToEngine: value => { editedEnvelope = value; return true; },
+  runningTaskIds: new Set(),
+  nativeHyperBroker: { cancelPending: () => {} },
+  manualCaptchaManager: { cancelPending: () => {}, cancelTask: () => {} },
+};
+vm.runInNewContext(`${bridgeFragment}
+pokemonTaskIds.add('task-queue');
+pokemonTaskConfigs.set('task-queue', {
+  id: 'task-queue', profileId: 'profile-1', products: [{ input: 'placeholder', quantity: '1' }],
+  monitorDelay: '3000', retryDelay: '3000', waitForQueue: true,
+});
+result = editPokemonCenter({ tasks: [{
+  id: 'task-queue', profileId: 'profile-1', products: [
+    { input: '10-33333-333', quantity: '2' },
+    { input: '10-44444-444', quantity: '4' },
+  ], monitorDelay: '3000', retryDelay: '3000', waitForQueue: true,
+}] });`, editSandbox);
+assert.equal(editSandbox.result.ok, true, 'queued task product edit was rejected');
+assert.equal(editedEnvelope.type, 'edit-tasks');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(editedEnvelope.messages[0].item.map(item => ({ input: item.monitorInput, quantity: item.quantity })))),
+  [
+    { input: '10-33333-333', quantity: '2' },
+    { input: '10-44444-444', quantity: '4' },
+  ],
+  'queued placeholder task did not receive its replacement products',
+);
+
 assert.match(electron, /targetEngine\.startPokemonCenter/);
 assert.match(electron, /targetEngine\.editPokemonCenter/);
 assert.match(electron, /targetEngine\.setPokemonCenterTaskProxy/);
@@ -116,7 +165,13 @@ assert.match(page, /migrateProductRows\(/);
 assert.match(page, /pokemon\.products\.map/);
 assert.match(page, /product\.quantity/);
 assert.match(page, /ion-md-trash/);
-assert.doesNotMatch(page, />×<\/button>/);
+assert.doesNotMatch(page, /title="Delete task">×<\/button>/);
+assert.match(page, /productsForTask/);
+assert.match(page, /configuredProductCount/);
+assert.match(page, /Edit task products/);
+assert.match(page, /Save &amp; update task/);
+assert.match(page, /including while it is waiting for or passing a queue/);
+assert.match(page, /products: undefined/);
 assert.match(page, /Tasks per profile/);
 assert.match(page, /Loop checkout/);
 assert.match(page, /Require all in stock/);
@@ -141,6 +196,12 @@ for (const targetOnly of [targetPage, taskGroups, accounts, targetLaunch, profil
 }
 assert.doesNotMatch([page, profilesPage, createProfile].join('\n'), /\bPolar\b/i,
   'customer-facing Pokémon Center and profile UI must use Zyn-only branding');
+assert.match(pokemonCheckout, /case "handle-queue"/);
+assert.match(pokemonCheckout, /DrainPendingRuntimeEdits/,
+  'Pokémon Center checkout does not drain task edits while progressing through the queue');
+assert.match(pokemonEdit, /t\.Inputs = newInputs/);
+assert.match(pokemonEdit, /case "get-product", "get-availability", "add-to-cart"/,
+  'live product edits do not reset product discovery before carting');
 
 for (const relative of ['public/helpers/target-engine.js', 'public/helpers/data-manager.js', 'public/electron.js']) {
   execFileSync(process.execPath, ['--check', path.join(staged, relative)]);

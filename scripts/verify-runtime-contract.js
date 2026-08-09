@@ -245,6 +245,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Billing address is the same as shipping/,
     'packaged Profiles UI omits the billing-address control');
   assert.match(rendererBundle, /Add product/, 'packaged Pokémon Center UI omits product rows');
+  assert.match(rendererBundle, /Edit task products/, 'packaged Pokémon Center UI omits per-task product editing');
+  assert.match(rendererBundle, /Save & update task/, 'packaged Pokémon Center UI cannot apply queued-task product edits');
   assert.match(rendererBundle, /Cookies per page load/, 'packaged Settings omits cookies-per-page');
   assert.match(rendererBundle, /Page loads per browser/, 'packaged Settings omits browser reuse');
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');
