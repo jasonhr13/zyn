@@ -41,7 +41,9 @@ function computeHwid() {
   return crypto.createHash('sha256').update(`${DEVICE_NAMESPACE}:${parts.join('|')}`).digest('hex').slice(0, 32);
 }
 
-function requestApi(apiBase, pathname, { method = 'GET', body = null, token = '', headers = {}, binary = false } = {}) {
+function requestApi(apiBase, pathname, {
+  method = 'GET', body = null, token = '', headers = {}, binary = false, rawResponse = false,
+} = {}) {
   return new Promise((resolve, reject) => {
     const data = body == null
       ? null
@@ -86,6 +88,17 @@ function requestApi(apiBase, pathname, { method = 'GET', body = null, token = ''
         }
         let parsed = {};
         try { parsed = JSON.parse(raw.toString('utf8')); } catch {}
+        if (rawResponse) {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode || 0,
+            body: raw.toString('utf8'),
+            headers: response.headers,
+            code: String(parsed.code || ''),
+            message: String(parsed.message || ''),
+          });
+          return;
+        }
         resolve({ status: response.statusCode || 0, ...parsed });
       });
     });
@@ -116,6 +129,19 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
     },
     logout(token) {
       return post(apiBase, '/api/auth/logout', {}, token);
+    },
+    hyper(token, operation, payload) {
+      const allowed = new Set([
+        'reese84', 'datadome-tags', 'datadome-interstitial', 'datadome-slider', 'incapsula-utmvc',
+      ]);
+      if (!allowed.has(operation)) return Promise.reject(new Error('unsupported Hyper operation'));
+      return requestApi(apiBase, `/api/services/hyper/${operation}`, {
+        method: 'POST',
+        body: payload || {},
+        token,
+        rawResponse: true,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
     },
     listBackups(token) {
       return requestApi(apiBase, '/api/backups', {

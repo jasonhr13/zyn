@@ -63,6 +63,10 @@ const silentLogger = { warn() {} };
           proxyRevision, proxyListsChanged: false,
         };
       },
+      async hyper(token, operation, payload) {
+        calls.push({ method: 'hyper', token, operation, payload });
+        return { ok: true, status: 200, body: '{"solution":"safe"}' };
+      },
       async logout(token) { calls.push({ method: 'logout', token }); return { ok: true }; },
       async resetPassword() { throw new Error('unexpected reset'); },
     };
@@ -104,6 +108,15 @@ const silentLogger = { warn() {} };
     assert.equal(stored.includes('account-password'), false, 'password was persisted');
     assert.equal(stored.includes('proxy-secret'), false, 'managed proxy credential was persisted');
     assert.equal(fs.statSync(authority.sessionPath).mode & 0o777, 0o600);
+    const hyper = await authority.hyper('reese84', { pageUrl: 'https://www.pokemoncenter.com/' });
+    assert.deepEqual(hyper, { ok: true, status: 200, body: '{"solution":"safe"}', error: '' });
+    assert.deepEqual(calls.find(call => call.method === 'hyper'), {
+      method: 'hyper',
+      token: 'authoritative-bearer',
+      operation: 'reese84',
+      payload: { pageUrl: 'https://www.pokemoncenter.com/' },
+    });
+    assert.equal(JSON.stringify(hyper).includes('authoritative-bearer'), false);
     const refreshed = await authority.validate();
     assert.equal(calls.find(call => call.method === 'validate').revision, proxyRevision);
     assert.equal(managedEvents.some(result => JSON.stringify(result.managedProxyLists || []).includes('proxy-secret')), true);
@@ -113,6 +126,10 @@ const silentLogger = { warn() {} };
       previous: { pokemoncenter: true, round1: false },
       next: { pokemoncenter: false, round1: true },
     }]);
+    const deniedHyper = await authority.hyper('reese84', {});
+    assert.equal(deniedHyper.status, 403);
+    assert.equal(calls.filter(call => call.method === 'hyper').length, 1,
+      'removed Pokémon Center entitlement still reached the Hyper service');
     authority.start();
     authority.start();
     assert.equal(intervalDelay, LICENSE_CHECK_MS);
@@ -236,6 +253,7 @@ const silentLogger = { warn() {} };
       observerSessionMigrated: true,
       logoutLocked: logoutLocks === 1,
       managedProxyRevisionReused: true,
+      hyperBearerMainOnly: true,
     }, null, 2));
   } finally {
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });

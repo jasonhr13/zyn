@@ -144,8 +144,11 @@ the optional field.
 
 ## Hyper broker contract
 
-These message types are reserved by version 1 so the later broker implementation does not invent a
-second transport.
+These message types carry Hyper solver requests through the existing engine transport. Electron
+checks that the task is actively registered to Pokemon Center US, then asks the main-process license
+authority to POST to `/api/services/hyper/:operation`. The authority supplies the in-memory Zyn
+bearer and device identity; the Worker supplies the encrypted Hyper key. Neither credential crosses
+the WebSocket bridge.
 
 Engine request:
 
@@ -181,6 +184,9 @@ Electron response:
 
 Allowed operations are `reese84`, `datadome-tags`, `datadome-interstitial`, `datadome-slider`, and
 `incapsula-utmvc`. Neither message may contain `hyperApiKey`, `apiKey`, or `x-api-key`.
+Request IDs must be unique while in flight. Electron rejects duplicates and discards responses from
+a request whose engine connection has closed. The UTMVC payload is ordinary JSON on this transport;
+the Worker applies the gzip content encoding required by Hyper's upstream endpoint.
 
 ## Lifecycle invariants
 

@@ -628,6 +628,16 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
   return authority;
 }
 
+function installNativeHyperAuthority(authority) {
+  if (!authority) return;
+  try {
+    const broker = require(path.join(originalAsar, 'public', 'helpers', 'native-hyper-broker.js'));
+    broker.setAuthority(authority);
+  } catch (error) {
+    console.error(`Could not connect the native Hyper broker to the license authority: ${error.message}`);
+  }
+}
+
 function replaceRetiredLicenseIpc(authority) {
   const { ipcMain } = require('electron');
   // The legacy status handler appends the retired key from settings. Replace the whole handler so
@@ -763,6 +773,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(path.join(resources, 'engine'
   installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
+  installNativeHyperAuthority(licenseAuthority);
   installProfileImapIpc(licenseAuthority);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();

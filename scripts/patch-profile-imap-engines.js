@@ -75,7 +75,8 @@ function patchTarget() {
 const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
 
   source = replaceOnce(source, `const skuTitles = require('./sku-titles');`, `const skuTitles = require('./sku-titles');
-const engineContract = require('./native-engine-contract');`, 'shared native-engine contract import');
+const engineContract = require('./native-engine-contract');
+const nativeHyperBroker = require('./native-hyper-broker');`, 'shared native-engine contract import');
 
   source = replaceOnce(source, `        const tid = (m && m.taskID) || '';
         log('[otp] verification code needed for ' + email + ' — checking mailbox, or enter it above', tid);`, `        const tid = (m && m.taskID) || '';
@@ -245,6 +246,36 @@ const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/pr
   let msg;
   try { msg = engineContract.parseEnvelope(data); } catch { return; }
   const items = msg.messages;`, 'native-engine inbound envelope validation');
+
+  source = replaceOnce(source, `function handleEngineMessage(data) {`, `function handleEngineMessage(data, connection) {`, 'native-engine connection-scoped message handler');
+
+  source = replaceOnce(source, `    default:
+      // stuckInCart / account-cookie / update-input / update-status variants: ignore for the UI`, `    case 'hyper-request':
+      // The native process receives neither the license bearer nor the Hyper credential. Its
+      // correlated request is resolved here through the main-process license authority.
+      nativeHyperBroker.handleEnvelope(msg, {
+        registry: engineTaskSites,
+        send: sendToEngine,
+        isActive: () => engineConn === connection,
+        logger: { warn: message => log(String(message)) },
+      });
+      break;
+    default:
+      // stuckInCart / account-cookie / update-input / update-status variants: ignore for the UI`, 'native Hyper request routing');
+
+  source = replaceOnce(source, `    ws.on('message', handleEngineMessage);
+    ws.on('close', () => { if (engineConn === ws) engineConn = null; });`, `    ws.on('message', data => handleEngineMessage(data, ws));
+    ws.on('close', () => {
+      if (engineConn === ws) {
+        engineConn = null;
+        nativeHyperBroker.cancelPending();
+      }
+    });`, 'native engine connection-scoped broker lifecycle');
+
+  source = replaceOnce(source, `  engineConn = null;
+}`, `  engineConn = null;
+  nativeHyperBroker.cancelPending();
+}`, 'native broker shutdown cancellation');
 
   source = replaceOnce(source, `  const addr = String(email || '').trim();
   if (!addr) return;
@@ -649,10 +680,12 @@ function patchPlainLog() {
 }
 
 try {
-  fs.copyFileSync(
-    path.join(__dirname, '..', 'launcher', 'native-engine-contract.js'),
-    path.join(helperDirectory, 'native-engine-contract.js'),
-  );
+  for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js']) {
+    fs.copyFileSync(
+      path.join(__dirname, '..', 'launcher', filename),
+      path.join(helperDirectory, filename),
+    );
+  }
   patchTarget();
   patchWalmart();
   patchPlainLog();

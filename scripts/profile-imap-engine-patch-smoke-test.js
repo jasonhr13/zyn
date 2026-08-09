@@ -18,14 +18,21 @@ const target = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8')
 const walmart = fs.readFileSync(path.join(directory, 'walmart-engine.js'), 'utf8');
 const plainLog = fs.readFileSync(path.join(directory, 'plain-log.js'), 'utf8');
 const nativeEngineContract = path.join(directory, 'native-engine-contract.js');
+const nativeHyperBroker = path.join(directory, 'native-hyper-broker.js');
 assert.equal(fs.existsSync(nativeEngineContract), true, 'shared native-engine contract was not staged');
+assert.equal(fs.existsSync(nativeHyperBroker), true, 'native Hyper broker was not staged');
 assert.match(target, /require\('\.\/native-engine-contract'\)/);
+assert.match(target, /require\('\.\/native-hyper-broker'\)/);
 assert.match(target, /new engineContract\.TaskSiteRegistry\(\)/);
 assert.match(target, /engineContract\.parseEnvelope\(obj\)/);
 assert.match(target, /engineContract\.parseEnvelope\(data\)/);
 assert.match(target, /engineTaskSites\.register\(t\.id, engineContract\.SITES\.TARGET\)/);
 assert.match(target, /engineTaskSites\.remove\(taskId\)/);
 assert.match(target, /engineTaskSites\.clear\(\)/);
+assert.match(target, /case 'hyper-request'/);
+assert.match(target, /nativeHyperBroker\.handleEnvelope\(msg/);
+assert.match(target, /isActive: \(\) => engineConn === connection/);
+assert.match(target, /nativeHyperBroker\.cancelPending\(\)/);
 assert.match(target, /dm\.getProfileImap\(profileId, email\)/);
 assert.match(target, /'--headless=true'/);
 assert.doesNotMatch(target, /'--headless=false'/);
@@ -78,6 +85,7 @@ for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']
   execFileSync(process.execPath, ['--check', path.join(directory, filename)]);
 }
 execFileSync(process.execPath, ['--check', nativeEngineContract]);
+execFileSync(process.execPath, ['--check', nativeHyperBroker]);
 const repeat = spawnSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { encoding: 'utf8' });
 assert.notEqual(repeat.status, 0, 'hash gate accepted an already-modified engine');
 assert.match(`${repeat.stdout}${repeat.stderr}`, /does not match the reviewed R5 source/);

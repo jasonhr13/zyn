@@ -331,6 +331,28 @@ function createLicenseAuthority({
         return { ...rendererStatus(), reason: 'Cannot reach the license server. Check your connection and try again.' };
       }
     },
+    async hyper(operation, payload = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, body: '', error: 'A valid Zyn session is required.' };
+      }
+      if (!normalizeTaskTypes(licenseState.taskTypes).pokemoncenter) {
+        return { ok: false, status: 403, body: '', error: 'Pokémon Center access is not enabled.' };
+      }
+      try {
+        const result = await licenseApi.hyper(licenseToken, operation, payload);
+        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        return {
+          ok: result.ok === true,
+          status: Number(result.status) || 0,
+          body: String(result.body || ''),
+          error: result.ok === true ? '' : String(result.message || 'Hyper request failed.').slice(0, 240),
+        };
+      } catch (error) {
+        logger.warn?.(`[license] Hyper broker unavailable: ${error.message}`);
+        return { ok: false, status: 502, body: '', error: 'Hyper service is unavailable.' };
+      }
+    },
     async logout() {
       loadSession();
       const token = licenseToken;
