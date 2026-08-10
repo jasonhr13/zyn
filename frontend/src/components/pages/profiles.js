@@ -37,6 +37,13 @@ function inProfileGroup(profile, group) {
   return profileGroups(profile).some(value => value.toLowerCase() === key);
 }
 
+function activeTaskProfileIds(tasks, statuses) {
+  return (Array.isArray(tasks) ? tasks : []).filter(task => {
+    const status = statuses && statuses[task.id];
+    return status && status.running === true;
+  }).map(task => String(task.profileId || '')).filter(Boolean);
+}
+
 // Flatten a stored profile into the flat shape the Create/Edit modal expects.
 function flatten(profile) {
   const knownImapHosts = new Set(['imap.gmail.com', 'outlook.office365.com', 'imap.mail.yahoo.com', 'imap.mail.me.com']);
@@ -369,14 +376,14 @@ class Profiles extends Component {
   };
 
   render() {
-    const { profiles, targetTasks } = this.props;
+    const { profiles, targetTasks, targetTaskStatus, pokemonTaskStatus } = this.props;
     const {
       showCreate, editProfile, duplicateInitial, selected, query, groups, activeGroup,
     } = this.state;
     const usedProfileIds = new Set([
-      ...(targetTasks || []).map(task => String(task.profileId || '')),
-      ...((this.props.pokemonTasks || []).map(task => String(task.profileId || ''))),
-    ].filter(Boolean));
+      ...activeTaskProfileIds(targetTasks, targetTaskStatus),
+      ...activeTaskProfileIds(this.props.pokemonTasks, pokemonTaskStatus),
+    ]);
 
     const scopedProfiles = activeGroup === ALL_PROFILES
       ? profiles
@@ -596,7 +603,6 @@ class Profiles extends Component {
                   const cardNumber = profile.payment?.cardNumber || profile.cardNumber || '';
                   const isSelected = selected.includes(profile.id);
                   const pokemonCenter = profile.profileType === 'pokemoncenter';
-                  const memberships = profileGroups(profile);
                   return (
                     <div
                       className={`profile-row${isSelected ? ' selected' : ''}`}
@@ -615,9 +621,6 @@ class Profiles extends Component {
                           </span>
                           {usedProfileIds.has(String(profile.id)) && <span className="profile-use-badge">IN USE</span>}
                         </div>
-                        <small>{memberships.length
-                          ? memberships.slice(0, 2).join(' · ') + (memberships.length > 2 ? ` +${memberships.length - 2}` : '')
-                          : 'Ungrouped'}</small>
                       </div>
                       <div className="profile-row-cell">
                         <strong>{profile.email || 'No email'}</strong>
@@ -687,5 +690,7 @@ export default connect(state => ({
   profiles: state.profiles,
   accounts: state.accounts,
   targetTasks: (state.target && state.target.tasks) || [],
+  targetTaskStatus: (state.target && state.target.taskStatus) || {},
   pokemonTasks: (state.pokemon && state.pokemon.tasks) || [],
+  pokemonTaskStatus: (state.pokemon && state.pokemon.taskStatus) || {},
 }))(Profiles);
