@@ -43,6 +43,7 @@
 .analytics-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 10.5px; pointer-events: none; }
 .analytics-checkouts > header { align-items: center; }
 .analytics-table-actions { display: flex; gap: 5px; align-items: center; }
+.analytics-table-actions .analytics-delete { min-width: 32px; padding: 5px 8px; }
 .analytics-search { height: 31px; width: 150px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--field-border); border-radius: 8px; background: var(--field); color: var(--dim); }
 .analytics-search:focus-within { border-color: var(--accent-border); box-shadow: var(--shadow-focus); }
 .analytics-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 10px; }
@@ -61,11 +62,10 @@
 .analytics-product-image { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 34px; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--panel-bg-alt); color: var(--muted); }
 .analytics-product-image img { width: 100%; height: 100%; object-fit: cover; }
 .analytics-list-empty { min-height: 270px; display: grid; place-items: center; color: var(--dim); font-size: 10.5px; }
-.analytics-checkouts > footer { min-height: 48px; display: flex; justify-content: space-between; align-items: center; padding: 8px 13px; border-top: 1px solid var(--panel-border); }
+.analytics-checkouts > footer { min-height: 48px; display: flex; justify-content: flex-end; align-items: center; padding: 8px 13px; border-top: 1px solid var(--panel-border); }
 .analytics-checkouts > footer > div { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; }
-.analytics-checkouts > footer button { width: 28px; height: 28px; border: 1px solid var(--btn-border); border-radius: 50%; background: var(--btn); color: var(--text2); cursor: pointer; }
+.analytics-checkouts > footer button { box-sizing: border-box; width: 28px; height: 28px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--btn-border); border-radius: 50%; background: var(--btn); color: var(--text2); line-height: 1; cursor: pointer; }
 .analytics-checkouts > footer button:disabled { opacity: .35; cursor: default; }
-.analytics-checkouts > footer .analytics-delete { color: var(--danger); border-radius: 7px; }
 @media (max-width: 1120px) {
   .analytics-cards { grid-template-columns: repeat(2, 1fr); }
   .analytics-grid { grid-template-columns: 1fr; }

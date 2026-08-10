@@ -282,6 +282,7 @@ export default class Dashboard extends Component {
               <div className="analytics-table-actions">
                 <button className="btn btn-sm btn-icon" type="button" onClick={() => this.load()} title="Refresh"><Icon name="refresh" size={14} /></button>
                 <button className="btn btn-sm btn-icon" type="button" onClick={this.exportCsv} title="Export CSV"><Icon name="download" size={14} /></button>
+                <button className="btn btn-sm btn-danger btn-icon analytics-delete" type="button" onClick={this.deleteHistory} title="Delete checkout history" aria-label="Delete checkout history"><Icon name="trash" size={13} /></button>
                 <label className="analytics-search"><Icon name="search" size={13} />
                   <input value={this.state.search} onChange={this.setSearch} placeholder="Search checkouts" />
                 </label>
@@ -306,7 +307,6 @@ export default class Dashboard extends Component {
                   })}
             </div>
             <footer>
-              <button className="analytics-delete" type="button" onClick={this.deleteHistory} title="Delete analytics"><Icon name="trash" size={13} /></button>
               <div><button type="button" disabled={page <= 1} onClick={() => this.setPage(page - 1)}>‹</button>
                 <span>{page} / {maxPage}</span>
                 <button type="button" disabled={page >= maxPage} onClick={() => this.setPage(page + 1)}>›</button></div>
