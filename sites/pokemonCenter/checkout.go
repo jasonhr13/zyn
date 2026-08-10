@@ -10,7 +10,6 @@ import (
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
 	"github.com/PolarAIO/Polar-AIO/backend/client"
@@ -365,7 +364,11 @@ func (t *PokemonCenterTask) HandleTask() {
 
 				if atleastOneCarted && !t.AllInstock {
 					t.TaskState = constants.StatusSteps.Carted
-					safego.Go(func() { task.SendCartedEvent(t.RunID) })
+					task.SendCartedAnalytics(task.ProductWebhookData{
+						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
+						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
+					})
 					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
 					t.NextStep = "submit-email"
 					break
@@ -373,7 +376,11 @@ func (t *PokemonCenterTask) HandleTask() {
 
 				if t.AllInstock && allCarted {
 					t.TaskState = constants.StatusSteps.Carted
-					safego.Go(func() { task.SendCartedEvent(t.RunID) })
+					task.SendCartedAnalytics(task.ProductWebhookData{
+						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
+						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
+					})
 					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
 					t.NextStep = "submit-email"
 					break
@@ -453,6 +460,8 @@ func (t *PokemonCenterTask) HandleTask() {
 					OrderNumber:      t.OrderNumber,
 					OrderLink:        fmt.Sprintf("https://www.pokemoncenter.com/orders/%s?postalCode=%s", t.OrderNumber, t.Profile.ShippingZip),
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 				})
 				if t.LoopCheckout {
 					profiles.MarkProfileUsed(t.Site, t.Profile.ProfileGroup, t.ProfileId)
@@ -486,6 +495,8 @@ func (t *PokemonCenterTask) HandleTask() {
 					Proxy:            proxy.AssignedProxyURL(t.ProxyGroup, t.ID),
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					DeclineReason:    t.DeclineReason,
 				})
 				if t.LoopCheckout {

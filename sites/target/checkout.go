@@ -436,7 +436,6 @@ func (t *TargetTask) HandleTask() {
 					break
 				}
 				t.TaskState = constants.StatusSteps.Carted
-				safego.Go(func() { task.SendCartedEvent(t.RunID) })
 
 				productName := t.CartData.Attributes.Description
 				if productName == "" {
@@ -468,6 +467,16 @@ func (t *TargetTask) HandleTask() {
 					ProductSize:  "Default",
 					Quantity:     productQty,
 				}}
+				task.SendCartedAnalytics(task.ProductWebhookData{
+					CheckoutProducts: t.BuildProductWebhookItems(),
+					Site:             "Target",
+					ProfileName:      t.Profile.ProfileName,
+					ProxyGroup:       t.ProxyGroup,
+					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
+					GrandTotal:       t.CartToalPrice,
+				})
 				t.AddLog(fmt.Sprintf("Carted %dx %s - $%.2f w shape: %s", productQty, productName, t.CartToalPrice, t.ShapeMethod))
 				datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "Target", "task_id": t.RunID, "shapeMethod": t.ShapeMethod})
 				t.PassedCartErrors = 0
@@ -621,6 +630,8 @@ func (t *TargetTask) HandleTask() {
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					GrandTotal:       t.CartToalPrice,
 					ExtraFeilds:      extraFields,
 				})
@@ -649,6 +660,8 @@ func (t *TargetTask) HandleTask() {
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					DeclineReason:    t.DeclineReason,
 				}
 				declineExtraFields := map[string]string{

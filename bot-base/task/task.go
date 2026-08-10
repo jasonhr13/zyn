@@ -1,9 +1,12 @@
 package task
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"strings"
 	"sync"
@@ -74,9 +77,85 @@ func SendProductWebhook(data ProductWebhookData) {
 	if fn := sendProductWebhook; fn != nil {
 		safego.Go(func() { fn(data) })
 	}
+	emitAnalyticsEvent(analyticsOutcomeType(data), data)
 	// Persist/send server events synchronously so a process exit cannot
 	// race past an in-flight goroutine before the durable queue write.
 	sendServerEvents(data)
+}
+
+func analyticsOutcomeType(data ProductWebhookData) string {
+	if data.Success {
+		return "checkout"
+	}
+	return "decline"
+}
+
+func moneyCents(value float64) int64 {
+	return int64(math.Round(value * 100))
+}
+
+func newAnalyticsEventID() string {
+	buffer := make([]byte, 16)
+	if _, err := rand.Read(buffer); err == nil {
+		return hex.EncodeToString(buffer)
+	}
+	return fmt.Sprintf("evt-%d", time.Now().UnixNano())
+}
+
+func emitAnalyticsEvent(eventType string, data ProductWebhookData) {
+	if sendMessage == nil {
+		return
+	}
+
+	items := make([]AnalyticsProductItem, 0, len(data.CheckoutProducts))
+	var calculatedTotal int64
+	for _, product := range data.CheckoutProducts {
+		quantity := product.Quantity
+		if quantity <= 0 {
+			quantity = 1
+		}
+		unitPriceCents := moneyCents(product.Price)
+		calculatedTotal += unitPriceCents * int64(quantity)
+		items = append(items, AnalyticsProductItem{
+			SKU:            product.SKU,
+			Name:           product.Name,
+			Image:          product.Image,
+			ProductURL:     product.ProductLink,
+			Size:           product.Size,
+			UnitPriceCents: unitPriceCents,
+			Quantity:       quantity,
+		})
+	}
+
+	totalCents := moneyCents(data.GrandTotal)
+	if totalCents <= 0 {
+		totalCents = calculatedTotal
+	}
+	taskID := data.ClientTaskID
+	if taskID == "" {
+		taskID = data.TaskID
+	}
+	runID := data.RunID
+	if runID == "" {
+		runID = data.TaskID
+	}
+	event := AnalyticsEventMessage{
+		EventID:     newAnalyticsEventID(),
+		EventType:   eventType,
+		Site:        data.Site,
+		TaskID:      taskID,
+		RunID:       runID,
+		OrderNumber: data.OrderNumber,
+		TotalCents:  totalCents,
+		Items:       items,
+		OccurredAt:  time.Now().UnixMilli(),
+	}
+	_ = sendMessage(statusMessage{Type: "analytics-event", Messages: []AnalyticsEventMessage{event}})
+}
+
+func SendCartedAnalytics(data ProductWebhookData) {
+	emitAnalyticsEvent("carted", data)
+	SendCartedEvent(data.TaskID)
 }
 
 func sendServerEvents(data ProductWebhookData) {

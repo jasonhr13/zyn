@@ -15,14 +15,14 @@ import (
 )
 
 var (
-	incapIncidentRegex    = regexp.MustCompile(`src="(/_Incapsula_Resource\\?[^"]*)"`)
-	incapHcapkey          = regexp.MustCompile(`data-sitekey="([^"]+)"`)
-	incapHcapPostUrl      = regexp.MustCompile(`xhr\.open\("POST",\s"([^"]+)"`)
-	datadomeChallengeUrl  = regexp.MustCompile(`"url":"([^"]+)"`)
-	datadomeDdObject      = regexp.MustCompile(`var dd\s*=\s*({.*?})`)
-	puzzle                = regexp.MustCompile(`captchaChallengePath:\s*['"]([^'"]+\.jpg)['"]`)
-	incapDynamicPath      = regexp.MustCompile(`src\s*=\s*"(\/[^/]+\/[^?]+)\?.*"`)
-	incapDynamicFullPath  = regexp.MustCompile(`scriptElement\.src\s*=\s*"(.*?)"`)
+	incapIncidentRegex   = regexp.MustCompile(`src="(/_Incapsula_Resource\\?[^"]*)"`)
+	incapHcapkey         = regexp.MustCompile(`data-sitekey="([^"]+)"`)
+	incapHcapPostUrl     = regexp.MustCompile(`xhr\.open\("POST",\s"([^"]+)"`)
+	datadomeChallengeUrl = regexp.MustCompile(`"url":"([^"]+)"`)
+	datadomeDdObject     = regexp.MustCompile(`var dd\s*=\s*({.*?})`)
+	puzzle               = regexp.MustCompile(`captchaChallengePath:\s*['"]([^'"]+\.jpg)['"]`)
+	incapDynamicPath     = regexp.MustCompile(`src\s*=\s*"(\/[^/]+\/[^?]+)\?.*"`)
+	incapDynamicFullPath = regexp.MustCompile(`scriptElement\.src\s*=\s*"(.*?)"`)
 )
 
 func ParseIncapIncident(html string) (bool, string) {
@@ -241,6 +241,7 @@ func (t *PokemonCenterTask) BuildProductWebhookItems() []task.ProductWebhookItem
 	for i := range t.Products {
 		if t.Products[i].Carted {
 			items = append(items, task.ProductWebhookItem{
+				SKU:         t.Products[i].Sku,
 				Quantity:    t.Products[i].Quantity,
 				Image:       t.Products[i].ProductImage,
 				Name:        t.Products[i].ProductName,
@@ -255,6 +256,7 @@ func (t *PokemonCenterTask) BuildProductWebhookItems() []task.ProductWebhookItem
 	}
 	for i := range t.Products {
 		items = append(items, task.ProductWebhookItem{
+			SKU:         t.Products[i].Sku,
 			Quantity:    t.Products[i].Quantity,
 			Name:        t.Products[i].ProductName,
 			Price:       t.Products[i].ProductPrice,
@@ -267,6 +269,7 @@ func (t *PokemonCenterTask) BuildProductWebhookItems() []task.ProductWebhookItem
 	}
 	if t.Product.Name != "" {
 		return []task.ProductWebhookItem{{
+			SKU:         t.Product.Sku,
 			Quantity:    1,
 			Name:        t.Product.Name,
 			Price:       t.Product.Price,

@@ -274,9 +274,11 @@ func (t *TargetTask) fraudStatusIsSuccess(status string) bool {
 }
 
 func (t *TargetTask) BuildProductWebhookItems() []task.ProductWebhookItem {
+	sku := t.notificationDetails().SKU
 	items := make([]task.ProductWebhookItem, 0, len(t.Products))
 	for i := range t.Products {
 		items = append(items, task.ProductWebhookItem{
+			SKU:         sku,
 			Quantity:    t.Products[i].Quantity,
 			Image:       t.Products[i].ProductImage,
 			Name:        t.Products[i].ProductName,
@@ -290,6 +292,7 @@ func (t *TargetTask) BuildProductWebhookItems() []task.ProductWebhookItem {
 	}
 	if t.Product.Name != "" {
 		return []task.ProductWebhookItem{{
+			SKU:         sku,
 			Quantity:    1,
 			Name:        t.Product.Name,
 			Price:       t.Product.Price,

@@ -110,6 +110,8 @@ type ProductWebhookData struct {
 	OrderNumber      string
 	OrderLink        string
 	TaskID           string
+	ClientTaskID     string
+	RunID            string
 	GrandTotal       float64
 	ExtraFeilds      map[string]string
 	DeclineReason    string
@@ -130,12 +132,38 @@ type ServerEventData struct {
 }
 
 type ProductWebhookItem struct {
+	SKU         string
 	Quantity    int
 	Image       string
 	Name        string
 	Price       float64
 	ProductLink string
 	Size        string
+}
+
+// AnalyticsEventMessage is the local-only outcome envelope consumed by Zyn.
+// Authentication and durable upload are intentionally owned by the Electron
+// process so the checkout engine never receives user session credentials.
+type AnalyticsEventMessage struct {
+	EventID     string                 `json:"eventId"`
+	EventType   string                 `json:"eventType"`
+	Site        string                 `json:"site"`
+	TaskID      string                 `json:"taskId,omitempty"`
+	RunID       string                 `json:"runId,omitempty"`
+	OrderNumber string                 `json:"orderNumber,omitempty"`
+	TotalCents  int64                  `json:"totalCents"`
+	Items       []AnalyticsProductItem `json:"items"`
+	OccurredAt  int64                  `json:"occurredAt"`
+}
+
+type AnalyticsProductItem struct {
+	SKU            string `json:"sku,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Image          string `json:"image,omitempty"`
+	ProductURL     string `json:"productUrl,omitempty"`
+	Size           string `json:"size,omitempty"`
+	UnitPriceCents int64  `json:"unitPriceCents"`
+	Quantity       int    `json:"quantity"`
 }
 
 type BaseContext struct {
