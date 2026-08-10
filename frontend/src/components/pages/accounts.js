@@ -11,7 +11,15 @@ const isTargetAccount = account => String((account && account.site) || '').trim(
 // hundreds of accounts, rendering a populated <select> per row was the actual cause of the list
 // lagging, reported live 2026-07-20 at 600 accounts).
 class Accounts extends Component {
-  state = { raw: '', adding: false, note: '' };
+  state = {
+    raw: '',
+    adding: false,
+    note: '',
+    editingId: '',
+    editEmail: '',
+    editPassword: '',
+    editError: '',
+  };
 
   refresh = () => {
     const accounts = ipcRenderer.sendSync('getAccounts');
@@ -33,6 +41,60 @@ class Accounts extends Component {
   remove = (id) => {
     ipcRenderer.sendSync('deleteAccount', id);
     this.refresh();
+  };
+
+  openEdit = (account) => this.setState({
+    editingId: account.id,
+    editEmail: account.email || '',
+    // Passwords never come back to the renderer. Blank therefore means "keep the saved value",
+    // not an empty replacement.
+    editPassword: '',
+    editError: '',
+    note: '',
+  });
+
+  closeEdit = () => this.setState({
+    editingId: '', editEmail: '', editPassword: '', editError: '',
+  });
+
+  saveEdit = () => {
+    const { editingId, editPassword } = this.state;
+    const email = String(this.state.editEmail || '').trim();
+    const accounts = (this.props.accounts || []).filter(isTargetAccount);
+    const current = accounts.find(account => account.id === editingId);
+    if (!current || !email || !email.includes('@')) {
+      this.setState({ editError: 'Enter a valid email address.' });
+      return;
+    }
+    if (accounts.some(account => account.id !== editingId
+      && String(account.email || '').trim().toLowerCase() === email.toLowerCase())) {
+      this.setState({ editError: 'That Target account already exists.' });
+      return;
+    }
+
+    const emailChanged = String(current.email || '').trim().toLowerCase() !== email.toLowerCase();
+    const passwordChanged = editPassword.length > 0;
+    const data = { email };
+    if (passwordChanged) data.password = editPassword;
+    if (emailChanged) {
+      const matchingProfile = (this.props.profiles || [])
+        .filter(profile => profile && profile.profileType !== 'pokemoncenter')
+        .find(profile => String(profile.email || '').trim().toLowerCase() === email.toLowerCase());
+      data.profileId = matchingProfile ? matchingProfile.id : null;
+    }
+    // A stored Target session belongs to the old credentials. Force the next run to authenticate
+    // the edited account instead of silently checking out under the previous session.
+    if (emailChanged || passwordChanged) data.cookie = '';
+
+    ipcRenderer.sendSync('updateAccount', { id: editingId, data });
+    this.refresh();
+    this.setState({
+      editingId: '',
+      editEmail: '',
+      editPassword: '',
+      editError: '',
+      note: 'Account updated',
+    });
   };
 
   // Copies Target emails only. Real passwords are encrypted at rest and never sent to this renderer.
@@ -59,6 +121,57 @@ class Accounts extends Component {
     if (acct.profileId) return profiles.find(p => p.id === acct.profileId) || null;
     return profiles.find(p => (p.email || '').toLowerCase() === (acct.email || '').toLowerCase()) || null;
   };
+
+  renderEditModal() {
+    const { editingId, editEmail, editPassword, editError } = this.state;
+    if (!editingId) return null;
+    const valid = editEmail.trim().includes('@');
+    return (
+      <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeEdit()}>
+        <div className="modal" style={{ maxWidth: 480 }} onMouseDown={event => event.stopPropagation()}>
+          <div className="modal-header">
+            <div>
+              <div className="modal-title">Edit Target Account</div>
+              <p>Update the login without deleting tasks that use this account.</p>
+            </div>
+            <button className="modal-close" onClick={this.closeEdit}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input
+                className="form-input"
+                type="email"
+                autoFocus
+                value={editEmail}
+                onChange={event => this.setState({ editEmail: event.target.value, editError: '' })}
+                onKeyDown={event => event.key === 'Enter' && valid && this.saveEdit()}
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">New password</label>
+              <input
+                className="form-input"
+                type="password"
+                placeholder="Leave blank to keep the saved password"
+                value={editPassword}
+                onChange={event => this.setState({ editPassword: event.target.value, editError: '' })}
+                onKeyDown={event => event.key === 'Enter' && valid && this.saveEdit()}
+              />
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 5 }}>
+                Saved passwords remain encrypted and are never displayed.
+              </div>
+              {editError && <div style={{ fontSize: 11, color: '#f87171', marginTop: 8 }}>{editError}</div>}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={this.closeEdit}>Cancel</button>
+            <button className="btn btn-primary" disabled={!valid} onClick={this.saveEdit}>Save Changes</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   render() {
     const { raw, adding, note } = this.state;
@@ -165,6 +278,13 @@ class Accounts extends Component {
                     </div>
 
                     <button
+                      className="btn btn-sm btn-secondary btn-icon"
+                      title="Edit account"
+                      onClick={() => this.openEdit(a)}
+                    >
+                      <i className="ion-md-create" style={{ fontSize: 11 }} />
+                    </button>
+                    <button
                       className="btn btn-sm btn-danger btn-icon"
                       title="Delete account"
                       onClick={() => this.remove(a.id)}
@@ -177,6 +297,7 @@ class Accounts extends Component {
             )}
           </div>
         </div>
+        {this.renderEditModal()}
       </div>
     );
   }

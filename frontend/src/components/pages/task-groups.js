@@ -215,24 +215,10 @@ class TaskGroups extends Component {
       if (Array.isArray(settings.targetHarvesters)) {
         harvesters = settings.targetHarvesters.map(normalizeHarvester);
       } else {
-        // One-time migration from the single global selector. It starts enabled so existing users
-        // still have a farmer after upgrading, while every field is now editable independently.
-        const proxyListName = typeof settings.targetHarvesterProxyList === 'string'
-          ? settings.targetHarvesterProxyList : '';
-        const workers = clampInteger(settings.targetHarvestWorkers, 1, 100, proxyListName ? 4 : 1);
-        harvesters = [normalizeHarvester({
-          id: uid('harvester'),
-          name: 'Default Harvester',
-          type: 'auto',
-          atcMode: 'v1',
-          browser: 'auto',
-          proxyListName,
-          workers,
-          input: settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '',
-          cookieTtlSec: settings.targetCookieTtlSec || 600,
-          intervalDelaySec: 10,
-          enabled: true,
-        })];
+        // Absence means exactly that: the user has not created a harvester. Persist an explicit
+        // empty list so neither a fresh install nor an older settings file can fall through to the
+        // retired task-owned farmer and begin using bandwidth merely because a task was added.
+        harvesters = [];
         migratedSettings = { ...settings, targetHarvesters: harvesters };
         ipcRenderer.sendSync('saveSettings', migratedSettings);
       }

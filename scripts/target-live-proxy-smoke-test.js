@@ -35,8 +35,10 @@ assert.match(taskGroups, /const displayStatus = this\.proxyStatusFor\(task\) \|\
   'task groups must keep the operational status behind transient proxy feedback');
 assert.match(taskGroups, /const running = statusKind\(status\) === 'running'/,
   'task actions must continue to use the operational status during a proxy failure notice');
-assert.match(taskGroups, /targetHarvesterProxyList/,
-  'task groups must migrate the former shared farmer proxy setting');
+assert.doesNotMatch(taskGroups, /Default Harvester/,
+  'fresh or legacy settings must not create an implicit harvester');
+assert.match(taskGroups, /harvesters = \[\][\s\S]*targetHarvesters: harvesters/,
+  'missing harvester settings must persist an explicit empty list');
 assert.match(taskGroups, /targetThrottleFallbackGroup/,
   'task groups must expose and persist the post-cart throttle fallback setting');
 assert.match(taskGroups, />Cookie Harvesters</,
@@ -83,6 +85,8 @@ assert.match(runtimePatcher, /const harvesterStartFailures = new Map\(\)/,
   'packaged bridge patch must track fail-closed producer startup errors');
 assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
   'managed harvester configuration must preserve the selected producer type');
+assert.match(harvesterConfig, /!Array\.isArray\(settings\.targetHarvesters\)\) return \[\]/,
+  'missing harvester settings must disable the retired task-owned producer');
 assert.match(harvesterConfig, /'opera'/,
   'managed harvester configuration must preserve an Opera browser selection');
 assert.match(harvesterProducers, /'--producer=true'/,

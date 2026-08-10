@@ -55,6 +55,22 @@ assert.equal(sandbox.result.before, false);
 assert.equal(sandbox.result.during, true);
 assert.equal(sandbox.result.after, false);
 assert.equal(sandbox.result.disabled, false);
+
+const emptySandbox = {
+  dm: { getSettings: () => ({}) },
+  result: null,
+};
+vm.runInNewContext(`${configSource}
+result = {
+  configs: managedHarvesterConfigs(),
+  managed: managedHarvesterMode(),
+};`, emptySandbox);
+assert.equal(Array.isArray(emptySandbox.result.configs), true);
+assert.equal(emptySandbox.result.configs.length, 0,
+  'missing settings must not synthesize a harvester configuration');
+assert.equal(emptySandbox.result.managed, true,
+  'missing settings must block the legacy task-owned farmer path');
+
 assert.match(producerSource, /setInterval\([\s\S]*ensureHarvesterBroker\(\)[\s\S]*15000/,
   'harvester schedules are not reconciled by a background timer');
 assert.match(rendererSource, /type="datetime-local" value=\{draft\.startSchedule\}/);

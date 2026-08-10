@@ -17,6 +17,10 @@ assert.doesNotMatch(accounts, /SITE_TABS|activeSite|account-site-picker/);
 assert.match(accounts, /addAccountsBulk'[\s\S]*site:\s*'target'/);
 assert.match(accounts, /<option value="target">Target<\/option>/);
 assert.match(accounts, /filter\(isTargetAccount\)/);
+assert.match(accounts, /ipcRenderer\.sendSync\('updateAccount', \{ id: editingId, data \}\)/);
+assert.match(accounts, /Leave blank to keep the saved password/);
+assert.match(accounts, /data\.profileId = matchingProfile \? matchingProfile\.id : null/);
+assert.match(accounts, /if \(emailChanged \|\| passwordChanged\) data\.cookie = ''/);
 
 assert.match(sidebar, /to:\s*'\/task-groups'[\s\S]*label:\s*'Target'[\s\S]*section:\s*'Tasks'/);
 assert.match(sidebar, /to:\s*'\/pokemoncenter'[\s\S]*label:\s*'Pokémon Center'[\s\S]*taskType:\s*'pokemoncenter'/);
