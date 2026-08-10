@@ -80,6 +80,9 @@ assert.match(farmer, /harvestOnce\(type, proxy, selectedBrowser, browser\)/, 'wo
 assert.match(farmer, /browser\.newContext\(/, 'a reused browser does not create fresh contexts');
 assert.match(farmer, /argOf\('blockHeavyResources', 'true'\)/);
 assert.match(farmer, /installHeavyResourceBlock\(page/);
+assert.match(farmer, /createPageBandwidthMeter\(context, page/);
+assert.match(farmer, /bandwidth: bandwidthStatusPayload\(\)/,
+  'per-harvester status omits browser wire-bandwidth telemetry');
 
 console.log(JSON.stringify({
   ok: true,

@@ -44,7 +44,8 @@ import { shapeWorkerRelaunchDelayMs } from './shape-worker-retry.mjs';
 import { dismissTargetHealthDataConsent } from './target-consent-overlay.mjs';
 import { runTargetAtcV2Flow, TARGET_ATC_V2_SOURCE } from './target-atc-v2.mjs';
 import {
-  blockHeavyResourcesEnabled, installHeavyResourceBlock,
+  blockHeavyResourcesEnabled, createPageBandwidthMeter, emptyBandwidthSample,
+  installHeavyResourceBlock,
 } from './shape-bandwidth.mjs';
 
 // Broker port. Read from the env the app sets (HOPE_SHAPE_PORT) so the app, this farmer, and the
@@ -108,6 +109,86 @@ const activity = {
   produced: { login: 0, atc: 0 },
   delivered: { login: 0, atc: 0 },
 };
+const emptyTransferTotals = () => ({
+  attempts: 0,
+  measuredAttempts: 0,
+  unmeasuredAttempts: 0,
+  cookies: 0,
+  downloadBytes: 0,
+  uploadBytes: 0,
+  totalBytes: 0,
+  proxyBytes: 0,
+  directBytes: 0,
+  proxyDownloadBytes: 0,
+  proxyUploadBytes: 0,
+  directDownloadBytes: 0,
+  directUploadBytes: 0,
+  proxyCookies: 0,
+  directCookies: 0,
+  requests: 0,
+  blockedRequests: 0,
+  cachedRequests: 0,
+  failedRequests: 0,
+  proxyRequests: 0,
+  directRequests: 0,
+  proxyBlockedRequests: 0,
+  directBlockedRequests: 0,
+  proxyCachedRequests: 0,
+  directCachedRequests: 0,
+  proxyFailedRequests: 0,
+  directFailedRequests: 0,
+});
+const bandwidthActivity = {
+  startedAt: activity.startedAt,
+  ...emptyTransferTotals(),
+  byType: { login: emptyTransferTotals(), atc: emptyTransferTotals() },
+};
+function addTransferSample(target, sample, cookies, proxied) {
+  const downloadBytes = Math.max(0, Number(sample && sample.downloadBytes) || 0);
+  const uploadBytes = Math.max(0, Number(sample && sample.uploadBytes) || 0);
+  const totalBytes = downloadBytes + uploadBytes;
+  target.attempts += 1;
+  target.measuredAttempts += sample && sample.supported === true ? 1 : 0;
+  target.unmeasuredAttempts += sample && sample.supported === true ? 0 : 1;
+  target.cookies += Math.max(0, Number(cookies) || 0);
+  target.downloadBytes += downloadBytes;
+  target.uploadBytes += uploadBytes;
+  target.totalBytes += totalBytes;
+  target.proxyBytes += proxied ? totalBytes : 0;
+  target.directBytes += proxied ? 0 : totalBytes;
+  target.proxyDownloadBytes += proxied ? downloadBytes : 0;
+  target.proxyUploadBytes += proxied ? uploadBytes : 0;
+  target.directDownloadBytes += proxied ? 0 : downloadBytes;
+  target.directUploadBytes += proxied ? 0 : uploadBytes;
+  target.proxyCookies += proxied ? Math.max(0, Number(cookies) || 0) : 0;
+  target.directCookies += proxied ? 0 : Math.max(0, Number(cookies) || 0);
+  for (const field of ['requests', 'blockedRequests', 'cachedRequests', 'failedRequests']) {
+    target[field] += Math.max(0, Number(sample && sample[field]) || 0);
+  }
+  const routePrefix = proxied ? 'proxy' : 'direct';
+  target[`${routePrefix}Requests`] += Math.max(0, Number(sample && sample.requests) || 0);
+  target[`${routePrefix}BlockedRequests`] += Math.max(0, Number(sample && sample.blockedRequests) || 0);
+  target[`${routePrefix}CachedRequests`] += Math.max(0, Number(sample && sample.cachedRequests) || 0);
+  target[`${routePrefix}FailedRequests`] += Math.max(0, Number(sample && sample.failedRequests) || 0);
+}
+function recordTransferSample(type, sample, cookies, proxied) {
+  const measured = sample || emptyBandwidthSample(false);
+  addTransferSample(bandwidthActivity, measured, cookies, proxied);
+  if (bandwidthActivity.byType[type]) addTransferSample(bandwidthActivity.byType[type], measured, cookies, proxied);
+}
+function bandwidthStatusPayload() {
+  return {
+    ...bandwidthActivity,
+    supported: bandwidthActivity.measuredAttempts > 0 || bandwidthActivity.attempts === 0,
+    available: bandwidthActivity.measuredAttempts > 0,
+    uploadEstimated: true,
+    measurement: 'chromium-cdp',
+    byType: {
+      login: { ...bandwidthActivity.byType.login },
+      atc: { ...bandwidthActivity.byType.atc },
+    },
+  };
+}
 // Producer processes do not own the bank. They mirror the broker's counts so their existing
 // demand/cap coordinator can avoid farming past a shared ceiling while every producer feeds the
 // same broker on :4727.
@@ -378,6 +459,7 @@ function producerStatusPayload() {
     produced: { ...activity.produced },
     failures: health.failures || {},
     quarantinedProxies: Number(health.quarantinedProxies) || 0,
+    bandwidth: bandwidthStatusPayload(),
     lastSuccessAt: producerLastSuccessAt,
     startedAt: activity.startedAt,
   };
@@ -650,14 +732,30 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
   const persona = makePersona();
   const browser = reuse || await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
   let context = null;
+  let bandwidthMeter = null;
   try {
     // Browser reuse does not mean Target-state reuse. Every load gets a fresh context, storage jar,
     // page, and persona while retaining the expensive browser process and its fixed proxy.
     context = await browser.newContext(makeContextOptions(persona));
     const page = await context.newPage();
+    const interceptedEndpoint = harvestUrlRe(type);
+    bandwidthMeter = await createPageBandwidthMeter(context, page, {
+      isLocalResponse: request => {
+        const url = String(request && request.url || '');
+        const method = String(request && request.method || '').toUpperCase();
+        const resourceType = String(request && request.resourceType || '').toLowerCase();
+        if (/^(?:data|blob|about|file):/i.test(url)) return true;
+        if (interceptedEndpoint.test(url) && method !== 'OPTIONS' && resourceType !== 'document') return true;
+        return type === 'atc' && HARVESTER_ATC_MODE === 'v2' && resourceType === 'document'
+          && /^https:\/\/(?:www\.)?target\.com\/p\//i.test(url);
+      },
+    });
     // Bandwidth: drop product images/media through the proxy. Scripts/CSS/XHR stay so Shape and
     // Add-to-Cart keep working. Disable with --blockHeavyResources=false if yield ever dips.
-    await installHeavyResourceBlock(page, { enabled: BLOCK_HEAVY_RESOURCES });
+    await installHeavyResourceBlock(page, {
+      enabled: BLOCK_HEAVY_RESOURCES,
+      onBlocked: request => bandwidthMeter.noteBlocked(request),
+    });
     await page.addInitScript(personaInitScript(persona)).catch(() => {});
     const human = createHuman(page, persona);
 
@@ -800,6 +898,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 }
                 // Stub the response so Target NEVER receives the real request → nonce stays unused for
                 // the engine's first-and-only replay (exactly what the reference implementation's extension does).
+                bandwidthMeter.noteLocalResponse(req);
                 try { await route.fulfill(stub); } catch { try { await route.abort(); } catch {} }
                 return;
               }
@@ -814,6 +913,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
               // "signature" is in KEEP_IN_QUIET, so this reaches the operator instead of being
               // swallowed as debug chatter — it is the single most useful line when a harvest fails.
               log(`  incomplete signature: got [${got}], missing [${short.join(',')}] — stubbed, retrying`);
+              bandwidthMeter.noteLocalResponse(req);
               try { await route.fulfill(stub); } catch { try { await route.abort(); } catch {} }
               return;
             } catch {}
@@ -1155,13 +1255,27 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
         fail = DIAG ? `${why} | url=${url} | title="${title}" | shot=${shot}` : why;
       } catch (e) { fail = 'diag error: ' + e.message; }
     }
+    const bandwidth = bandwidthMeter ? await bandwidthMeter.stop() : emptyBandwidthSample(false);
     return {
       headers: captured,
       fail,
       failureCategory,
       source: type === 'atc' && HARVESTER_ATC_MODE === 'v2' ? TARGET_ATC_V2_SOURCE : 'inBot',
+      bandwidth,
     };
+  } catch (error) {
+    const bandwidth = bandwidthMeter
+      ? await bandwidthMeter.stop().catch(() => emptyBandwidthSample(false))
+      : emptyBandwidthSample(false);
+    if (error && typeof error === 'object') {
+      error.bandwidth = bandwidth;
+      throw error;
+    }
+    const wrapped = new Error(String(error));
+    wrapped.bandwidth = bandwidth;
+    throw wrapped;
   } finally {
+    if (bandwidthMeter) await bandwidthMeter.stop().catch(() => {});
     // A reused browser must not retain pages, cookies, storage, or personas between loads.
     if (context) await context.close().catch(() => {});
     if (!reuse) await browser.close().catch(() => {});
@@ -1232,6 +1346,7 @@ async function farmerWorker(id, selectedBrowser) {
     let failureCategory = '';
     let banked = 0;
     let wasReused = false;
+    let bandwidth = null;
     let proxy = sessionProxy;
     const startedAt = Date.now();
     let nextLoopDelayMs = 1000;
@@ -1260,6 +1375,7 @@ async function farmerWorker(id, selectedBrowser) {
         loadsLeft -= 1;
         const result = await harvestOnce(type, proxy, selectedBrowser, browser);
         const { headers, fail, source } = result;
+        bandwidth = result.bandwidth || null;
         failureCategory = result.failureCategory || '';
         const batch = Array.isArray(headers) ? headers : headers ? [headers] : [];
         for (const captured of batch) {
@@ -1273,8 +1389,12 @@ async function farmerWorker(id, selectedBrowser) {
         harvested = banked > 0;
         if (!harvested) failure = fail || (headers ? 'captured signature could not be banked' : 'timeout');
       }
-    } catch (e) { failure = String(e && e.message || e); }
+    } catch (e) {
+      bandwidth = e && e.bandwidth || bandwidth;
+      failure = String(e && e.message || e);
+    }
     finally { reservation.release({ success: harvested }); }
+    recordTransferSample(type, bandwidth, banked, !!proxy);
     if (harvested) {
       harvestHealth.recordSuccess({ type, proxyKey: proxy && proxy.raw });
       workerScaler.recordSuccess({

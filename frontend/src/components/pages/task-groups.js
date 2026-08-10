@@ -2,7 +2,13 @@ import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
-import { sameTargetBank, targetBankPresentation } from '../target-bank-metrics.mjs';
+import {
+  formatBandwidth,
+  sameTargetBank,
+  targetBandwidthSummary,
+  targetBankPresentation,
+  targetHarvesterBandwidth,
+} from '../target-bank-metrics.mjs';
 import {
   buildScheduleFromDraft,
   draftFromSchedule,
@@ -1030,6 +1036,10 @@ class TaskGroups extends Component {
     });
     const total = this.state.harvesters.length;
     const open = this.state.harvesterDrawerOpen;
+    const configuredHarvesterIds = new Set(this.state.harvesters.map(item => String(item.id)));
+    const runtimeHarvesters = this.state.bank && Array.isArray(this.state.bank.harvesters)
+      ? this.state.bank.harvesters.filter(item => configuredHarvesterIds.has(String(item && item.id))) : [];
+    const bandwidthSummary = targetBandwidthSummary(runtimeHarvesters, Date.now());
     const railStatusLabel = {
       ready: 'Ready',
       working: 'Active',
@@ -1052,6 +1062,7 @@ class TaskGroups extends Component {
           const runtime = this.harvesterRuntimeFor(harvester.id);
           const state = this.harvesterState(harvester, runtime);
           const produced = (runtime && runtime.produced) || {};
+          const bandwidth = targetHarvesterBandwidth(runtime, Date.now());
           const workerValue = state.kind === 'running'
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
@@ -1062,6 +1073,28 @@ class TaskGroups extends Component {
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
             : 'Always';
+          const runtimeRoute = String((runtime && runtime.route) || '').trim().toLowerCase();
+          const usesProxy = bandwidth.proxyBytes > 0 || !!(runtimeRoute && runtimeRoute !== 'local');
+          const bandwidthValue = !runtime || bandwidth.attempts === 0
+            ? 'Waiting for first page'
+            : !bandwidth.supported
+              ? 'Telemetry unavailable for this browser'
+              : `${formatBandwidth(bandwidth.totalBytes)} · ${formatBandwidth(bandwidth.bytesPerHour)}/hr avg`
+                + (bandwidth.cookies ? ` · ${formatBandwidth(bandwidth.bytesPerCookie)}/cookie` : ' · no cookie yield yet');
+          const transferDetail = `↓ ${formatBandwidth(bandwidth.downloadBytes)} · ↑ ${formatBandwidth(bandwidth.uploadBytes)} est.`
+            + ` · ${bandwidth.requests} requests · ${bandwidth.blockedRequests} heavy assets blocked`;
+          const typeBreakdown = ['login', 'atc'].map(type => {
+            const item = bandwidth.byType[type] || {};
+            const bytes = Number(item.totalBytes) || 0;
+            const cookies = Number(item.cookies) || 0;
+            if (!(Number(item.attempts) > 0)) return '';
+            const name = type === 'atc' ? atcModeLabel : 'Login';
+            return `${name} ${formatBandwidth(bytes)}${cookies ? ` (${formatBandwidth(bytes / cookies)}/cookie)` : ''}`;
+          }).filter(Boolean).join(' · ');
+          const requestDetail = `${bandwidth.attempts} pages · ${bandwidth.failedRequests} failed requests`
+            + ` · ${bandwidth.cachedRequests} cache hits`
+            + (bandwidth.unmeasuredAttempts ? ` · ${bandwidth.unmeasuredAttempts} unmeasured` : '')
+            + (typeBreakdown ? ` · ${typeBreakdown}` : '');
           return (
             <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
               <div className="target-harvester-identity">
@@ -1070,6 +1103,11 @@ class TaskGroups extends Component {
               </div>
               <div className="target-harvester-card-stat target-harvester-workers"><small>Workers</small><strong>{workerValue}</strong></div>
               <div className="target-harvester-card-stat target-harvester-produced"><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></div>
+              <div className="target-harvester-card-stat target-harvester-bandwidth">
+                <small>{usesProxy ? 'Proxy' : 'Direct'} bandwidth · this run</small>
+                <strong title={bandwidthValue}>{bandwidthValue}</strong>
+                {bandwidth.attempts > 0 && <><em>{transferDetail}</em><em>{requestDetail}</em></>}
+              </div>
               <div className="target-harvester-card-stat target-harvester-browser"><small>Browser / Last success</small><strong>{browser} · {this.harvesterLastSuccess(runtime)}</strong></div>
               <div className="target-harvester-card-stat target-harvester-schedule"><small>Schedule</small><strong title={schedule}>{schedule}</strong></div>
               <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
@@ -1123,6 +1161,22 @@ class TaskGroups extends Component {
                 <span><strong>{bank.login}</strong><small>Login banked</small></span>
                 <span><strong>{bank.atc}</strong><small>ATC banked</small></span>
               </div>
+              <section className="target-harvester-bandwidth-summary" aria-label="Proxy bandwidth telemetry"
+                title="Browser-level transfer. Your proxy provider may report slightly more for tunnel and TLS overhead.">
+                <header>
+                  <span><strong>Proxy bandwidth</strong><small>Current harvester runs</small></span>
+                  <em>{bandwidthSummary.available ? 'Wire download · estimated upload' : 'Waiting for harvester traffic'}</em>
+                </header>
+                <div>
+                  <span><strong>{formatBandwidth(bandwidthSummary.proxyBytes)}</strong><small>Total proxy data</small></span>
+                  <span><strong>{formatBandwidth(bandwidthSummary.bytesPerHour)}/hr</strong><small>Average rate</small></span>
+                  <span><strong>{bandwidthSummary.proxyCookies ? formatBandwidth(bandwidthSummary.bytesPerProxyCookie) : '—'}</strong><small>Per cookie</small></span>
+                  <span><strong>↓ {formatBandwidth(bandwidthSummary.proxyDownloadBytes)}</strong><small>↑ {formatBandwidth(bandwidthSummary.proxyUploadBytes)} est.</small></span>
+                </div>
+                <p>{bandwidthSummary.requests} network requests · {bandwidthSummary.blockedRequests} heavy assets blocked · {bandwidthSummary.failedRequests} failed · {bandwidthSummary.cachedRequests} cache hits
+                  {bandwidthSummary.unmeasuredAttempts > 0 ? ` · ${bandwidthSummary.unmeasuredAttempts} pages unmeasured` : ''}
+                  {bandwidthSummary.directBytes > 0 ? ` · ${formatBandwidth(bandwidthSummary.directBytes)} direct traffic excluded` : ''}</p>
+              </section>
               <div className="target-harvester-drawer-toolbar">
                 <span className={`group-status group-status-${bank.state === 'ready' ? 'success' : bank.state === 'working' ? 'running' : bank.state === 'error' ? 'error' : 'idle'}`}>
                   <span className="group-status-dot" />{bank.label}

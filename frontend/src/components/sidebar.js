@@ -33,7 +33,7 @@ class Sidebar extends Component {
           className="btn btn-sm"
           onClick={this.install}
           title={`v${update.version} downloaded — restart to apply`}
-          style={{ background: 'var(--ok)', color: 'var(--accent-on)', fontWeight: 700, width: '100%', marginBottom: 6 }}
+          style={{ background: 'var(--ok)', color: '#000', fontWeight: 700, width: '100%', marginBottom: 6 }}
         >
           <Icon name="refresh" size={13} /> Update to v{update.version}
         </button>

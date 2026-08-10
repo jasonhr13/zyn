@@ -23,6 +23,8 @@ assert.match(sidebar, /to:\s*'\/pokemoncenter'[\s\S]*label:\s*'Pokémon Center'[
 assert.match(sidebar, /activeRoutes:\s*\['\/task-groups',\s*'\/target'\]/);
 assert.doesNotMatch(sidebar, /label:\s*'Tasks'[\s\S]*to:\s*'\/modules'/);
 assert.match(routes, /<Sidebar taskTypes=\{license\.taskTypes \|\| \{\}\} \/>/);
+assert.match(sidebar, /Update to v\{update\.version\}/);
+assert.match(sidebar, /background:\s*'var\(--ok\)'[\s\S]{0,80}color:\s*'#000'/);
 assert.doesNotMatch(sidebar, /label:\s*'Generate'/);
 
 for (const retired of ['tasks', 'generate', 'pbandai', 'round1', 'riotgames', 'walmart']) {

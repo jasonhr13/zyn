@@ -1,5 +1,97 @@
 const count = (value) => Math.max(0, Number(value) || 0);
 
+export function formatBandwidth(bytes) {
+  let value = count(bytes);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const digits = unit === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unit]}`;
+}
+
+export function targetHarvesterBandwidth(runtime, now = Date.now()) {
+  const raw = (runtime && runtime.bandwidth) || {};
+  const downloadBytes = count(raw.downloadBytes);
+  const uploadBytes = count(raw.uploadBytes);
+  const totalBytes = count(raw.totalBytes || downloadBytes + uploadBytes);
+  const proxyBytes = count(raw.proxyBytes);
+  const directBytes = count(raw.directBytes);
+  const cookies = count(raw.cookies);
+  const startedAt = count(raw.startedAt || (runtime && runtime.startedAt));
+  const elapsedHours = startedAt > 0 ? Math.max(1 / 3600, (count(now) - startedAt) / 3600000) : 0;
+  return {
+    available: raw.available === true,
+    supported: raw.supported !== false,
+    attempts: count(raw.attempts),
+    cookies,
+    downloadBytes,
+    uploadBytes,
+    totalBytes,
+    proxyBytes,
+    directBytes,
+    proxyDownloadBytes: count(raw.proxyDownloadBytes),
+    proxyUploadBytes: count(raw.proxyUploadBytes),
+    directDownloadBytes: count(raw.directDownloadBytes),
+    directUploadBytes: count(raw.directUploadBytes),
+    proxyCookies: count(raw.proxyCookies),
+    directCookies: count(raw.directCookies),
+    requests: count(raw.requests),
+    blockedRequests: count(raw.blockedRequests),
+    cachedRequests: count(raw.cachedRequests),
+    failedRequests: count(raw.failedRequests),
+    proxyRequests: count(raw.proxyRequests),
+    proxyBlockedRequests: count(raw.proxyBlockedRequests),
+    proxyCachedRequests: count(raw.proxyCachedRequests),
+    proxyFailedRequests: count(raw.proxyFailedRequests),
+    unmeasuredAttempts: count(raw.unmeasuredAttempts),
+    bytesPerHour: elapsedHours > 0 ? totalBytes / elapsedHours : 0,
+    bytesPerCookie: cookies > 0 ? totalBytes / cookies : 0,
+    byType: raw.byType || {},
+  };
+}
+
+export function targetBandwidthSummary(harvesters, now = Date.now()) {
+  const summary = {
+    available: false,
+    totalBytes: 0,
+    proxyBytes: 0,
+    directBytes: 0,
+    proxyDownloadBytes: 0,
+    proxyUploadBytes: 0,
+    proxyCookies: 0,
+    requests: 0,
+    blockedRequests: 0,
+    cachedRequests: 0,
+    failedRequests: 0,
+    unmeasuredAttempts: 0,
+    bytesPerHour: 0,
+    bytesPerProxyCookie: 0,
+  };
+  for (const runtime of Array.isArray(harvesters) ? harvesters : []) {
+    const item = targetHarvesterBandwidth(runtime, now);
+    summary.available = summary.available || item.available;
+    summary.totalBytes += item.totalBytes;
+    summary.proxyBytes += item.proxyBytes;
+    summary.directBytes += item.directBytes;
+    summary.proxyDownloadBytes += item.proxyDownloadBytes;
+    summary.proxyUploadBytes += item.proxyUploadBytes;
+    summary.proxyCookies += item.proxyCookies;
+    summary.requests += item.proxyRequests;
+    summary.blockedRequests += item.proxyBlockedRequests;
+    summary.cachedRequests += item.proxyCachedRequests;
+    summary.failedRequests += item.proxyFailedRequests;
+    summary.unmeasuredAttempts += item.unmeasuredAttempts;
+    summary.bytesPerHour += item.proxyBytes && item.totalBytes
+      ? item.bytesPerHour * (item.proxyBytes / item.totalBytes) : 0;
+  }
+  summary.bytesPerProxyCookie = summary.proxyCookies > 0
+    ? summary.proxyBytes / summary.proxyCookies : 0;
+  return summary;
+}
+
 const FAILURE_LABELS = {
   target_block: 'Target block',
   captcha: 'Captcha',
