@@ -1,7 +1,7 @@
 const CHANNELS = new Set(['mac', 'windows', 'runtimes']);
 const MAC_ARCHES = new Set(['arm64', 'x64']);
 const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
-const CURRENT_MAC_VERSION = '1.6.83';
+const CURRENT_MAC_VERSION = '1.6.84';
 
 function emptyMacFeed(key) {
   if (!/^mac\/(arm64|x64)\/latest-mac\.yml$/.test(key)) return null;

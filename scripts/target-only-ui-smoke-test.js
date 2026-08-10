@@ -18,7 +18,11 @@ assert.match(accounts, /addAccountsBulk'[\s\S]*site:\s*'target'/);
 assert.match(accounts, /<option value="target">Target<\/option>/);
 assert.match(accounts, /filter\(isTargetAccount\)/);
 
-assert.match(sidebar, /to:\s*'\/modules'[\s\S]*label:\s*'Tasks'/);
+assert.match(sidebar, /to:\s*'\/task-groups'[\s\S]*label:\s*'Target'[\s\S]*section:\s*'Tasks'/);
+assert.match(sidebar, /to:\s*'\/pokemoncenter'[\s\S]*label:\s*'Pokémon Center'[\s\S]*taskType:\s*'pokemoncenter'/);
+assert.match(sidebar, /activeRoutes:\s*\['\/task-groups',\s*'\/target'\]/);
+assert.doesNotMatch(sidebar, /label:\s*'Tasks'[\s\S]*to:\s*'\/modules'/);
+assert.match(routes, /<Sidebar taskTypes=\{license\.taskTypes \|\| \{\}\} \/>/);
 assert.doesNotMatch(sidebar, /label:\s*'Generate'/);
 
 for (const retired of ['tasks', 'generate', 'pbandai', 'round1', 'riotgames', 'walmart']) {

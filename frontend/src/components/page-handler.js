@@ -149,7 +149,7 @@ class PageHandler extends Component {
         <OtpBanner />
         <RuntimeBanner />
         <div className="body-wrapper">
-          <Sidebar />
+          <Sidebar taskTypes={license.taskTypes || {}} />
           <div className="page-area">
             <ErrorBoundary>
               <Switch>

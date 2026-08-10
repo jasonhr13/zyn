@@ -8,9 +8,9 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
-const MODULE_ROUTES = ['/modules', '/task-groups', '/target', '/pokemoncenter'];
 const NAV_ITEMS = [
-  { to: '/modules', icon: 'layers', label: 'Tasks', section: null, modules: true },
+  { to: '/task-groups', icon: 'target', label: 'Target', section: 'Tasks', activeRoutes: ['/task-groups', '/target'] },
+  { to: '/pokemoncenter', icon: 'ticket', label: 'Pokémon Center', section: 'Tasks', taskType: 'pokemoncenter' },
   { to: '/profiles', icon: 'user', label: 'Profiles', section: 'Workspace' },
   { to: '/accounts', icon: 'key', label: 'Accounts', section: 'Workspace' },
   { to: '/proxies', icon: 'network', label: 'Proxies', section: 'Workspace' },
@@ -44,10 +44,12 @@ class Sidebar extends Component {
 
   render() {
     let lastSection = null;
+    const taskTypes = this.props.taskTypes || {};
+    const navItems = NAV_ITEMS.filter(item => !item.taskType || taskTypes[item.taskType] === true);
     return (
       <div className="sidebar">
         <nav className="sidebar-nav" aria-label="Primary navigation">
-          {NAV_ITEMS.map(({ to, icon, label, section, modules }) => {
+          {navItems.map(({ to, icon, label, section, activeRoutes }) => {
             const heading = section && section !== lastSection
               ? <div className="sidebar-section-label">{section}</div>
               : null;
@@ -60,8 +62,8 @@ class Sidebar extends Component {
                   exact
                   className="sidebar-link"
                   activeClassName="active"
-                  isActive={modules
-                    ? (_match, location) => MODULE_ROUTES.some(route => location.pathname === route || location.pathname.startsWith(`${route}/`))
+                  isActive={activeRoutes
+                    ? (_match, location) => activeRoutes.some(route => location.pathname === route || location.pathname.startsWith(`${route}/`))
                     : undefined}
                   title={label}
                 >
