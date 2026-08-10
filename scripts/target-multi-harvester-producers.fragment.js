@@ -1,5 +1,18 @@
+function harvesterProxyLines(config) {
+  return proxyLinesFor(config.proxyListName).filter(line => parseProxyLine(line));
+}
+
 function harvesterFingerprint(config) {
-  return JSON.stringify(config);
+  let proxyState = 'local';
+  if (config.proxyListName) {
+    try {
+      const lines = harvesterProxyLines(config);
+      proxyState = lines.length
+        ? `${lines.length}:${crypto.createHash('sha256').update(lines.join('\n')).digest('hex')}`
+        : 'unavailable';
+    } catch { proxyState = 'unavailable'; }
+  }
+  return JSON.stringify({ config, proxyState });
 }
 
 function stopHarvesterProducer(id) {
@@ -17,10 +30,28 @@ function spawnHarvesterProducer(config) {
   sweepStaleProxyFiles();
   let proxyFile = '';
   try {
-    const lines = proxyLinesFor(config.proxyListName);
+    const lines = harvesterProxyLines(config);
+    // A named proxy route is an instruction, not a preference. If its list was deleted, renamed,
+    // emptied, or failed to decrypt, never turn a metered-proxy harvester into a home-IP harvester.
+    if (config.proxyListName && !lines.length) {
+      const failureKey = `proxy:${config.proxyListName}`;
+      if (harvesterStartFailures.get(config.id) !== failureKey) {
+        log(`[target] harvester ${config.name} not started — proxy group ${config.proxyListName} is unavailable or empty`);
+        harvesterStartFailures.set(config.id, failureKey);
+      }
+      return;
+    }
+    harvesterStartFailures.delete(config.id);
     proxyFile = path.join(os.tmpdir(), `shape-proxies-${Date.now()}${Math.floor(Math.random() * 1000)}.txt`);
     fs.writeFileSync(proxyFile, lines.join('\n'), { encoding: 'utf8', mode: 0o600 });
-  } catch (e) { log(`harvester ${config.name} proxy file error: ${e.message}`); }
+  } catch (e) {
+    const failureKey = `proxy-error:${e.message}`;
+    if (harvesterStartFailures.get(config.id) !== failureKey) {
+      log(`harvester ${config.name} proxy file error: ${e.message}`);
+      harvesterStartFailures.set(config.id, failureKey);
+    }
+    if (config.proxyListName) return;
+  }
 
   const env = nodeEnvironment({ FORCE_COLOR: '0', HOPE_SHAPE_PORT: String(SHAPE_PORT), HOPE_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
@@ -94,6 +125,9 @@ function spawnHarvesterProducer(config) {
 function syncHarvesterProducers(configs = managedHarvesterConfigs() || []) {
   const active = configs.filter(config => harvesterScheduleActive(config));
   const wanted = new Map(active.map(config => [config.id, config]));
+  for (const id of [...harvesterStartFailures.keys()]) {
+    if (!wanted.has(id)) harvesterStartFailures.delete(id);
+  }
   for (const [id, entry] of harvesterProcs) {
     const config = wanted.get(id);
     if (!config || entry.fingerprint !== harvesterFingerprint(config)) stopHarvesterProducer(id);

@@ -46,6 +46,10 @@ assert.equal((engine.match(/const env = nodeEnvironment\(/g) || []).length, 3,
 assert.match(engine, /'--producer=true'/, 'packaged bridge is missing managed producer launch mode');
 assert.match(engine, /harvesters: Array\.isArray\(j\.harvesters\)/,
   'per-harvester telemetry is not forwarded to the renderer');
+assert.match(engine, /not started — proxy group/,
+  'packaged harvester bridge does not fail closed when its selected proxy group disappears');
+assert.match(engine, /const harvesterStartFailures = new Map\(\)/,
+  'packaged harvester bridge cannot suppress repeated missing-proxy reconciliation errors');
 assert.match(engine, /function isTaskRunning\(taskId\)/,
   'scheduled task groups cannot inspect per-task runtime state');
 assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,

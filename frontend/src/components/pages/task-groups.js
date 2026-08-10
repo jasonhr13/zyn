@@ -350,6 +350,10 @@ class TaskGroups extends Component {
     const draft = this.state.harvesterDraft;
     const name = String(draft.name || '').trim();
     if (!name) return;
+    if (draft.enabled !== false && !this.harvesterProxyAvailable(draft)) {
+      window.alert(`Proxy group “${draft.proxyListName}” is unavailable. Select another proxy group or Local before starting this harvester.`);
+      return;
+    }
     const startSchedule = isoDateTimeValue(draft.startSchedule);
     const stopSchedule = isoDateTimeValue(draft.stopSchedule);
     if (startSchedule && stopSchedule && Date.parse(stopSchedule) <= Date.parse(startSchedule)) {
@@ -375,6 +379,10 @@ class TaskGroups extends Component {
   };
 
   toggleHarvester = harvester => {
+    if (!harvester.enabled && !this.harvesterProxyAvailable(harvester)) {
+      window.alert(`Proxy group “${harvester.proxyListName}” is unavailable. Edit this harvester before starting it.`);
+      return;
+    }
     const harvesters = this.state.harvesters.map(item => item.id === harvester.id
       ? { ...item, enabled: !item.enabled } : item);
     this.persistHarvesters(harvesters);
@@ -393,6 +401,8 @@ class TaskGroups extends Component {
 
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
+  harvesterProxyAvailable = harvester => !harvester.proxyListName
+    || this.proxyLists().some(list => proxyRef(list) === harvester.proxyListName);
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
@@ -1008,6 +1018,9 @@ class TaskGroups extends Component {
 
   harvesterState = (harvester, runtime) => {
     if (!harvester.enabled) return { kind: 'idle', label: 'Stopped' };
+    if (!this.harvesterProxyAvailable(harvester)) {
+      return { kind: 'error', label: 'Proxy unavailable' };
+    }
     const now = Date.now();
     const startsAt = harvester.startSchedule ? Date.parse(harvester.startSchedule) : NaN;
     const stopsAt = harvester.stopSchedule ? Date.parse(harvester.stopSchedule) : NaN;
@@ -1030,7 +1043,9 @@ class TaskGroups extends Component {
   };
 
   renderHarvesterDrawer() {
-    const bank = targetBankPresentation(this.state.bank, this.state.harvesters, {
+    const availableHarvesters = this.state.harvesters.map(harvester =>
+      this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
+    const bank = targetBankPresentation(this.state.bank, availableHarvesters, {
       now: this.state.bankCheckedAt || Date.now(),
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
@@ -1099,7 +1114,11 @@ class TaskGroups extends Component {
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
             : 'Always';
           const runtimeRoute = String((runtime && runtime.route) || '').trim().toLowerCase();
-          const usesProxy = bandwidth.proxyBytes > 0 || !!(runtimeRoute && runtimeRoute !== 'local');
+          const routeExpectsProxy = !!(runtimeRoute && runtimeRoute !== 'local');
+          const hasMeasuredTraffic = bandwidth.attempts > 0 || bandwidth.totalBytes > 0;
+          const usesProxy = bandwidth.proxyBytes > 0 || (!hasMeasuredTraffic && routeExpectsProxy);
+          const proxyRouteMismatch = hasMeasuredTraffic && routeExpectsProxy
+            && bandwidth.proxyBytes === 0 && bandwidth.directBytes > 0;
           const bandwidthValue = !runtime || bandwidth.attempts === 0
             ? 'Waiting for first page'
             : !bandwidth.supported
@@ -1129,7 +1148,7 @@ class TaskGroups extends Component {
               <div className="target-harvester-card-stat target-harvester-workers"><small>Workers</small><strong>{workerValue}</strong></div>
               <div className="target-harvester-card-stat target-harvester-produced"><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></div>
               <div className="target-harvester-card-stat target-harvester-bandwidth">
-                <small>{usesProxy ? 'Proxy' : 'Direct'} bandwidth · this run</small>
+                <small>{proxyRouteMismatch ? 'Direct bandwidth · proxy unavailable' : `${usesProxy ? 'Proxy' : 'Direct'} bandwidth · this run`}</small>
                 <strong title={bandwidthValue}>{bandwidthValue}</strong>
                 {bandwidth.attempts > 0 && <><em>{transferDetail}</em><em>{requestDetail}</em></>}
               </div>

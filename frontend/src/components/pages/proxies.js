@@ -41,6 +41,7 @@ class Proxies extends Component {
     ipcRenderer.sendSync('saveProxyList', { name: editorName.trim(), raw: editorRaw.trim() });
     const proxies = ipcRenderer.sendSync('getProxies');
     this.props.dispatch({ type: 'update', obj: { proxies } });
+    try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     this.setState({ activeList: editorName.trim(), isEditing: false });
   };
 
@@ -48,6 +49,7 @@ class Proxies extends Component {
     ipcRenderer.sendSync('deleteProxyList', name);
     const proxies = ipcRenderer.sendSync('getProxies');
     this.props.dispatch({ type: 'update', obj: { proxies } });
+    try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     if (this.state.activeList === name) {
       this.setState({ activeList: null, editorName: '', editorRaw: '', isEditing: false });
     }

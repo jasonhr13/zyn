@@ -622,6 +622,7 @@ function runningCount() { return runningTaskIds.size; }`,
 // cookies into the single broker above, so one route/browser can be stopped or crash without
 // interrupting the shared bank or another harvester.
 const harvesterProcs = new Map(); // id -> { proc, fingerprint }
+const harvesterStartFailures = new Map(); // id -> failure key, suppresses repeated reconciliation logs
 let harvesterSyncTimer = null;`, 'Target managed harvester process state');
 
   const harvesterConfig = fs.readFileSync(path.join(__dirname, 'target-multi-harvester-config.fragment.js'), 'utf8').trimEnd();

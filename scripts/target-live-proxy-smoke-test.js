@@ -10,6 +10,7 @@ const source = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const ui = source('frontend/src/components/pages/target.js');
 const taskGroups = source('frontend/src/components/pages/task-groups.js');
+const proxiesPage = source('frontend/src/components/pages/proxies.js');
 const pageHandler = source('frontend/src/components/page-handler.js');
 const store = source('frontend/src/components/store.js');
 const runtimePatcher = source('scripts/patch-profile-imap-engines.js');
@@ -54,6 +55,12 @@ assert.match(taskGroups, /runtime && runtime\.browserPerformance/,
   'harvester cards must read per-browser performance telemetry');
 assert.match(taskGroups, /Favoring \$\{browserLeader\.label\}/,
   'automatic harvester cards must identify the browser currently being favored');
+assert.match(taskGroups, /harvesterProxyAvailable/,
+  'harvester UI must detect deleted or unavailable proxy groups');
+assert.match(taskGroups, /label: 'Proxy unavailable'/,
+  'a harvester with a missing proxy group must render an actionable error state');
+assert.equal((proxiesPage.match(/sendSync\('syncTargetHarvesters'\)/g) || []).length, 2,
+  'saving or deleting a proxy group must immediately reconcile managed harvesters');
 assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,
@@ -72,6 +79,8 @@ assert.match(bridge, /type: 'set-task-proxy'.*proxyGroup: group/,
   'bridge must emit the backend live-edit protocol');
 assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
   'packaged bridge patch must create independent producer process handles');
+assert.match(runtimePatcher, /const harvesterStartFailures = new Map\(\)/,
+  'packaged bridge patch must track fail-closed producer startup errors');
 assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
   'managed harvester configuration must preserve the selected producer type');
 assert.match(harvesterConfig, /'opera'/,
@@ -80,6 +89,12 @@ assert.match(harvesterProducers, /'--producer=true'/,
   'managed harvesters must run as producer-only processes behind the shared broker');
 assert.match(harvesterProducers, /`--browsers=\$\{config\.browser\}`/,
   'managed harvesters must pass the selected browser to the farmer process');
+assert.match(harvesterProducers, /config\.proxyListName && !lines\.length/,
+  'managed harvesters must not silently fall back to direct traffic when a proxy group is empty');
+assert.match(harvesterProducers, /not started — proxy group/,
+  'missing proxy groups must produce a clear startup error');
+assert.match(harvesterProducers, /createHash\('sha256'\).*lines\.join/,
+  'proxy-list edits must change the producer fingerprint and restart affected harvesters');
 assert.match(farmer, /u\.pathname === '\/harvesterStatus'/,
   'the shared broker must aggregate per-harvester runtime telemetry');
 assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login'/,
