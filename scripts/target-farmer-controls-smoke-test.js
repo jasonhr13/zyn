@@ -83,6 +83,10 @@ assert.match(farmer, /installHeavyResourceBlock\(page/);
 assert.match(farmer, /createPageBandwidthMeter\(context, page/);
 assert.match(farmer, /bandwidth: bandwidthStatusPayload\(\)/,
   'per-harvester status omits browser wire-bandwidth telemetry');
+assert.match(farmer, /browserPerformance: browserOptimizer \? browserOptimizer\.snapshot\(\) : null/,
+  'per-harvester status omits adaptive browser performance telemetry');
+assert.match(farmer, /failureCategory: category/,
+  'browser optimizer cannot distinguish route failures from browser failures');
 
 console.log(JSON.stringify({
   ok: true,
@@ -90,4 +94,5 @@ console.log(JSON.stringify({
   limits: { cookiesPerPage: 10, pageLoadsPerBrowser: 10 },
   blockedTypes: ['image', 'media', 'font'],
   freshContextPerLoad: true,
+  adaptiveBrowserScheduling: true,
 }, null, 2));

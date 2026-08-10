@@ -929,6 +929,7 @@ body.theme-night .form-select {
 .target-harvester-bandwidth strong { color: var(--text); font-size: 10px; }
 .target-harvester-bandwidth em { overflow: hidden; color: var(--muted); font-size: 7.8px; font-style: normal; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .target-harvester-browser { grid-area: browser; }
+.target-harvester-browser em { overflow: hidden; color: var(--muted); font-size: 7.8px; font-style: normal; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .target-harvester-schedule { grid-area: schedule; }
 .target-harvester-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 2px; }
 .target-harvester-actions .btn { flex: 1; justify-content: center; }

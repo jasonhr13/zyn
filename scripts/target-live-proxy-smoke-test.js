@@ -50,6 +50,10 @@ assert.match(taskGroups, /Target ATC/,
   'task groups must expose a dedicated ATC harvester type');
 assert.match(taskGroups, /\['opera', 'Opera'\]/,
   'task groups must expose Opera as a managed harvester browser');
+assert.match(taskGroups, /runtime && runtime\.browserPerformance/,
+  'harvester cards must read per-browser performance telemetry');
+assert.match(taskGroups, /Favoring \$\{browserLeader\.label\}/,
+  'automatic harvester cards must identify the browser currently being favored');
 assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,

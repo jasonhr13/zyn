@@ -38,6 +38,7 @@ import {
   detectShapeBrowsers, distributeShapeWorkerBrowsers, shapeBrowserLaunchOptions,
   normalizeShapeBrowserSelection, shapeBrowserSchedulerSlotCount,
 } from './shape-browser-pool.mjs';
+import { createShapeBrowserOptimizer } from './shape-browser-optimizer.mjs';
 import { randomLoadsForBrowser, shapeFarmerThroughputOptions } from './shape-farmer-throughput.mjs';
 import { createShapeWorkerScaler } from './shape-worker-scaler.mjs';
 import { shapeWorkerRelaunchDelayMs } from './shape-worker-retry.mjs';
@@ -222,6 +223,7 @@ let farmerBrowser = { key: 'chromium', channel: 'chromium', mode: 'not-started' 
 let farmerBrowsers = [];
 let workerBrowsers = [];
 let workerScaler = null;
+let browserOptimizer = null;
 
 // Shape headers are short-lived; anything older is dropped by prune() rather than handed to the
 // engine (a stale replay is a guaranteed 401, and it burns the task's attempt).
@@ -460,6 +462,7 @@ function producerStatusPayload() {
     failures: health.failures || {},
     quarantinedProxies: Number(health.quarantinedProxies) || 0,
     bandwidth: bandwidthStatusPayload(),
+    browserPerformance: browserOptimizer ? browserOptimizer.snapshot() : null,
     lastSuccessAt: producerLastSuccessAt,
     startedAt: activity.startedAt,
   };
@@ -551,7 +554,7 @@ const server = http.createServer((req, res) => {
     prune('login'); prune('atc');
     const coordination = harvestCoordinator.state();
     const health = harvestHealth.snapshot();
-    const scale = workerScaler ? workerScaler.snapshot() : {
+    const rawScale = workerScaler ? workerScaler.snapshot() : {
       policy: 'fixed', desiredWorkers: 0,
       activeWorkers: 0, configuredCeiling: startedWorkerCount, hardLimit: startedWorkerCount,
       recentSamples: 0, recentErrors: 0, recentErrorRate: 0,
@@ -567,12 +570,24 @@ const server = http.createServer((req, res) => {
         rotations: 0, rotationEvery: 2, activeLeaseCompletions: {}, lastRotation: null,
       },
     };
+    const browserPerformance = browserOptimizer ? browserOptimizer.snapshot() : null;
+    const optimizerActiveCounts = Object.fromEntries((browserPerformance?.browsers || [])
+      .map(browser => [browser.key, browser.activeWorkers]));
+    const scale = browserPerformance ? {
+      ...rawScale,
+      scheduling: { ...rawScale.scheduling, activeBrowserCounts: optimizerActiveCounts },
+    } : rawScale;
+    const performanceByBrowser = new Map((browserPerformance?.browsers || [])
+      .map(browser => [browser.key, browser]));
     const activeWorkerIds = new Set(scale.scheduling && scale.scheduling.activeWorkerIds || []);
     const browsers = farmerBrowsers.map(browser => ({
       ...browser,
       configuredWorkers: workerBrowsers.filter(candidate => candidate.key === browser.key).length,
-      activeWorkers: workerBrowsers.filter((candidate, id) =>
-        activeWorkerIds.has(id) && candidate.key === browser.key).length,
+      activeWorkers: performanceByBrowser.has(browser.key)
+        ? performanceByBrowser.get(browser.key).activeWorkers
+        : workerBrowsers.filter((candidate, id) =>
+          activeWorkerIds.has(id) && candidate.key === browser.key).length,
+      performance: performanceByBrowser.get(browser.key) || null,
     }));
     // `app` and `owner` let the app identify this process positively before ever reclaiming the
     // port from it — image-name matching would be reckless (node.exe is everyone's dev server).
@@ -596,6 +611,7 @@ const server = http.createServer((req, res) => {
            health: { ...health, activeWorkers: scale.activeWorkers + producerWorkers,
              busyWorkers: coordination.inFlight.login + coordination.inFlight.atc,
              configuredWorkers: startedWorkerCount + producerConfigured,
+             browserOptimization: browserPerformance,
              scaling: producerConfigured ? {
                ...scale,
                desiredWorkers: producerConfigured,
@@ -1297,17 +1313,21 @@ function workerScaleSourceKey(proxy, selectedBrowser, workerId) {
   return `home:${selectedBrowser.key}:${workerId}`;
 }
 
-async function farmerWorker(id, selectedBrowser) {
+async function farmerWorker(id, initialBrowser) {
   // A worker reuses one expensive browser process for a small random number of loads. The proxy is
   // a browser launch option, so it remains fixed for that session; every load still gets a fresh
   // context/persona inside harvestOnce().
   let browser = null;
+  let sessionBrowser = null;
   let sessionProxy = null;
   let loadsLeft = 0;
   let sessionLoads = 0;
+  let firstSession = true;
   const endSession = async () => {
     if (browser) await browser.close().catch(() => {});
+    if (sessionBrowser && browserOptimizer) browserOptimizer.release(id);
     browser = null;
+    sessionBrowser = null;
     sessionProxy = null;
     loadsLeft = 0;
     sessionLoads = 0;
@@ -1340,7 +1360,7 @@ async function farmerWorker(id, selectedBrowser) {
       continue;
     }
     const type = reservation.type;
-    if (type === 'login') log(`farmer worker ${id} [${selectedBrowser.key}]: reserved the single login lane`);
+    let selectedBrowser = sessionBrowser || initialBrowser;
     let harvested = false;
     let failure = '';
     let failureCategory = '';
@@ -1362,16 +1382,25 @@ async function farmerWorker(id, selectedBrowser) {
         } else {
           proxy = proxyChoice.proxy;
           sessionProxy = proxy;
+          selectedBrowser = browserOptimizer
+            ? browserOptimizer.acquire(id, firstSession ? initialBrowser.key : '')
+            : initialBrowser;
+          firstSession = false;
+          sessionBrowser = selectedBrowser;
           browser = await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
           sessionLoads = randomLoadsForBrowser(LOADS_PER_BROWSER);
           loadsLeft = sessionLoads;
         }
       } else {
         proxy = sessionProxy;
+        selectedBrowser = sessionBrowser || initialBrowser;
         wasReused = true;
       }
 
       if (browser) {
+        if (type === 'login') {
+          log(`farmer worker ${id} [${selectedBrowser.key}]: reserved the single login lane`);
+        }
         loadsLeft -= 1;
         const result = await harvestOnce(type, proxy, selectedBrowser, browser);
         const { headers, fail, source } = result;
@@ -1396,6 +1425,14 @@ async function farmerWorker(id, selectedBrowser) {
     finally { reservation.release({ success: harvested }); }
     recordTransferSample(type, bandwidth, banked, !!proxy);
     if (harvested) {
+      if (browserOptimizer) browserOptimizer.recordOutcome({
+        workerId: id,
+        browserKey: selectedBrowser.key,
+        success: true,
+        cookies: banked,
+        durationMs: Date.now() - startedAt,
+        bandwidth,
+      });
       harvestHealth.recordSuccess({ type, proxyKey: proxy && proxy.raw });
       workerScaler.recordSuccess({
         sourceKey: workerScaleSourceKey(proxy, selectedBrowser, id), workerId: id,
@@ -1406,6 +1443,14 @@ async function farmerWorker(id, selectedBrowser) {
       if (loadsLeft <= 0) await endSession();
     } else {
       const category = failureCategory || classifyHarvestFailure(failure);
+      if (browserOptimizer) browserOptimizer.recordOutcome({
+        workerId: id,
+        browserKey: selectedBrowser.key,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        bandwidth,
+        failureCategory: category,
+      });
       const outcome = harvestHealth.recordFailure({ type, category, proxyKey: proxy && proxy.raw });
       // Health telemetry needs route independence without proxy credentials. Fixed scheduling never
       // uses this evidence to deactivate a worker; quarantine owns the failed route instead.
@@ -1440,10 +1485,17 @@ function startFarming(browserMode) {
     if (!PRODUCER_MODE) { prune('login'); prune('atc'); }
     const health = harvestHealth.snapshot();
     const scale = workerScaler && workerScaler.snapshot();
+    const optimization = browserOptimizer && browserOptimizer.snapshot();
     const cooling = Object.entries(health.cooldowns).filter(([, lane]) => lane.remainingMs > 0)
       .map(([type, lane]) => `${type}:${Math.ceil(lane.remainingMs / 1000)}s`).join(',') || 'none';
-    const browserMix = scale ? Object.entries(scale.scheduling.activeBrowserCounts)
-      .filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`).join(',') : '';
+    const browserMix = optimization
+      ? optimization.browsers.filter(browser => browser.activeWorkers > 0)
+        .map(browser => `${browser.key}:${browser.activeWorkers}`).join(',')
+      : scale ? Object.entries(scale.scheduling.activeBrowserCounts)
+        .filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`).join(',') : '';
+    const browserLeader = optimization
+      ? optimization.learning ? 'learning' : optimization.leader?.key || 'none'
+      : '';
     const cap = UNCAPPED ? '' : `/${TARGET_POOL}`;
     const counts = PRODUCER_MODE ? producerBank : { login: pool.login.length, atc: pool.atc.length };
     log(`bank: login=${counts.login}${cap} atc=${counts.atc}${cap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
@@ -1453,7 +1505,8 @@ function startFarming(browserMode) {
       + (scale ? ` workers=${scale.activeWorkers}/${scale.hardLimit} policy=${scale.policy} errors=${Math.round(scale.recentErrorRate * 100)}%`
         + ` errorSources=${scale.distinctPressureSources}`
         + `:${scale.decisionErrors}/${scale.decisionSamples}`
-        + ` browsers=${browserMix || 'none'} rotations=${scale.scheduling.rotations}` : ''));
+        + ` browsers=${browserMix || 'none'} rotations=${scale.scheduling.rotations}`
+        + (optimization ? ` browserPolicy=${optimization.policy} leader=${browserLeader}` : '') : ''));
   }, 20000).unref?.();
 
   detectShapeBrowsers(
@@ -1480,6 +1533,10 @@ function startFarming(browserMode) {
     // so the fair scheduler can rotate every proven browser through limited capacity.
     const schedulerSlots = shapeBrowserSchedulerSlotCount(detected, hardLimit);
     workerBrowsers = distributeShapeWorkerBrowsers(detected, schedulerSlots);
+    browserOptimizer = createShapeBrowserOptimizer({
+      browsers: detected,
+      workerCount: hardLimit,
+    });
     workerScaler = createShapeWorkerScaler({
       configuredWorkers,
       browserCount: detected.length,
@@ -1490,9 +1547,11 @@ function startFarming(browserMode) {
     startedWorkerCount = configuredWorkers;
     workerBrowsers.forEach((browser, id) => farmerWorker(id, browser));
     const scale = workerScaler.snapshot();
+    const optimization = browserOptimizer.snapshot();
     log(`fixed worker slots ${scale.activeWorkers}/${scale.hardLimit} active immediately; scheduler `
       + `${workerBrowsers.length}: ${workerBrowsers.map(browser => browser.key).join(', ')}`
-      + ` — no error scale-down, login concurrency 1, session ${SESSION_READY_AT_START ? 'restored' : 'pending'}`);
+      + ` — browser policy ${optimization.policy} (${optimization.minimumSamples} comparable samples each), `
+      + `no error scale-down, login concurrency 1, session ${SESSION_READY_AT_START ? 'restored' : 'pending'}`);
     publishProducerStatus();
   }).catch((error) => log(`browser detection failed: ${error.message}`));
 }

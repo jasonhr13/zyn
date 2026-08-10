@@ -1068,6 +1068,30 @@ class TaskGroups extends Component {
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
           const browser = (HARVESTER_BROWSERS.find(([value]) => value === harvester.browser) || [null, harvester.browser])[1];
+          const browserPerformance = runtime && runtime.browserPerformance;
+          const performanceBrowsers = browserPerformance && Array.isArray(browserPerformance.browsers)
+            ? browserPerformance.browsers : [];
+          const browserLeader = browserPerformance && browserPerformance.leader;
+          const adaptiveBrowserPool = browserPerformance && browserPerformance.policy === 'adaptive-efficiency';
+          const browserPolicy = harvester.browser === 'auto'
+            ? !browserPerformance
+              ? `${browser} · Starting`
+              : adaptiveBrowserPool
+                ? browserPerformance.learning
+                  ? `${browser} · Learning`
+                  : browserLeader
+                    ? `${browser} · Favoring ${browserLeader.label}`
+                    : `${browser} · Balancing`
+                : `${browser} · One browser available`
+            : `${browser} · Fixed`;
+          const browserDetail = performanceBrowsers.filter(item => Number(item.attempts) > 0).map(item => {
+            const successRate = Math.round((Number(item.successRate) || 0) * 100);
+            const efficiency = Number(item.bytesPerCookie) > 0
+              ? `${formatBandwidth(item.bytesPerCookie)}/cookie` : 'no cookie yield';
+            const latency = Number(item.successfulAverageMs) > 0
+              ? `${(Number(item.successfulAverageMs) / 1000).toFixed(1)}s success` : 'no successful timing';
+            return `${item.label}: ${successRate}% · ${Number(item.cookies) || 0} cookies · ${efficiency} · ${latency}`;
+          }).join(' | ');
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
           const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
             : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
@@ -1109,7 +1133,11 @@ class TaskGroups extends Component {
                 <strong title={bandwidthValue}>{bandwidthValue}</strong>
                 {bandwidth.attempts > 0 && <><em>{transferDetail}</em><em>{requestDetail}</em></>}
               </div>
-              <div className="target-harvester-card-stat target-harvester-browser"><small>Browser / Last success</small><strong>{browser} · {this.harvesterLastSuccess(runtime)}</strong></div>
+              <div className="target-harvester-card-stat target-harvester-browser">
+                <small>Browser policy / Last success</small>
+                <strong>{browserPolicy} · {this.harvesterLastSuccess(runtime)}</strong>
+                {!!browserDetail && <em title={browserDetail}>{browserDetail}</em>}
+              </div>
               <div className="target-harvester-card-stat target-harvester-schedule"><small>Schedule</small><strong title={schedule}>{schedule}</strong></div>
               <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
               <div className="target-harvester-actions">
