@@ -2,7 +2,7 @@ import React from 'react';
 import CreateProfileModal from './create-modal';
 
 // Edit modal reuses Create modal, pre-populating from the flat profile
-function EditProfileModal({ profile, onSave, onClose }) {
+function EditProfileModal({ profile, mailboxProfiles, onSave, onClose }) {
   const knownImapHosts = new Set(['imap.gmail.com', 'outlook.office365.com', 'imap.mail.yahoo.com', 'imap.mail.me.com']);
   const imapHost = profile.imap?.host || '';
   const shipping = profile.shipping || {};
@@ -47,6 +47,8 @@ function EditProfileModal({ profile, onSave, onClose }) {
   return (
     <CreateProfileModal
       initial={initial}
+      mailboxProfiles={mailboxProfiles}
+      excludeProfileId={profile.id}
       onSave={(data) => onSave(profile.id, data)}
       onClose={onClose}
     />

@@ -48,6 +48,8 @@ assert.match(taskGroups, /Target Login/,
   'task groups must expose a dedicated login harvester type');
 assert.match(taskGroups, /Target ATC/,
   'task groups must expose a dedicated ATC harvester type');
+assert.match(taskGroups, /\['opera', 'Opera'\]/,
+  'task groups must expose Opera as a managed harvester browser');
 assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,
@@ -68,8 +70,12 @@ assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
   'packaged bridge patch must create independent producer process handles');
 assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
   'managed harvester configuration must preserve the selected producer type');
+assert.match(harvesterConfig, /'opera'/,
+  'managed harvester configuration must preserve an Opera browser selection');
 assert.match(harvesterProducers, /'--producer=true'/,
   'managed harvesters must run as producer-only processes behind the shared broker');
+assert.match(harvesterProducers, /`--browsers=\$\{config\.browser\}`/,
+  'managed harvesters must pass the selected browser to the farmer process');
 assert.match(farmer, /u\.pathname === '\/harvesterStatus'/,
   'the shared broker must aggregate per-harvester runtime telemetry');
 assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login'/,

@@ -51,6 +51,7 @@ const HARVESTER_BROWSERS = [
   ['brave', 'Brave'],
   ['vivaldi', 'Vivaldi'],
   ['yandex', 'Yandex'],
+  ['opera', 'Opera'],
   ['chromium', 'Bundled Chromium'],
 ];
 

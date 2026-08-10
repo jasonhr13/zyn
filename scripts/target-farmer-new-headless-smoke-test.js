@@ -14,13 +14,16 @@ const farmer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-farmer
 const browserPool = fs.readFileSync(path.join(project, 'native-farmer', 'shape-browser-pool.mjs'), 'utf8');
 const runtimePaths = fs.readFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), 'utf8');
 
-for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']) {
+for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']) {
   assert.match(browserPool, new RegExp(`key: '${key}'`), `native browser pool omits ${key}`);
 }
 assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family launches lack an explicit full-browser channel');
 assert.match(browserPool, /Brave Browser\.app\/Contents\/MacOS\/Brave Browser/);
 assert.match(browserPool, /Vivaldi\.app/);
 assert.match(browserPool, /Yandex\.app/);
+assert.match(browserPool, /Opera\.app/);
+assert.match(farmer, /normalizeShapeBrowserSelection\(argOf\('browsers', 'auto'\)\)/,
+  'explicit installed-browser selections still collapse to the automatic pool');
 assert.match(farmer, /const HEADLESS = argOf\('headless', 'false'\) === 'true'/);
 assert.match(farmer, /browserMode = HEADLESS \? 'new-headless'/);
 assert.match(farmer, /activeWorkers: scale\.activeWorkers/);
@@ -48,5 +51,5 @@ console.log(JSON.stringify({
   source: 'pinned native farmer @423d132',
   runtime: 'native-electron-node',
   displayMode: 'new-headless',
-  browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium'],
+  browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Opera', 'Chromium'],
 }, null, 2));

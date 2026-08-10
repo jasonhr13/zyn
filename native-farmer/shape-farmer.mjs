@@ -36,7 +36,7 @@ import {
 } from './shape-harvest-health.mjs';
 import {
   detectShapeBrowsers, distributeShapeWorkerBrowsers, shapeBrowserLaunchOptions,
-  shapeBrowserSchedulerSlotCount,
+  normalizeShapeBrowserSelection, shapeBrowserSchedulerSlotCount,
 } from './shape-browser-pool.mjs';
 import { randomLoadsForBrowser, shapeFarmerThroughputOptions } from './shape-farmer-throughput.mjs';
 import { createShapeWorkerScaler } from './shape-worker-scaler.mjs';
@@ -649,7 +649,7 @@ function pickProxy() {
   return { proxy: PROXIES[idx], waitMs: 0 };
 }
 const HEADLESS = argOf('headless', 'false') === 'true';
-const BROWSER_SELECTION = argOf('browsers', 'auto') === 'chromium' ? 'chromium' : 'auto';
+const BROWSER_SELECTION = normalizeShapeBrowserSelection(argOf('browsers', 'auto'));
 // Every browser in the pool has an explicit channel. In headless mode that opts Chrome, Edge, and
 // bundled Chromium into their regular browser's New Headless implementation.
 // Park the harvest windows off-screen instead of on top of whatever the operator is doing. Defaults
@@ -1463,7 +1463,7 @@ function startFarming(browserMode) {
   ).then((detected) => {
     if (!detected.length) {
       log(BROWSER_SELECTION === 'auto'
-        ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, or bundled Chromium browser is available'
+        ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, Opera, or bundled Chromium browser is available'
         : `browser detection failed — ${BROWSER_SELECTION} is not available`);
       return;
     }

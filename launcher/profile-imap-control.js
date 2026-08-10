@@ -131,6 +131,43 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
 
   function getProfiles() { return getProfilesRaw().map(decodeProfileSecrets); }
 
+  function normalizeProfileGroups(values) {
+    const groups = [];
+    const seen = new Set();
+    for (const raw of (Array.isArray(values) ? values : [])) {
+      const group = String(raw || '').trim();
+      const key = group.toLowerCase();
+      if (!group || seen.has(key)) continue;
+      seen.add(key);
+      groups.push(group);
+    }
+    return groups;
+  }
+
+  function groupsForProfile(profile) {
+    return normalizeProfileGroups([
+      ...(Array.isArray(profile && profile.groups) ? profile.groups : []),
+      profile && profile.group,
+    ]);
+  }
+
+  function registeredProfileGroups() {
+    const settings = readJSON(SETTINGS_FILE, {});
+    return normalizeProfileGroups(settings.profileGroups);
+  }
+
+  function writeRegisteredProfileGroups(groups) {
+    const settings = readJSON(SETTINGS_FILE, {});
+    writeJSON(SETTINGS_FILE, { ...settings, profileGroups: normalizeProfileGroups(groups) });
+  }
+
+  function registerProfileGroups(groups) {
+    const current = registeredProfileGroups();
+    const merged = normalizeProfileGroups([...current, ...groups]);
+    if (merged.length !== current.length) writeRegisteredProfileGroups(merged);
+    return merged;
+  }
+
   function getProfileImap(profileId, email) {
     const profiles = getProfiles();
     const wantedId = String(profileId || '');
@@ -155,6 +192,7 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
     const profile = { id: crypto.randomUUID(), ...data };
     profiles.push(profile);
     writeProfiles(profiles);
+    registerProfileGroups(groupsForProfile(profile));
     return profile;
   }
 
@@ -168,19 +206,87 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
       created.push(profile);
     }
     if (created.length) writeProfiles(profiles);
+    registerProfileGroups(created.flatMap(groupsForProfile));
     return created;
   }
 
   function updateProfile(id, data) {
-    writeProfiles(getProfiles().map(profile => profile.id === id ? { ...profile, ...data } : profile));
+    const profiles = getProfiles().map(profile => profile.id === id ? { ...profile, ...data } : profile);
+    writeProfiles(profiles);
+    const updated = profiles.find(profile => profile.id === id);
+    if (updated) registerProfileGroups(groupsForProfile(updated));
   }
 
   function deleteProfile(id) { writeProfiles(getProfiles().filter(profile => profile.id !== id)); }
 
   function getGroups() {
-    const groups = new Set();
-    for (const profile of getProfiles()) for (const group of (profile.groups || [])) if (group) groups.add(group);
-    return [...groups].sort((left, right) => left.localeCompare(right));
+    const groups = normalizeProfileGroups([
+      ...registeredProfileGroups(),
+      ...getProfiles().flatMap(groupsForProfile),
+    ]);
+    return groups.sort((left, right) => left.localeCompare(right));
+  }
+
+  function createProfileGroup(name) {
+    const clean = String(name || '').trim();
+    if (!clean) throw new Error('Group name is required');
+    const existing = getGroups().find(group => group.toLowerCase() === clean.toLowerCase());
+    if (existing) return existing;
+    writeRegisteredProfileGroups([...registeredProfileGroups(), clean]);
+    return clean;
+  }
+
+  function renameProfileGroup(from, to) {
+    const requested = String(from || '').trim();
+    const replacement = String(to || '').trim();
+    if (!requested || !replacement) throw new Error('Both group names are required');
+    const groups = getGroups();
+    const source = groups.find(group => group.toLowerCase() === requested.toLowerCase());
+    if (!source) throw new Error(`Profile group “${requested}” was not found`);
+    const collision = groups.find(group => group.toLowerCase() === replacement.toLowerCase()
+      && group.toLowerCase() !== source.toLowerCase());
+    if (collision) throw new Error(`Profile group “${collision}” already exists`);
+
+    const profiles = getProfiles().map(profile => {
+      const memberships = groupsForProfile(profile);
+      if (!memberships.some(group => group.toLowerCase() === source.toLowerCase())) return profile;
+      const nextGroups = normalizeProfileGroups(memberships.map(group => (
+        group.toLowerCase() === source.toLowerCase() ? replacement : group
+      )));
+      const next = { ...profile, groups: nextGroups };
+      delete next.group;
+      return next;
+    });
+    writeProfiles(profiles);
+    writeRegisteredProfileGroups(normalizeProfileGroups([
+      ...registeredProfileGroups().map(group => (
+        group.toLowerCase() === source.toLowerCase() ? replacement : group
+      )),
+      replacement,
+    ]));
+    return replacement;
+  }
+
+  function deleteProfileGroup(name) {
+    const requested = String(name || '').trim();
+    const source = getGroups().find(group => group.toLowerCase() === requested.toLowerCase());
+    if (!source) return 0;
+    let affected = 0;
+    const profiles = getProfiles().map(profile => {
+      const memberships = groupsForProfile(profile);
+      if (!memberships.some(group => group.toLowerCase() === source.toLowerCase())) return profile;
+      affected += 1;
+      const next = {
+        ...profile,
+        groups: memberships.filter(group => group.toLowerCase() !== source.toLowerCase()),
+      };
+      delete next.group;
+      return next;
+    });
+    if (affected) writeProfiles(profiles);
+    writeRegisteredProfileGroups(registeredProfileGroups()
+      .filter(group => group.toLowerCase() !== source.toLowerCase()));
+    return affected;
   }
 
   function addProfilesToGroup(ids, group) {
@@ -190,31 +296,44 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
     let added = 0;
     const profiles = getProfiles().map(profile => {
       if (!selected.has(String(profile.id))) return profile;
-      const groups = Array.isArray(profile.groups) ? profile.groups : [];
-      if (groups.includes(cleanGroup)) return profile;
+      const groups = groupsForProfile(profile);
+      if (groups.some(value => value.toLowerCase() === cleanGroup.toLowerCase())) return profile;
       added += 1;
-      return { ...profile, groups: [...groups, cleanGroup] };
+      const next = { ...profile, groups: [...groups, cleanGroup] };
+      delete next.group;
+      return next;
     });
     if (added) writeProfiles(profiles);
+    registerProfileGroups([cleanGroup]);
     return added;
   }
 
   function removeProfilesFromGroup(ids, group) {
     const cleanGroup = String(group || '').trim();
     const selected = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
-    writeProfiles(getProfiles().map(profile => selected.has(String(profile.id)) && Array.isArray(profile.groups)
-      ? { ...profile, groups: profile.groups.filter(value => value !== cleanGroup) } : profile));
+    writeProfiles(getProfiles().map(profile => {
+      if (!selected.has(String(profile.id))) return profile;
+      const next = {
+        ...profile,
+        groups: groupsForProfile(profile)
+          .filter(value => value.toLowerCase() !== cleanGroup.toLowerCase()),
+      };
+      delete next.group;
+      return next;
+    }));
   }
 
   function setProfileGroups(id, groups) {
-    const clean = [...new Set((Array.isArray(groups) ? groups : []).map(value => String(value).trim()).filter(Boolean))];
+    const clean = normalizeProfileGroups(groups);
     updateProfile(id, { groups: clean });
+    registerProfileGroups(clean);
   }
 
   function importProfiles(incoming, mode) {
     const arriving = Array.isArray(incoming) ? incoming : [];
     if (mode === 'replace') {
       writeProfiles(arriving);
+      registerProfileGroups(arriving.flatMap(groupsForProfile));
       return { set: arriving.length };
     }
     const current = getProfiles();
@@ -227,7 +346,10 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
         added += 1;
       }
     }
-    if (added) writeProfiles(current);
+    if (added) {
+      writeProfiles(current);
+      registerProfileGroups(arriving.flatMap(groupsForProfile));
+    }
     return { added };
   }
 
@@ -241,6 +363,9 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
     updateProfile,
     deleteProfile,
     getGroups,
+    createProfileGroup,
+    renameProfileGroup,
+    deleteProfileGroup,
     addProfilesToGroup,
     removeProfilesFromGroup,
     setProfileGroups,
@@ -263,6 +388,10 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
     migrationVersion: PROFILE_IMAP_MIGRATION_VERSION,
     getProfiles,
     getProfileImap,
+    getGroups,
+    createProfileGroup,
+    renameProfileGroup,
+    deleteProfileGroup,
     importProfiles,
     normalizeImapConfig,
     profilePath: filePath(PROFILE_FILE),

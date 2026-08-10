@@ -3,6 +3,9 @@
 import assert from 'node:assert/strict';
 import {
   detectShapeBrowsers,
+  installedBrowserExecutablePaths,
+  normalizeShapeBrowserSelection,
+  shapeBrowserCandidates,
 } from '../native-farmer/shape-browser-pool.mjs';
 import {
   classifyHarvestFailure,
@@ -15,6 +18,7 @@ const installed = {
   brave: '/installed/brave',
   vivaldi: '/installed/vivaldi',
   yandex: '/installed/yandex',
+  opera: '/installed/opera',
 };
 
 const detected = await detectShapeBrowsers(async (options) => {
@@ -40,11 +44,25 @@ const detected = await detectShapeBrowsers(async (options) => {
 }, (browser, error) => unavailable.push({ key: browser.key, message: error.message }), 'auto', name => installed[name] || '');
 
 assert.deepEqual(detected.map(browser => browser.key), [
-  'chrome', 'msedge', 'brave', 'yandex', 'chromium',
+  'chrome', 'msedge', 'brave', 'yandex', 'opera', 'chromium',
 ]);
 assert.deepEqual(unavailable.map(item => item.key), ['vivaldi']);
 assert.match(unavailable[0].message, /browser has been closed/i);
-assert.equal(closed.length, 6, 'every probe is closed, including a crash-on-page browser');
+assert.equal(closed.length, 7, 'every probe is closed, including a crash-on-page browser');
+
+assert.equal(normalizeShapeBrowserSelection('Opera'), 'opera');
+assert.equal(normalizeShapeBrowserSelection('chrome'), 'chrome');
+assert.equal(normalizeShapeBrowserSelection('unknown-browser'), 'auto');
+assert.deepEqual(shapeBrowserCandidates('opera').map(browser => browser.key), ['opera']);
+assert.deepEqual(installedBrowserExecutablePaths('opera', {
+  platform: 'darwin', homeDir: '/Users/test',
+}), [
+  '/Applications/Opera.app/Contents/MacOS/Opera',
+  '/Users/test/Applications/Opera.app/Contents/MacOS/Opera',
+]);
+assert.ok(installedBrowserExecutablePaths('opera', {
+  platform: 'win32', homeDir: 'C:\\Users\\test', env: { LOCALAPPDATA: 'C:\\Local' },
+}).includes('C:\\Local\\Programs\\Opera\\opera.exe'));
 
 const tunnelCategory = classifyHarvestFailure([
   'chrome-error://chromewebdata/',

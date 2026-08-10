@@ -221,7 +221,7 @@ check('Target farmer New Headless launch contract', () => {
     assert.equal(sha256(path.join(resources, 'bot', filename)), expected,
       `${filename} no longer matches pinned ${upstream.commit}`);
   }
-  for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']) {
+  for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']) {
     assert.match(browserPool, new RegExp(`key: '${key}'`), `native browser pool omits ${key}`);
   }
   assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family browsers lack an explicit full-browser channel');

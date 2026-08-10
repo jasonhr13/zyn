@@ -1,4 +1,4 @@
-const HARVESTER_BROWSERS = new Set(['auto', 'chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']);
+const HARVESTER_BROWSERS = new Set(['auto', 'chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']);
 function managedHarvesterConfigs() {
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}

@@ -91,7 +91,7 @@ test('returns a no-artifact current-version feed before a signed release is publ
     const response = await worker.fetch(new Request(`https://updates.rcart.app/mac/${arch}/latest-mac.yml`), env);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.match(await response.text(), /^version: 1\.6\.85\nfiles: \[\]/);
+    assert.match(await response.text(), /^version: 1\.6\.86\nfiles: \[\]/);
   }
 });
 

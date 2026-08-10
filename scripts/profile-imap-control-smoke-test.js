@@ -76,6 +76,22 @@ const distinctRaw = fs.readFileSync(path.join(directory, 'profiles.json'), 'utf8
 assert.equal(distinctRaw.includes('one secret'), false);
 assert.equal(distinctRaw.includes('two secret'), false);
 
+const emptyGroup = dataManager.createProfileGroup('Primary');
+assert.equal(emptyGroup, 'Primary');
+assert.deepEqual(dataManager.getGroups(), ['Primary']);
+assert.deepEqual(read('settings.json').profileGroups, ['Primary'], 'empty profile groups must survive a reload');
+const groupedProfile = dataManager.createProfile({
+  profileName: 'Grouped profile', email: 'grouped@example.com', groups: ['Primary'],
+});
+assert.equal(dataManager.renameProfileGroup('Primary', 'VIP'), 'VIP');
+assert.deepEqual(dataManager.getProfiles().find(profile => profile.id === groupedProfile.id).groups, ['VIP']);
+assert.deepEqual(dataManager.getGroups(), ['VIP']);
+assert.equal(dataManager.deleteProfileGroup('VIP'), 1);
+assert.equal(dataManager.getProfiles().some(profile => profile.id === groupedProfile.id), true,
+  'deleting a group must keep its profiles');
+assert.deepEqual(dataManager.getProfiles().find(profile => profile.id === groupedProfile.id).groups, []);
+assert.deepEqual(dataManager.getGroups(), []);
+
 const exported = dataManager.exportAll();
 assert.equal(exported.profiles.find(profile => profile.id === 'one').imap.password, 'one secret');
 assert.equal(exported.profiles.find(profile => profile.id === 'two').imap.password, 'two secret');

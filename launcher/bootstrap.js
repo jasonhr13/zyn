@@ -374,9 +374,23 @@ function installProfileImap() {
   }
 }
 
-function installProfileImapIpc(authority) {
+function installProfileImapIpc(authority, profileControl) {
   if (!FEATURES.profileImap) return;
   const { ipcMain } = require('electron');
+  if (profileControl) {
+    ipcMain.on('createProfileGroup', (event, name) => {
+      try { event.returnValue = { ok: true, group: profileControl.createProfileGroup(name) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+    ipcMain.on('renameProfileGroup', (event, { from, to } = {}) => {
+      try { event.returnValue = { ok: true, group: profileControl.renameProfileGroup(from, to) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+    ipcMain.on('deleteProfileGroup', (event, name) => {
+      try { event.returnValue = { ok: true, affected: profileControl.deleteProfileGroup(name) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+  }
   ipcMain.removeHandler('testProfileImap');
   ipcMain.handle('testProfileImap', async (_event, config = {}) => {
     if (authority && authority.cached().ok !== true) {
@@ -808,12 +822,12 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroups();
-  installProfileImap();
+  const profileImapControl = installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);
-  installProfileImapIpc(licenseAuthority);
+  installProfileImapIpc(licenseAuthority, profileImapControl);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();
