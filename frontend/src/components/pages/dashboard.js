@@ -215,12 +215,6 @@ export default class Dashboard extends Component {
     setTimeout(() => URL.revokeObjectURL(link.href), 0);
   };
 
-  deleteHistory = async () => {
-    if (!window.confirm('Delete all checkout analytics for this Zyn account? This cannot be undone.')) return;
-    const result = await ipcRenderer.invoke('deleteAnalytics');
-    if (result && result.ok) this.setState({ dashboard: null, checkouts: [], total: 0, page: 1 }, () => this.load());
-  };
-
   render() {
     const { dashboard, metric, interval, range, checkouts, total, page, pageSize, clock } = this.state;
     const summary = dashboard && dashboard.summary ? dashboard.summary : EMPTY_SUMMARY;
@@ -282,7 +276,6 @@ export default class Dashboard extends Component {
               <div className="analytics-table-actions">
                 <button className="btn btn-sm btn-icon" type="button" onClick={() => this.load()} title="Refresh"><Icon name="refresh" size={14} /></button>
                 <button className="btn btn-sm btn-icon" type="button" onClick={this.exportCsv} title="Export CSV"><Icon name="download" size={14} /></button>
-                <button className="btn btn-sm btn-danger btn-icon analytics-delete" type="button" onClick={this.deleteHistory} title="Delete checkout history" aria-label="Delete checkout history"><Icon name="trash" size={13} /></button>
                 <label className="analytics-search"><Icon name="search" size={13} />
                   <input value={this.state.search} onChange={this.setSearch} placeholder="Search checkouts" />
                 </label>

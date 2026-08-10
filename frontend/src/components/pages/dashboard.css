@@ -43,7 +43,6 @@
 .analytics-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 10.5px; pointer-events: none; }
 .analytics-checkouts > header { align-items: center; }
 .analytics-table-actions { display: flex; gap: 5px; align-items: center; }
-.analytics-table-actions .analytics-delete { min-width: 32px; padding: 5px 8px; }
 .analytics-search { height: 31px; width: 150px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--field-border); border-radius: 8px; background: var(--field); color: var(--dim); }
 .analytics-search:focus-within { border-color: var(--accent-border); box-shadow: var(--shadow-focus); }
 .analytics-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 10px; }

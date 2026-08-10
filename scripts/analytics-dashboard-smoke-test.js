@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const dashboard = read('frontend/src/components/pages/dashboard.js');
 const dashboardCss = read('frontend/src/components/pages/dashboard.css');
+const settings = read('frontend/src/components/pages/settings.js');
 const routes = read('frontend/src/components/page-handler.js');
 const sidebar = read('frontend/src/components/sidebar.js');
 const worker = read('cloudflare/license/src/index.js');
@@ -26,7 +27,10 @@ for (const label of ['Today', 'Last 30 Days', 'Last 90 Days', 'All Time', 'Check
 }
 assert.match(dashboard, /analyticsDashboard/);
 assert.match(dashboard, /analyticsCheckouts/);
-assert.match(dashboard, /deleteAnalytics/);
+assert.doesNotMatch(dashboard, /deleteAnalytics/);
+assert.match(settings, /ipcRenderer\.invoke\('deleteAnalytics'\)/);
+assert.match(settings, /Permanently delete all analytics data/);
+assert.match(settings, /This cannot be undone/);
 assert.match(dashboard, /text\/csv/);
 assert.match(dashboard, /<MetricChart/);
 assert.match(dashboardCss, /--card-line: #e11d48/);
