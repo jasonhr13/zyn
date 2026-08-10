@@ -9,6 +9,7 @@ let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
 const NAV_ITEMS = [
+  { to: '/dashboard', icon: 'activity', label: 'Dashboard', section: 'Overview' },
   { to: '/task-groups', icon: 'target', label: 'Target', section: 'Tasks', activeRoutes: ['/task-groups', '/target'] },
   { to: '/pokemoncenter', icon: 'ticket', label: 'Pokémon Center', section: 'Tasks', taskType: 'pokemoncenter' },
   { to: '/profiles', icon: 'user', label: 'Profiles', section: 'Workspace' },

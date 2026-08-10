@@ -20,6 +20,7 @@ const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
+const { createAnalyticsService } = require('./analytics-recorder');
 const { createPokemonQueueEvents } = require('./pokemon-queue-events');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
@@ -274,6 +275,7 @@ function installWindowSizePersistence() {
 let taskGroupStore = null;
 let taskGroupScheduler = null;
 let pokemonQueueEvents = null;
+let analyticsService = null;
 
 function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
@@ -308,6 +310,36 @@ function pushTaskGroupSchedule(payload = {}) {
       if (payload.line) window.webContents.send('targetLog', { taskId: '', line: payload.line });
     }
   } catch {}
+}
+
+function pushAnalyticsUpdated(payload = {}) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('analyticsUpdated', payload);
+      }
+    }
+  } catch {}
+}
+
+function installAnalytics(authority) {
+  if (!authority) return null;
+  try {
+    const service = createAnalyticsService({
+      dataDirectory: app.getPath('userData'),
+      authority,
+      ipcMain,
+      onUpdated: pushAnalyticsUpdated,
+      logger: console,
+    });
+    const bridgeRecorder = require(path.join(originalAsar, 'public', 'helpers', 'analytics-recorder.js'));
+    bridgeRecorder.setService(service);
+    app.once('will-quit', () => service.dispose());
+    return service;
+  } catch (error) {
+    console.error(`Could not install Zyn analytics: ${error.message}`);
+    return null;
+  }
 }
 
 function validateScheduledTargetProxies(config, dataManager, managedProxyControl) {
@@ -617,6 +649,7 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     safeStorage,
     onStatus: status => {
       pushLicenseStatus(status);
+      try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
       if (status && status.ok === true) {
         beginRuntimeBootstrap();
@@ -825,6 +858,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const profileImapControl = installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
+  analyticsService = installAnalytics(licenseAuthority);
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);
   installProfileImapIpc(licenseAuthority, profileImapControl);

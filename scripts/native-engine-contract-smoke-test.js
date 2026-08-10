@@ -43,6 +43,7 @@ const wire = contract.createEnvelope('stop-tasks', [{ id: 'pc-1' }]);
 assert.deepEqual(contract.parseEnvelope(Buffer.from(JSON.stringify(wire))), wire);
 assert.throws(() => contract.createEnvelope('stop-tasks', { id: 'pc-1' }), /must be an array/);
 assert.throws(() => contract.parseEnvelope('{"type":"stop-tasks"}'), /must be an array/);
+assert.equal(contract.FROM_ENGINE.includes('analytics-event'), true);
 
 assert.deepEqual(contract.buildReceivedToken({
   taskId: 'pc-1',
@@ -86,6 +87,7 @@ if (fs.existsSync(goRoot)) {
   const schema = fs.readFileSync(path.join(goRoot, 'frontend', 'schema.go'), 'utf8');
   const websocket = fs.readFileSync(path.join(goRoot, 'frontend', 'ws.go'), 'utf8');
   const captcha = fs.readFileSync(path.join(goRoot, 'bot-base', 'captcha', 'captcha.go'), 'utf8');
+  const taskSchema = fs.readFileSync(path.join(goRoot, 'bot-base', 'task', 'schema.go'), 'utf8');
   assert.match(schema, /QueueEntryDelay string `json:"QueueEntryDelay"`/,
     'Go queue-entry field spelling drifted from the compatibility contract');
   for (const type of ['send-configs', 'start-tasks', 'stop-tasks', 'edit-tasks', 'received-token']) {
@@ -93,6 +95,8 @@ if (fs.existsSync(goRoot)) {
   }
   assert.match(captcha, /"type": "solve-captcha"/);
   assert.match(captcha, /"taskId":\s+solve\.TaskID/);
+  assert.match(taskSchema, /type AnalyticsEventMessage struct/);
+  assert.match(taskSchema, /TotalCents\s+int64\s+`json:"totalCents"`/);
 }
 
 console.log(JSON.stringify({

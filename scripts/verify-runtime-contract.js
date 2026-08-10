@@ -142,6 +142,10 @@ check('Zyn runtime branding', () => {
     archive,
     'public/helpers/manual-captcha-manager.js',
   ).toString('utf8');
+  const analyticsRecorder = asar.extractFile(
+    archive,
+    'public/helpers/analytics-recorder.js',
+  ).toString('utf8');
   const queueEvents = fs.readFileSync(
     path.join(appPath, 'Contents', 'Resources', 'app', 'pokemon-queue-events.js'),
     'utf8',
@@ -160,6 +164,10 @@ check('Zyn runtime branding', () => {
     'packaged native engine bridge does not route Hyper requests');
   assert.match(targetEngine, /manualCaptchaManager\.handleEnvelope\(msg/,
     'packaged native engine bridge does not route manual captcha requests');
+  assert.match(targetEngine, /case 'analytics-event':/,
+    'packaged native engine bridge does not route local analytics events');
+  assert.match(targetEngine, /analyticsRecorder\.record\(m\)/,
+    'packaged native engine bridge bypasses the account-bound analytics outbox');
   assert.match(targetEngine, /function validatePokemonProducts\(/,
     'packaged Pokémon Center bridge omits per-product quantities');
   assert.match(targetEngine, /quantity: product\.quantity/,
@@ -186,6 +194,8 @@ check('Zyn runtime branding', () => {
     'packaged captcha manager does not constrain manual solves to Pokemon Center US');
   assert.match(manualCaptchaManager, /nodeIntegration: false/,
     'packaged captcha window enables renderer Node integration');
+  assert.match(analyticsRecorder, /createAnalyticsService/,
+    'packaged analytics recorder is missing');
   assert.match(nativeEngineContract, /const PROTOCOL_VERSION = 1;/,
     'packaged native-engine protocol version is missing');
   assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,

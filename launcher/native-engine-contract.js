@@ -24,6 +24,7 @@ const TO_ENGINE = Object.freeze([
 const FROM_ENGINE = Object.freeze([
   'update-status', 'update-input', 'task-log', 'task-notification', 'product',
   'product-titles', 'request-code', 'account-cookie', 'account-password', 'solve-captcha',
+  'analytics-event',
   // Reserved for the server-side Hyper broker.
   'hyper-request',
 ]);

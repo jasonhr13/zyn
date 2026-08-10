@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "3a73b1aee2f8722a0995ea34543409af672e9de59d29657deb2d3e607ae7aa0c"
+      "sha256": "1cd3e226c74f9f658db243cbf07481adc8fc088d135d84cbc8504080fc59415e"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "2bba2f794a826a6ef64b0ff83971859f890d6dc7fb91ddc5849a9e9f1645cc6c"
+      "sha256": "3b84a40a8979885e36b32ef03b17580e5c584f8752d316f56d1c5df1cafc9554"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "38ffb40c2f3dfb6b226341e7a08ac5f737ba184d5fd8e6432e153a6540df3b9b"
+      "sha256": "91de70fd94787e547cd56cc0fc780d4f772ac0435eb7d8d3c13e3698703f1f0c"
     }
   },
   "requiredResources": [
@@ -48,6 +48,7 @@
     "Contents/Resources/app/license-client.js",
     "Contents/Resources/app/license-authority.js",
     "Contents/Resources/app/license-observer.js",
+    "Contents/Resources/app/analytics-recorder.js",
     "Contents/Resources/app/pokemon-queue-events.js",
     "Contents/Resources/app/task-type-access.js",
     "Contents/Resources/app/task-type-ipc-guard.js",

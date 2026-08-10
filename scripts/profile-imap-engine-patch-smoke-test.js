@@ -21,12 +21,17 @@ const plainLog = fs.readFileSync(path.join(directory, 'plain-log.js'), 'utf8');
 const nativeEngineContract = path.join(directory, 'native-engine-contract.js');
 const nativeHyperBroker = path.join(directory, 'native-hyper-broker.js');
 const manualCaptchaManager = path.join(directory, 'manual-captcha-manager.js');
+const analyticsRecorder = path.join(directory, 'analytics-recorder.js');
 assert.equal(fs.existsSync(nativeEngineContract), true, 'shared native-engine contract was not staged');
 assert.equal(fs.existsSync(nativeHyperBroker), true, 'native Hyper broker was not staged');
 assert.equal(fs.existsSync(manualCaptchaManager), true, 'manual captcha manager was not staged');
+assert.equal(fs.existsSync(analyticsRecorder), true, 'analytics recorder was not staged');
 assert.match(target, /require\('\.\/native-engine-contract'\)/);
 assert.match(target, /require\('\.\/native-hyper-broker'\)/);
 assert.match(target, /require\('\.\/manual-captcha-manager'\)/);
+assert.match(target, /require\('\.\/analytics-recorder'\)/);
+assert.match(target, /case 'analytics-event':/);
+assert.match(target, /analyticsRecorder\.record\(m\)/);
 assert.match(target, /new engineContract\.TaskSiteRegistry\(\)/);
 assert.match(target, /engineContract\.parseEnvelope\(obj\)/);
 assert.match(target, /engineContract\.parseEnvelope\(data\)/);
@@ -164,6 +169,7 @@ for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']
 execFileSync(process.execPath, ['--check', nativeEngineContract]);
 execFileSync(process.execPath, ['--check', nativeHyperBroker]);
 execFileSync(process.execPath, ['--check', manualCaptchaManager]);
+execFileSync(process.execPath, ['--check', analyticsRecorder]);
 const repeat = spawnSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { encoding: 'utf8' });
 assert.notEqual(repeat.status, 0, 'hash gate accepted an already-modified engine');
 assert.match(`${repeat.stdout}${repeat.stderr}`, /does not match the reviewed R5 source/);
@@ -174,5 +180,6 @@ console.log(JSON.stringify({
   targetProfileRouting: true,
   targetLiveSkuEditing: true,
   sharedNativeEngineContract: true,
+  accountBoundAnalytics: true,
   walmartProfileRouting: true,
 }, null, 2));

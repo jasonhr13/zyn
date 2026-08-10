@@ -20,6 +20,11 @@ const MAX_HYPER_RESPONSE_BYTES = 4 * 1024 * 1024;
 const HYPER_TIMEOUT_MS = 30 * 1000;
 const HYPER_RATE_WINDOW_MS = 60 * 1000;
 const HYPER_RATE_MAX_REQUESTS = 1200;
+const ANALYTICS_BATCH_MAX = 20;
+const ANALYTICS_ITEMS_MAX = 20;
+const ANALYTICS_TEXT_MAX = 500;
+const ANALYTICS_MAX_AGE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+const ANALYTICS_FUTURE_SKEW_MS = 5 * 60 * 1000;
 // D1 limits both a string and a complete row to 2,000,000 bytes. Keep headroom for the remaining
 // columns and AES-GCM/base64 overhead; unusually incompressible pools get a useful split-list error.
 const MAX_STORED_PROXY_CHARS = 1800000;
@@ -979,6 +984,228 @@ async function authenticatedLicense(request, env) {
   `).bind(tokenHash).first();
   if (!row || !row.active || row.device_id !== deviceId || Number(row.expires_at) <= now) return null;
   return row;
+}
+
+function analyticsText(value, max = ANALYTICS_TEXT_MAX) {
+  return String(value == null ? '' : value).trim().slice(0, max);
+}
+
+function analyticsSite(value) {
+  const compact = analyticsText(value, 80).toLowerCase().replace(/[^a-z]/g, '');
+  if (compact === 'target') return 'Target';
+  if (compact === 'pokemoncenter' || compact === 'pokemoncenterus') return 'Pokemon Center US';
+  return '';
+}
+
+function analyticsInteger(value, min, max, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeAnalyticsEvent(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const eventId = analyticsText(value.eventId, 80);
+  const eventType = analyticsText(value.eventType, 20).toLowerCase();
+  const site = analyticsSite(value.site);
+  if (!/^[a-z0-9-]{16,80}$/i.test(eventId)
+      || !['carted', 'checkout', 'decline'].includes(eventType) || !site) return null;
+  const occurredAt = analyticsInteger(value.occurredAt, 0, now + ANALYTICS_FUTURE_SKEW_MS, now);
+  if (occurredAt < now - ANALYTICS_MAX_AGE_MS) return null;
+  const rawItems = Array.isArray(value.items) ? value.items.slice(0, ANALYTICS_ITEMS_MAX) : [];
+  const items = rawItems.map((item) => {
+    const input = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+    const productUrl = analyticsText(input.productUrl, 1000);
+    return {
+      sku: analyticsText(input.sku, 120),
+      name: analyticsText(input.name, 300),
+      image: analyticsText(input.image, 1000),
+      productUrl: /^https?:\/\//i.test(productUrl) ? productUrl : '',
+      size: analyticsText(input.size, 120),
+      unitPriceCents: analyticsInteger(input.unitPriceCents, 0, 100000000, 0),
+      quantity: analyticsInteger(input.quantity, 1, 999, 1),
+    };
+  });
+  return {
+    eventId,
+    eventType,
+    site,
+    taskId: analyticsText(value.taskId, 160),
+    runId: analyticsText(value.runId, 160),
+    orderNumber: analyticsText(value.orderNumber, 160),
+    totalCents: analyticsInteger(value.totalCents, 0, 1000000000, 0),
+    occurredAt,
+    items,
+  };
+}
+
+function analyticsWindow(url, now = Date.now()) {
+  const ranges = { today: 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000, '90d': 90 * 24 * 60 * 60 * 1000 };
+  const range = Object.hasOwn(ranges, url.searchParams.get('range')) ? url.searchParams.get('range') : 'all';
+  const rawFrom = url.searchParams.get('from');
+  const rawTo = url.searchParams.get('to');
+  const requestedFrom = rawFrom == null ? Number.NaN : Number(rawFrom);
+  const requestedTo = rawTo == null ? Number.NaN : Number(rawTo);
+  const fallbackFrom = range === 'all' ? 0 : now - ranges[range];
+  const from = Number.isSafeInteger(requestedFrom)
+    ? Math.max(0, Math.min(now + ANALYTICS_FUTURE_SKEW_MS, requestedFrom)) : fallbackFrom;
+  const to = Number.isSafeInteger(requestedTo)
+    ? Math.max(from, Math.min(now + ANALYTICS_FUTURE_SKEW_MS, requestedTo)) : now + 1;
+  return { range, from, to };
+}
+
+async function ingestAnalytics(request, env) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const body = await bodyJson(request);
+  if (!Array.isArray(body.events) || body.events.length < 1 || body.events.length > ANALYTICS_BATCH_MAX) {
+    return json({ ok: false, message: `Submit 1-${ANALYTICS_BATCH_MAX} analytics events.` }, 400);
+  }
+  const now = Date.now();
+  const events = body.events.map(value => normalizeAnalyticsEvent(value, now));
+  if (events.some(event => !event)) return json({ ok: false, message: 'An analytics event is invalid.' }, 400);
+
+  const ingestId = crypto.randomUUID();
+  const statementGroups = [];
+  for (const event of events) {
+    const statements = [env.DB.prepare(`
+      INSERT OR IGNORE INTO analytics_events
+        (user_id, event_id, event_type, site, task_id, run_id, order_number,
+         total_cents, occurred_at, created_at, ingest_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      license.user_id, event.eventId, event.eventType, event.site, event.taskId, event.runId,
+      event.orderNumber, event.totalCents, event.occurredAt, now, ingestId,
+    )];
+    event.items.forEach((item, lineNumber) => {
+      statements.push(env.DB.prepare(`
+        INSERT OR IGNORE INTO analytics_items
+          (user_id, event_id, line_number, sku, name, image, product_url, size, unit_price_cents, quantity)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM analytics_events
+          WHERE user_id = ? AND event_id = ? AND ingest_id = ?
+        )
+      `).bind(
+        license.user_id, event.eventId, lineNumber, item.sku, item.name, item.image,
+        item.productUrl, item.size, item.unitPriceCents, item.quantity,
+        license.user_id, event.eventId, ingestId,
+      ));
+    });
+    statementGroups.push(statements);
+  }
+  // Keep every event and its item rows in one transactional D1 batch while placing a conservative
+  // ceiling on each request. If a later group fails, replaying the desktop outbox remains safe.
+  let chunk = [];
+  for (const group of statementGroups) {
+    if (chunk.length && chunk.length + group.length > 50) {
+      await env.DB.batch(chunk);
+      chunk = [];
+    }
+    chunk.push(...group);
+  }
+  if (chunk.length) await env.DB.batch(chunk);
+  return json({ ok: true, accepted: events.length });
+}
+
+async function analyticsDashboard(request, env, url) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const window = analyticsWindow(url);
+  const summary = await env.DB.prepare(`
+    SELECT
+      SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+      SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+      SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+      SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+        SELECT 1 FROM analytics_events terminal
+        WHERE terminal.user_id = e.user_id
+          AND e.run_id != '' AND terminal.run_id = e.run_id
+          AND terminal.event_type IN ('checkout', 'decline')
+          AND terminal.occurred_at >= e.occurred_at
+      ) THEN 1 ELSE 0 END) AS stuck_in_cart
+    FROM analytics_events e
+    WHERE e.user_id = ? AND e.occurred_at >= ? AND e.occurred_at < ?
+  `).bind(license.user_id, window.from, window.to).first();
+  const series = await env.DB.prepare(`
+    SELECT date(occurred_at / 1000, 'unixepoch') AS day,
+      SUM(CASE WHEN event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+      SUM(CASE WHEN event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+      SUM(CASE WHEN event_type = 'checkout' THEN total_cents ELSE 0 END) AS total_spent_cents
+    FROM analytics_events
+    WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+    GROUP BY day ORDER BY day ASC LIMIT 4000
+  `).bind(license.user_id, window.from, window.to).all();
+  return json({
+    ok: true,
+    window,
+    summary: {
+      checkouts: Number(summary && summary.checkouts) || 0,
+      declines: Number(summary && summary.declines) || 0,
+      totalSpentCents: Number(summary && summary.total_spent_cents) || 0,
+      stuckInCart: Number(summary && summary.stuck_in_cart) || 0,
+    },
+    series: (series.results || []).map(row => ({
+      day: String(row.day || ''),
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+    })),
+  });
+}
+
+async function analyticsCheckouts(request, env, url) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.user_id = ? AND e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR e.site LIKE ? COLLATE NOCASE OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+      SELECT 1 FROM analytics_items ai
+      WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
+        AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
+    ))`;
+  const bindings = [license.user_id, window.from, window.to, search, like, like, like, like];
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM analytics_events e WHERE ${filter}`)
+    .bind(...bindings).first();
+  const rows = await env.DB.prepare(`
+    SELECT e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+      i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
+    FROM (
+      SELECT e.* FROM analytics_events e WHERE ${filter}
+      ORDER BY e.occurred_at DESC LIMIT ? OFFSET ?
+    ) e
+    LEFT JOIN analytics_items i ON i.user_id = e.user_id AND i.event_id = e.event_id
+    ORDER BY e.occurred_at DESC, i.line_number ASC
+  `).bind(...bindings, pageSize, (page - 1) * pageSize).all();
+  const checkouts = [];
+  const byId = new Map();
+  for (const row of (rows.results || [])) {
+    let checkout = byId.get(row.event_id);
+    if (!checkout) {
+      checkout = {
+        eventId: row.event_id, site: row.site, orderNumber: row.order_number,
+        totalCents: Number(row.total_cents) || 0, occurredAt: Number(row.occurred_at) || 0, items: [],
+      };
+      byId.set(row.event_id, checkout);
+      checkouts.push(checkout);
+    }
+    if (row.line_number != null) checkout.items.push({
+      sku: row.sku, name: row.name, image: row.image, productUrl: row.product_url, size: row.size,
+      unitPriceCents: Number(row.unit_price_cents) || 0, quantity: Number(row.quantity) || 1,
+    });
+  }
+  return json({ ok: true, window, page, pageSize, total: Number(totalRow && totalRow.total) || 0, checkouts });
+}
+
+async function deleteAnalytics(request, env) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const result = await env.DB.prepare('DELETE FROM analytics_events WHERE user_id = ?').bind(license.user_id).run();
+  return json({ ok: true, deleted: Number(result.meta && result.meta.changes) || 0 });
 }
 
 async function consumeHyperQuota(env, userId, now = Date.now()) {
@@ -2001,6 +2228,11 @@ async function api(request, env, url) {
   if (url.pathname === '/api/license/validate' && request.method === 'POST') return validateLicense(request, env);
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env);
   if (url.pathname === '/api/backups' && request.method === 'GET') return listBackups(request, env);
+  if (url.pathname === '/api/analytics/events' && request.method === 'POST') return ingestAnalytics(request, env);
+  if (url.pathname === '/api/analytics/dashboard' && request.method === 'GET') return analyticsDashboard(request, env, url);
+  if (url.pathname === '/api/analytics/checkouts' && request.method === 'GET') return analyticsCheckouts(request, env, url);
+  if (url.pathname === '/api/analytics' && request.method === 'DELETE') return deleteAnalytics(request, env);
+  if (url.pathname.startsWith('/api/analytics')) return json({ ok: false, message: 'Method not allowed.' }, 405);
   const backupMatch = url.pathname.match(/^\/api\/backups\/([0-9a-f-]+)$/i);
   if (backupMatch && request.method === 'PUT') return putBackup(request, env, backupMatch[1]);
   if (backupMatch && request.method === 'GET') return getBackup(request, env, backupMatch[1]);
@@ -2031,6 +2263,8 @@ export const __test = Object.freeze({
   pokemonQueueCredentialInput,
   pokemonQueueUpstreamUrl,
   serviceCredentialJson,
+  analyticsWindow,
+  normalizeAnalyticsEvent,
 });
 
 export default {

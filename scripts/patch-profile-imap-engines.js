@@ -77,7 +77,8 @@ const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Targe
   source = replaceOnce(source, `const skuTitles = require('./sku-titles');`, `const skuTitles = require('./sku-titles');
 const engineContract = require('./native-engine-contract');
 const nativeHyperBroker = require('./native-hyper-broker');
-const manualCaptchaManager = require('./manual-captcha-manager');`, 'shared native-engine contract import');
+const manualCaptchaManager = require('./manual-captcha-manager');
+const analyticsRecorder = require('./analytics-recorder');`, 'shared native-engine contract import');
 
   source = replaceOnce(
     source,
@@ -828,6 +829,13 @@ ${harvesterConfig}`, 'Target managed harvester config');
         }
         log('[notify] ' + JSON.stringify(m));`, 'site-aware native notification routing');
 
+  source = replaceOnce(source, `    case 'task-notification':`, `    case 'analytics-event':
+      for (const m of items) {
+        if (!analyticsRecorder.record(m)) log('[analytics] event was not recorded');
+      }
+      break;
+    case 'task-notification':`, 'native analytics event routing');
+
   source = replaceOnce(source, `    case 'request-code':`, `    case 'update-input':
       for (const m of items) {
         if (!m || engineTaskSites.resolve(m) !== POKEMON_SITE) continue;
@@ -1036,7 +1044,7 @@ function patchPlainLog() {
 }
 
 try {
-  for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js', 'manual-captcha-manager.js']) {
+  for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js', 'manual-captcha-manager.js', 'analytics-recorder.js']) {
     fs.copyFileSync(
       path.join(__dirname, '..', 'launcher', filename),
       path.join(helperDirectory, filename),

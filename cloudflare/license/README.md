@@ -113,6 +113,15 @@ the portable data bundle, encrypts it with AES-256-GCM using a locally held reco
 only the encrypted envelope. Recovery keys are protected locally with Electron `safeStorage` and are
 never sent to the service. Objects are scoped by user UUID and the newest ten revisions are retained.
 
+Checkout analytics are stored in D1 under the authenticated user's server-derived UUID. The desktop
+sends one idempotent outcome event per cart, checkout, or decline with nested product rows, integer
+cents, quantities, site, order number, and time. The API ignores caller-supplied ownership and does
+not accept account email, profile data, addresses, cards, passwords, proxies, or license tokens as
+analytics fields. A local, permission-restricted outbox retries temporary failures and is bound to a
+one-way hash of the signed-in account so queued events cannot cross an account switch. Dashboard
+queries support Today, 30 Days, 90 Days, and All Time; checkout history is searchable, paginated,
+exportable from the desktop, and deletable by the signed-in user.
+
 ## Operations
 
 From the repository root:

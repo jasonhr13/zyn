@@ -54,6 +54,38 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   await access(new URL('../public/manifest.webmanifest', import.meta.url));
 });
 
+test('normalizes analytics without accepting identity or payment fields', () => {
+  const event = __test.normalizeAnalyticsEvent({
+    eventId: '0123456789abcdef0123456789abcdef',
+    eventType: 'checkout',
+    site: 'pokemoncenter',
+    taskId: 'task-1',
+    runId: 'run-1',
+    orderNumber: 'order-1',
+    totalCents: 2500,
+    occurredAt: 100000,
+    email: 'must-not-store@example.com',
+    cardNumber: '4111111111111111',
+    items: [{ sku: 'sku-1', name: 'One', unitPriceCents: 1025, quantity: 2 }],
+  }, 100000);
+  assert.equal(event.site, 'Pokemon Center US');
+  assert.equal(event.totalCents, 2500);
+  assert.equal(event.items[0].quantity, 2);
+  assert.equal(Object.hasOwn(event, 'email'), false);
+  assert.equal(JSON.stringify(event).includes('4111111111111111'), false);
+  assert.equal(__test.normalizeAnalyticsEvent({ ...event, eventId: 'short' }, 100000), null);
+});
+
+test('uses a bounded client range for local-day dashboard queries', () => {
+  const now = 1_000_000;
+  const window = __test.analyticsWindow(new URL(`https://license.zynbot.app/api/analytics/dashboard?range=today&from=123&to=${now}`), now);
+  assert.deepEqual(window, { range: 'today', from: 123, to: now });
+  assert.deepEqual(
+    __test.analyticsWindow(new URL('https://license.zynbot.app/api/analytics/dashboard?range=30d'), now),
+    { range: '30d', from: now - 30 * 24 * 60 * 60 * 1000, to: now + 1 },
+  );
+});
+
 test('encrypts Hyper credentials with authenticated encryption and returns only status metadata', async () => {
   const secret = 'hyper-test-key-that-must-stay-server-side';
   const env = { SERVICE_CONFIG_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url') };

@@ -353,6 +353,62 @@ function createLicenseAuthority({
         return { ok: false, status: 502, body: '', error: 'Hyper service is unavailable.' };
       }
     },
+    async recordAnalytics(events = []) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.analyticsEvents(licenseToken, events);
+        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] analytics upload unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
+      }
+    },
+    async analyticsDashboard(query = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.analyticsDashboard(licenseToken, query);
+        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] analytics dashboard unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
+      }
+    },
+    async analyticsCheckouts(query = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.analyticsCheckouts(licenseToken, query);
+        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] analytics checkouts unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
+      }
+    },
+    async deleteAnalytics() {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.deleteAnalytics(licenseToken);
+        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] analytics deletion unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
+      }
+    },
     openPokemonQueueEvents(handlers = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');

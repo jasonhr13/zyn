@@ -115,6 +115,15 @@ function post(apiBase, pathname, body, token = '') {
   return requestApi(apiBase, pathname, { method: 'POST', body: body || {}, token });
 }
 
+function analyticsQuery(pathname, query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== '' && value != null) params.set(key, String(value));
+  }
+  const suffix = params.toString();
+  return suffix ? `${pathname}?${suffix}` : pathname;
+}
+
 function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
   const deviceId = computeHwid();
   const deviceName = os.hostname().slice(0, 100);
@@ -205,7 +214,28 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
         headers: { 'x-rcart-device-id': deviceId },
       });
     },
+    analyticsEvents(token, events) {
+      return requestApi(apiBase, '/api/analytics/events', {
+        method: 'POST', body: { events: Array.isArray(events) ? events : [] }, token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    analyticsDashboard(token, query = {}) {
+      return requestApi(apiBase, analyticsQuery('/api/analytics/dashboard', query), {
+        token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    analyticsCheckouts(token, query = {}) {
+      return requestApi(apiBase, analyticsQuery('/api/analytics/checkouts', query), {
+        token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    deleteAnalytics(token) {
+      return requestApi(apiBase, '/api/analytics', {
+        method: 'DELETE', token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
   };
 }
 
-module.exports = { createClient, computeHwid, DEFAULT_API_BASE, __test: { requestApi } };
+module.exports = { createClient, computeHwid, DEFAULT_API_BASE, __test: { requestApi, analyticsQuery } };

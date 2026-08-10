@@ -7,6 +7,7 @@ import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
 import OtpBanner from './otp-banner';
 import RuntimeBanner from './runtime-banner';
+import Dashboard from './pages/dashboard';
 import { isTargetProxyStatus } from './target-proxy-status';
 import Modules from './pages/modules';
 import TaskGroups from './pages/task-groups';
@@ -153,6 +154,7 @@ class PageHandler extends Component {
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
+                <Route exact path="/dashboard" render={() => <Dashboard email={license.email || ''} />} />
                 <Route exact path="/modules" render={() => <Modules taskTypes={license.taskTypes || {}} />} />
                 <Route path="/task-groups" component={TaskGroups} />
                 <Route path="/target" component={Target} />
@@ -162,7 +164,7 @@ class PageHandler extends Component {
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />
                 <Route path="/settings" component={Settings} />
-                <Redirect to="/modules" />
+                <Redirect to="/dashboard" />
               </Switch>
             </ErrorBoundary>
           </div>

@@ -76,6 +76,7 @@ exact spelling. A start message carries the canonical site in both `site` and `t
 | `update-input` | `taskID`, `site?`, `productName`, `productSize` | Task registry |
 | `task-log` | `taskID`, `site?`, `data` | Task registry |
 | `task-notification` | `taskID`, `site?`, nested `type`, product/order fields | Task registry |
+| `analytics-event` | `eventId`, `eventType`, `site`, task/run/order IDs, integer cents, nested items | Main-process analytics outbox |
 | `product-titles` | `titles`, `missing` | Target monitor only in version 1 |
 | `request-code` | `email`, `requestId`, `taskID?` | OTP handler |
 | `account-cookie` | `accountId`, `cookie`, `site?` | Account store |
@@ -84,6 +85,17 @@ exact spelling. A start message carries the canonical site in both `site` and `t
 
 `site` is optional on legacy Target events because the registry is authoritative. New site-aware
 engine events should include it.
+
+### Local analytics outcome
+
+The native engine emits one `analytics-event` for each cart, checkout, or decline. A multi-product
+order remains one event and carries one item row per product, including its own quantity. Money is
+always integer cents. `eventId` is generated once in Go and is the idempotency key used when the
+main-process outbox retries an upload.
+
+The event deliberately excludes profiles, addresses, cards, passwords, proxies, account email, and
+license credentials. Electron binds it to the currently authenticated Zyn account and uploads it;
+the Go process never connects to the analytics API.
 
 ## Start-task common fields
 
