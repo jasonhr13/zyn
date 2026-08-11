@@ -3,16 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#121315">
     <title>Zyn License Admin</title>
+    <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+    <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="/admin.css">
   </head>
   <body>
     <main class="shell">
       <header>
-        <div>
-          <p class="eyebrow">Cloudflare license service</p>
-          <h1>Zyn users</h1>
-          <p class="subtitle">Manage accounts, licenses, task modules, and shared proxy access.</p>
+        <div class="admin-brand">
+          <img src="/zyn-icon.png" alt="" width="64" height="64">
+          <div>
+            <p class="eyebrow">Zyn operations</p>
+            <h1>License admin</h1>
+            <p class="subtitle">Manage accounts, licenses, task modules, and shared proxy access.</p>
+          </div>
         </div>
         <button id="logout" class="secondary hidden">Sign out</button>
       </header>
@@ -30,88 +37,252 @@
       </section>
 
       <section id="admin" class="hidden">
-        <div class="stats">
-          <article><span>Users</span><strong id="user-count">0</strong></article>
-          <article><span>Active licenses</span><strong id="license-count">0</strong></article>
-          <article><span>Waiting for reset</span><strong id="reset-count">0</strong></article>
-          <article><span>Waiting list</span><strong id="waitlist-count">0</strong></article>
-          <article><span>Proxy lists</span><strong id="proxy-count">0</strong></article>
-        </div>
+        <nav class="admin-tabs" aria-label="Admin pages">
+          <button type="button" class="admin-tab active" data-admin-tab="accounts">Accounts</button>
+          <button type="button" class="admin-tab" data-admin-tab="waiting-list">Waiting list</button>
+          <button type="button" class="admin-tab" data-admin-tab="managed-proxies">Managed proxies</button>
+          <button type="button" class="admin-tab" data-admin-tab="settings">Settings</button>
+          <button type="button" class="admin-tab" data-admin-tab="analytics">Analytics</button>
+        </nav>
 
-        <section class="card add-card">
-          <div>
-            <h2>Add user</h2>
-            <p>A random temporary password is generated and shown once.</p>
+        <section id="admin-page-accounts" class="admin-page" data-admin-page="accounts">
+          <div class="stats">
+            <article><span>Users</span><strong id="user-count">0</strong></article>
+            <article><span>Active licenses</span><strong id="license-count">0</strong></article>
+            <article><span>Waiting for reset</span><strong id="reset-count">0</strong></article>
           </div>
-          <form id="add-form" class="row">
-            <input id="new-email" type="email" autocomplete="off" placeholder="user@example.com" required>
-            <button type="submit">Add user</button>
-          </form>
+
+          <section class="card add-card">
+            <div>
+              <h2>Add user</h2>
+              <p>A random temporary password is generated and shown once.</p>
+            </div>
+            <form id="add-form" class="row">
+              <input id="new-email" type="email" autocomplete="off" placeholder="user@example.com" required>
+              <button type="submit">Add user</button>
+            </form>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-heading">
+              <div><h2>Accounts</h2><p id="updated-at">Not loaded</p></div>
+              <button id="refresh" class="secondary">Refresh</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Status</th><th>Task types</th><th>Proxy access</th><th>License</th><th>Last seen</th><th></th></tr></thead>
+                <tbody id="users"></tbody>
+              </table>
+            </div>
+            <p id="empty" class="empty hidden">No users yet.</p>
+          </section>
         </section>
 
-        <section class="card waitlist-card">
-          <div class="table-heading">
+        <section id="admin-page-waiting-list" class="admin-page hidden" data-admin-page="waiting-list">
+          <section class="card admin-page-heading">
             <div>
+              <p class="eyebrow">Invitations</p>
               <h2>Waiting list</h2>
-              <p>Invite a person to create their account and generate a private download link in one step.</p>
+              <p>Review signups and send each person a private Zyn invitation.</p>
             </div>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead><tr><th>Email</th><th>Joined</th><th>Status</th><th></th></tr></thead>
-              <tbody id="waitlist"></tbody>
-            </table>
-          </div>
-          <p id="waitlist-empty" class="empty">No one is waiting yet.</p>
+            <div class="admin-page-count"><strong id="waitlist-count">0</strong><span>waiting</span></div>
+          </section>
+
+          <section class="card waitlist-card">
+            <div class="table-heading">
+              <div>
+                <h2>Signups</h2>
+                <p>Inviting creates an account when needed and generates a private download link.</p>
+              </div>
+              <button id="refresh-waitlist" type="button" class="secondary">Refresh</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Email</th><th>Joined</th><th>Status</th><th></th></tr></thead>
+                <tbody id="waitlist"></tbody>
+              </table>
+            </div>
+            <p id="waitlist-empty" class="empty">No one is waiting yet.</p>
+          </section>
         </section>
 
-        <section class="card task-types-card">
-          <div class="table-heading">
+        <section id="admin-page-managed-proxies" class="admin-page hidden" data-admin-page="managed-proxies">
+          <section class="card admin-page-heading">
             <div>
-              <h2>Task type access</h2>
-              <p>Optional modules default off. Enabling globally turns one on for everyone; account overrides can then disable individual users.</p>
+              <p class="eyebrow">Shared infrastructure</p>
+              <h2>Managed proxies</h2>
+              <p>Create and maintain the encrypted proxy lists available to licensed accounts.</p>
             </div>
-          </div>
-          <div id="task-types" class="task-type-grid"></div>
+            <div class="admin-page-count"><strong id="proxy-count">0</strong><span>lists</span></div>
+          </section>
+
+          <section class="card proxy-card">
+            <div class="table-heading">
+              <div>
+                <h2>Proxy lists</h2>
+                <p>Users with proxy access receive every list. Up to 50,000 proxies per list.</p>
+              </div>
+              <button id="refresh-proxies" type="button" class="secondary">Refresh</button>
+            </div>
+            <form id="proxy-form" class="proxy-form">
+              <input id="proxy-id" type="hidden">
+              <label for="proxy-name">List name</label>
+              <input id="proxy-name" maxlength="80" autocomplete="off" placeholder="Target Residential" required>
+              <label for="proxy-raw">Proxies</label>
+              <textarea id="proxy-raw" spellcheck="false" placeholder="host:port:user:pass&#10;host:port:user:pass" required></textarea>
+              <div class="proxy-form-footer">
+                <span id="proxy-line-count">0 proxies</span>
+                <div class="row compact-row">
+                  <button id="cancel-proxy" type="button" class="secondary hidden">Cancel</button>
+                  <button id="save-proxy" type="submit">Create proxy list</button>
+                </div>
+              </div>
+            </form>
+            <div id="proxy-lists" class="managed-lists"></div>
+            <p id="proxy-empty" class="empty">No managed proxy lists yet.</p>
+          </section>
         </section>
 
-        <section class="card proxy-card">
-          <div class="table-heading">
+        <section id="admin-page-settings" class="admin-page hidden" data-admin-page="settings">
+          <section class="card admin-page-heading">
             <div>
-              <h2>Managed proxy lists</h2>
-              <p>Users with proxy access receive every list. Up to 50,000 proxies per list; contents are compressed and encrypted before D1 storage.</p>
+              <p class="eyebrow">Global configuration</p>
+              <h2>Settings</h2>
+              <p>Control module availability and server-held service credentials.</p>
             </div>
-          </div>
-          <form id="proxy-form" class="proxy-form">
-            <input id="proxy-id" type="hidden">
-            <label for="proxy-name">List name</label>
-            <input id="proxy-name" maxlength="80" autocomplete="off" placeholder="Target Residential" required>
-            <label for="proxy-raw">Proxies</label>
-            <textarea id="proxy-raw" spellcheck="false" placeholder="host:port:user:pass&#10;host:port:user:pass" required></textarea>
-            <div class="proxy-form-footer">
-              <span id="proxy-line-count">0 proxies</span>
-              <div class="row compact-row">
-                <button id="cancel-proxy" type="button" class="secondary hidden">Cancel</button>
-                <button id="save-proxy" type="submit">Create proxy list</button>
+          </section>
+
+          <section class="card task-types-card">
+            <div class="table-heading">
+              <div>
+                <h2>Global module availability</h2>
+                <p>Optional modules default off. Account-specific overrides remain on the Accounts page.</p>
               </div>
             </div>
-          </form>
-          <div id="proxy-lists" class="managed-lists"></div>
-          <p id="proxy-empty" class="empty">No managed proxy lists yet.</p>
+            <div id="task-types" class="task-type-grid"></div>
+          </section>
+
+          <section class="card service-config-card">
+            <div class="table-heading">
+              <div>
+                <h2>Hyper service</h2>
+                <p>The API key stays encrypted in the license Worker. Installed apps only call the licensed Pokémon Center broker.</p>
+              </div>
+              <span id="hyper-status" class="badge">Not configured</span>
+            </div>
+            <form id="hyper-form" class="service-config-form">
+              <div>
+                <label for="hyper-api-key">Hyper API key</label>
+                <input id="hyper-api-key" type="password" minlength="8" maxlength="512" autocomplete="new-password" placeholder="Enter a new key" required>
+                <p id="hyper-meta" class="meta">No key is stored.</p>
+              </div>
+              <div class="row compact-row">
+                <button id="clear-hyper" type="button" class="danger hidden">Remove key</button>
+                <button type="submit">Save key</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card service-config-card">
+            <div class="table-heading">
+              <div>
+                <h2>Pokémon Center queue events</h2>
+                <p>The upstream license stays encrypted in the license Worker. Installed apps receive only normalized queue and captcha events.</p>
+              </div>
+              <span id="pokemon-queue-status" class="badge">Not configured</span>
+            </div>
+            <form id="pokemon-queue-form" class="service-config-form">
+              <div>
+                <label for="pokemon-queue-license">Queue event license</label>
+                <input id="pokemon-queue-license" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Enter a new license" required>
+                <p id="pokemon-queue-meta" class="meta">No license is stored.</p>
+              </div>
+              <div class="row compact-row">
+                <button id="clear-pokemon-queue" type="button" class="danger hidden">Remove license</button>
+                <button type="submit">Save license</button>
+              </div>
+            </form>
+          </section>
         </section>
 
-        <section class="card table-card">
-          <div class="table-heading">
-            <div><h2>Accounts</h2><p id="updated-at">Not loaded</p></div>
-            <button id="refresh" class="secondary">Refresh</button>
+        <section id="admin-page-analytics" class="admin-page hidden" data-admin-page="analytics">
+          <section class="card analytics-toolbar">
+            <div>
+              <p class="eyebrow">Global activity</p>
+              <h2>App analytics</h2>
+              <p>Aggregated checkout activity across every Zyn account.</p>
+            </div>
+            <div class="analytics-toolbar-actions">
+              <div class="analytics-ranges" aria-label="Analytics date range">
+                <button type="button" class="secondary" data-analytics-range="today">Today</button>
+                <button type="button" class="secondary" data-analytics-range="30d">Last 30 days</button>
+                <button type="button" class="secondary" data-analytics-range="90d">Last 90 days</button>
+                <button type="button" class="secondary active" data-analytics-range="all">All time</button>
+              </div>
+              <button id="analytics-refresh" type="button" class="secondary">Refresh</button>
+            </div>
+          </section>
+
+          <div class="stats analytics-stats">
+            <article><span>Active users</span><strong id="analytics-active-users">0</strong></article>
+            <article><span>Checkouts</span><strong id="analytics-checkouts-count">0</strong></article>
+            <article><span>Declines</span><strong id="analytics-declines-count">0</strong></article>
+            <article><span>Total spent</span><strong id="analytics-total-spent">$0.00</strong></article>
+            <article><span>Stuck in cart</span><strong id="analytics-stuck-count">0</strong></article>
           </div>
-          <div class="table-scroll">
-            <table>
-              <thead><tr><th>User</th><th>Status</th><th>Task types</th><th>Proxy access</th><th>License</th><th>Last seen</th><th></th></tr></thead>
-              <tbody id="users"></tbody>
-            </table>
-          </div>
-          <p id="empty" class="empty hidden">No users yet.</p>
+
+          <section class="card analytics-chart-card">
+            <div class="table-heading">
+              <div>
+                <h2>Global overview</h2>
+                <p id="analytics-updated-at">Not loaded</p>
+              </div>
+              <div class="analytics-metrics" aria-label="Chart metric">
+                <button type="button" class="secondary active" data-analytics-metric="checkouts">Checkouts</button>
+                <button type="button" class="secondary" data-analytics-metric="spent">Total spent</button>
+                <button type="button" class="secondary" data-analytics-metric="declines">Declines</button>
+              </div>
+            </div>
+            <div id="analytics-chart" class="analytics-chart" aria-live="polite"></div>
+          </section>
+
+          <section class="card analytics-table-card">
+            <div class="table-heading analytics-table-heading">
+              <div><h2>User analytics</h2><p id="analytics-users-count">0 users with activity</p></div>
+              <input id="analytics-user-search" class="analytics-search" type="search" placeholder="Search users" autocomplete="off">
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Checkouts</th><th>Declines</th><th>Total spent</th><th>Stuck</th><th>Last checkout</th></tr></thead>
+                <tbody id="analytics-users"></tbody>
+              </table>
+            </div>
+            <p id="analytics-users-empty" class="empty hidden">No user activity in this range.</p>
+            <div class="analytics-pagination">
+              <button id="analytics-users-prev" type="button" class="secondary">Previous</button>
+              <span id="analytics-users-page">1 / 1</span>
+              <button id="analytics-users-next" type="button" class="secondary">Next</button>
+            </div>
+          </section>
+
+          <section class="card analytics-table-card">
+            <div class="table-heading analytics-table-heading">
+              <div><h2>Global checkout history</h2><p id="analytics-history-count">0 checkouts</p></div>
+              <input id="analytics-checkout-search" class="analytics-search" type="search" placeholder="Search user, item, SKU or order" autocomplete="off">
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Item</th><th>Site</th><th>Date</th><th>Order</th><th>Total</th></tr></thead>
+                <tbody id="analytics-history"></tbody>
+              </table>
+            </div>
+            <p id="analytics-history-empty" class="empty hidden">No checkouts in this range.</p>
+            <div class="analytics-pagination">
+              <button id="analytics-history-prev" type="button" class="secondary">Previous</button>
+              <span id="analytics-history-page">1 / 1</span>
+              <button id="analytics-history-next" type="button" class="secondary">Next</button>
+            </div>
+          </section>
         </section>
       </section>
     </main>

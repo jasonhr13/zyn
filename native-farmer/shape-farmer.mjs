@@ -36,15 +36,17 @@ import {
 } from './shape-harvest-health.mjs';
 import {
   detectShapeBrowsers, distributeShapeWorkerBrowsers, shapeBrowserLaunchOptions,
-  shapeBrowserSchedulerSlotCount,
+  normalizeShapeBrowserSelection, shapeBrowserSchedulerSlotCount,
 } from './shape-browser-pool.mjs';
+import { createShapeBrowserOptimizer } from './shape-browser-optimizer.mjs';
 import { randomLoadsForBrowser, shapeFarmerThroughputOptions } from './shape-farmer-throughput.mjs';
 import { createShapeWorkerScaler } from './shape-worker-scaler.mjs';
 import { shapeWorkerRelaunchDelayMs } from './shape-worker-retry.mjs';
 import { dismissTargetHealthDataConsent } from './target-consent-overlay.mjs';
 import { runTargetAtcV2Flow, TARGET_ATC_V2_SOURCE } from './target-atc-v2.mjs';
 import {
-  blockHeavyResourcesEnabled, installHeavyResourceBlock,
+  blockHeavyResourcesEnabled, createPageBandwidthMeter, emptyBandwidthSample,
+  installHeavyResourceBlock,
 } from './shape-bandwidth.mjs';
 
 // Broker port. Read from the env the app sets (HOPE_SHAPE_PORT) so the app, this farmer, and the
@@ -108,6 +110,86 @@ const activity = {
   produced: { login: 0, atc: 0 },
   delivered: { login: 0, atc: 0 },
 };
+const emptyTransferTotals = () => ({
+  attempts: 0,
+  measuredAttempts: 0,
+  unmeasuredAttempts: 0,
+  cookies: 0,
+  downloadBytes: 0,
+  uploadBytes: 0,
+  totalBytes: 0,
+  proxyBytes: 0,
+  directBytes: 0,
+  proxyDownloadBytes: 0,
+  proxyUploadBytes: 0,
+  directDownloadBytes: 0,
+  directUploadBytes: 0,
+  proxyCookies: 0,
+  directCookies: 0,
+  requests: 0,
+  blockedRequests: 0,
+  cachedRequests: 0,
+  failedRequests: 0,
+  proxyRequests: 0,
+  directRequests: 0,
+  proxyBlockedRequests: 0,
+  directBlockedRequests: 0,
+  proxyCachedRequests: 0,
+  directCachedRequests: 0,
+  proxyFailedRequests: 0,
+  directFailedRequests: 0,
+});
+const bandwidthActivity = {
+  startedAt: activity.startedAt,
+  ...emptyTransferTotals(),
+  byType: { login: emptyTransferTotals(), atc: emptyTransferTotals() },
+};
+function addTransferSample(target, sample, cookies, proxied) {
+  const downloadBytes = Math.max(0, Number(sample && sample.downloadBytes) || 0);
+  const uploadBytes = Math.max(0, Number(sample && sample.uploadBytes) || 0);
+  const totalBytes = downloadBytes + uploadBytes;
+  target.attempts += 1;
+  target.measuredAttempts += sample && sample.supported === true ? 1 : 0;
+  target.unmeasuredAttempts += sample && sample.supported === true ? 0 : 1;
+  target.cookies += Math.max(0, Number(cookies) || 0);
+  target.downloadBytes += downloadBytes;
+  target.uploadBytes += uploadBytes;
+  target.totalBytes += totalBytes;
+  target.proxyBytes += proxied ? totalBytes : 0;
+  target.directBytes += proxied ? 0 : totalBytes;
+  target.proxyDownloadBytes += proxied ? downloadBytes : 0;
+  target.proxyUploadBytes += proxied ? uploadBytes : 0;
+  target.directDownloadBytes += proxied ? 0 : downloadBytes;
+  target.directUploadBytes += proxied ? 0 : uploadBytes;
+  target.proxyCookies += proxied ? Math.max(0, Number(cookies) || 0) : 0;
+  target.directCookies += proxied ? 0 : Math.max(0, Number(cookies) || 0);
+  for (const field of ['requests', 'blockedRequests', 'cachedRequests', 'failedRequests']) {
+    target[field] += Math.max(0, Number(sample && sample[field]) || 0);
+  }
+  const routePrefix = proxied ? 'proxy' : 'direct';
+  target[`${routePrefix}Requests`] += Math.max(0, Number(sample && sample.requests) || 0);
+  target[`${routePrefix}BlockedRequests`] += Math.max(0, Number(sample && sample.blockedRequests) || 0);
+  target[`${routePrefix}CachedRequests`] += Math.max(0, Number(sample && sample.cachedRequests) || 0);
+  target[`${routePrefix}FailedRequests`] += Math.max(0, Number(sample && sample.failedRequests) || 0);
+}
+function recordTransferSample(type, sample, cookies, proxied) {
+  const measured = sample || emptyBandwidthSample(false);
+  addTransferSample(bandwidthActivity, measured, cookies, proxied);
+  if (bandwidthActivity.byType[type]) addTransferSample(bandwidthActivity.byType[type], measured, cookies, proxied);
+}
+function bandwidthStatusPayload() {
+  return {
+    ...bandwidthActivity,
+    supported: bandwidthActivity.measuredAttempts > 0 || bandwidthActivity.attempts === 0,
+    available: bandwidthActivity.measuredAttempts > 0,
+    uploadEstimated: true,
+    measurement: 'chromium-cdp',
+    byType: {
+      login: { ...bandwidthActivity.byType.login },
+      atc: { ...bandwidthActivity.byType.atc },
+    },
+  };
+}
 // Producer processes do not own the bank. They mirror the broker's counts so their existing
 // demand/cap coordinator can avoid farming past a shared ceiling while every producer feeds the
 // same broker on :4727.
@@ -141,6 +223,7 @@ let farmerBrowser = { key: 'chromium', channel: 'chromium', mode: 'not-started' 
 let farmerBrowsers = [];
 let workerBrowsers = [];
 let workerScaler = null;
+let browserOptimizer = null;
 
 // Shape headers are short-lived; anything older is dropped by prune() rather than handed to the
 // engine (a stale replay is a guaranteed 401, and it burns the task's attempt).
@@ -378,6 +461,8 @@ function producerStatusPayload() {
     produced: { ...activity.produced },
     failures: health.failures || {},
     quarantinedProxies: Number(health.quarantinedProxies) || 0,
+    bandwidth: bandwidthStatusPayload(),
+    browserPerformance: browserOptimizer ? browserOptimizer.snapshot() : null,
     lastSuccessAt: producerLastSuccessAt,
     startedAt: activity.startedAt,
   };
@@ -469,7 +554,7 @@ const server = http.createServer((req, res) => {
     prune('login'); prune('atc');
     const coordination = harvestCoordinator.state();
     const health = harvestHealth.snapshot();
-    const scale = workerScaler ? workerScaler.snapshot() : {
+    const rawScale = workerScaler ? workerScaler.snapshot() : {
       policy: 'fixed', desiredWorkers: 0,
       activeWorkers: 0, configuredCeiling: startedWorkerCount, hardLimit: startedWorkerCount,
       recentSamples: 0, recentErrors: 0, recentErrorRate: 0,
@@ -485,12 +570,24 @@ const server = http.createServer((req, res) => {
         rotations: 0, rotationEvery: 2, activeLeaseCompletions: {}, lastRotation: null,
       },
     };
+    const browserPerformance = browserOptimizer ? browserOptimizer.snapshot() : null;
+    const optimizerActiveCounts = Object.fromEntries((browserPerformance?.browsers || [])
+      .map(browser => [browser.key, browser.activeWorkers]));
+    const scale = browserPerformance ? {
+      ...rawScale,
+      scheduling: { ...rawScale.scheduling, activeBrowserCounts: optimizerActiveCounts },
+    } : rawScale;
+    const performanceByBrowser = new Map((browserPerformance?.browsers || [])
+      .map(browser => [browser.key, browser]));
     const activeWorkerIds = new Set(scale.scheduling && scale.scheduling.activeWorkerIds || []);
     const browsers = farmerBrowsers.map(browser => ({
       ...browser,
       configuredWorkers: workerBrowsers.filter(candidate => candidate.key === browser.key).length,
-      activeWorkers: workerBrowsers.filter((candidate, id) =>
-        activeWorkerIds.has(id) && candidate.key === browser.key).length,
+      activeWorkers: performanceByBrowser.has(browser.key)
+        ? performanceByBrowser.get(browser.key).activeWorkers
+        : workerBrowsers.filter((candidate, id) =>
+          activeWorkerIds.has(id) && candidate.key === browser.key).length,
+      performance: performanceByBrowser.get(browser.key) || null,
     }));
     // `app` and `owner` let the app identify this process positively before ever reclaiming the
     // port from it — image-name matching would be reckless (node.exe is everyone's dev server).
@@ -514,6 +611,7 @@ const server = http.createServer((req, res) => {
            health: { ...health, activeWorkers: scale.activeWorkers + producerWorkers,
              busyWorkers: coordination.inFlight.login + coordination.inFlight.atc,
              configuredWorkers: startedWorkerCount + producerConfigured,
+             browserOptimization: browserPerformance,
              scaling: producerConfigured ? {
                ...scale,
                desiredWorkers: producerConfigured,
@@ -567,7 +665,7 @@ function pickProxy() {
   return { proxy: PROXIES[idx], waitMs: 0 };
 }
 const HEADLESS = argOf('headless', 'false') === 'true';
-const BROWSER_SELECTION = argOf('browsers', 'auto') === 'chromium' ? 'chromium' : 'auto';
+const BROWSER_SELECTION = normalizeShapeBrowserSelection(argOf('browsers', 'auto'));
 // Every browser in the pool has an explicit channel. In headless mode that opts Chrome, Edge, and
 // bundled Chromium into their regular browser's New Headless implementation.
 // Park the harvest windows off-screen instead of on top of whatever the operator is doing. Defaults
@@ -650,14 +748,30 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
   const persona = makePersona();
   const browser = reuse || await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
   let context = null;
+  let bandwidthMeter = null;
   try {
     // Browser reuse does not mean Target-state reuse. Every load gets a fresh context, storage jar,
     // page, and persona while retaining the expensive browser process and its fixed proxy.
     context = await browser.newContext(makeContextOptions(persona));
     const page = await context.newPage();
+    const interceptedEndpoint = harvestUrlRe(type);
+    bandwidthMeter = await createPageBandwidthMeter(context, page, {
+      isLocalResponse: request => {
+        const url = String(request && request.url || '');
+        const method = String(request && request.method || '').toUpperCase();
+        const resourceType = String(request && request.resourceType || '').toLowerCase();
+        if (/^(?:data|blob|about|file):/i.test(url)) return true;
+        if (interceptedEndpoint.test(url) && method !== 'OPTIONS' && resourceType !== 'document') return true;
+        return type === 'atc' && HARVESTER_ATC_MODE === 'v2' && resourceType === 'document'
+          && /^https:\/\/(?:www\.)?target\.com\/p\//i.test(url);
+      },
+    });
     // Bandwidth: drop product images/media through the proxy. Scripts/CSS/XHR stay so Shape and
     // Add-to-Cart keep working. Disable with --blockHeavyResources=false if yield ever dips.
-    await installHeavyResourceBlock(page, { enabled: BLOCK_HEAVY_RESOURCES });
+    await installHeavyResourceBlock(page, {
+      enabled: BLOCK_HEAVY_RESOURCES,
+      onBlocked: request => bandwidthMeter.noteBlocked(request),
+    });
     await page.addInitScript(personaInitScript(persona)).catch(() => {});
     const human = createHuman(page, persona);
 
@@ -800,6 +914,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 }
                 // Stub the response so Target NEVER receives the real request → nonce stays unused for
                 // the engine's first-and-only replay (exactly what the reference implementation's extension does).
+                bandwidthMeter.noteLocalResponse(req);
                 try { await route.fulfill(stub); } catch { try { await route.abort(); } catch {} }
                 return;
               }
@@ -814,6 +929,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
               // "signature" is in KEEP_IN_QUIET, so this reaches the operator instead of being
               // swallowed as debug chatter — it is the single most useful line when a harvest fails.
               log(`  incomplete signature: got [${got}], missing [${short.join(',')}] — stubbed, retrying`);
+              bandwidthMeter.noteLocalResponse(req);
               try { await route.fulfill(stub); } catch { try { await route.abort(); } catch {} }
               return;
             } catch {}
@@ -1155,13 +1271,27 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
         fail = DIAG ? `${why} | url=${url} | title="${title}" | shot=${shot}` : why;
       } catch (e) { fail = 'diag error: ' + e.message; }
     }
+    const bandwidth = bandwidthMeter ? await bandwidthMeter.stop() : emptyBandwidthSample(false);
     return {
       headers: captured,
       fail,
       failureCategory,
       source: type === 'atc' && HARVESTER_ATC_MODE === 'v2' ? TARGET_ATC_V2_SOURCE : 'inBot',
+      bandwidth,
     };
+  } catch (error) {
+    const bandwidth = bandwidthMeter
+      ? await bandwidthMeter.stop().catch(() => emptyBandwidthSample(false))
+      : emptyBandwidthSample(false);
+    if (error && typeof error === 'object') {
+      error.bandwidth = bandwidth;
+      throw error;
+    }
+    const wrapped = new Error(String(error));
+    wrapped.bandwidth = bandwidth;
+    throw wrapped;
   } finally {
+    if (bandwidthMeter) await bandwidthMeter.stop().catch(() => {});
     // A reused browser must not retain pages, cookies, storage, or personas between loads.
     if (context) await context.close().catch(() => {});
     if (!reuse) await browser.close().catch(() => {});
@@ -1183,17 +1313,21 @@ function workerScaleSourceKey(proxy, selectedBrowser, workerId) {
   return `home:${selectedBrowser.key}:${workerId}`;
 }
 
-async function farmerWorker(id, selectedBrowser) {
+async function farmerWorker(id, initialBrowser) {
   // A worker reuses one expensive browser process for a small random number of loads. The proxy is
   // a browser launch option, so it remains fixed for that session; every load still gets a fresh
   // context/persona inside harvestOnce().
   let browser = null;
+  let sessionBrowser = null;
   let sessionProxy = null;
   let loadsLeft = 0;
   let sessionLoads = 0;
+  let firstSession = true;
   const endSession = async () => {
     if (browser) await browser.close().catch(() => {});
+    if (sessionBrowser && browserOptimizer) browserOptimizer.release(id);
     browser = null;
+    sessionBrowser = null;
     sessionProxy = null;
     loadsLeft = 0;
     sessionLoads = 0;
@@ -1226,12 +1360,13 @@ async function farmerWorker(id, selectedBrowser) {
       continue;
     }
     const type = reservation.type;
-    if (type === 'login') log(`farmer worker ${id} [${selectedBrowser.key}]: reserved the single login lane`);
+    let selectedBrowser = sessionBrowser || initialBrowser;
     let harvested = false;
     let failure = '';
     let failureCategory = '';
     let banked = 0;
     let wasReused = false;
+    let bandwidth = null;
     let proxy = sessionProxy;
     const startedAt = Date.now();
     let nextLoopDelayMs = 1000;
@@ -1247,19 +1382,29 @@ async function farmerWorker(id, selectedBrowser) {
         } else {
           proxy = proxyChoice.proxy;
           sessionProxy = proxy;
+          selectedBrowser = browserOptimizer
+            ? browserOptimizer.acquire(id, firstSession ? initialBrowser.key : '')
+            : initialBrowser;
+          firstSession = false;
+          sessionBrowser = selectedBrowser;
           browser = await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
           sessionLoads = randomLoadsForBrowser(LOADS_PER_BROWSER);
           loadsLeft = sessionLoads;
         }
       } else {
         proxy = sessionProxy;
+        selectedBrowser = sessionBrowser || initialBrowser;
         wasReused = true;
       }
 
       if (browser) {
+        if (type === 'login') {
+          log(`farmer worker ${id} [${selectedBrowser.key}]: reserved the single login lane`);
+        }
         loadsLeft -= 1;
         const result = await harvestOnce(type, proxy, selectedBrowser, browser);
         const { headers, fail, source } = result;
+        bandwidth = result.bandwidth || null;
         failureCategory = result.failureCategory || '';
         const batch = Array.isArray(headers) ? headers : headers ? [headers] : [];
         for (const captured of batch) {
@@ -1273,9 +1418,21 @@ async function farmerWorker(id, selectedBrowser) {
         harvested = banked > 0;
         if (!harvested) failure = fail || (headers ? 'captured signature could not be banked' : 'timeout');
       }
-    } catch (e) { failure = String(e && e.message || e); }
+    } catch (e) {
+      bandwidth = e && e.bandwidth || bandwidth;
+      failure = String(e && e.message || e);
+    }
     finally { reservation.release({ success: harvested }); }
+    recordTransferSample(type, bandwidth, banked, !!proxy);
     if (harvested) {
+      if (browserOptimizer) browserOptimizer.recordOutcome({
+        workerId: id,
+        browserKey: selectedBrowser.key,
+        success: true,
+        cookies: banked,
+        durationMs: Date.now() - startedAt,
+        bandwidth,
+      });
       harvestHealth.recordSuccess({ type, proxyKey: proxy && proxy.raw });
       workerScaler.recordSuccess({
         sourceKey: workerScaleSourceKey(proxy, selectedBrowser, id), workerId: id,
@@ -1286,6 +1443,14 @@ async function farmerWorker(id, selectedBrowser) {
       if (loadsLeft <= 0) await endSession();
     } else {
       const category = failureCategory || classifyHarvestFailure(failure);
+      if (browserOptimizer) browserOptimizer.recordOutcome({
+        workerId: id,
+        browserKey: selectedBrowser.key,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        bandwidth,
+        failureCategory: category,
+      });
       const outcome = harvestHealth.recordFailure({ type, category, proxyKey: proxy && proxy.raw });
       // Health telemetry needs route independence without proxy credentials. Fixed scheduling never
       // uses this evidence to deactivate a worker; quarantine owns the failed route instead.
@@ -1320,10 +1485,17 @@ function startFarming(browserMode) {
     if (!PRODUCER_MODE) { prune('login'); prune('atc'); }
     const health = harvestHealth.snapshot();
     const scale = workerScaler && workerScaler.snapshot();
+    const optimization = browserOptimizer && browserOptimizer.snapshot();
     const cooling = Object.entries(health.cooldowns).filter(([, lane]) => lane.remainingMs > 0)
       .map(([type, lane]) => `${type}:${Math.ceil(lane.remainingMs / 1000)}s`).join(',') || 'none';
-    const browserMix = scale ? Object.entries(scale.scheduling.activeBrowserCounts)
-      .filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`).join(',') : '';
+    const browserMix = optimization
+      ? optimization.browsers.filter(browser => browser.activeWorkers > 0)
+        .map(browser => `${browser.key}:${browser.activeWorkers}`).join(',')
+      : scale ? Object.entries(scale.scheduling.activeBrowserCounts)
+        .filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`).join(',') : '';
+    const browserLeader = optimization
+      ? optimization.learning ? 'learning' : optimization.leader?.key || 'none'
+      : '';
     const cap = UNCAPPED ? '' : `/${TARGET_POOL}`;
     const counts = PRODUCER_MODE ? producerBank : { login: pool.login.length, atc: pool.atc.length };
     log(`bank: login=${counts.login}${cap} atc=${counts.atc}${cap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
@@ -1333,7 +1505,8 @@ function startFarming(browserMode) {
       + (scale ? ` workers=${scale.activeWorkers}/${scale.hardLimit} policy=${scale.policy} errors=${Math.round(scale.recentErrorRate * 100)}%`
         + ` errorSources=${scale.distinctPressureSources}`
         + `:${scale.decisionErrors}/${scale.decisionSamples}`
-        + ` browsers=${browserMix || 'none'} rotations=${scale.scheduling.rotations}` : ''));
+        + ` browsers=${browserMix || 'none'} rotations=${scale.scheduling.rotations}`
+        + (optimization ? ` browserPolicy=${optimization.policy} leader=${browserLeader}` : '') : ''));
   }, 20000).unref?.();
 
   detectShapeBrowsers(
@@ -1343,7 +1516,7 @@ function startFarming(browserMode) {
   ).then((detected) => {
     if (!detected.length) {
       log(BROWSER_SELECTION === 'auto'
-        ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, or bundled Chromium browser is available'
+        ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, Opera, or bundled Chromium browser is available'
         : `browser detection failed — ${BROWSER_SELECTION} is not available`);
       return;
     }
@@ -1360,6 +1533,10 @@ function startFarming(browserMode) {
     // so the fair scheduler can rotate every proven browser through limited capacity.
     const schedulerSlots = shapeBrowserSchedulerSlotCount(detected, hardLimit);
     workerBrowsers = distributeShapeWorkerBrowsers(detected, schedulerSlots);
+    browserOptimizer = createShapeBrowserOptimizer({
+      browsers: detected,
+      workerCount: hardLimit,
+    });
     workerScaler = createShapeWorkerScaler({
       configuredWorkers,
       browserCount: detected.length,
@@ -1370,9 +1547,11 @@ function startFarming(browserMode) {
     startedWorkerCount = configuredWorkers;
     workerBrowsers.forEach((browser, id) => farmerWorker(id, browser));
     const scale = workerScaler.snapshot();
+    const optimization = browserOptimizer.snapshot();
     log(`fixed worker slots ${scale.activeWorkers}/${scale.hardLimit} active immediately; scheduler `
       + `${workerBrowsers.length}: ${workerBrowsers.map(browser => browser.key).join(', ')}`
-      + ` — no error scale-down, login concurrency 1, session ${SESSION_READY_AT_START ? 'restored' : 'pending'}`);
+      + ` — browser policy ${optimization.policy} (${optimization.minimumSamples} comparable samples each), `
+      + `no error scale-down, login concurrency 1, session ${SESSION_READY_AT_START ? 'restored' : 'pending'}`);
     publishProducerStatus();
   }).catch((error) => log(`browser detection failed: ${error.message}`));
 }

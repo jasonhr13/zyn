@@ -11,8 +11,9 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.5}"
-APP_VERSION="${ZYN_VERSION:-1.6.79}"
+APP_RELEASE="${ZYN_RELEASE:-R8.14}"
+APP_VERSION="${ZYN_VERSION:-1.6.88}"
+NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
   echo "Unsupported Zyn runtime mode: $RUNTIME_MODE (expected remote or bundled)" >&2
@@ -34,6 +35,22 @@ if [[ ! -d "$BASE_APP" ]]; then
 fi
 if [[ ! -x "$ASAR_BIN" ]]; then
   echo "Missing ASAR packer. Run npm install in frontend/ first." >&2
+  exit 1
+fi
+if [[ ! -x "$NATIVE_BACKEND" ]]; then
+  echo "Missing native checkout backend: $NATIVE_BACKEND" >&2
+  echo "Run ./scripts/build-native-target-engine.sh $APP_ARCH first." >&2
+  exit 1
+fi
+EXPECTED_BACKEND_SHA="$(node -e '
+  const contract = require(process.argv[1]);
+  process.stdout.write((contract.nativeEngines[process.argv[2]] || {}).sha256 || "");
+' "$PROJECT_DIR/config/runtime-contract.json" "$APP_ARCH")"
+ACTUAL_BACKEND_SHA="$(shasum -a 256 "$NATIVE_BACKEND" | awk '{print $1}')"
+if [[ -z "$EXPECTED_BACKEND_SHA" || "$ACTUAL_BACKEND_SHA" != "$EXPECTED_BACKEND_SHA" ]]; then
+  echo "Native checkout backend does not match config/runtime-contract.json for $APP_ARCH." >&2
+  echo "Expected: ${EXPECTED_BACKEND_SHA:-missing}" >&2
+  echo "Actual:   $ACTUAL_BACKEND_SHA" >&2
   exit 1
 fi
 if [[ -e "$OUTPUT_APP" ]]; then
@@ -92,6 +109,10 @@ fi
 
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
+rm -rf "$RESOURCES/engine"
+mkdir -p "$RESOURCES/engine"
+cp "$NATIVE_BACKEND" "$RESOURCES/engine/backend"
+chmod 0755 "$RESOURCES/engine/backend"
 mkdir -p "$RESOURCES/bot/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/bot/node_modules/"
 rm -rf "$RESOURCES/vendor/ms-playwright-mac" "$RESOURCES/vendor/ms-playwright-mac-arm64"
@@ -115,14 +136,18 @@ cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpac
 
 for launcher_file in \
   bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
-  task-type-access.js task-type-ipc-guard.js task-group-store.js window-size-state.js \
+  checkout-reporting.js analytics-recorder.js \
+  pokemon-queue-events.js \
+  task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js \
+  task-group-scheduler.js target-group-launch.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
   managed-proxy-ipc-guard.js; do
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"
 done
 cp "$PROJECT_DIR/launcher/runtime-manager.js" "$RESOURCES/app/runtime-manager.js"
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
-cp -R "$PROJECT_DIR/launcher/node_modules" "$RESOURCES/app/node_modules"
+mkdir -p "$RESOURCES/app/node_modules"
+cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/app/node_modules/"
 
 PLIST="$CONTENTS/Info.plist"
 CURRENT_EXECUTABLE="$(plutil -extract CFBundleExecutable raw "$PLIST")"
@@ -157,11 +182,10 @@ done
 /usr/libexec/PlistBuddy -c "Add :ZynRuntimeMode string $RUNTIME_MODE" "$PLIST"
 
 if [[ "$RUNTIME_MODE" == "remote" ]]; then
-  # Target's farmer is native and reuses Electron as Node, so the original Windows Node and browser
-  # payloads are not used. Chromium, Wine, and backend.exe are installed from the signed manifest.
+  # Target's farmer and checkout engine are native. Only Chromium is installed from the signed
+  # manifest; the small architecture-matched backend stays in the signed app bundle.
   rm -rf \
     "$RESOURCES/wine" \
-    "$RESOURCES/engine" \
     "$RESOURCES/vendor/ms-playwright" \
     "$RESOURCES/vendor/ms-playwright-mac"
   rm -f "$RESOURCES/vendor/node" "$RESOURCES/vendor/node.exe"

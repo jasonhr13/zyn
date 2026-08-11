@@ -46,6 +46,14 @@ assert.equal((engine.match(/const env = nodeEnvironment\(/g) || []).length, 3,
 assert.match(engine, /'--producer=true'/, 'packaged bridge is missing managed producer launch mode');
 assert.match(engine, /harvesters: Array\.isArray\(j\.harvesters\)/,
   'per-harvester telemetry is not forwarded to the renderer');
+assert.match(engine, /not started — proxy group/,
+  'packaged harvester bridge does not fail closed when its selected proxy group disappears');
+assert.match(engine, /const harvesterStartFailures = new Map\(\)/,
+  'packaged harvester bridge cannot suppress repeated missing-proxy reconciliation errors');
+assert.match(engine, /function isTaskRunning\(taskId\)/,
+  'scheduled task groups cannot inspect per-task runtime state');
+assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,
+  'scheduled task running-state helper is not exported');
 
 // The IPC bridge is applied while staging an app, so exercise that tracked patch against the
 // recovered baseline instead of depending on ignored extracted-file edits.
@@ -76,6 +84,13 @@ assert.match(farmer, /harvestOnce\(type, proxy, selectedBrowser, browser\)/, 'wo
 assert.match(farmer, /browser\.newContext\(/, 'a reused browser does not create fresh contexts');
 assert.match(farmer, /argOf\('blockHeavyResources', 'true'\)/);
 assert.match(farmer, /installHeavyResourceBlock\(page/);
+assert.match(farmer, /createPageBandwidthMeter\(context, page/);
+assert.match(farmer, /bandwidth: bandwidthStatusPayload\(\)/,
+  'per-harvester status omits browser wire-bandwidth telemetry');
+assert.match(farmer, /browserPerformance: browserOptimizer \? browserOptimizer\.snapshot\(\) : null/,
+  'per-harvester status omits adaptive browser performance telemetry');
+assert.match(farmer, /failureCategory: category/,
+  'browser optimizer cannot distinguish route failures from browser failures');
 
 console.log(JSON.stringify({
   ok: true,
@@ -83,4 +98,5 @@ console.log(JSON.stringify({
   limits: { cookiesPerPage: 10, pageLoadsPerBrowser: 10 },
   blockedTypes: ['image', 'media', 'font'],
   freshContextPerLoad: true,
+  adaptiveBrowserScheduling: true,
 }, null, 2));

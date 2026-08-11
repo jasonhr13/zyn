@@ -19,7 +19,6 @@ async function main() {
   const payload = verifyManifest(await manifestResponse.json());
   const items = [...new Map([
     ...Object.values(payload.platforms || {}).flatMap(platform => Object.values(platform)),
-    payload.engine,
   ].filter(Boolean).map(item => [item.archive, item])).values()];
 
   for (const item of items) {

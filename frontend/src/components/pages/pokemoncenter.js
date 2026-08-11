@@ -1,181 +1,565 @@
-import React, { Component, createRef } from 'react';
+import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyLabel, proxyRef } from '../proxy-options';
 const { ipcRenderer } = window.require('electron');
 
-// Mirrors P-Bandai's STATUS_META, scoped to what the monitor script actually reports right now
-// (queue wait → queue passed → holding for a SKU). Add-to-cart/checkout states aren't wired yet.
-const STATUS_META = {
-  starting: { label: 'Starting…',     color: '#9aa0aa' },
-  queue:    { label: 'In queue',      color: '#f5a623' },
-  ready:    { label: 'Queue passed',  color: '#34d399' },
-  error:    { label: 'Error',         color: '#ff5a5a' },
-  stopped:  { label: 'Stopped',       color: '#9aa0aa' },
-};
+const uid = () => 'pc_' + Math.random().toString(36).slice(2, 10);
+const productUid = () => 'pc_product_' + Math.random().toString(36).slice(2, 10);
+const MAX_PRODUCTS = 3;
+const blankProduct = () => ({ id: productUid(), input: '', quantity: '1' });
+const normalizeQuantity = value => String(Math.max(1, parseInt(value, 10) || 1));
+function normalizeProductInput(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+  if (input.toLowerCase() === 'placeholder') return 'placeholder';
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const parsed = new URL(input);
+      if (!(parsed.hostname === 'pokemoncenter.com' || parsed.hostname.endsWith('.pokemoncenter.com'))) return '';
+      const product = parsed.pathname.match(/\/product\/([^/]+)/);
+      return product && product[1] ? `https://www.pokemoncenter.com/product/${product[1]}` : '';
+    } catch { return ''; }
+  }
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input) ? input : '';
+}
+
+function migrateProductRows(products, legacyInputs = '', legacyQuantity = '1') {
+  if (Array.isArray(products) && products.length) {
+    return products.slice(0, MAX_PRODUCTS).map(product => ({
+      id: String((product && product.id) || productUid()),
+      input: String((product && product.input) || ''),
+      quantity: normalizeQuantity(product && product.quantity),
+    }));
+  }
+  const legacy = String(legacyInputs || '').split(/[\n,]/).map(input => input.trim()).filter(Boolean);
+  return legacy.length
+    ? legacy.slice(0, MAX_PRODUCTS).map(input => ({ id: productUid(), input, quantity: normalizeQuantity(legacyQuantity) }))
+    : [blankProduct()];
+}
+
+function validateProducts(value) {
+  const rows = Array.isArray(value) ? value : [];
+  const entries = rows.map(row => ({ row: row || {}, input: String((row && row.input) || '').trim() }))
+    .filter(entry => entry.input);
+  const normalized = entries.map(entry => normalizeProductInput(entry.input));
+  const seen = new Set();
+  const products = [];
+  entries.forEach((entry, index) => {
+    const input = normalized[index];
+    if (!input || seen.has(input)) return;
+    seen.add(input);
+    products.push({ input, quantity: normalizeQuantity(entry.row.quantity) });
+  });
+  return {
+    products,
+    invalid: entries.filter((entry, index) => !normalized[index]).map(entry => entry.input),
+    tooMany: entries.length > MAX_PRODUCTS || products.length > MAX_PRODUCTS,
+  };
+}
+
+function profileList(profiles) {
+  const value = (profiles && (profiles.list || profiles.profiles)) || (Array.isArray(profiles) ? profiles : []);
+  return value.filter(profile => profile && profile.profileType === 'pokemoncenter');
+}
+
+function profileName(profile) {
+  return profile ? (profile.profileName || profile.email || 'Unnamed profile') : 'Missing profile';
+}
+
+function Status({ value }) {
+  const color = (value && value.color) || '#6b7280';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color, fontSize: 11, fontWeight: 650 }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
+      {(value && (value.label || value.state)) || 'Idle'}
+    </span>
+  );
+}
 
 class PokemonCenter extends Component {
-  logBox = createRef();
+  taskLogRef = React.createRef();
+  engineLogRef = React.createRef();
 
-  componentDidMount() { this.scrollToBottom(); }
+  state = {
+    draftProfiles: [], draftProxy: '', draftCount: '2', expanded: null, notice: '',
+    editingProductsTask: null, productDraft: [],
+  };
 
-  getSnapshotBeforeUpdate(prev) {
-    if (prev.pokemon.logs.length !== this.props.pokemon.logs.length && this.logBox.current) {
-      const el = this.logBox.current;
-      return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    }
-    return null;
+  componentDidMount() {
+    try {
+      const saved = ipcRenderer.sendSync('getPokemonCenterTasks') || {};
+      this.props.dispatch({ type: 'pokemonSet', obj: {
+        products: migrateProductRows(saved.products, saved.inputs, saved.quantity),
+        tasks: Array.isArray(saved.tasks) ? saved.tasks : [],
+        monitorDelay: String(saved.monitorDelay || '3000'),
+        retryDelay: String(saved.retryDelay || '3000'),
+        loopCheckout: !!saved.loopCheckout,
+        waitForQueue: !!saved.waitForQueue,
+        queueEntryDelay: String(saved.queueEntryDelay || '0'),
+        allInstock: !!saved.allInstock,
+      } });
+    } catch {}
   }
-  componentDidUpdate(prev, prevState, wasAtBottom) { if (wasAtBottom) this.scrollToBottom(); }
 
-  scrollToBottom = () => { const el = this.logBox.current; if (el) el.scrollTop = el.scrollHeight; };
+  componentDidUpdate(prevProps, prevState) {
+    const taskId = this.state.expanded;
+    const previousTaskLogs = taskId ? (prevProps.pokemon.taskLogs[taskId] || []) : [];
+    const taskLogs = taskId ? (this.props.pokemon.taskLogs[taskId] || []) : [];
 
-  set = (k, v) => this.props.dispatch({ type: 'pokemonSet', obj: { [k]: v } });
+    if (taskId && (prevState.expanded !== taskId || previousTaskLogs !== taskLogs)) {
+      this.scrollLogToBottom(this.taskLogRef);
+    }
 
-  start = () => {
-    const { pokemon } = this.props;
-    if (pokemon.instance) return;
-    this.props.dispatch({ type: 'pokemonLaunch' });
-    ipcRenderer.send('startPokemonCenter', {
-      instanceId: 'default',
-      proxyListName: pokemon.proxyListName,
-      accountId: pokemon.accountId,
-      queueUrl: pokemon.queueUrl || 'https://www.pokemoncenter.com/',
+    if ((prevProps.pokemon.logs || []) !== (this.props.pokemon.logs || [])) {
+      this.scrollLogToBottom(this.engineLogRef);
+    }
+  }
+
+  componentWillUnmount() { clearTimeout(this.editTimer); clearTimeout(this.noticeTimer); }
+
+  scrollLogToBottom = ref => {
+    const node = ref.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  };
+
+  persist = (over = {}) => {
+    const payload = { ...this.props.pokemon, ...over };
+    const saved = {
+      products: payload.products, tasks: payload.tasks,
+      monitorDelay: payload.monitorDelay, retryDelay: payload.retryDelay,
+      loopCheckout: payload.loopCheckout, waitForQueue: payload.waitForQueue,
+      queueEntryDelay: payload.queueEntryDelay, allInstock: payload.allInstock,
+    };
+    try { ipcRenderer.sendSync('savePokemonCenterTasks', saved); } catch {}
+  };
+
+  setModule = (key, value, live = true) => {
+    this.props.dispatch({ type: 'pokemonSet', obj: { [key]: value } });
+    this.persist({ [key]: value });
+    if (live) this.queueLiveEdit({ [key]: value });
+  };
+
+  updateProduct = (id, obj) => {
+    const products = this.props.pokemon.products.map(product => product.id === id ? { ...product, ...obj } : product);
+    this.setModule('products', products);
+  };
+
+  addProduct = () => {
+    if (this.props.pokemon.products.length >= MAX_PRODUCTS) return;
+    this.setModule('products', [...this.props.pokemon.products, blankProduct()]);
+  };
+
+  removeProduct = id => {
+    const products = this.props.pokemon.products.filter(product => product.id !== id);
+    this.setModule('products', products.length ? products : [blankProduct()]);
+  };
+
+  productsForTask = task => (Array.isArray(task && task.products) && task.products.length
+    ? task.products : this.props.pokemon.products);
+
+  configuredProductCount = products => (Array.isArray(products) ? products : [])
+    .filter(product => String((product && product.input) || '').trim()).length;
+
+  openTaskProducts = task => {
+    const source = this.productsForTask(task);
+    this.setState({
+      editingProductsTask: task,
+      productDraft: migrateProductRows(source).map(product => ({ ...product, id: productUid() })),
     });
   };
 
-  stop = () => {
-    ipcRenderer.sendSync('stopPokemonCenter', 'default');
-    this.props.dispatch({ type: 'pokemonDone' });
+  closeTaskProducts = () => this.setState({ editingProductsTask: null, productDraft: [] });
+
+  updateTaskProductDraft = (id, obj) => this.setState(state => ({
+    productDraft: state.productDraft.map(product => product.id === id ? { ...product, ...obj } : product),
+  }));
+
+  addTaskProductDraft = () => this.setState(state => state.productDraft.length >= MAX_PRODUCTS ? null : ({
+    productDraft: [...state.productDraft, blankProduct()],
+  }));
+
+  removeTaskProductDraft = id => this.setState(state => {
+    const productDraft = state.productDraft.filter(product => product.id !== id);
+    return { productDraft: productDraft.length ? productDraft : [blankProduct()] };
+  });
+
+  saveTaskProducts = () => {
+    const { editingProductsTask, productDraft } = this.state;
+    if (!editingProductsTask) return;
+    const validation = validateProducts(productDraft);
+    if (validation.invalid.length) { this.flash('Use a Pokémon Center SKU, product URL, or placeholder'); return; }
+    if (!validation.products.length) { this.flash('Add at least one product SKU or placeholder'); return; }
+    const products = productDraft.map(product => ({
+      id: String(product.id || productUid()),
+      input: String(product.input || '').trim(),
+      quantity: normalizeQuantity(product.quantity),
+    })).filter(product => product.input).slice(0, MAX_PRODUCTS);
+    this.updateTask(editingProductsTask, { products });
+    this.closeTaskProducts();
   };
 
-  setSku = () => {
-    const sku = (this.props.pokemon.sku || '').trim();
-    if (!sku) return;
-    ipcRenderer.send('setPokemonSku', { instanceId: 'default', sku });
+  useSharedTaskProducts = () => {
+    if (!this.state.editingProductsTask) return;
+    this.updateTask(this.state.editingProductsTask, { products: undefined });
+    this.closeTaskProducts();
   };
 
-  clearLogs = () => this.props.dispatch({ type: 'pokemonSet', obj: { logs: [] } });
-  copyLogs = () => { navigator.clipboard.writeText(this.props.pokemon.logs.join('\n')).catch(() => {}); };
+  sharedConfig = (over = {}) => {
+    const p = { ...this.props.pokemon, ...over };
+    return {
+      products: validateProducts(p.products).products.slice(0, MAX_PRODUCTS),
+      monitorDelay: String(p.monitorDelay || '3000'), retryDelay: String(p.retryDelay || '3000'),
+      loopCheckout: !!p.loopCheckout, waitForQueue: !!p.waitForQueue,
+      queueEntryDelay: String(p.queueEntryDelay || '0'), allInstock: !!p.allInstock,
+    };
+  };
+
+  runningTasks = () => this.props.pokemon.tasks.filter(task => {
+    const status = this.props.pokemon.taskStatus[task.id];
+    return status && status.running !== false;
+  });
+
+  queueLiveEdit = (over = {}) => {
+    clearTimeout(this.editTimer);
+    this.editTimer = setTimeout(() => {
+      const tasks = this.runningTasks();
+      if (!tasks.length) return;
+      const validation = validateProducts(({ ...this.props.pokemon, ...over }).products);
+      if (validation.invalid.length) {
+        this.flash('Use a Pokémon Center SKU, product URL, or placeholder');
+        return;
+      }
+      if (validation.tooMany) {
+        this.flash(`Pokémon Center supports up to ${MAX_PRODUCTS} products per task`);
+        return;
+      }
+      const result = ipcRenderer.sendSync('editPokemonCenter', { ...this.sharedConfig(over), tasks });
+      this.flash(result && result.ok ? `Updated ${result.updated} running task${result.updated === 1 ? '' : 's'}`
+        : ((result && result.error) || 'Live update failed'));
+    }, 350);
+  };
+
+  flash = notice => {
+    this.setState({ notice });
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => this.setState({ notice: '' }), 3500);
+  };
+
+  toggleDraftProfile = id => {
+    const selected = this.state.draftProfiles.includes(id)
+      ? this.state.draftProfiles.filter(value => value !== id)
+      : [...this.state.draftProfiles, id];
+    this.setState({ draftProfiles: selected });
+  };
+
+  createTasks = () => {
+    const { draftProfiles, draftProxy, draftCount } = this.state;
+    if (!draftProfiles.length) return;
+    const count = Math.max(1, Math.min(20, parseInt(draftCount, 10) || 1));
+    const tasks = draftProfiles.flatMap(profileId => Array.from({ length: count }, () => ({
+      id: uid(), profileId, proxyListName: draftProxy,
+    })));
+    const next = [...this.props.pokemon.tasks, ...tasks];
+    this.props.dispatch({ type: 'pokemonTasksAdd', tasks });
+    this.persist({ tasks: next });
+    this.setState({ draftProfiles: [] });
+  };
+
+  updateTask = (task, obj) => {
+    const updated = { ...task, ...obj };
+    const resetsProducts = Object.prototype.hasOwnProperty.call(obj, 'products') && obj.products == null;
+    if (resetsProducts) delete updated.products;
+    const tasks = this.props.pokemon.tasks.map(value => value.id === task.id ? updated : value);
+    this.props.dispatch({ type: 'pokemonSet', obj: { tasks } });
+    this.persist({ tasks });
+    if (!this.props.pokemon.taskStatus[task.id]) return;
+    if (Object.prototype.hasOwnProperty.call(obj, 'proxyListName')) {
+      const ok = ipcRenderer.sendSync('setPokemonCenterTaskProxy', task.id, obj.proxyListName);
+      this.flash(ok ? 'Proxy update sent to the running task' : 'Proxy update could not reach the engine');
+      return;
+    }
+    const engineUpdated = resetsProducts ? { ...updated, products: this.props.pokemon.products } : updated;
+    const result = ipcRenderer.sendSync('editPokemonCenter', { ...this.sharedConfig(), tasks: [engineUpdated] });
+    this.flash(result && result.ok ? 'Running task updated' : ((result && result.error) || 'Task update failed'));
+  };
+
+  removeTask = task => {
+    if (this.props.pokemon.taskStatus[task.id]) ipcRenderer.sendSync('stopPokemonCenter', task.id);
+    const tasks = this.props.pokemon.tasks.filter(value => value.id !== task.id);
+    this.props.dispatch({ type: 'pokemonTaskDelete', id: task.id });
+    this.persist({ tasks });
+  };
+
+  start = tasks => {
+    const profiles = profileList(this.props.profiles);
+    const validIds = new Set(profiles.map(profile => String(profile.id)));
+    const launch = tasks.filter(task => validIds.has(String(task.profileId)));
+    if (!launch.length) { this.flash('Select a valid checkout profile'); return; }
+    const validations = launch.map(task => validateProducts(this.productsForTask(task)));
+    if (validations.some(validation => validation.invalid.length)) {
+      this.flash('Use a Pokémon Center SKU, product URL, or placeholder');
+      return;
+    }
+    if (validations.some(validation => !validation.products.length)) {
+      this.flash('Add at least one product SKU or placeholder');
+      return;
+    }
+    if (validations.some(validation => validation.tooMany)) {
+      this.flash(`Use no more than ${MAX_PRODUCTS} products per task`);
+      return;
+    }
+    const ok = ipcRenderer.sendSync('startPokemonCenter', { ...this.sharedConfig(), tasks: launch });
+    if (ok) this.props.dispatch({ type: 'pokemonLaunch', taskIds: launch.map(task => task.id) });
+    else this.flash('The native Pokémon Center engine did not start');
+  };
+
+  stop = taskId => { ipcRenderer.sendSync('stopPokemonCenter', taskId); };
 
   render() {
-    const { pokemon, accounts, proxies } = this.props;
-    const { proxyListName, accountId, queueUrl, sku, instance, logs } = pokemon;
+    const { pokemon, profiles, proxies } = this.props;
+    const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft } = this.state;
+    const list = profileList(profiles);
     const proxyLists = (proxies && proxies.lists) || [];
-    const pcAccounts = (accounts || []).filter(a => (a.site || 'bandai') === 'pokemoncenter');
-    const running = !!instance;
-    const meta = instance ? (STATUS_META[instance.state] || STATUS_META.starting) : null;
-    const queuePassed = instance && (instance.state === 'ready' || (instance.detail || '').includes('passed'));
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div className="page-header">
-          <div className="page-title"><span className="page-title-dot" /> Pokémon Center</div>
-          <div className="page-actions">
-            {running && (
-              <button className="btn btn-secondary btn-sm" onClick={this.stop}>
-                <i className="ion-md-square" style={{ fontSize: 11 }} /> Stop
-              </button>
-            )}
+      <div className="page" style={{ padding: '16px 20px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="page-header" style={{ marginBottom: 14 }}>
+          <div>
+            <h1 className="page-title" style={{ margin: 0 }}>Pokémon Center US</h1>
+            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+              Native guest checkout · manual captcha windows open automatically
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {notice && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{notice}</span>}
+            <button className="btn btn-primary" onClick={() => this.start(pokemon.tasks)} disabled={!pokemon.tasks.length}>Start All</button>
+            <button className="btn btn-secondary" onClick={() => this.stop()}>Stop All</button>
           </div>
         </div>
 
-        <div className="page-content">
-          <div className="settings-section">
-            <div className="form-group">
-              <label className="form-label">Queue / start URL</label>
-              <input
-                className="form-input"
-                value={queueUrl}
-                onChange={e => this.set('queueUrl', e.target.value)}
-                placeholder="https://www.pokemoncenter.com/"
-              />
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Proxy</label>
-                <select className="form-select" value={proxyListName} onChange={e => this.set('proxyListName', e.target.value)} disabled={running}>
-                  <option value="">None (home IP)</option>
-                  {proxyLists.map(l => (
-                    <option key={proxyRef(l)} value={proxyRef(l)}>My Proxies: {proxyLabel(l)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Account</label>
-                <select className="form-select" value={accountId} onChange={e => this.set('accountId', e.target.value)} disabled={running}>
-                  <option value="">None (manual login)</option>
-                  {pcAccounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.email}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              Opens one visible browser, joins the queue, and waits. Add-to-cart/checkout aren't
-              wired up yet — once the queue passes, use the SKU field below.
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={this.start}
-              disabled={running}
-              style={{ width: '100%', marginTop: 12 }}
-            >
-              🚀 {running ? 'Already running' : 'Start Queue Monitor'}
-            </button>
-          </div>
-
-          {running && (
-            <div className="settings-section">
-              <div className="settings-section-title">Status</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color, flexShrink: 0, boxShadow: `0 0 6px ${meta.color}` }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: meta.color }}>{meta.label}</span>
-                {instance.detail ? <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {instance.detail}</span> : null}
-              </div>
-              <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">SKU</label>
-                  <input
-                    className="form-input"
-                    value={sku}
-                    onChange={e => this.set('sku', e.target.value)}
-                    placeholder="e.g. 851-XXXXX"
-                    disabled={!queuePassed}
-                  />
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={this.setSku}
-                  disabled={!queuePassed || !sku.trim()}
-                  style={{ marginBottom: 2 }}
-                  title={queuePassed ? 'Send this SKU to the running browser' : 'Wait for the queue to pass first'}
-                >
-                  Set SKU
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(290px, .9fr) minmax(340px, 1.1fr)', gap: 14, marginBottom: 14 }}>
+            <div className="panel" style={{ margin: 0, padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <strong style={{ fontSize: 12 }}>Products</strong>
+                <button className="btn btn-secondary btn-sm" onClick={this.addProduct} disabled={pokemon.products.length >= MAX_PRODUCTS}>
+                  <i className="ion-md-add" style={{ marginRight: 5 }} />Add product
                 </button>
               </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {pokemon.products.map((product, index) => (
+                  <div key={product.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px 30px', gap: 7, alignItems: 'end' }}>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">SKU or product URL {index + 1}</span>
+                      <input
+                        className="form-input"
+                        value={product.input}
+                        onChange={event => this.updateProduct(product.id, { input: event.target.value })}
+                        placeholder={index === 0 ? '10-10451-115' : 'SKU, URL, or placeholder'}
+                      />
+                    </label>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">Qty</span>
+                      <input
+                        className="form-input"
+                        inputMode="numeric"
+                        value={product.quantity}
+                        onChange={event => this.updateProduct(product.id, { quantity: event.target.value.replace(/\D/g, '').slice(0, 4) || '1' })}
+                      />
+                    </label>
+                    <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeProduct(product.id)} title="Remove product">
+                      <i className="ion-md-trash" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 7, fontSize: 10.5, lineHeight: 1.45, color: 'var(--muted)' }}>
+                Add up to three SKUs, full product URLs, or <b>placeholder</b>. Each product has its own quantity; the engine reduces it to the site's purchase limit when necessary.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 12 }}>
+                <label className="form-group" style={{ margin: 0 }}>
+                  <span className="form-label">Monitor ms</span>
+                  <input className="form-input" value={pokemon.monitorDelay} onChange={e => this.setModule('monitorDelay', e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                </label>
+                <label className="form-group" style={{ margin: 0 }}>
+                  <span className="form-label">Retry ms</span>
+                  <input className="form-input" value={pokemon.retryDelay} onChange={e => this.setModule('retryDelay', e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                </label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', marginTop: 12, fontSize: 11 }}>
+                <label title="Idle until the queue-status service detects a queue or site protection."><input type="checkbox" checked={pokemon.waitForQueue} onChange={e => this.setModule('waitForQueue', e.target.checked)} /> Wait for queue (24/7)</label>
+                <label title="With multiple inputs, do not cart until every product is in stock."><input type="checkbox" checked={pokemon.allInstock} onChange={e => this.setModule('allInstock', e.target.checked)} /> Require all in stock</label>
+                <label title="After checkout or decline, rotate to another profile in the selected profile's first group."><input type="checkbox" checked={pokemon.loopCheckout} onChange={e => this.setModule('loopCheckout', e.target.checked)} /> Loop checkout</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Queue delay
+                  <input className="form-input" title="Applied the next time a task starts." value={pokemon.queueEntryDelay} onChange={e => this.setModule('queueEntryDelay', e.target.value.replace(/\D/g, '').slice(0, 6), false)} style={{ width: 66, padding: '3px 6px' }} />
+                </label>
+              </div>
+              <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 10.5, lineHeight: 1.4 }}>
+                Wait for queue checks the HTTPS queue-status endpoint every three seconds. Open a task’s Log to see the first healthy response,
+                30-second heartbeats, failures/recovery, and the event that moves it into the queue.
+              </div>
             </div>
-          )}
 
-          <div className="settings-section" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span className="settings-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>Live Log</span>
-              {logs.length > 0 && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-secondary btn-sm" onClick={this.copyLogs}>Copy</button>
-                  <button className="btn btn-secondary btn-sm" onClick={this.clearLogs}>Clear</button>
+            <div className="panel" style={{ margin: 0, padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <strong style={{ fontSize: 12 }}>Create profile tasks</strong>
+                <button className="btn btn-primary btn-sm" onClick={this.createTasks} disabled={!draftProfiles.length}>
+                  Create {draftProfiles.length ? draftProfiles.length * (parseInt(draftCount, 10) || 1) : ''} Task{draftProfiles.length * (parseInt(draftCount, 10) || 1) === 1 ? '' : 's'}
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 190px', gap: 12 }}>
+                <div style={{ height: 184, overflowY: 'auto', border: '1px solid var(--panel-border)', borderRadius: 7, padding: 4 }}>
+                  {!list.length && <div style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}>Add a checkout profile first.</div>}
+                  {list.map(profile => {
+                    const selected = draftProfiles.includes(profile.id);
+                    const used = pokemon.tasks.filter(task => String(task.profileId) === String(profile.id)).length;
+                    return (
+                      <div key={profile.id} onClick={() => this.toggleDraftProfile(profile.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 5,
+                        cursor: 'pointer', background: selected ? 'var(--accent-soft)' : 'transparent', fontSize: 11,
+                      }}>
+                        <input type="checkbox" readOnly checked={selected} style={{ pointerEvents: 'none' }} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{profileName(profile)}</span>
+                        {used > 0 && <span style={{ color: 'var(--muted)', fontSize: 10 }}>{used} task{used === 1 ? '' : 's'}</span>}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-            <div ref={this.logBox} style={{ overflowY: 'auto', background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 8, padding: 10, maxHeight: 300, minHeight: 120 }}>
-              {logs.length === 0
-                ? <div style={{ color: 'var(--muted)', fontSize: 11, fontStyle: 'italic' }}>No output yet.</div>
-                : logs.map((l, i) => <div key={i} className="log-line">{l}</div>)}
+                <label className="form-group" style={{ margin: 0 }}>
+                  <span className="form-label">Proxy</span>
+                  <select className="form-select" value={draftProxy} onChange={e => this.setState({ draftProxy: e.target.value })}>
+                    <option value="">Local (no proxy)</option>
+                    {proxyLists.map(proxy => <option key={proxyRef(proxy)} value={proxyRef(proxy)}>{proxyLabel(proxy)}</option>)}
+                  </select>
+                  <span className="form-label" style={{ display: 'block', marginTop: 10 }}>Tasks per profile</span>
+                  <input className="form-input" value={draftCount} onChange={e => this.setState({ draftCount: e.target.value.replace(/\D/g, '').slice(0, 2) || '1' })} />
+                  <span style={{ display: 'block', marginTop: 9, color: 'var(--muted)', fontSize: 10.5, lineHeight: 1.45 }}>
+                    Recommended: 2–6 tasks per profile. Loop Checkout rotates through the profile's first group. No Pokémon Center account is required.
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
+
+          <div className="panel" style={{ margin: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>
+              <span>PROFILE</span><span>PRODUCTS</span><span>PROXY</span><span>STATUS</span><span>ACTIONS</span>
+            </div>
+            {!pokemon.tasks.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>No Pokémon Center tasks yet.</div>}
+            {pokemon.tasks.map(task => {
+              const profile = list.find(value => String(value.id) === String(task.profileId));
+              const status = pokemon.taskStatus[task.id];
+              const active = status && status.running !== false;
+              const input = pokemon.taskInputs[task.id];
+              const logs = pokemon.taskLogs[task.id] || [];
+              const open = expanded === task.id;
+              const taskProducts = this.productsForTask(task);
+              const taskProductCount = this.configuredProductCount(taskProducts);
+              const customProducts = Array.isArray(task.products) && task.products.length > 0;
+              return (
+                <div key={task.id} style={{ borderBottom: '1px solid var(--panel-border)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10, padding: '10px 12px', alignItems: 'center', fontSize: 11 }}>
+                    <select className="form-select" value={task.profileId} onChange={e => this.updateTask(task, { profileId: e.target.value })}>
+                      <option value="">Select profile</option>
+                      {list.map(value => <option key={value.id} value={value.id}>{profileName(value)}</option>)}
+                    </select>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(input && input.productName) || ''}>
+                      {`${taskProductCount} product${taskProductCount === 1 ? '' : 's'} configured`}
+                      {customProducts && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>task-specific</small>}
+                      {input && input.productName && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>· {input.productName}</small>}
+                    </span>
+                    <select className="form-select" value={task.proxyListName || ''} onChange={e => this.updateTask(task, { proxyListName: e.target.value })}>
+                      <option value="">Local (no proxy)</option>
+                      {proxyLists.map(proxy => <option key={proxyRef(proxy)} value={proxyRef(proxy)}>{proxyLabel(proxy)}</option>)}
+                    </select>
+                    <Status value={status} />
+                    <span style={{ display: 'flex', gap: 5 }}>
+                      {active
+                        ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
+                        : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!profile}>Start</button>}
+                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.openTaskProducts(task)} title="Edit task products"><i className="ion-md-create" /></button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
+                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
+                    </span>
+                  </div>
+                  {open && <div style={{ padding: '0 12px 12px' }}>
+                    <div ref={this.taskLogRef} style={{ background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 7, padding: 9, minHeight: 52, maxHeight: 180, overflowY: 'auto' }}>
+                      {!logs.length ? <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>
+                        : logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
+                    </div>
+                  </div>}
+                </div>
+              );
+            })}
+          </div>
+
+          {pokemon.logs.length > 0 && <div className="panel" style={{ marginTop: 14, padding: 12 }}>
+            <strong style={{ fontSize: 11 }}>Engine log</strong>
+            <div ref={this.engineLogRef} style={{ marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
+              {pokemon.logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
+            </div>
+          </div>}
         </div>
+
+        {editingProductsTask && <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeTaskProducts()}>
+          <div className="modal" style={{ width: 620 }}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Edit task products</div>
+                <p style={{ margin: '3px 0 0', color: 'var(--muted)', fontSize: 10.5 }}>
+                  Changes are sent to this task immediately, including while it is waiting for or passing a queue.
+                </p>
+              </div>
+              <button className="modal-close" onClick={this.closeTaskProducts}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gap: 9 }}>
+                {productDraft.map((product, index) => (
+                  <div key={product.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 82px 32px', gap: 8, alignItems: 'end' }}>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">SKU or product URL {index + 1}</span>
+                      <input
+                        className="form-input"
+                        autoFocus={index === 0}
+                        value={product.input}
+                        onChange={event => this.updateTaskProductDraft(product.id, { input: event.target.value })}
+                        placeholder="SKU, URL, or placeholder"
+                      />
+                    </label>
+                    <label className="form-group" style={{ margin: 0 }}>
+                      <span className="form-label">Qty</span>
+                      <input
+                        className="form-input"
+                        inputMode="numeric"
+                        value={product.quantity}
+                        onChange={event => this.updateTaskProductDraft(product.id, { quantity: event.target.value.replace(/\D/g, '').slice(0, 4) || '1' })}
+                      />
+                    </label>
+                    <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTaskProductDraft(product.id)} title="Remove product">
+                      <i className="ion-md-trash" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={this.addTaskProductDraft} disabled={productDraft.length >= MAX_PRODUCTS}>
+                <i className="ion-md-add" style={{ marginRight: 5 }} />Add product
+              </button>
+            </div>
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+              <button className="btn btn-secondary" onClick={this.useSharedTaskProducts}>Use shared products</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" onClick={this.closeTaskProducts}>Cancel</button>
+                <button className="btn btn-primary" onClick={this.saveTaskProducts}>Save &amp; update task</button>
+              </div>
+            </div>
+          </div>
+        </div>}
       </div>
     );
   }
 }
 
-export default connect(s => ({ pokemon: s.pokemon, accounts: s.accounts, proxies: s.proxies }))(PokemonCenter);
+export default connect(state => ({
+  pokemon: state.pokemon, profiles: state.profiles, proxies: state.proxies,
+}))(PokemonCenter);

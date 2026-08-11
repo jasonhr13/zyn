@@ -72,7 +72,24 @@ async function main() {
           login: 0,
           atc: 0,
           proxies: 1200,
-          harvesters: [{ id: 'ui-stopped-harvester', activeWorkers: 5, configuredWorkers: 5 }],
+          harvesters: [{
+            id: 'ui-stopped-harvester', activeWorkers: 5, configuredWorkers: 5,
+            route: 'ISP Proxies', browser: 'chrome', startedAt: Date.now() - 3600000,
+            produced: { login: 2, atc: 8 }, lastSuccessAt: Date.now() - 12000,
+            bandwidth: {
+              available: true, supported: true, uploadEstimated: true,
+              attempts: 14, measuredAttempts: 14, cookies: 10,
+              downloadBytes: 7200000, uploadBytes: 340000, totalBytes: 7540000,
+              proxyBytes: 7540000, directBytes: 0,
+              proxyDownloadBytes: 7200000, proxyUploadBytes: 340000, proxyCookies: 10,
+              requests: 286, blockedRequests: 92, cachedRequests: 18, failedRequests: 3,
+              proxyRequests: 286, proxyBlockedRequests: 92, proxyCachedRequests: 18, proxyFailedRequests: 3,
+              byType: {
+                login: { attempts: 3, cookies: 2, totalBytes: 3100000 },
+                atc: { attempts: 11, cookies: 8, totalBytes: 4440000 },
+              },
+            },
+          }],
         })
         : originalInvoke(channel, ...args);
       ipc.sendSync = (channel, ...args) => {
@@ -248,7 +265,11 @@ async function main() {
   assert.match(report.harvesterDrawerText, /Cookie Harvesters/);
   assert.match(report.harvesterDrawerText, /0\/1\s*Running/);
   assert.match(report.harvesterDrawerText, /New Harvester/);
+  assert.match(report.harvesterDrawerText, /Proxy bandwidth/);
+  assert.match(report.harvesterDrawerText, /7\.54 MB/);
+  assert.match(report.harvesterDrawerText, /754 KB/);
   assert.match(report.harvesterText, /5 configured/);
+  assert.match(report.harvesterText, /92 heavy assets blocked/);
   assert.doesNotMatch(report.harvesterText, /5\/5/);
   assert.equal(report.cookieBankMaximum, '80');
   assert.equal(report.savedCookieBankMaximum, '80');

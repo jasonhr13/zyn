@@ -8,3 +8,4 @@
 
 # Preserve this upstream source byte-for-byte; the pinned GitHub blob uses CRLF.
 native-farmer/harvest-persona.mjs -text
+native-backend/**/backend -text

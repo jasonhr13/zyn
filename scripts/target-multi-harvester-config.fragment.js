@@ -1,8 +1,11 @@
-const HARVESTER_BROWSERS = new Set(['auto', 'chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']);
+const HARVESTER_BROWSERS = new Set(['auto', 'chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']);
 function managedHarvesterConfigs() {
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}
-  if (!Array.isArray(settings.targetHarvesters)) return null;
+  // A missing setting is a fresh/legacy install with no user-created harvesters. Treat it as an
+  // explicit empty managed list so starting checkout cannot resurrect the retired task-owned
+  // producer and consume local or proxy bandwidth without the user configuring one.
+  if (!Array.isArray(settings.targetHarvesters)) return [];
   return settings.targetHarvesters.map((raw, index) => {
     const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
     const route = String((raw && raw.proxyListName) || '');

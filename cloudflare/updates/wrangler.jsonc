@@ -7,6 +7,10 @@
     {
       "pattern": "updates.rcart.app",
       "custom_domain": true
+    },
+    {
+      "pattern": "updates.zynbot.app",
+      "custom_domain": true
     }
   ],
   "r2_buckets": [

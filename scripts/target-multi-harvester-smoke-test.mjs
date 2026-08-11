@@ -112,10 +112,20 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(actualPublished, true, 'producer process did not publish to the shared broker');
+  const actualStatus = await request(port, 'GET', '/status');
+  const actualRuntime = actualStatus.harvesters.find(item => item.id === 'actual');
+  assert.equal(actualRuntime.bandwidth.measurement, 'chromium-cdp');
+  assert.equal(actualRuntime.bandwidth.attempts, 0);
 
   for (const status of [
-    { id: 'home', name: 'Home ATC', type: 'atc', route: 'Local', configuredWorkers: 2, activeWorkers: 2 },
-    { id: 'proxy', name: 'Proxy ATC', type: 'atc', route: 'ISP', configuredWorkers: 8, activeWorkers: 8 },
+    {
+      id: 'home', name: 'Home ATC', type: 'atc', route: 'Local', configuredWorkers: 2, activeWorkers: 2,
+      bandwidth: { directBytes: 900000, proxyBytes: 0, requests: 20 },
+    },
+    {
+      id: 'proxy', name: 'Proxy ATC', type: 'atc', route: 'ISP', configuredWorkers: 8, activeWorkers: 8,
+      bandwidth: { directBytes: 0, proxyBytes: 4200000, requests: 80 },
+    },
   ]) {
     await request(port, 'POST', '/harvesterStatus', status, true);
   }
@@ -125,6 +135,8 @@ try {
   }
   assert.equal(aggregated.health.activeWorkers, 10);
   assert.equal(aggregated.health.configuredWorkers, 10);
+  assert.equal(aggregated.harvesters.find(item => item.id === 'proxy').bandwidth.proxyBytes, 4200000,
+    'broker must preserve per-harvester bandwidth telemetry');
 
   const save = await request(port, 'POST', '/saveCookies', {
     type: 'atc', headers: shapeHeaders, proxy: '127.0.0.1:9000:user:pass',

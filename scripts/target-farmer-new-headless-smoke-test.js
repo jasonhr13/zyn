@@ -12,20 +12,33 @@ execFileSync(process.execPath, [path.join(__dirname, 'verify-native-farmer-upstr
 
 const farmer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-farmer.mjs'), 'utf8');
 const browserPool = fs.readFileSync(path.join(project, 'native-farmer', 'shape-browser-pool.mjs'), 'utf8');
+const browserOptimizer = fs.readFileSync(path.join(project, 'native-farmer', 'shape-browser-optimizer.mjs'), 'utf8');
 const runtimePaths = fs.readFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), 'utf8');
 
-for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']) {
+for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']) {
   assert.match(browserPool, new RegExp(`key: '${key}'`), `native browser pool omits ${key}`);
 }
 assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family launches lack an explicit full-browser channel');
 assert.match(browserPool, /Brave Browser\.app\/Contents\/MacOS\/Brave Browser/);
 assert.match(browserPool, /Vivaldi\.app/);
 assert.match(browserPool, /Yandex\.app/);
+assert.match(browserPool, /Opera\.app/);
+assert.match(farmer, /normalizeShapeBrowserSelection\(argOf\('browsers', 'auto'\)\)/,
+  'explicit installed-browser selections still collapse to the automatic pool');
 assert.match(farmer, /const HEADLESS = argOf\('headless', 'false'\) === 'true'/);
 assert.match(farmer, /browserMode = HEADLESS \? 'new-headless'/);
 assert.match(farmer, /activeWorkers: scale\.activeWorkers/);
 assert.match(farmer, /configuredWorkers: startedWorkerCount/);
 assert.match(farmer, /farmerBrowsers = detected\.map/);
+assert.match(farmer, /browserOptimizer\.acquire\(id, firstSession \? initialBrowser\.key : ''\)/,
+  'new browser sessions do not use adaptive browser selection');
+assert.match(farmer, /browserOptimizer\.recordOutcome\(/,
+  'browser harvest outcomes do not train adaptive selection');
+assert.match(farmer, /browserPerformance: browserOptimizer \? browserOptimizer\.snapshot\(\) : null/,
+  'managed harvester status omits per-browser performance telemetry');
+assert.match(browserOptimizer, /policy: candidates\.length > 1 \? 'adaptive-efficiency' : 'fixed-browser'/);
+assert.match(browserOptimizer, /maximumActivePerBrowser: shareCeiling/,
+  'adaptive scheduling omits its browser-diversity ceiling');
 assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/);
 assert.match(runtimePaths, /return process\.execPath/);
 
@@ -48,5 +61,6 @@ console.log(JSON.stringify({
   source: 'pinned native farmer @423d132',
   runtime: 'native-electron-node',
   displayMode: 'new-headless',
-  browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Chromium'],
+  browserScheduling: 'adaptive-efficiency',
+  browsers: ['Chrome', 'Edge', 'Brave', 'Vivaldi', 'Yandex', 'Opera', 'Chromium'],
 }, null, 2));

@@ -21,11 +21,12 @@ const MANIFEST_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAbxrlW2wsfr/+kl/nA6KVcK6AExOHXJPCRgwyQ461C2w=
 -----END PUBLIC KEY-----`;
 
-const PLATFORM_COMPONENTS = Object.freeze({ darwin: ['chromium', 'wine', 'engine'] });
-const EXPECTED_ENGINE_SHA256 = '6c381523e02af2c7e2e49be01243d65d4e95ae22c2d45a32eb23ef1b00d57ce2';
+const PLATFORM_COMPONENTS = Object.freeze({
+  darwin: ['chromium'],
+  win32: ['chromium'],
+});
 const EXPECTED_CHROMIUM_REVISION = '1228';
-const EXPECTED_WINE_VERSION = '11.0_1';
-const RUNTIME_NAMES = new Set(['chromium', 'wine', 'engine']);
+const RUNTIME_NAMES = new Set(['chromium']);
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 
@@ -198,7 +199,7 @@ class RuntimeManager {
   }
 
   item(name, patch = {}) {
-    const labels = { chromium: 'Chromium', wine: 'Wine', engine: 'Checkout engine' };
+    const labels = { chromium: 'Chromium' };
     const current = this.status.items[name] || { name, label: labels[name] || name };
     this.status.items = { ...this.status.items, [name]: { ...current, ...patch } };
     return this.emit();
@@ -226,7 +227,7 @@ class RuntimeManager {
       throw new Error(`Runtime manifest does not support ${this.platformKey}.`);
     }
     const names = PLATFORM_COMPONENTS[this.platform] || [];
-    const runtimeItems = { ...platform, engine: payload.engine };
+    const runtimeItems = { ...platform };
     for (const name of names) {
       if (!safeItem(name, runtimeItems[name])) {
         throw new Error(`Runtime manifest has an invalid ${name} entry.`);
@@ -237,14 +238,8 @@ class RuntimeManager {
         throw new Error(`Runtime manifest has an unsafe ${name} URL.`);
       }
     }
-    if (runtimeItems.engine.sourceSha256 !== EXPECTED_ENGINE_SHA256) {
-      throw new Error('Runtime manifest does not contain this Zyn build’s frozen checkout engine.');
-    }
     if (!runtimeItems.chromium.entry.includes(`/chromium-${EXPECTED_CHROMIUM_REVISION}/`)) {
       throw new Error('Runtime manifest Chromium does not match this Zyn build’s Playwright revision.');
-    }
-    if (runtimeItems.wine.version !== EXPECTED_WINE_VERSION) {
-      throw new Error('Runtime manifest Wine does not match this Zyn build’s compatibility contract.');
     }
     this.currentDocument = document;
     this.currentPayload = payload;
@@ -286,26 +281,11 @@ class RuntimeManager {
     const directory = this.installDir(name, item);
     if (name === 'chromium') {
       process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH = path.join(directory, item.root || 'ms-playwright');
-    } else if (name === 'wine') {
-      process.env.ZYN_WINE_PATH = path.join(directory, item.entry);
-    } else if (name === 'engine') {
-      process.env.ZYN_ENGINE_PATH = path.join(directory, item.entry);
     }
   }
 
-  async hostRequirementError(name, item) {
-    if (name !== 'wine' || !item.requiresRosetta || this.platform !== 'darwin' || this.arch !== 'arm64') {
-      return null;
-    }
-    try {
-      if (this.checkRosetta) {
-        if (await this.checkRosetta()) return null;
-      } else {
-        await exec('/usr/sbin/pkgutil', ['--pkg-info', 'com.apple.pkg.RosettaUpdateAuto']);
-        return null;
-      }
-    } catch {}
-    return 'Rosetta 2 is required for the Windows checkout engine. Install Rosetta, then click Retry.';
+  async hostRequirementError() {
+    return null;
   }
 
   async reconcile() {
@@ -461,7 +441,8 @@ class RuntimeManager {
   async extractAndVerify(name, item, archive) {
     const format = item.format || 'tar.xz';
     const listArgs = format === 'tar.gz' ? ['-tzf', archive] : ['-tJf', archive];
-    const listing = await exec('/usr/bin/tar', listArgs);
+    const tar = this.platform === 'win32' ? 'tar.exe' : '/usr/bin/tar';
+    const listing = await exec(tar, listArgs);
     const entries = listing.stdout.split(/\r?\n/).filter(Boolean);
     if (!entries.length || entries.some((entry) => path.isAbsolute(entry)
       || entry.split(/[\\/]+/).some((part) => part === '..'))) {
@@ -475,7 +456,7 @@ class RuntimeManager {
       const extractArgs = format === 'tar.gz'
         ? ['-xzf', archive, '-C', staging]
         : ['-xJf', archive, '-C', staging];
-      await exec('/usr/bin/tar', extractArgs);
+      await exec(tar, extractArgs);
       const entry = path.join(staging, item.entry);
       const verifyTarget = path.join(staging, item.verify);
       if (!fs.existsSync(entry) || !fs.existsSync(verifyTarget)) {
@@ -484,12 +465,16 @@ class RuntimeManager {
 
       if (this.verifyArtifact) {
         await this.verifyArtifact({ name, item, entry, verifyTarget, staging });
-      } else if (name === 'engine') {
-        const handle = await fsp.open(verifyTarget, 'r');
+      } else if (this.platform === 'win32') {
+        // Windows releases are intentionally unsigned for now. The signed Ed25519 manifest pins
+        // the complete archive hash; this PE header check prevents a malformed archive from being
+        // marked ready after extraction while preserving the expected SmartScreen warning.
+        const handle = await fsp.open(entry, 'r');
         const header = Buffer.alloc(2);
-        try { await handle.read(header, 0, 2, 0); } finally { await handle.close(); }
-        if (header.toString('ascii') !== 'MZ') throw new Error('Checkout engine is not a valid Windows executable.');
-        await fsp.chmod(entry, 0o755);
+        try { await handle.read(header, 0, header.length, 0); } finally { await handle.close(); }
+        if (!header.equals(Buffer.from('MZ'))) {
+          throw new Error(`${item.label || name} executable is not a Windows PE file.`);
+        }
       } else {
         await exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', verifyTarget]);
         const details = await exec('/usr/bin/codesign', ['-dvvv', verifyTarget]);

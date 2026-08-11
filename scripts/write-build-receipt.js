@@ -45,11 +45,9 @@ const frontendPackage = JSON.parse(fs.readFileSync(
 const { FEATURES } = require(path.join(projectDir, 'launcher', 'feature-flags.js'));
 const contract = JSON.parse(fs.readFileSync(path.join(projectDir, 'config', 'runtime-contract.json'), 'utf8'));
 const resources = path.join(appPath, 'Contents', 'Resources');
-const expectedRuntimeHash = relative => contract.immutableResources
-  .find(item => item.path === `Contents/Resources/${relative}`)?.sha256 || '';
 const runtimeHash = relative => {
   const file = path.join(resources, relative);
-  return fs.existsSync(file) ? sha256(file) : expectedRuntimeHash(relative);
+  return fs.existsSync(file) ? sha256(file) : '';
 };
 const receipt = {
   schemaVersion: 1,
@@ -71,9 +69,7 @@ const receipt = {
   runtime: {
     delivery: runtimeMode,
     manifest: runtimeMode === 'remote' ? 'https://updates.rcart.app/runtimes/zyn-manifest-v1.json' : '',
-    backendSha256: runtimeHash('engine/backend.exe'),
-    windowsNodeSha256: runtimeHash('vendor/node.exe'),
-    wineSha256: runtimeHash('wine/bin/wine'),
+    backendSha256: runtimeHash('engine/backend'),
   },
 };
 

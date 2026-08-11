@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.5",
+  "appRelease": "R8.14",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -10,31 +10,33 @@
     "profileImap": true,
     "managedProxies": true,
     "cloudBackup": false,
-    "taskScheduling": false,
+    "taskScheduling": true,
     "isolatedRenderer": false
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.79",
+    "version": "1.6.88",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
+    "supportedPlatforms": ["darwin", "win32"],
     "supportedArchitectures": ["arm64", "x64"]
   },
-  "immutableResources": [
-    {
-      "path": "Contents/Resources/engine/backend.exe",
-      "sha256": "6c381523e02af2c7e2e49be01243d65d4e95ae22c2d45a32eb23ef1b00d57ce2"
+  "immutableResources": [],
+  "nativeEngines": {
+    "arm64": {
+      "path": "Contents/Resources/engine/backend",
+      "sha256": "1cd3e226c74f9f658db243cbf07481adc8fc088d135d84cbc8504080fc59415e"
     },
-    {
-      "path": "Contents/Resources/vendor/node.exe",
-      "sha256": "35b7c95a379beb606f5798ed83081690df13190077630b234163c6607aa4cc94"
+    "x64": {
+      "path": "Contents/Resources/engine/backend",
+      "sha256": "3b84a40a8979885e36b32ef03b17580e5c584f8752d316f56d1c5df1cafc9554"
     },
-    {
-      "path": "Contents/Resources/wine/bin/wine",
-      "sha256": "bad3b6126b6612680e26302c0e0b7e56d6c7036eac9bf6313878bdd9039b003f"
+    "windows-x64": {
+      "path": "resources/engine/backend.exe",
+      "sha256": "91de70fd94787e547cd56cc0fc780d4f772ac0435eb7d8d3c13e3698703f1f0c"
     }
-  ],
+  },
   "requiredResources": [
     "Contents/MacOS/Zyn",
     "Contents/Resources/Zyn.icns",
@@ -46,9 +48,14 @@
     "Contents/Resources/app/license-client.js",
     "Contents/Resources/app/license-authority.js",
     "Contents/Resources/app/license-observer.js",
+    "Contents/Resources/app/analytics-recorder.js",
+    "Contents/Resources/app/pokemon-queue-events.js",
     "Contents/Resources/app/task-type-access.js",
     "Contents/Resources/app/task-type-ipc-guard.js",
     "Contents/Resources/app/task-group-store.js",
+    "Contents/Resources/app/task-group-schedule.js",
+    "Contents/Resources/app/task-group-scheduler.js",
+    "Contents/Resources/app/target-group-launch.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/app/imap-password.js",
     "Contents/Resources/app/imap-connection.js",
@@ -57,35 +64,24 @@
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/runtime-manager.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
+    "Contents/Resources/app/node_modules/ws/package.json",
+    "Contents/Resources/engine/backend",
     "Contents/Resources/bot/shape-farmer.mjs",
     "Contents/Resources/bot/shape-browser-pool.mjs",
     "Contents/Resources/bot/shape-harvest-health.mjs",
     "Contents/Resources/bot/shape-worker-scaler.mjs",
     "Contents/Resources/node_modules/playwright-core/browsers.json",
     "Contents/Resources/vendor/ms-playwright/chromium-1228/chrome-win64/chrome.exe",
-    "Contents/Resources/vendor/ms-playwright-mac",
-    "Contents/Resources/wine/bin/wineserver"
+    "Contents/Resources/vendor/ms-playwright-mac"
   ],
-  "symlinks": [
-    {
-      "path": "Contents/Resources/engine/backend",
-      "target": "backend.exe"
-    },
-    {
-      "path": "Contents/Resources/vendor/node",
-      "target": "node.exe"
-    }
-  ],
+  "symlinks": [],
   "windowsLaunchers": [
-    "Contents/Resources/engine/backend",
-    "Contents/Resources/engine/backend.exe",
     "Contents/Resources/vendor/node",
     "Contents/Resources/vendor/node.exe"
   ],
   "remoteRuntime": {
     "manifest": "https://updates.rcart.app/runtimes/zyn-manifest-v1.json",
     "excludedResourceRoots": [
-      "Contents/Resources/engine",
       "Contents/Resources/wine",
       "Contents/Resources/vendor/ms-playwright",
       "Contents/Resources/vendor/ms-playwright-mac",

@@ -99,6 +99,13 @@ check('Zyn executable architecture', () => {
   const description = fileDescription(path.join(appPath, 'Contents', 'MacOS', 'Zyn'));
   assert.match(description, appArch === 'x64' ? /x86_64/ : /arm64/);
 });
+const nativeEngine = contract.nativeEngines[appArch];
+check('native Target backend', () => {
+  assert.ok(nativeEngine, `no native backend contract for ${appArch}`);
+  const file = path.join(appPath, nativeEngine.path);
+  assert.equal(sha256(file), nativeEngine.sha256, 'SHA-256 does not match the architecture contract');
+  assert.match(fileDescription(file), appArch === 'x64' ? /Mach-O.*x86_64/ : /Mach-O.*arm64/);
+});
 
 check('feature flags', () => {
   const flagsPath = path.join(appPath, 'Contents', 'Resources', 'app', 'feature-flags.js');
@@ -121,10 +128,82 @@ check('Zyn runtime branding', () => {
   const archive = path.join(appPath, 'Contents', 'Resources', 'app-original.asar');
   const electronMain = asar.extractFile(archive, 'public/electron.js').toString('utf8');
   const discordMonitor = asar.extractFile(archive, 'public/helpers/discord-monitor.js').toString('utf8');
+  const targetEngine = asar.extractFile(archive, 'public/helpers/target-engine.js').toString('utf8');
+  const dataManager = asar.extractFile(archive, 'public/helpers/data-manager.js').toString('utf8');
+  const nativeEngineContract = asar.extractFile(
+    archive,
+    'public/helpers/native-engine-contract.js',
+  ).toString('utf8');
+  const nativeHyperBroker = asar.extractFile(
+    archive,
+    'public/helpers/native-hyper-broker.js',
+  ).toString('utf8');
+  const manualCaptchaManager = asar.extractFile(
+    archive,
+    'public/helpers/manual-captcha-manager.js',
+  ).toString('utf8');
+  const analyticsRecorder = asar.extractFile(
+    archive,
+    'public/helpers/analytics-recorder.js',
+  ).toString('utf8');
+  const queueEvents = fs.readFileSync(
+    path.join(appPath, 'Contents', 'Resources', 'app', 'pokemon-queue-events.js'),
+    'utf8',
+  );
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
+  assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
+    'packaged Electron main process omits live Target task editing');
   assert.doesNotMatch(electronMain, /\bHope\b|hope:\/\//i);
   assert.match(discordMonitor, /\[monitor\] connected on/);
   assert.doesNotMatch(discordMonitor, /listening as/);
+  assert.match(targetEngine, /require\('\.\/native-engine-contract'\)/,
+    'packaged Target bridge does not use the shared native-engine contract');
+  assert.match(targetEngine, /new engineContract\.TaskSiteRegistry\(\)/,
+    'packaged Target bridge does not track site ownership for shared-engine tasks');
+  assert.match(targetEngine, /nativeHyperBroker\.handleEnvelope\(msg/,
+    'packaged native engine bridge does not route Hyper requests');
+  assert.match(targetEngine, /manualCaptchaManager\.handleEnvelope\(msg/,
+    'packaged native engine bridge does not route manual captcha requests');
+  assert.match(targetEngine, /case 'analytics-event':/,
+    'packaged native engine bridge does not route local analytics events');
+  assert.match(targetEngine, /analyticsRecorder\.record\(m\)/,
+    'packaged native engine bridge bypasses the account-bound analytics outbox');
+  assert.match(targetEngine, /function validatePokemonProducts\(/,
+    'packaged Pokémon Center bridge omits per-product quantities');
+  assert.match(targetEngine, /quantity: product\.quantity/,
+    'packaged Pokémon Center bridge drops per-product quantities');
+  assert.match(targetEngine, /billingFirstName: billingFirst/,
+    'packaged profile bridge drops the separate billing address');
+  assert.match(targetEngine, /const queueMonitorLog = decoded\.startsWith\('\[queue-monitor\]'\)/,
+    'packaged Pokémon Center bridge hides safe queue-monitor health logs');
+  assert.match(targetEngine, /function publishPokemonQueueProtection/,
+    'packaged Pokémon Center bridge omits normalized push events');
+  assert.match(targetEngine, /function setPokemonQueueStreamHealth/,
+    'packaged Pokémon Center bridge omits push-stream health logs');
+  assert.match(targetEngine, /loopCheckout: \(t\.loopCheckout != null/,
+    'packaged Target bridge drops the loop-checkout contract flag');
+  assert.match(targetEngine, /endless: \(t\.loopCheckout != null/,
+    'packaged Target bridge does not activate native continuous checkout');
+  assert.match(targetEngine, /function enforceTargetLoopCheckout\(/,
+    'packaged Target bridge lets looping tasks bypass the order cap');
+  assert.match(dataManager, /products: Array\.isArray/,
+    'packaged Pokémon Center storage omits product rows');
+  assert.match(nativeHyperBroker, /authority\.hyper\(request\.operation, request\.payload\)/,
+    'packaged Hyper bridge bypasses the main-process license authority');
+  assert.match(manualCaptchaManager, /manual captcha is restricted to Pokemon Center US/,
+    'packaged captcha manager does not constrain manual solves to Pokemon Center US');
+  assert.match(manualCaptchaManager, /nodeIntegration: false/,
+    'packaged captcha window enables renderer Node integration');
+  assert.match(analyticsRecorder, /createAnalyticsService/,
+    'packaged analytics recorder is missing');
+  assert.match(nativeEngineContract, /const PROTOCOL_VERSION = 1;/,
+    'packaged native-engine protocol version is missing');
+  assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,
+    'packaged native-engine contract omits Pokemon Center US');
+  assert.match(queueEvents, /authority\.openPokemonQueueEvents/,
+    'packaged queue event client bypasses the license authority');
+  assert.doesNotMatch(queueEvents, /polar-wss-production|licenseKey|siteConfigs/,
+    'packaged queue event client contains upstream secrets or unrelated cloud handling');
 });
 
 check('build receipt', () => {
@@ -135,7 +214,7 @@ check('build receipt', () => {
   assert.equal(receipt.release, contract.appRelease);
   assert.equal(receipt.product.bundleIdentifier, product.bundleIdentifier);
   assert.equal(receipt.product.arch, appArch);
-  assert.equal(receipt.runtime.backendSha256, contract.immutableResources[0].sha256);
+  assert.equal(receipt.runtime.backendSha256, nativeEngine.sha256);
   assert.equal(receipt.runtime.delivery || 'bundled', runtimeMode);
   assert.equal(receipt.runtime.manifest || '', remoteRuntime ? contract.remoteRuntime.manifest : '');
   assert.deepEqual(receipt.features, contract.features);
@@ -152,7 +231,7 @@ check('Target farmer New Headless launch contract', () => {
     assert.equal(sha256(path.join(resources, 'bot', filename)), expected,
       `${filename} no longer matches pinned ${upstream.commit}`);
   }
-  for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'chromium']) {
+  for (const key of ['chrome', 'msedge', 'brave', 'vivaldi', 'yandex', 'opera', 'chromium']) {
     assert.match(browserPool, new RegExp(`key: '${key}'`), `native browser pool omits ${key}`);
   }
   assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family browsers lack an explicit full-browser channel');
@@ -163,9 +242,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(targetEngine, /'--headless=true'/, 'Zyn does not request headless mode');
   assert.doesNotMatch(targetEngine, /'--headless=false'/, 'Zyn still requests headed mode');
   assert.match(targetEngine, /const findNodeExe = nodeExecutable/, 'Target farmer does not use native Node boundary');
-  if (remoteRuntime) {
-    assert.match(targetEngine, /process\.env\.ZYN_ENGINE_PATH/, 'Target engine does not resolve the verified downloaded backend');
-  }
+  assert.match(targetEngine, /process\.resourcesPath[\s\S]{0,160}'engine'/,
+    'Target engine does not resolve the bundled native backend');
   assert.match(targetEngine, /nodeEnvironment\(\{ FORCE_COLOR/, 'Target farmer does not use native environment');
   assert.match(runtimePaths, /ELECTRON_RUN_AS_NODE = '1'/, 'packaged farmer does not reuse Electron as Node');
   assert.match(targetEngine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/, 'Zyn omits cookies-per-page');
@@ -181,17 +259,39 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(farmer, /configuredWorkers: startedWorkerCount/, 'farmer omits configured worker count');
   assert.match(targetEngine, /health: j\.health \|\| null/, 'Zyn drops broker worker health');
   assert.match(targetEngine, /lastBankedAt: latestBankedAt\(\)/, 'Zyn drops latest bank success time');
+  assert.match(targetEngine, /function editTargetTasks\(config = \{\}\)/,
+    'Target bridge omits live task watch-list editing');
+  assert.match(targetEngine, /type: 'edit-tasks', messages/,
+    'Target bridge does not send native runtime edits');
+  assert.match(targetEngine, /MONITOR_ID \+ '-edit-'/,
+    'Target bridge does not refresh newly edited SKUs in shared-monitor mode');
+  assert.match(targetEngine, /loopCheckout: \(t\.loopCheckout != null/,
+    'Target bridge drops the loop-checkout contract flag');
+  assert.match(targetEngine, /endless: \(t\.loopCheckout != null/,
+    'Target bridge does not activate native continuous checkout');
+  assert.match(targetEngine, /function enforceTargetLoopCheckout\(/,
+    'Target bridge lets looping tasks bypass the order cap');
 
   const manifest = JSON.parse(asar.extractFile(path.join(resources, 'app-original.asar'), 'build/asset-manifest.json').toString('utf8'));
   const rendererBundlePath = `build/${manifest.files['main.js'].replace(/^\.\//, '')}`;
   const rendererBundle = asar.extractFile(path.join(resources, 'app-original.asar'), rendererBundlePath).toString('utf8');
   assert.match(rendererBundle, /Zyn/, 'packaged renderer omits the Zyn brand');
-  assert.doesNotMatch(rendererBundle, /\bHope\b|control[ -]plane/i, 'packaged renderer retains retired branding');
+  assert.doesNotMatch(rendererBundle, /\bHope\b|\bPolar\b|control[ -]plane/i, 'packaged renderer retains retired branding');
+  assert.match(rendererBundle, /Profile Type/, 'packaged Profiles UI omits retailer-specific profile types');
+  assert.match(rendererBundle, /Billing address is the same as shipping/,
+    'packaged Profiles UI omits the billing-address control');
+  assert.match(rendererBundle, /Add product/, 'packaged Pokémon Center UI omits product rows');
+  assert.match(rendererBundle, /Edit task products/, 'packaged Pokémon Center UI omits per-task product editing');
+  assert.match(rendererBundle, /Save & update task/, 'packaged Pokémon Center UI cannot apply queued-task product edits');
+  assert.match(rendererBundle, /HTTPS queue-status endpoint every three seconds/,
+    'packaged Pokémon Center UI does not explain queue-monitor health logging');
   assert.match(rendererBundle, /Cookies per page load/, 'packaged Settings omits cookies-per-page');
   assert.match(rendererBundle, /Page loads per browser/, 'packaged Settings omits browser reuse');
   assert.match(rendererBundle, /Block images, video & fonts while farming/, 'packaged Settings omits bandwidth control');
   assert.match(rendererBundle, /Starting broker/, 'packaged task groups omit broker startup state');
   assert.match(rendererBundle, /only this task/, 'packaged task groups omit per-task logs');
+  assert.match(rendererBundle, /editTargetTasks/, 'packaged task groups omit live SKU editing');
+  assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
   assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');
   assert.match(rendererBundle, /Broker online/, 'packaged task groups do not distinguish broker reachability');
@@ -213,11 +313,13 @@ check('Target farmer New Headless launch contract', () => {
     assert.match(manager, /zyn-manifest-v1\.json/, 'remote runtime manager uses the wrong manifest protocol');
     assert.match(manager, /verifyManifest/, 'remote runtime manager does not verify signed manifests');
     assert.match(manager, /bytes=\$\{existing\}-/, 'remote runtime manager does not resume partial downloads');
-    assert.match(manager, /process\.env\.ZYN_ENGINE_PATH/, 'remote runtime manager does not activate backend.exe');
+    assert.match(manager, /darwin: \['chromium'\]/, 'remote runtime downloads more than native Chromium');
+    assert.doesNotMatch(manager, /EXPECTED_ENGINE_SHA256|EXPECTED_WINE_VERSION/,
+      'remote runtime still pins the Windows engine or Wine');
     const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
-    assert.match(bootstrap, /waitForRuntime\(\['chromium', 'wine', 'engine'\]\)/,
-      'Target launches do not wait for all remote runtime components');
-    assert.match(bootstrap, /status && status\.ok === true\) beginRuntimeBootstrap\(\)/,
+    assert.match(bootstrap, /waitForRuntime\(\['chromium'\]\)/,
+      'Target launches do not wait for the remote Chromium component');
+    assert.match(bootstrap, /status && status\.ok === true\)[\s\S]{0,120}beginRuntimeBootstrap\(\)/,
       'runtime download does not begin after license sign-in');
   } else {
     assert.equal(

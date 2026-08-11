@@ -32,10 +32,28 @@ async function verifyArch(arch) {
   return { arch, dmg: dmg[1], bytes: Number(dmg[2]), download: `${updateOrigin}/download/mac/${arch}` };
 }
 
+async function verifyWindows() {
+  const feedUrl = `${updateOrigin}/windows/latest.yml`;
+  const feed = await (await checked(feedUrl, { headers: { 'cache-control': 'no-cache' } })).text();
+  assert.match(feed, new RegExp(`^version:\\s*${escapedVersion}$`, 'm'));
+  const installer = feed.match(/^path:\s+(Zyn-Setup-[A-Za-z0-9.+-]+-x64\.exe)$/m);
+  assert.ok(installer, 'Windows installer path is missing from the feed');
+  const size = feed.match(new RegExp(`^\\s*-\\s+url:\\s+${installer[1].replaceAll('.', '\\.')}\\s*\\n\\s+sha512:\\s+\\S+\\s*\\n\\s+size:\\s+(\\d+)$`, 'm'));
+  assert.ok(size, 'Windows installer entry is missing from the feed');
+  const download = await fetch(`${updateOrigin}/download/windows`, { method: 'HEAD', redirect: 'manual' });
+  assert.equal(download.status, 302, 'Windows download route did not redirect');
+  const expectedUrl = `${updateOrigin}/windows/${installer[1]}`;
+  assert.equal(download.headers.get('location'), expectedUrl);
+  const artifact = await checked(expectedUrl, { method: 'HEAD' });
+  assert.equal(Number(artifact.headers.get('content-length')), Number(size[1]));
+  return { arch: 'x64', installer: installer[1], bytes: Number(size[1]), download: `${updateOrigin}/download/windows` };
+}
+
 async function main() {
-  const [arm64, x64, site, license, updates] = await Promise.all([
+  const [arm64, x64, windows, site, license, updates] = await Promise.all([
     verifyArch('arm64'),
     verifyArch('x64'),
+    verifyWindows(),
     checked('https://rcart.app/download').then(response => response.text()),
     checked('https://license.rcart.app/health').then(response => response.json()),
     checked(`${updateOrigin}/health`).then(response => response.json()),
@@ -44,7 +62,8 @@ async function main() {
   assert.doesNotMatch(site, /rCart/);
   assert.equal(license.service, 'zyn-license-api');
   assert.equal(updates.service, 'zyn-updates');
-  console.log(JSON.stringify({ ok: true, version, arm64, x64 }, null, 2));
+  assert.deepEqual(updates.windowsArchitectures, ['x64']);
+  console.log(JSON.stringify({ ok: true, version, arm64, x64, windows }, null, 2));
 }
 
 main().catch(error => {

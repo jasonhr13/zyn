@@ -15,6 +15,7 @@
 frontend/node_modules/
 frontend/build/
 launcher/node_modules/
+release-tools/node_modules/
 
 # Packaged applications, installers, downloaded runtimes, and staging output
 /dist/

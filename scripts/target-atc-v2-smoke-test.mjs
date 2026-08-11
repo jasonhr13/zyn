@@ -112,8 +112,8 @@ const build = read('scripts/build-zyn.sh');
 assert.match(farmer, /argOf\('atcMode', 'v1'\)/, 'V1 must remain the CLI default');
 assert.match(farmer, /runTargetAtcV2Flow\(/, 'the ATC worker must dispatch to the V2 flow');
 assert.match(farmer, /source: type === 'atc'.*TARGET_ATC_V2_SOURCE/, 'V2 cookies need source metadata');
-assert.match(taskGroups, /ATC\+ — Synthetic product page \(Recommended\)/,
-  'the harvester editor must expose ATC+ as the recommended mode');
+assert.match(taskGroups, /<option value="v2">ATC\+<\/option>\s*<\/select>\s*<\/div>/,
+  'the harvester editor must expose only the ATC+ label');
 assert.match(configFragment, /atcMode: raw && raw\.atcMode === 'v2' \? 'v2' : 'v1'/);
 assert.match(producerFragment, /`--atcMode=\$\{config\.atcMode\}`/);
 assert.match(build, /native-farmer\/"\*\.html/, 'the recovered PDP must be bundled beside the farmer');

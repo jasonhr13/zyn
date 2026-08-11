@@ -2,7 +2,22 @@ import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
-import { sameTargetBank, targetBankPresentation } from '../target-bank-metrics.mjs';
+import {
+  formatBandwidth,
+  sameTargetBank,
+  targetBandwidthSummary,
+  targetBankPresentation,
+  targetHarvesterBandwidth,
+} from '../target-bank-metrics.mjs';
+import {
+  buildScheduleFromDraft,
+  draftFromSchedule,
+  emptyScheduleDraft,
+  formatLocalTime,
+  normalizeSchedule,
+  scheduleDetailLine,
+  scheduleSummary,
+} from '../task-group-schedule.mjs';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -11,6 +26,7 @@ const EMPTY_GROUP = Object.freeze({
   skus: '',
   qty: 2,
   proxyListName: '',
+  loopCheckout: false,
 });
 
 const EMPTY_HARVESTER = Object.freeze({
@@ -35,6 +51,7 @@ const HARVESTER_BROWSERS = [
   ['brave', 'Brave'],
   ['vivaldi', 'Vivaldi'],
   ['yandex', 'Yandex'],
+  ['opera', 'Opera'],
   ['chromium', 'Bundled Chromium'],
 ];
 
@@ -128,9 +145,14 @@ class TaskGroups extends Component {
     showGroupModal: false,
     editingGroupId: '',
     groupDraft: { ...EMPTY_GROUP },
+    showScheduleModal: false,
+    scheduleDraft: emptyScheduleDraft(),
+    scheduleError: '',
+    scheduleNow: Date.now(),
     showTaskModal: false,
     selectedAccounts: [],
     taskProxy: '',
+    taskLoopCheckout: false,
     copiedEngine: false,
     copiedTask: false,
     bank: null,
@@ -149,6 +171,9 @@ class TaskGroups extends Component {
     this.loadGroups();
     this.pollBank();
     this.bankTimer = setInterval(this.pollBank, 5000);
+    this.scheduleClockTimer = setInterval(() => this.setState({ scheduleNow: Date.now() }), 30000);
+    this.onTaskGroupSchedule = () => this.loadGroups();
+    ipcRenderer.on('taskGroupSchedule', this.onTaskGroupSchedule);
   }
 
   componentDidUpdate(prevProps) {
@@ -173,6 +198,8 @@ class TaskGroups extends Component {
 
   componentWillUnmount() {
     clearInterval(this.bankTimer);
+    clearInterval(this.scheduleClockTimer);
+    try { ipcRenderer.removeListener('taskGroupSchedule', this.onTaskGroupSchedule); } catch {}
   }
 
   loadGroups = () => {
@@ -188,24 +215,10 @@ class TaskGroups extends Component {
       if (Array.isArray(settings.targetHarvesters)) {
         harvesters = settings.targetHarvesters.map(normalizeHarvester);
       } else {
-        // One-time migration from the single global selector. It starts enabled so existing users
-        // still have a farmer after upgrading, while every field is now editable independently.
-        const proxyListName = typeof settings.targetHarvesterProxyList === 'string'
-          ? settings.targetHarvesterProxyList : '';
-        const workers = clampInteger(settings.targetHarvestWorkers, 1, 100, proxyListName ? 4 : 1);
-        harvesters = [normalizeHarvester({
-          id: uid('harvester'),
-          name: 'Default Harvester',
-          type: 'auto',
-          atcMode: 'v1',
-          browser: 'auto',
-          proxyListName,
-          workers,
-          input: settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '',
-          cookieTtlSec: settings.targetCookieTtlSec || 600,
-          intervalDelaySec: 10,
-          enabled: true,
-        })];
+        // Absence means exactly that: the user has not created a harvester. Persist an explicit
+        // empty list so neither a fresh install nor an older settings file can fall through to the
+        // retired task-owned farmer and begin using bandwidth merely because a task was added.
+        harvesters = [];
         migratedSettings = { ...settings, targetHarvesters: harvesters };
         ipcRenderer.sendSync('saveSettings', migratedSettings);
       }
@@ -323,6 +336,10 @@ class TaskGroups extends Component {
     const draft = this.state.harvesterDraft;
     const name = String(draft.name || '').trim();
     if (!name) return;
+    if (draft.enabled !== false && !this.harvesterProxyAvailable(draft)) {
+      window.alert(`Proxy group “${draft.proxyListName}” is unavailable. Select another proxy group or Local before starting this harvester.`);
+      return;
+    }
     const startSchedule = isoDateTimeValue(draft.startSchedule);
     const stopSchedule = isoDateTimeValue(draft.stopSchedule);
     if (startSchedule && stopSchedule && Date.parse(stopSchedule) <= Date.parse(startSchedule)) {
@@ -348,6 +365,10 @@ class TaskGroups extends Component {
   };
 
   toggleHarvester = harvester => {
+    if (!harvester.enabled && !this.harvesterProxyAvailable(harvester)) {
+      window.alert(`Proxy group “${harvester.proxyListName}” is unavailable. Edit this harvester before starting it.`);
+      return;
+    }
     const harvesters = this.state.harvesters.map(item => item.id === harvester.id
       ? { ...item, enabled: !item.enabled } : item);
     this.persistHarvesters(harvesters);
@@ -360,11 +381,14 @@ class TaskGroups extends Component {
 
   profileList = () => {
     const value = this.props.profiles || [];
-    return value.list || value.profiles || (Array.isArray(value) ? value : []);
+    return (value.list || value.profiles || (Array.isArray(value) ? value : []))
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
   };
 
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
+  harvesterProxyAvailable = harvester => !harvester.proxyListName
+    || this.proxyLists().some(list => proxyRef(list) === harvester.proxyListName);
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
@@ -418,10 +442,65 @@ class TaskGroups extends Component {
       skus: group.skus || '',
       qty: group.qty || 2,
       proxyListName: group.proxyListName || '',
+      loopCheckout: group.loopCheckout === true,
     },
   });
 
   closeGroupModal = () => this.setState({ showGroupModal: false, editingGroupId: '' });
+
+  setScheduleDraft = patch => this.setState(previous => ({
+    scheduleDraft: { ...previous.scheduleDraft, ...patch },
+    scheduleError: '',
+  }));
+
+  openSchedule = group => this.setState({
+    showScheduleModal: true,
+    scheduleDraft: draftFromSchedule(group.schedule),
+    scheduleError: '',
+    scheduleNow: Date.now(),
+  });
+
+  closeSchedule = () => this.setState({ showScheduleModal: false, scheduleError: '' });
+
+  saveSchedule = group => {
+    const built = buildScheduleFromDraft(this.state.scheduleDraft);
+    if (built.error) {
+      this.setState({ scheduleError: built.error });
+      return;
+    }
+    const groups = this.state.groups.map(candidate => {
+      if (candidate.id !== group.id) return candidate;
+      if (!built.schedule) {
+        const { schedule: _schedule, ...rest } = candidate;
+        return { ...rest, updatedAt: Date.now() };
+      }
+      return { ...candidate, schedule: built.schedule, updatedAt: Date.now() };
+    });
+    this.persist(groups, () => this.setState({
+      showScheduleModal: false,
+      scheduleDraft: draftFromSchedule(built.schedule),
+      scheduleError: '',
+      scheduleNow: Date.now(),
+    }));
+  };
+
+  clearSchedule = group => {
+    if (!normalizeSchedule(group.schedule)) {
+      this.setState({ showScheduleModal: false, scheduleDraft: emptyScheduleDraft(), scheduleError: '' });
+      return;
+    }
+    if (!window.confirm(`Clear the schedule for “${group.name}”?`)) return;
+    const groups = this.state.groups.map(candidate => {
+      if (candidate.id !== group.id) return candidate;
+      const { schedule: _schedule, ...rest } = candidate;
+      return { ...rest, updatedAt: Date.now() };
+    });
+    this.persist(groups, () => this.setState({
+      showScheduleModal: false,
+      scheduleDraft: emptyScheduleDraft(),
+      scheduleError: '',
+    }));
+  };
 
   saveGroup = () => {
     const draft = this.state.groupDraft;
@@ -429,6 +508,25 @@ class TaskGroups extends Component {
     if (!name) return;
     const now = Date.now();
     let selectedGroupId = this.state.editingGroupId;
+    const previousGroup = selectedGroupId
+      ? this.state.groups.find(group => group.id === selectedGroupId)
+      : null;
+    const nextSkus = parseSkus(draft.skus);
+    const previousSkus = parseSkus(previousGroup && previousGroup.skus);
+    const liveTasks = previousGroup
+      ? (previousGroup.tasks || []).filter(task => statusKind(this.statusFor(task)) === 'running')
+      : [];
+    const liveWatchChanged = !!previousGroup && (
+      previousSkus.join(',') !== nextSkus.join(',')
+      || String(previousGroup.qty || 2) !== String(draft.qty || 2)
+    );
+    const loopCheckout = draft.loopCheckout === true;
+    const liveLoopChanged = !!previousGroup
+      && (previousGroup.loopCheckout === true) !== loopCheckout;
+    if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
+      window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
+      return;
+    }
     let groups;
     if (selectedGroupId) {
       groups = this.state.groups.map(group => group.id === selectedGroupId ? {
@@ -437,6 +535,10 @@ class TaskGroups extends Component {
         skus: draft.skus,
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        loopCheckout,
+        tasks: liveLoopChanged
+          ? (group.tasks || []).map(task => ({ ...task, loopCheckout }))
+          : group.tasks,
         updatedAt: now,
       } : group);
     } else {
@@ -448,16 +550,40 @@ class TaskGroups extends Component {
         skus: draft.skus,
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        loopCheckout,
         tasks: [],
         createdAt: now,
         updatedAt: now,
       }];
     }
-    this.persist(groups, () => this.setState({
-      selectedGroupId,
-      showGroupModal: false,
-      editingGroupId: '',
-    }));
+    this.persist(groups, () => {
+      let liveEditError = '';
+      if (liveWatchChanged && liveTasks.length) {
+        try {
+          const result = ipcRenderer.sendSync('editTargetTasks', {
+            tasks: liveTasks,
+            skus: nextSkus,
+            qty: draft.qty || 2,
+          });
+          if (!result || result.ok !== true || result.updated < 1) {
+            liveEditError = (result && result.error) || 'The native engine did not accept the live watch-list update.';
+          }
+        } catch (error) {
+          liveEditError = (error && error.message) || 'The live watch-list update failed.';
+        }
+      }
+      this.setState({
+        selectedGroupId,
+        showGroupModal: false,
+        editingGroupId: '',
+      }, () => {
+        if (liveEditError) {
+          window.alert(`The group was saved, but its running tasks were not updated. Stop and restart them to apply the new SKUs.\n\n${liveEditError}`);
+        } else if (liveLoopChanged && liveTasks.length) {
+          window.alert('The loop-checkout setting was saved. Stop and restart the running tasks to apply it.');
+        }
+      });
+    });
   };
 
   deleteGroup = (group) => {
@@ -475,6 +601,7 @@ class TaskGroups extends Component {
     showTaskModal: true,
     selectedAccounts: [],
     taskProxy: group.proxyListName || '',
+    taskLoopCheckout: group.loopCheckout === true,
   });
 
   toggleAccount = (accountId) => this.setState(({ selectedAccounts }) => ({
@@ -496,6 +623,7 @@ class TaskGroups extends Component {
         profileId: '',
         proxyListName: this.state.taskProxy,
         cardId: '',
+        loopCheckout: this.state.taskLoopCheckout === true,
         createdAt: now,
       }));
     const groups = this.state.groups.map(item => item.id === group.id ? {
@@ -524,6 +652,17 @@ class TaskGroups extends Component {
         });
       }
     } catch {}
+  };
+
+  updateTaskLoopCheckout = (group, task, loopCheckout) => {
+    const groups = this.state.groups.map(item => item.id === group.id ? {
+      ...item,
+      tasks: item.tasks.map(candidate => candidate.id === task.id
+        ? { ...candidate, loopCheckout: loopCheckout === true }
+        : candidate),
+      updatedAt: Date.now(),
+    } : item);
+    this.persist(groups);
   };
 
   deleteTask = (group, task) => {
@@ -627,6 +766,105 @@ class TaskGroups extends Component {
     if (!logs.length || !window.confirm(`Clear the log for “${this.accountLabel(task)}”?`)) return;
     this.props.dispatch({ type: 'targetSet', obj: { taskLogs: { ...taskLogs, [task.id]: [] } } });
   };
+
+  renderScheduleChip(group, now = this.state.scheduleNow) {
+    const summary = scheduleSummary(group.schedule, now);
+    if (!summary) return null;
+    return (
+      <span className="group-schedule-chip" title={scheduleDetailLine(group.schedule)}>
+        <Icon name="activity" size={11} /> {summary}
+      </span>
+    );
+  }
+
+  renderScheduleModal(group) {
+    if (!this.state.showScheduleModal) return null;
+    const draft = this.state.scheduleDraft || emptyScheduleDraft();
+    const preview = buildScheduleFromDraft(draft);
+    const armed = normalizeSchedule(group.schedule);
+    return (
+      <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeSchedule()}>
+        <div className="modal group-schedule-modal" onMouseDown={event => event.stopPropagation()}>
+          <div className="modal-header">
+            <div>
+              <div className="modal-title">Schedule “{group.name}”</div>
+              <p>{armed ? scheduleSummary(armed, this.state.scheduleNow) : 'Off — Zyn must stay open for timers to fire'}</p>
+            </div>
+            <button className="modal-close" onClick={this.closeSchedule}>×</button>
+          </div>
+          <div className="modal-body group-schedule-body">
+            <p className="group-schedule-help">
+              Start and/or stop this Target group at a local clock time or after a delay. Keep the Mac awake during drop windows.
+            </p>
+            <div className="group-schedule-grid">
+              <div className="group-schedule-leg">
+                <label className="form-label">Start group</label>
+                <div className="group-schedule-modes">
+                  {['off', 'at', 'in'].map(mode => (
+                    <label key={`start-${mode}`} className={draft.startMode === mode ? 'active' : ''}>
+                      <input type="radio" name="schedule-start" checked={draft.startMode === mode} onChange={() => this.setScheduleDraft({ startMode: mode })} />
+                      {mode === 'off' ? 'Off' : mode === 'at' ? 'At time' : 'In…'}
+                    </label>
+                  ))}
+                </div>
+                {draft.startMode === 'at' && (
+                  <input className="form-input" type="time" value={draft.startTime} onChange={event => this.setScheduleDraft({ startTime: event.target.value })} />
+                )}
+                {draft.startMode === 'in' && (
+                  <div className="group-schedule-interval">
+                    <input className="form-input" type="number" min="1" step="1" value={draft.startAmount} onChange={event => this.setScheduleDraft({ startAmount: event.target.value })} />
+                    <select className="form-select" value={draft.startUnit} onChange={event => this.setScheduleDraft({ startUnit: event.target.value })}>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="group-schedule-leg">
+                <label className="form-label">Stop group</label>
+                <div className="group-schedule-modes">
+                  {['off', 'at', 'in'].map(mode => (
+                    <label key={`stop-${mode}`} className={draft.stopMode === mode ? 'active' : ''}>
+                      <input type="radio" name="schedule-stop" checked={draft.stopMode === mode} onChange={() => this.setScheduleDraft({ stopMode: mode })} />
+                      {mode === 'off' ? 'Off' : mode === 'at' ? 'At time' : 'In…'}
+                    </label>
+                  ))}
+                </div>
+                {draft.stopMode === 'at' && (
+                  <input className="form-input" type="time" value={draft.stopTime} onChange={event => this.setScheduleDraft({ stopTime: event.target.value })} />
+                )}
+                {draft.stopMode === 'in' && (
+                  <div className="group-schedule-interval">
+                    <input className="form-input" type="number" min="1" step="1" value={draft.stopAmount} onChange={event => this.setScheduleDraft({ stopAmount: event.target.value })} />
+                    <select className="form-select" value={draft.stopUnit} onChange={event => this.setScheduleDraft({ stopUnit: event.target.value })}>
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="group-schedule-preview">
+              {preview.error ? <span className="text-danger">{preview.error}</span> : preview.schedule ? (
+                <span>
+                  {preview.schedule.startAt != null && <>Starts <strong>{formatLocalTime(preview.schedule.startAt)}</strong></>}
+                  {preview.schedule.startAt != null && preview.schedule.stopAt != null && ' · '}
+                  {preview.schedule.stopAt != null && <>Stops <strong>{formatLocalTime(preview.schedule.stopAt)}</strong></>}
+                  {armed && scheduleDetailLine(armed) !== scheduleDetailLine(preview.schedule) && <em> — not saved yet</em>}
+                </span>
+              ) : <span className="text-muted">No start or stop selected</span>}
+              {this.state.scheduleError && <span className="text-danger"> {this.state.scheduleError}</span>}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary group-schedule-clear" onClick={() => this.clearSchedule(group)} disabled={!armed}>Clear schedule</button>
+            <button className="btn btn-secondary" onClick={this.closeSchedule}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => this.saveSchedule(group)}><Icon name="activity" size={13} /> Save Schedule</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   renderSharedEngineLog() {
     const target = this.props.target || {};
@@ -766,6 +1004,9 @@ class TaskGroups extends Component {
 
   harvesterState = (harvester, runtime) => {
     if (!harvester.enabled) return { kind: 'idle', label: 'Stopped' };
+    if (!this.harvesterProxyAvailable(harvester)) {
+      return { kind: 'error', label: 'Proxy unavailable' };
+    }
     const now = Date.now();
     const startsAt = harvester.startSchedule ? Date.parse(harvester.startSchedule) : NaN;
     const stopsAt = harvester.stopSchedule ? Date.parse(harvester.stopSchedule) : NaN;
@@ -788,13 +1029,19 @@ class TaskGroups extends Component {
   };
 
   renderHarvesterDrawer() {
-    const bank = targetBankPresentation(this.state.bank, this.state.harvesters, {
+    const availableHarvesters = this.state.harvesters.map(harvester =>
+      this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
+    const bank = targetBankPresentation(this.state.bank, availableHarvesters, {
       now: this.state.bankCheckedAt || Date.now(),
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
     });
     const total = this.state.harvesters.length;
     const open = this.state.harvesterDrawerOpen;
+    const configuredHarvesterIds = new Set(this.state.harvesters.map(item => String(item.id)));
+    const runtimeHarvesters = this.state.bank && Array.isArray(this.state.bank.harvesters)
+      ? this.state.bank.harvesters.filter(item => configuredHarvesterIds.has(String(item && item.id))) : [];
+    const bandwidthSummary = targetBandwidthSummary(runtimeHarvesters, Date.now());
     const railStatusLabel = {
       ready: 'Ready',
       working: 'Active',
@@ -817,16 +1064,67 @@ class TaskGroups extends Component {
           const runtime = this.harvesterRuntimeFor(harvester.id);
           const state = this.harvesterState(harvester, runtime);
           const produced = (runtime && runtime.produced) || {};
+          const bandwidth = targetHarvesterBandwidth(runtime, Date.now());
           const workerValue = state.kind === 'running'
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
           const browser = (HARVESTER_BROWSERS.find(([value]) => value === harvester.browser) || [null, harvester.browser])[1];
+          const browserPerformance = runtime && runtime.browserPerformance;
+          const performanceBrowsers = browserPerformance && Array.isArray(browserPerformance.browsers)
+            ? browserPerformance.browsers : [];
+          const browserLeader = browserPerformance && browserPerformance.leader;
+          const adaptiveBrowserPool = browserPerformance && browserPerformance.policy === 'adaptive-efficiency';
+          const browserPolicy = harvester.browser === 'auto'
+            ? !browserPerformance
+              ? `${browser} · Starting`
+              : adaptiveBrowserPool
+                ? browserPerformance.learning
+                  ? `${browser} · Learning`
+                  : browserLeader
+                    ? `${browser} · Favoring ${browserLeader.label}`
+                    : `${browser} · Balancing`
+                : `${browser} · One browser available`
+            : `${browser} · Fixed`;
+          const browserDetail = performanceBrowsers.filter(item => Number(item.attempts) > 0).map(item => {
+            const successRate = Math.round((Number(item.successRate) || 0) * 100);
+            const efficiency = Number(item.bytesPerCookie) > 0
+              ? `${formatBandwidth(item.bytesPerCookie)}/cookie` : 'no cookie yield';
+            const latency = Number(item.successfulAverageMs) > 0
+              ? `${(Number(item.successfulAverageMs) / 1000).toFixed(1)}s success` : 'no successful timing';
+            return `${item.label}: ${successRate}% · ${Number(item.cookies) || 0} cookies · ${efficiency} · ${latency}`;
+          }).join(' | ');
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
           const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
             : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
             : 'Always';
+          const runtimeRoute = String((runtime && runtime.route) || '').trim().toLowerCase();
+          const routeExpectsProxy = !!(runtimeRoute && runtimeRoute !== 'local');
+          const hasMeasuredTraffic = bandwidth.attempts > 0 || bandwidth.totalBytes > 0;
+          const usesProxy = bandwidth.proxyBytes > 0 || (!hasMeasuredTraffic && routeExpectsProxy);
+          const proxyRouteMismatch = hasMeasuredTraffic && routeExpectsProxy
+            && bandwidth.proxyBytes === 0 && bandwidth.directBytes > 0;
+          const bandwidthValue = !runtime || bandwidth.attempts === 0
+            ? 'Waiting for first page'
+            : !bandwidth.supported
+              ? 'Telemetry unavailable for this browser'
+              : `${formatBandwidth(bandwidth.totalBytes)} · ${formatBandwidth(bandwidth.bytesPerHour)}/hr avg`
+                + (bandwidth.cookies ? ` · ${formatBandwidth(bandwidth.bytesPerCookie)}/cookie` : ' · no cookie yield yet');
+          const transferDetail = `↓ ${formatBandwidth(bandwidth.downloadBytes)} · ↑ ${formatBandwidth(bandwidth.uploadBytes)} est.`
+            + ` · ${bandwidth.requests} requests · ${bandwidth.blockedRequests} heavy assets blocked`;
+          const typeBreakdown = ['login', 'atc'].map(type => {
+            const item = bandwidth.byType[type] || {};
+            const bytes = Number(item.totalBytes) || 0;
+            const cookies = Number(item.cookies) || 0;
+            if (!(Number(item.attempts) > 0)) return '';
+            const name = type === 'atc' ? atcModeLabel : 'Login';
+            return `${name} ${formatBandwidth(bytes)}${cookies ? ` (${formatBandwidth(bytes / cookies)}/cookie)` : ''}`;
+          }).filter(Boolean).join(' · ');
+          const requestDetail = `${bandwidth.attempts} pages · ${bandwidth.failedRequests} failed requests`
+            + ` · ${bandwidth.cachedRequests} cache hits`
+            + (bandwidth.unmeasuredAttempts ? ` · ${bandwidth.unmeasuredAttempts} unmeasured` : '')
+            + (typeBreakdown ? ` · ${typeBreakdown}` : '');
           return (
             <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
               <div className="target-harvester-identity">
@@ -835,7 +1133,16 @@ class TaskGroups extends Component {
               </div>
               <div className="target-harvester-card-stat target-harvester-workers"><small>Workers</small><strong>{workerValue}</strong></div>
               <div className="target-harvester-card-stat target-harvester-produced"><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></div>
-              <div className="target-harvester-card-stat target-harvester-browser"><small>Browser / Last success</small><strong>{browser} · {this.harvesterLastSuccess(runtime)}</strong></div>
+              <div className="target-harvester-card-stat target-harvester-bandwidth">
+                <small>{proxyRouteMismatch ? 'Direct bandwidth · proxy unavailable' : `${usesProxy ? 'Proxy' : 'Direct'} bandwidth · this run`}</small>
+                <strong title={bandwidthValue}>{bandwidthValue}</strong>
+                {bandwidth.attempts > 0 && <><em>{transferDetail}</em><em>{requestDetail}</em></>}
+              </div>
+              <div className="target-harvester-card-stat target-harvester-browser">
+                <small>Browser policy / Last success</small>
+                <strong>{browserPolicy} · {this.harvesterLastSuccess(runtime)}</strong>
+                {!!browserDetail && <em title={browserDetail}>{browserDetail}</em>}
+              </div>
               <div className="target-harvester-card-stat target-harvester-schedule"><small>Schedule</small><strong title={schedule}>{schedule}</strong></div>
               <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
               <div className="target-harvester-actions">
@@ -888,6 +1195,22 @@ class TaskGroups extends Component {
                 <span><strong>{bank.login}</strong><small>Login banked</small></span>
                 <span><strong>{bank.atc}</strong><small>ATC banked</small></span>
               </div>
+              <section className="target-harvester-bandwidth-summary" aria-label="Proxy bandwidth telemetry"
+                title="Browser-level transfer. Your proxy provider may report slightly more for tunnel and TLS overhead.">
+                <header>
+                  <span><strong>Proxy bandwidth</strong><small>Current harvester runs</small></span>
+                  <em>{bandwidthSummary.available ? 'Wire download · estimated upload' : 'Waiting for harvester traffic'}</em>
+                </header>
+                <div>
+                  <span><strong>{formatBandwidth(bandwidthSummary.proxyBytes)}</strong><small>Total proxy data</small></span>
+                  <span><strong>{formatBandwidth(bandwidthSummary.bytesPerHour)}/hr</strong><small>Average rate</small></span>
+                  <span><strong>{bandwidthSummary.proxyCookies ? formatBandwidth(bandwidthSummary.bytesPerProxyCookie) : '—'}</strong><small>Per cookie</small></span>
+                  <span><strong>↓ {formatBandwidth(bandwidthSummary.proxyDownloadBytes)}</strong><small>↑ {formatBandwidth(bandwidthSummary.proxyUploadBytes)} est.</small></span>
+                </div>
+                <p>{bandwidthSummary.requests} network requests · {bandwidthSummary.blockedRequests} heavy assets blocked · {bandwidthSummary.failedRequests} failed · {bandwidthSummary.cachedRequests} cache hits
+                  {bandwidthSummary.unmeasuredAttempts > 0 ? ` · ${bandwidthSummary.unmeasuredAttempts} pages unmeasured` : ''}
+                  {bandwidthSummary.directBytes > 0 ? ` · ${formatBandwidth(bandwidthSummary.directBytes)} direct traffic excluded` : ''}</p>
+              </section>
               <div className="target-harvester-drawer-toolbar">
                 <span className={`group-status group-status-${bank.state === 'ready' ? 'success' : bank.state === 'working' ? 'running' : bank.state === 'error' ? 'error' : 'idle'}`}>
                   <span className="group-status-dot" />{bank.label}
@@ -916,7 +1239,7 @@ class TaskGroups extends Component {
       >
         <div className="task-group-row-identity">
           <span className="site-mark"><Icon name="target" size={19} /></span>
-          <span><h3>{group.name}</h3><p>Target task group</p></span>
+          <span><h3>{group.name}</h3><p>Target task group</p>{this.renderScheduleChip(group)}</span>
         </div>
         <div className="task-group-row-stats">
           <span><strong>{stats.total}</strong>Tasks</span>
@@ -1012,6 +1335,20 @@ class TaskGroups extends Component {
           <option value="">Local</option>
           {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
         </select>
+        <label
+          className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
+          title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
+          onClick={event => event.stopPropagation()}
+          onKeyDown={event => event.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={task.loopCheckout === true}
+            disabled={running}
+            onChange={event => this.updateTaskLoopCheckout(group, task, event.target.checked)}
+          />
+          {task.loopCheckout ? 'On' : 'Off'}
+        </label>
         <StatusBadge status={displayStatus} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
         <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
@@ -1084,6 +1421,7 @@ class TaskGroups extends Component {
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
                 <div><dt>Watch list</dt><dd>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
                 <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
                 <div><dt>Task ID</dt><dd>{task.id}</dd></div>
               </dl>
@@ -1129,9 +1467,10 @@ class TaskGroups extends Component {
         <div className="page-header task-view-header">
           <div>
             <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
-            <div className="page-title"><span className="page-title-dot" /> {group.name}</div>
+            <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
           </div>
           <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => this.openSchedule(group)}><Icon name="activity" size={12} /> Schedule</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={12} /> Edit Group</button>
             {stats.running ? (
               <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop All</button>
@@ -1148,6 +1487,7 @@ class TaskGroups extends Component {
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
             <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
+            <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
           </div>
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
@@ -1161,7 +1501,7 @@ class TaskGroups extends Component {
               <div className="group-tasks-empty"><span><Icon name="user" size={19} /></span><h3>No account tasks yet</h3><p>Add Target accounts to this group. Their checkout profiles are matched automatically by email.</p><button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}>Add Tasks</button></div>
             ) : (
               <div>
-                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Status</span><span>Created</span><span>Actions</span></div>
+                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Status</span><span>Created</span><span>Actions</span></div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
               </div>
@@ -1170,6 +1510,7 @@ class TaskGroups extends Component {
           {this.renderSharedEngineLog()}
         </div>
         {this.renderHarvesterDrawer()}
+        {this.renderScheduleModal(group)}
         {this.renderGroupModal()}
         {this.renderTaskModal(group)}
         {this.renderHarvesterModal()}
@@ -1223,9 +1564,8 @@ class TaskGroups extends Component {
                 <label className="form-label">ATC mode</label>
                 <select className="form-select" value={draft.atcMode} onChange={event => setDraft({ atcMode: event.target.value })}>
                   <option value="v1">Standard — Live Target product page</option>
-                  <option value="v2">ATC+ — Synthetic product page (Recommended)</option>
+                  <option value="v2">ATC+</option>
                 </select>
-                <div className="form-hint">ATC+ substitutes the recovered synthetic PDP at the selected product URL, waits for Target SSX, then captures the cart request.</div>
               </div>
             )}
             {draft.type !== 'login' && (
@@ -1303,6 +1643,10 @@ class TaskGroups extends Component {
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
               <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
             </div>
+            <label className={`task-repeat-toggle task-repeat-toggle-modal${draft.loopCheckout ? ' enabled' : ''}`}>
+              <input type="checkbox" checked={draft.loopCheckout === true} onChange={event => this.setState({ groupDraft: { ...draft, loopCheckout: event.target.checked } })} />
+              <span><strong>Loop checkout by default</strong><small>When changed, this applies to every task in the group. Individual tasks can be overridden afterward. Looping stops as each account reaches two orders per SKU in four hours.</small></span>
+            </label>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary" onClick={this.closeGroupModal}>Cancel</button><button className="btn btn-primary" disabled={!String(draft.name || '').trim()} onClick={this.saveGroup}><Icon name="check" size={12} /> {editing ? 'Save Changes' : 'Create Group'}</button></div>
         </div>
@@ -1321,6 +1665,10 @@ class TaskGroups extends Component {
           <div className="modal-body">
             <div className="task-create-summary"><span><Icon name="user" size={14} /> {this.state.selectedAccounts.length} selected</span><strong>{accounts.length} Target accounts</strong></div>
             <div className="form-group"><label className="form-label">Proxy group for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
+            <label className={`task-repeat-toggle task-repeat-toggle-modal${this.state.taskLoopCheckout ? ' enabled' : ''}`}>
+              <input type="checkbox" checked={this.state.taskLoopCheckout === true} onChange={event => this.setState({ taskLoopCheckout: event.target.checked })} />
+              <span><strong>Loop checkout for these tasks</strong><small>After a checkout or decline, keep trying eligible SKUs. Confirmed orders stop at two per account, per SKU, within four hours.</small></span>
+            </label>
             <div className="form-label">Accounts</div>
             <div className="task-account-picker">
               {!accounts.length && <div className="task-account-empty">No accounts are tagged Target. Add them from Accounts first.</div>}

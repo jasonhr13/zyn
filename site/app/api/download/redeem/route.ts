@@ -1,6 +1,13 @@
-const LICENSE_ORIGIN = process.env.RCART_LICENSE_ORIGIN || "https://license.rcart.app";
+import { serviceOriginForRequest } from "../../../domain";
+
 const DOWNLOAD_COOKIE = "rcart_download";
 const DOWNLOAD_SESSION_SECONDS = 24 * 60 * 60;
+
+function licenseOrigin(request: Request) {
+  return process.env.ZYN_LICENSE_ORIGIN
+    || process.env.RCART_LICENSE_ORIGIN
+    || serviceOriginForRequest(request, "license");
+}
 
 function redirect(request: Request, path: string, cookie?: string) {
   const headers = new Headers({
@@ -17,7 +24,7 @@ export async function POST(request: Request) {
   if (!/^[A-Za-z0-9_-]{40,128}$/.test(key)) return redirect(request, "/download?error=invalid");
 
   try {
-    const response = await fetch(`${LICENSE_ORIGIN}/api/download/redeem`, {
+    const response = await fetch(`${licenseOrigin(request)}/api/download/redeem`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

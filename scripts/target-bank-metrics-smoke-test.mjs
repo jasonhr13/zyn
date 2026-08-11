@@ -142,6 +142,10 @@ assert.match(taskGroups, /renderHarvesterDrawer\(\)/);
 assert.match(taskGroups, /className=\{`target-harvester-rail/);
 assert.match(taskGroups, /id="target-harvester-drawer"/);
 assert.match(taskGroups, /aria-controls="target-harvester-drawer"/);
+assert.match(taskGroups, /Proxy bandwidth/);
+assert.match(taskGroups, /Total proxy data/);
+assert.match(taskGroups, /heavy assets blocked/);
+assert.match(taskGroups, /Per cookie/);
 assert.match(taskGroups, /HARVESTER_DRAWER_STORAGE_KEY/);
 assert.doesNotMatch(taskGroups, /renderHarvesterManager\(\)/);
 assert.doesNotMatch(taskGroups, /workerLimit \|\| 'Auto'/);
@@ -156,5 +160,7 @@ assert.doesNotMatch(styles, /\.cookie-bank-health/);
 assert.match(styles, /\.target-harvester-rail \{/);
 assert.match(styles, /\.target-harvester-drawer \{/);
 assert.match(styles, /\.target-harvester-drawer-content \{[^}]*overflow-y: auto;/);
+assert.match(styles, /\.target-harvester-bandwidth-summary \{/);
+assert.match(styles, /\.target-harvester-bandwidth \{ grid-area: bandwidth; \}/);
 
 console.log('Target cookie-bank metrics smoke test passed');

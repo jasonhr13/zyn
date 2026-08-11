@@ -10,6 +10,7 @@ const source = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const ui = source('frontend/src/components/pages/target.js');
 const taskGroups = source('frontend/src/components/pages/task-groups.js');
+const proxiesPage = source('frontend/src/components/pages/proxies.js');
 const pageHandler = source('frontend/src/components/page-handler.js');
 const store = source('frontend/src/components/store.js');
 const runtimePatcher = source('scripts/patch-profile-imap-engines.js');
@@ -21,7 +22,7 @@ const bridge = source('extracted/asar/public/helpers/target-engine.js');
 const farmer = source('native-farmer/shape-farmer.mjs');
 const engine = fs.readFileSync(path.join(
   root,
-  'dist/Zyn-Runtime-Base.app/Contents/Resources/engine/backend.exe',
+  `native-backend/darwin-${process.arch === 'x64' ? 'x64' : 'arm64'}/backend`,
 ));
 
 assert.match(ui, /ipcRenderer\.sendSync\('setTargetTaskProxy', id, proxyListName\)/,
@@ -34,11 +35,13 @@ assert.match(taskGroups, /const displayStatus = this\.proxyStatusFor\(task\) \|\
   'task groups must keep the operational status behind transient proxy feedback');
 assert.match(taskGroups, /const running = statusKind\(status\) === 'running'/,
   'task actions must continue to use the operational status during a proxy failure notice');
-assert.match(taskGroups, /targetHarvesterProxyList/,
-  'task groups must migrate the former shared farmer proxy setting');
+assert.doesNotMatch(taskGroups, /Default Harvester/,
+  'fresh or legacy settings must not create an implicit harvester');
+assert.match(taskGroups, /harvesters = \[\][\s\S]*targetHarvesters: harvesters/,
+  'missing harvester settings must persist an explicit empty list');
 assert.match(taskGroups, /targetThrottleFallbackGroup/,
   'task groups must expose and persist the post-cart throttle fallback setting');
-assert.match(taskGroups, />HARVESTERS</,
+assert.match(taskGroups, />Cookie Harvesters</,
   'task groups must render the global harvester manager summary');
 assert.match(taskGroups, />FALLBACK</,
   'task groups must render the global fallback selector');
@@ -48,6 +51,18 @@ assert.match(taskGroups, /Target Login/,
   'task groups must expose a dedicated login harvester type');
 assert.match(taskGroups, /Target ATC/,
   'task groups must expose a dedicated ATC harvester type');
+assert.match(taskGroups, /\['opera', 'Opera'\]/,
+  'task groups must expose Opera as a managed harvester browser');
+assert.match(taskGroups, /runtime && runtime\.browserPerformance/,
+  'harvester cards must read per-browser performance telemetry');
+assert.match(taskGroups, /Favoring \$\{browserLeader\.label\}/,
+  'automatic harvester cards must identify the browser currently being favored');
+assert.match(taskGroups, /harvesterProxyAvailable/,
+  'harvester UI must detect deleted or unavailable proxy groups');
+assert.match(taskGroups, /label: 'Proxy unavailable'/,
+  'a harvester with a missing proxy group must render an actionable error state');
+assert.equal((proxiesPage.match(/sendSync\('syncTargetHarvesters'\)/g) || []).length, 2,
+  'saving or deleting a proxy group must immediately reconcile managed harvesters');
 assert.match(pageHandler, /targetProxyStatusClear/,
   'proxy feedback must be cleared after a bounded display interval');
 assert.match(store, /proxyEdit && proxyEdit\.pending && isTargetProxyStatusForGroup/,
@@ -66,10 +81,24 @@ assert.match(bridge, /type: 'set-task-proxy'.*proxyGroup: group/,
   'bridge must emit the backend live-edit protocol');
 assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
   'packaged bridge patch must create independent producer process handles');
+assert.match(runtimePatcher, /const harvesterStartFailures = new Map\(\)/,
+  'packaged bridge patch must track fail-closed producer startup errors');
 assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
   'managed harvester configuration must preserve the selected producer type');
+assert.match(harvesterConfig, /!Array\.isArray\(settings\.targetHarvesters\)\) return \[\]/,
+  'missing harvester settings must disable the retired task-owned producer');
+assert.match(harvesterConfig, /'opera'/,
+  'managed harvester configuration must preserve an Opera browser selection');
 assert.match(harvesterProducers, /'--producer=true'/,
   'managed harvesters must run as producer-only processes behind the shared broker');
+assert.match(harvesterProducers, /`--browsers=\$\{config\.browser\}`/,
+  'managed harvesters must pass the selected browser to the farmer process');
+assert.match(harvesterProducers, /config\.proxyListName && !lines\.length/,
+  'managed harvesters must not silently fall back to direct traffic when a proxy group is empty');
+assert.match(harvesterProducers, /not started — proxy group/,
+  'missing proxy groups must produce a clear startup error');
+assert.match(harvesterProducers, /createHash\('sha256'\).*lines\.join/,
+  'proxy-list edits must change the producer fingerprint and restart affected harvesters');
 assert.match(farmer, /u\.pathname === '\/harvesterStatus'/,
   'the shared broker must aggregate per-harvester runtime telemetry');
 assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login'/,
@@ -77,15 +106,11 @@ assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'logi
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',
-  'github.com/secretlair/backend/frontend.EditTask',
-  'github.com/secretlair/backend/bot-base/task.EnqueueRuntimeEdit',
-  'github.com/secretlair/backend/sites/target.(*TargetTask).applyRuntimeEdit',
-  'github.com/secretlair/backend/sites/target.(*TargetTask).applyProxyEdit',
-  'Switched To Local (home IP)',
-  'Could Not Clear Proxy',
-  'Could Not Switch To ',
-  'Switched To ',
-  ' (applies after carting)',
+  'github.com/PolarAIO/Polar-AIO/backend/bot-base/task.EnqueueRuntimeEdit',
+  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeEdit',
+  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeProxy',
+  'Proxy Updated',
+  'Proxy Switch Failed',
 ]) {
   assert.equal(engine.includes(Buffer.from(marker)), true, `backend is missing live-proxy marker: ${marker}`);
 }

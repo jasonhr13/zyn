@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const projectRoot = path.join(__dirname, '..');
-const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
 const requested = String(process.argv[2] || 'all').toLowerCase();
-const architectures = requested === 'all' ? ['arm64', 'x64'] : [requested === 'x86_64' ? 'x64' : requested];
-if (architectures.some(arch => !['arm64', 'x64'].includes(arch))) {
-  console.error('Usage: node scripts/prepare-zyn-runtime-artifacts.cjs [arm64|x64|all]');
+const normalized = requested === 'windows' || requested === 'win-x64' ? 'windows-x64'
+  : (requested === 'x86_64' ? 'x64' : requested);
+const architectures = normalized === 'all' ? ['arm64', 'x64', 'windows-x64'] : [normalized];
+if (architectures.some(arch => !['arm64', 'x64', 'windows-x64'].includes(arch))) {
+  console.error('Usage: node scripts/prepare-zyn-runtime-artifacts.cjs [arm64|x64|windows-x64|all]');
   process.exit(2);
 }
 
@@ -24,30 +24,10 @@ const identity = identityName.startsWith('Developer ID Application:')
   : `Developer ID Application: ${identityName}`;
 const playwrightVersion = '1.61.0';
 const chromiumRevision = '1228';
-const wineName = 'wine-stable-11.0_1-macos-x64.tar.xz';
-const wineUrl = `https://updates.rcart.app/runtimes/${wineName}`;
-const wineSha256 = 'b84ecd14bfb23929b195c874cc2ae45c9218dc7fed002af8c0d108774c9677f9';
-const wineSize = 204981544;
 
 function run(command, args, options = {}) {
   console.log(`$ ${command} ${args.map(arg => JSON.stringify(arg)).join(' ')}`);
   execFileSync(command, args, { cwd: projectRoot, stdio: 'inherit', ...options });
-}
-
-function sha256(file) {
-  const hash = crypto.createHash('sha256');
-  const descriptor = fs.openSync(file, 'r');
-  const buffer = Buffer.allocUnsafe(4 * 1024 * 1024);
-  try {
-    let read = 0;
-    do {
-      read = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (read) hash.update(buffer.subarray(0, read));
-    } while (read);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  return hash.digest('hex');
 }
 
 function notarizeAndStaple(appPath, arch) {
@@ -61,14 +41,43 @@ function notarizeAndStaple(appPath, arch) {
   fs.rmSync(archive, { force: true });
 }
 
-const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
-if (!identities.includes(identity)) {
-  throw new Error(`Missing signing identity: ${identity}. Import its certificate and private key into this Mac's login keychain.`);
+if (architectures.some(arch => arch !== 'windows-x64')) {
+  const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
+  if (!identities.includes(identity)) {
+    throw new Error(`Missing signing identity: ${identity}. Import its certificate and private key into this Mac's login keychain.`);
+  }
 }
 
 fs.mkdirSync(artifactsRoot, { recursive: true });
 
 for (const arch of architectures) {
+  if (arch === 'windows-x64') {
+    const source = path.join(
+      projectRoot,
+      'dist',
+      'Zyn-Runtime-Base.app',
+      'Contents',
+      'Resources',
+      'vendor',
+      'ms-playwright',
+      `chromium-${chromiumRevision}`,
+    );
+    const stage = path.join(stagingRoot, arch, 'chromium');
+    const destination = path.join(stage, 'ms-playwright', `chromium-${chromiumRevision}`);
+    if (!fs.existsSync(path.join(source, 'chrome-win64', 'chrome.exe'))) {
+      throw new Error(`Missing Windows Chromium source: ${source}`);
+    }
+    fs.rmSync(stage, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.cpSync(source, destination, { recursive: true });
+    const archiveName = `chromium-playwright-${playwrightVersion}-${chromiumRevision}-windows-x64.tar.gz`;
+    const archive = path.join(artifactsRoot, archiveName);
+    fs.rmSync(archive, { force: true });
+    run('/usr/bin/tar', ['-czf', archive, '-C', stage, 'ms-playwright']);
+    console.log(`Prepared ${archiveName} (${(fs.statSync(archive).size / 1048576).toFixed(1)} MiB)`);
+    continue;
+  }
+
   const sourceRoot = path.join(projectRoot, 'vendor', `ms-playwright-mac-${arch}`);
   const chromiumSource = path.join(sourceRoot, `chromium-${chromiumRevision}`);
   if (!fs.existsSync(chromiumSource)) throw new Error(`Missing native Chromium source: ${chromiumSource}`);
@@ -97,27 +106,4 @@ for (const arch of architectures) {
   console.log(`Prepared ${archiveName} (${(fs.statSync(archive).size / 1048576).toFixed(1)} MiB)`);
 }
 
-const wineArchive = path.join(artifactsRoot, wineName);
-if (!fs.existsSync(wineArchive) || fs.statSync(wineArchive).size !== wineSize || sha256(wineArchive) !== wineSha256) {
-  fs.rmSync(wineArchive, { force: true });
-  run('/usr/bin/curl', ['--fail', '--location', '--show-error', wineUrl, '-o', wineArchive]);
-}
-if (fs.statSync(wineArchive).size !== wineSize || sha256(wineArchive) !== wineSha256) {
-  throw new Error('The established signed Wine archive failed its pinned size/SHA-256 check.');
-}
-
-const engineSource = path.join(projectRoot, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'engine', 'backend.exe');
-const expectedBackend = contract.immutableResources.find(item => item.path.endsWith('/engine/backend.exe'))?.sha256;
-if (!fs.existsSync(engineSource) || sha256(engineSource) !== expectedBackend) {
-  throw new Error('The runtime base backend.exe does not match the frozen Zyn contract.');
-}
-const engineStage = path.join(stagingRoot, 'engine');
-fs.rmSync(engineStage, { recursive: true, force: true });
-fs.mkdirSync(path.join(engineStage, 'engine'), { recursive: true });
-fs.copyFileSync(engineSource, path.join(engineStage, 'engine', 'backend.exe'));
-const engineName = `checkout-engine-${expectedBackend.slice(0, 16)}-windows-x64.tar.gz`;
-const engineArchive = path.join(artifactsRoot, engineName);
-fs.rmSync(engineArchive, { force: true });
-run('/usr/bin/tar', ['-czf', engineArchive, '-C', engineStage, 'engine']);
-console.log(`Prepared ${engineName} (${(fs.statSync(engineArchive).size / 1048576).toFixed(1)} MiB)`);
-console.log('Zyn runtime artifacts are ready for manifest signing.');
+console.log('Zyn Chromium runtime artifacts are ready for manifest signing.');

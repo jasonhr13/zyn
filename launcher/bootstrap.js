@@ -1,8 +1,8 @@
 'use strict';
 
 // The original Electron application is kept byte-for-byte in app-original.asar.
-// This small bootstrap only translates launches of its bundled Windows binaries
-// into equivalent launches through the Wine runtime carried in the app bundle.
+// This bootstrap supplies Zyn's cross-platform licensing, scheduling, native-engine,
+// runtime-download, and update integration while preserving the reviewed application shell.
 
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -11,6 +11,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
+const { createTaskGroupScheduler } = require('./task-group-scheduler');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
@@ -18,6 +19,9 @@ const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
+const { installCheckoutReporting } = require('./checkout-reporting');
+const { createAnalyticsService } = require('./analytics-recorder');
+const { createPokemonQueueEvents } = require('./pokemon-queue-events');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
@@ -31,9 +35,10 @@ Object.defineProperty(global, '__zynApp', {
 const resources = process.resourcesPath;
 const bundledWine = path.join(resources, 'wine', 'bin', 'wine');
 const originalAsar = path.join(resources, 'app-original.asar');
+const nativeBackend = path.join(resources, 'engine', process.platform === 'win32' ? 'backend.exe' : 'backend');
 const originalSpawn = childProcess.spawn.bind(childProcess);
 const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
-const developerIdentity = 'seaniepokie';
+const localDeveloperIdentity = process.env.ZYN_DEVELOPER_EMAIL || 'developer@localhost';
 const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac');
 if (fs.existsSync(nativePlaywrightBrowsers)) {
   // The native farmer reuses this signed Electron executable as Node. Point Playwright at the
@@ -139,8 +144,6 @@ function wineserverPath() {
 }
 
 const windowsLaunchers = new Set([
-  path.normalize(path.join(resources, 'engine', 'backend')),
-  path.normalize(path.join(resources, 'engine', 'backend.exe')),
   path.normalize(path.join(resources, 'vendor', 'node')),
   path.normalize(path.join(resources, 'vendor', 'node.exe')),
 ]);
@@ -166,12 +169,10 @@ function wineEnvironment(environment) {
 }
 
 function shouldUseWine(command) {
+  if (process.platform === 'win32') return false;
   if (typeof command !== 'string') return false;
   const normalized = path.normalize(path.resolve(command));
-  const remoteEngine = process.env.ZYN_ENGINE_PATH
-    ? path.normalize(path.resolve(process.env.ZYN_ENGINE_PATH))
-    : '';
-  return windowsLaunchers.has(normalized) || (remoteEngine && normalized === remoteEngine);
+  return windowsLaunchers.has(normalized);
 }
 
 childProcess.spawn = function spawnWithBundledWine(command, args, options) {
@@ -185,7 +186,7 @@ childProcess.spawn = function spawnWithBundledWine(command, args, options) {
   return originalSpawn(winePath(), launchArgs, launchOptions);
 };
 
-function configureMacUpdater() {
+function configureUpdater() {
   try {
     const { autoUpdater } = require(path.join(
       originalAsar,
@@ -193,7 +194,9 @@ function configureMacUpdater() {
       'electron-updater',
     ));
     const updateArch = process.arch === 'x64' ? 'x64' : 'arm64';
-    const updateUrl = `https://updates.rcart.app/mac/${updateArch}`;
+    const updateUrl = process.platform === 'win32'
+      ? 'https://updates.rcart.app/windows'
+      : `https://updates.rcart.app/mac/${updateArch}`;
     autoUpdater.setFeedURL({ provider: 'generic', url: updateUrl });
     console.info(`Zyn auto-update feed: ${updateUrl}`);
   } catch (error) {
@@ -269,14 +272,19 @@ function installWindowSizePersistence() {
   });
 }
 
+let taskGroupStore = null;
+let taskGroupScheduler = null;
+let pokemonQueueEvents = null;
+let analyticsService = null;
+
 function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
   const { ipcMain } = require('electron');
-  const store = createTaskGroupStore(app.getPath('userData'));
+  taskGroupStore = createTaskGroupStore(app.getPath('userData'));
 
   ipcMain.on('getTaskGroups', (event) => {
     try {
-      event.returnValue = store.load();
+      event.returnValue = taskGroupStore.load();
     } catch (error) {
       console.error(`Could not load Zyn task groups: ${error.message}`);
       event.returnValue = [];
@@ -284,12 +292,101 @@ function installTaskGroups() {
   });
   ipcMain.on('saveTaskGroups', (event, groups) => {
     try {
-      event.returnValue = store.save(groups);
+      taskGroupStore.save(groups);
+      taskGroupScheduler?.sync();
+      event.returnValue = taskGroupStore.load();
     } catch (error) {
       console.error(`Could not save Zyn task groups: ${error.message}`);
-      try { event.returnValue = store.load(); } catch { event.returnValue = []; }
+      try { event.returnValue = taskGroupStore.load(); } catch { event.returnValue = []; }
     }
   });
+}
+
+function pushTaskGroupSchedule(payload = {}) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+      window.webContents.send('taskGroupSchedule', payload);
+      if (payload.line) window.webContents.send('targetLog', { taskId: '', line: payload.line });
+    }
+  } catch {}
+}
+
+function pushAnalyticsUpdated(payload = {}) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('analyticsUpdated', payload);
+      }
+    }
+  } catch {}
+}
+
+function installAnalytics(authority) {
+  if (!authority) return null;
+  try {
+    const service = createAnalyticsService({
+      dataDirectory: app.getPath('userData'),
+      authority,
+      ipcMain,
+      onUpdated: pushAnalyticsUpdated,
+      logger: console,
+    });
+    const bridgeRecorder = require(path.join(originalAsar, 'public', 'helpers', 'analytics-recorder.js'));
+    bridgeRecorder.setService(service);
+    app.once('will-quit', () => service.dispose());
+    return service;
+  } catch (error) {
+    console.error(`Could not install Zyn analytics: ${error.message}`);
+    return null;
+  }
+}
+
+function validateScheduledTargetProxies(config, dataManager, managedProxyControl) {
+  const settings = dataManager.getSettings?.() || {};
+  const refs = [
+    ...(Array.isArray(config?.tasks) ? config.tasks.map(task => task.proxyListName) : []),
+    settings.targetHarvesterProxyList,
+    settings.targetThrottleFallbackGroup,
+    ...(Array.isArray(settings.targetHarvesters)
+      ? settings.targetHarvesters.map(harvester => harvester && harvester.proxyListName) : []),
+  ].map(value => String(value || '')).filter(value => value.startsWith('managed:'));
+  for (const ref of new Set(refs)) {
+    if (!managedProxyControl) throw new Error('Managed proxy access is unavailable.');
+    managedProxyControl.getProxyLines(ref);
+  }
+}
+
+function installTaskGroupScheduling(authority, managedProxyControl) {
+  if (!FEATURES.taskScheduling || !taskGroupStore) return null;
+  const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+  const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+  taskGroupScheduler = createTaskGroupScheduler({
+    getGroups: () => taskGroupStore.load(),
+    saveGroups: groups => taskGroupStore.save(groups),
+    getAccounts: () => dataManager.getAccounts?.() || [],
+    getProfiles: () => dataManager.getProfiles?.() || [],
+    isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
+    canStart: () => (!authority || authority.cached().ok === true)
+      && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),
+    startTarget: config => {
+      validateScheduledTargetProxies(config, dataManager, managedProxyControl);
+      const window = BrowserWindow.getAllWindows().find(candidate => !candidate.isDestroyed());
+      if (!window) throw new Error('The Zyn window is not ready.');
+      return targetEngine.startTarget(config, window);
+    },
+    stopTarget: taskId => targetEngine.stopTarget(taskId),
+    notify: pushTaskGroupSchedule,
+    log: line => console.info(line),
+  });
+  const syncWhenWindowReady = () => {
+    taskGroupScheduler?.sync();
+    const armed = taskGroupScheduler?.describeArmed() || [];
+    if (armed.length) console.info('[schedule] armed', armed.map(item => `${item.name}: ${item.detail}`).join(' | '));
+  };
+  if (BrowserWindow.getAllWindows().some(window => !window.isDestroyed())) syncWhenWindowReady();
+  else app.once('browser-window-created', () => setTimeout(syncWhenWindowReady, 0));
+  return taskGroupScheduler;
 }
 
 function installProfileImap() {
@@ -309,9 +406,23 @@ function installProfileImap() {
   }
 }
 
-function installProfileImapIpc(authority) {
+function installProfileImapIpc(authority, profileControl) {
   if (!FEATURES.profileImap) return;
   const { ipcMain } = require('electron');
+  if (profileControl) {
+    ipcMain.on('createProfileGroup', (event, name) => {
+      try { event.returnValue = { ok: true, group: profileControl.createProfileGroup(name) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+    ipcMain.on('renameProfileGroup', (event, { from, to } = {}) => {
+      try { event.returnValue = { ok: true, group: profileControl.renameProfileGroup(from, to) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+    ipcMain.on('deleteProfileGroup', (event, name) => {
+      try { event.returnValue = { ok: true, affected: profileControl.deleteProfileGroup(name) }; }
+      catch (error) { event.returnValue = { ok: false, error: error.message }; }
+    });
+  }
   ipcMain.removeHandler('testProfileImap');
   ipcMain.handle('testProfileImap', async (_event, config = {}) => {
     if (authority && authority.cached().ok !== true) {
@@ -365,7 +476,11 @@ function stopAllRunningForLicense() {
       try { taskHandler[name]?.(); } catch {}
     }
   } catch {}
-  try { require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopTarget(); } catch {}
+  try {
+    const nativeEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    nativeEngine.stopTarget?.();
+    nativeEngine.stopPokemonCenter?.();
+  } catch {}
   try { require(path.join(originalAsar, 'public', 'helpers', 'walmart-engine.js')).stopWalmart(); } catch {}
   try {
     const { BrowserWindow } = require('electron');
@@ -386,6 +501,9 @@ function stopRemovedTaskTypes({ removed = [] } = {}) {
     if (taskType === 'pokemoncenter') {
       console.warn('[license] Pokémon Center access removed; stopping its running tasks');
       try { taskHandler?.stopAllPokemonCenter?.(); } catch {}
+      try {
+        require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopPokemonCenter?.();
+      } catch {}
     }
   }
 }
@@ -426,10 +544,10 @@ async function launchTargetAfterRuntime(original, args, authority) {
       config,
       'Preparing Runtime',
       '#f5c96b',
-      status.state === 'downloading' ? `Downloading runtime · ${status.percent || 0}%` : 'Preparing Chromium, Wine, and checkout engine…',
+      status.state === 'downloading' ? `Downloading runtime · ${status.percent || 0}%` : 'Preparing Chromium…',
     );
   }
-  const ready = await waitForRuntime(['chromium', 'wine', 'engine']);
+  const ready = await waitForRuntime(['chromium']);
   if (generation !== pendingTargetRuntimeLaunch || authority.cached().ok !== true) return undefined;
   if (!ready) {
     pushTargetRuntimeState(config, 'Runtime Error', '#ff7b83', 'Runtime setup is paused. Use Retry above.');
@@ -476,12 +594,18 @@ function guardTaskHelpers(authority) {
     console.error(`Could not guard task helpers with the replacement license: ${error.message}`);
   }
 
-  for (const [file, method] of [['target-engine.js', 'startTarget'], ['walmart-engine.js', 'startWalmart']]) {
+  for (const [file, method, taskType] of [
+    ['target-engine.js', 'startTarget', ''],
+    ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
+    ['walmart-engine.js', 'startWalmart', ''],
+  ]) {
     try {
       const engine = require(path.join(originalAsar, 'public', 'helpers', file));
+      if (typeof engine[method] !== 'function') continue;
       const original = engine[method].bind(engine);
       engine[method] = (...args) => {
         if (!allowed()) { blocked(method); return undefined; }
+        if (taskType && !entitled(taskType)) { blocked(method, taskType); return undefined; }
         if (method === 'startTarget' && runtimeManager.enabled) {
           return launchTargetAfterRuntime(original, args, authority);
         }
@@ -525,7 +649,12 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     safeStorage,
     onStatus: status => {
       pushLicenseStatus(status);
-      if (status && status.ok === true) beginRuntimeBootstrap();
+      try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
+      try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
+      if (status && status.ok === true) {
+        beginRuntimeBootstrap();
+        try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
+      }
     },
     onLock: stopAllRunningForLicense,
     onEntitlementsChanged: stopRemovedTaskTypes,
@@ -566,6 +695,33 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
   return authority;
 }
 
+function installNativeHyperAuthority(authority) {
+  if (!authority) return;
+  try {
+    const broker = require(path.join(originalAsar, 'public', 'helpers', 'native-hyper-broker.js'));
+    broker.setAuthority(authority);
+  } catch (error) {
+    console.error(`Could not connect the native Hyper broker to the license authority: ${error.message}`);
+  }
+}
+
+function installPokemonQueueEventStream(authority) {
+  if (!authority) return null;
+  try {
+    const engine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const monitor = createPokemonQueueEvents({
+      authority,
+      setHealth: health => engine.setPokemonQueueStreamHealth?.(health),
+      publish: event => engine.publishPokemonQueueProtection?.(event) === true,
+    });
+    monitor.update(authority.cached());
+    return monitor;
+  } catch (error) {
+    console.error(`Could not start the Pokémon Center queue event stream: ${error.message}`);
+    return null;
+  }
+}
+
 function replaceRetiredLicenseIpc(authority) {
   const { ipcMain } = require('electron');
   // The legacy status handler appends the retired key from settings. Replace the whole handler so
@@ -582,7 +738,7 @@ function enableLocalDeveloperLicense() {
     ok: true,
     reason: 'local developer mode',
     expires: null,
-    discord: { username: developerIdentity, id: '' },
+    discord: { username: localDeveloperIdentity, id: '' },
     at: now(),
     lastGood: now(),
   });
@@ -608,7 +764,7 @@ function enableLocalDeveloperLicense() {
         hwid: 'local-development',
         start: async () => {
           active = true;
-          if (onIdentity) onIdentity({ username: developerIdentity, id: '' });
+          if (onIdentity) onIdentity({ username: localDeveloperIdentity, id: '' });
           if (onFleetControl) onFleetControl({ disabledModules: [], notice: '' });
           return 'ok';
         },
@@ -623,71 +779,48 @@ function enableLocalDeveloperLicense() {
 
 }
 
-function configureDeveloperReporting() {
-  // Central Target/Walmart reporting. Always discard credentials belonging to the retired license
-  // service and preserve the requested development identity independently of license authority.
+function configureAccountReporting(licenseAuthority) {
+  let reporter = null;
+  let taskHandler = null;
   try {
-    const reporter = require(path.join(originalAsar, 'public', 'helpers', 'checkout-reporter.js'));
-    const configureReporter = reporter.configure.bind(reporter);
-    reporter.configure = (next = {}) => configureReporter({
-      ...next,
-      key: '',
-      token: '',
-      discord: developerIdentity,
-      discordId: '',
-    });
-    reporter.configure();
+    reporter = require(path.join(originalAsar, 'public', 'helpers', 'checkout-reporter.js'));
   } catch (error) {
-    console.error(`Could not configure the local reporter identity: ${error.message}`);
+    console.error(`Could not load the central checkout reporter: ${error.message}`);
+  }
+  try {
+    taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
+  } catch (error) {
+    console.error(`Could not load the P-Bandai checkout reporter: ${error.message}`);
   }
 
-  // P-Bandai reports from its Windows Node child instead of checkout-reporter, so enforce the same
-  // identity at that process boundary as well.
-  try {
-    const taskHandler = require(path.join(originalAsar, 'public', 'helpers', 'task-handler.js'));
-    const startPbandai = taskHandler.startPbandai.bind(taskHandler);
-    taskHandler.startPbandai = (options, ...rest) => startPbandai({
-      ...(options || {}),
-      buyerDiscord: developerIdentity,
-      dashboardKey: '',
-    }, ...rest);
-  } catch (error) {
-    console.error(`Could not configure the P-Bandai reporter identity: ${error.message}`);
-  }
+  installCheckoutReporting({
+    reporter,
+    taskHandler,
+    getLicenseStatus: () => licenseAuthority ? licenseAuthority.cached() : null,
+  });
 }
 
-function runWineSelfTest() {
+function runNativeEngineSelfTest() {
   app.whenReady().then(async () => {
-    if (runtimeManager.enabled) {
-      try {
-        await runtimeInitialization;
-        await runtimeManager.waitFor(['wine', 'engine']);
-      } catch (error) {
-        console.error(`ZYN_WINE_SELFTEST runtime setup failed: ${error.message}`);
-        app.exit(1);
-        return;
-      }
-    }
-    const backend = process.env.ZYN_ENGINE_PATH || path.join(resources, 'engine', 'backend');
-    const child = childProcess.spawn(backend, ['-h'], {
-      cwd: path.dirname(backend),
+    const child = childProcess.spawn(nativeBackend, ['-h'], {
+      cwd: path.dirname(nativeBackend),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
     child.stdout.on('data', (data) => { output += data; });
     child.stderr.on('data', (data) => { output += data; });
     child.on('error', (error) => {
-      console.error(`ZYN_WINE_SELFTEST failed: ${error.message}`);
+      console.error(`ZYN_ENGINE_SELFTEST failed: ${error.message}`);
       app.exit(1);
     });
     child.on('exit', (code) => {
       console.log(output.trim());
-      console.log(`ZYN_WINE_SELFTEST exit=${code}`);
+      console.log(`ZYN_ENGINE_SELFTEST exit=${code}`);
       app.exit(code || 0);
     });
     setTimeout(() => {
       try { child.kill('SIGKILL'); } catch {}
-      console.error('ZYN_WINE_SELFTEST timed out');
+      console.error('ZYN_ENGINE_SELFTEST timed out');
       app.exit(124);
     }, 30000).unref();
   });
@@ -696,6 +829,9 @@ function runWineSelfTest() {
 // Wine keeps one server per prefix. Stop that private server after Zyn's own
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
+  try { taskGroupScheduler?.dispose(); } catch {}
+  try { pokemonQueueEvents?.dispose(); } catch {}
+  if (process.platform === 'win32') return;
   const prefix = winePrefix();
   const wineserver = wineserverPath();
   if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
@@ -708,27 +844,31 @@ app.on('will-quit', () => {
   } catch {}
 });
 
-if (!fs.existsSync(originalAsar) || (runtimeMode === 'bundled' && !fs.existsSync(bundledWine))) {
-  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'bundled Wine runtime';
+if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
+  const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'native checkout backend';
   dialog.showErrorBox('Zyn could not start', `The ${missing} is missing from the app bundle.`);
   app.quit();
-} else if (process.env.ZYN_WINE_SELFTEST === '1') {
-  runWineSelfTest();
+} else if (process.env.ZYN_ENGINE_SELFTEST === '1' || process.env.ZYN_WINE_SELFTEST === '1') {
+  runNativeEngineSelfTest();
 } else {
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroups();
-  installProfileImap();
+  const profileImapControl = installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
-  installProfileImapIpc(licenseAuthority);
+  analyticsService = installAnalytics(licenseAuthority);
+  installNativeHyperAuthority(licenseAuthority);
+  pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);
+  installProfileImapIpc(licenseAuthority, profileImapControl);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();
   }
-  configureMacUpdater();
-  configureDeveloperReporting();
+  installTaskGroupScheduling(licenseAuthority, managedProxyControl);
+  configureUpdater();
+  configureAccountReporting(licenseAuthority);
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
     ? installTaskTypeIpcGuard({
         ipcMain: require('electron').ipcMain,

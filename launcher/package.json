@@ -1,10 +1,11 @@
 {
   "name": "zyn-macos-launcher",
   "productName": "Zyn",
-  "version": "1.6.79",
+  "version": "1.6.88",
   "private": true,
   "main": "bootstrap.js",
   "dependencies": {
-    "imapflow": "1.6.5"
+    "imapflow": "1.6.5",
+    "ws": "8.21.3"
   }
 }

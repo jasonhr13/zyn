@@ -12,6 +12,7 @@ export const SHAPE_BROWSER_CANDIDATES = Object.freeze([
   Object.freeze({ key: 'brave', label: 'Brave', channel: 'chromium', installedExecutable: 'brave' }),
   Object.freeze({ key: 'vivaldi', label: 'Vivaldi', channel: 'chromium', installedExecutable: 'vivaldi' }),
   Object.freeze({ key: 'yandex', label: 'Yandex', channel: 'chromium', installedExecutable: 'yandex' }),
+  Object.freeze({ key: 'opera', label: 'Opera', channel: 'chromium', installedExecutable: 'opera' }),
   Object.freeze({ key: 'chromium', label: 'Chromium', channel: 'chromium' }),
 ]);
 
@@ -59,6 +60,7 @@ export function installedBrowserExecutablePaths(name, options = {}) {
     const macExecutables = {
       vivaldi: ['Vivaldi.app', 'Vivaldi'],
       yandex: ['Yandex.app', 'Yandex'],
+      opera: ['Opera.app', 'Opera'],
     };
     const executable = macExecutables[name];
     if (!executable) return [];
@@ -82,6 +84,24 @@ export function installedBrowserExecutablePaths(name, options = {}) {
       return [localAppData, programFiles, programFilesX86]
         .map(root => path.win32.join(root, 'Yandex', 'YandexBrowser', 'Application', 'browser.exe'));
     }
+    if (name === 'opera') {
+      return [localAppData, programFiles, programFilesX86]
+        .flatMap(root => [
+          path.win32.join(root, 'Programs', 'Opera', 'opera.exe'),
+          path.win32.join(root, 'Programs', 'Opera', 'launcher.exe'),
+          path.win32.join(root, 'Opera', 'opera.exe'),
+          path.win32.join(root, 'Opera', 'launcher.exe'),
+        ]);
+    }
+  }
+
+  if (platform === 'linux' && name === 'opera') {
+    return [
+      '/usr/bin/opera',
+      '/usr/bin/opera-stable',
+      '/opt/opera/opera',
+      '/snap/bin/opera',
+    ];
   }
 
   return [];
@@ -110,8 +130,14 @@ export function shapeBrowserLaunchOptions(
   return options;
 }
 
-export function shapeBrowserCandidates(selection = 'auto') {
+export function normalizeShapeBrowserSelection(selection = 'auto') {
   const selected = String(selection || 'auto').trim().toLowerCase();
+  return selected === 'auto' || SHAPE_BROWSER_CANDIDATES.some(candidate => candidate.key === selected)
+    ? selected : 'auto';
+}
+
+export function shapeBrowserCandidates(selection = 'auto') {
+  const selected = normalizeShapeBrowserSelection(selection);
   return selected === 'auto'
     ? SHAPE_BROWSER_CANDIDATES
     : SHAPE_BROWSER_CANDIDATES.filter(candidate => candidate.key === selected);

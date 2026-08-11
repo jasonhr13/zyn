@@ -1,35 +1,39 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import "./globals.css";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "rcart.app";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
+export function generateMetadata(): Metadata {
+  const origin = "https://zynbot.app";
 
   return {
-    title: "Zyn — Precision retail operations",
-    description: "Monitor products, organize tasks, and run checkout operations from one precise desktop workspace.",
+    title: "Zyn — Target + Pokémon Center US Automation",
+    description: "Focused Target and Pokémon Center US monitoring and checkout automation in one desktop app. Join the free beta.",
     metadataBase: new URL(origin),
-    icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/favicon.png", type: "image/png", sizes: "64x64" },
+        { url: "/zyn-icon.png", type: "image/png", sizes: "1024x1024" },
+      ],
+      shortcut: "/favicon.png",
+      apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    },
     openGraph: {
-      title: "Zyn — The checkout command center built for the drop.",
-      description: "Monitor products, organize every task, and run checkout operations from one focused desktop workspace.",
+      title: "Zyn — Target + Pokémon Center US Automation",
+      description: "Focused checkout automation for Target and Pokémon Center US. Join the free beta and get one year free after paid access launches.",
       type: "website",
       url: origin,
       images: [{
-        url: `${origin}/og.png`,
+        url: `${origin}/og-retailers-beta.png`,
         width: 1200,
         height: 630,
-        alt: "Zyn — The checkout command center built for the drop.",
+        alt: "Zyn — Target and Pokémon Center US automation",
       }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Zyn — The checkout command center built for the drop.",
-      description: "Precision retail operations from one focused desktop workspace.",
-      images: [`${origin}/og.png`],
+      title: "Zyn — Target + Pokémon Center US Automation",
+      description: "Target and Pokémon Center US automation for desktop. Free during beta, plus one year free for every beta user.",
+      images: [`${origin}/og-retailers-beta.png`],
     },
   };
 }

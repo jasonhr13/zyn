@@ -340,7 +340,8 @@ class Target extends Component {
   // ── account -> profile matching ────────────────────────────────────────────
   profileForAccount = (accountId) => {
     const { accounts = [], profiles = {} } = this.props;
-    const list = profiles.list || profiles.profiles || (Array.isArray(profiles) ? profiles : []);
+    const list = (profiles.list || profiles.profiles || (Array.isArray(profiles) ? profiles : []))
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
     const acct = accounts.find(a => String(a.id) === String(accountId));
     if (!acct) return null;
     const email = String(acct.email || '').trim().toLowerCase();

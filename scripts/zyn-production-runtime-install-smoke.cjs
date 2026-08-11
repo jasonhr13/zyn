@@ -23,7 +23,6 @@ async function main() {
     platform: 'darwin',
     arch,
     root,
-    checkRosetta: async () => true,
     onStatus(status) {
       const progress = `${status.state}:${Math.floor((status.percent || 0) / 10) * 10}`;
       if (progress !== lastProgress) {
@@ -37,8 +36,7 @@ async function main() {
   assert.equal(status.ready, true);
   assert.equal(status.state, 'ready');
   assert.ok(fs.existsSync(process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH));
-  assert.ok(fs.existsSync(process.env.ZYN_WINE_PATH));
-  assert.ok(fs.existsSync(process.env.ZYN_ENGINE_PATH));
+  assert.deepEqual(Object.keys(status.items), ['chromium']);
   console.log(JSON.stringify({
     ok: true,
     arch,

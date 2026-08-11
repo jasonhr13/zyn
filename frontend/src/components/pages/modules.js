@@ -5,34 +5,15 @@ import Icon from '../icon';
 const MODULES = [
   {
     path: '/task-groups',
-    name: 'Task Groups',
+    name: 'Target',
     icon: 'layers',
     description: 'Organize Target watch lists and account tasks into independently managed workspaces.',
-  },
-  {
-    path: '/pbandai',
-    name: 'Bandai',
-    icon: 'ticket',
-    description: 'Product monitoring, account sessions, coupon checks, and checkout tasks.',
-  },
-  {
-    path: '/tasks',
-    name: 'Secret Lair',
-    icon: 'sparkle',
-    description: 'Create profile-based tasks and manage queue passes from the existing workspace.',
-  },
-  {
-    path: '/round1',
-    name: 'Round1',
-    icon: 'game',
-    description: 'Configure campaign signups, pickup stores, proxies, and registration runs.',
-    taskType: 'round1',
   },
   {
     path: '/pokemoncenter',
     name: 'Pokémon Center',
     icon: 'ticket',
-    description: 'Monitor the queue, select products, and run account-backed checkout sessions.',
+    description: 'Run profile-based US guest checkout tasks with queue handling and manual captcha solving.',
     taskType: 'pokemoncenter',
   },
 ];
@@ -49,7 +30,7 @@ export default function Modules({ taskTypes = {} }) {
           <span className="module-hero-mark"><Icon name="layers" size={22} /></span>
           <div>
             <h1>Choose a task workspace</h1>
-            <p>Available workspaces are synced with your Zyn account. Task engines and their controls are unchanged.</p>
+            <p>Available workspaces are synced with your Zyn account.</p>
           </div>
         </section>
         <div className="module-grid">

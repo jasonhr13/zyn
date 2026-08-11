@@ -8,6 +8,10 @@
     {
       "pattern": "license.rcart.app",
       "custom_domain": true
+    },
+    {
+      "pattern": "license.zynbot.app",
+      "custom_domain": true
     }
   ],
   "assets": {
@@ -21,6 +25,20 @@
       "database_name": "hope-license",
       "database_id": "a6aa8a05-ca0c-4d7d-beca-ba1ba0f906f8",
       "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "POKEMON_QUEUE_RELAY",
+        "class_name": "PokemonQueueRelay"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PokemonQueueRelay"]
     }
   ],
   "r2_buckets": [

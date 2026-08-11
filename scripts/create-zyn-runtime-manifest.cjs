@@ -8,19 +8,17 @@ const { execFileSync } = require('child_process');
 const { MANIFEST_PUBLIC_KEY, MANIFEST_PATH } = require('../launcher/runtime-manager');
 
 const projectRoot = path.join(__dirname, '..');
-const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
 const artifactsRoot = path.join(projectRoot, 'release', 'runtime-artifacts');
 const manifestName = path.basename(MANIFEST_PATH);
 const keychainService = 'com.thwebco.zyn.runtime-signing';
 const keychainAccount = 'manifest-private-key';
 const playwrightVersion = '1.61.0';
 const chromiumRevision = '1228';
-const wineName = 'wine-stable-11.0_1-macos-x64.tar.xz';
-const engineSourceSha256 = contract.immutableResources
-  .find(item => item.path.endsWith('/engine/backend.exe'))?.sha256;
-const engineName = `checkout-engine-${engineSourceSha256.slice(0, 16)}-windows-x64.tar.gz`;
 
 function chromiumName(arch) {
+  if (arch === 'windows-x64') {
+    return `chromium-playwright-${playwrightVersion}-${chromiumRevision}-windows-x64.tar.gz`;
+  }
   return `chromium-playwright-${playwrightVersion}-${chromiumRevision}-macos-${arch}.tar.xz`;
 }
 
@@ -60,11 +58,11 @@ if (process.argv.includes('--verify-key')) {
 
 const chromiumArm = fileInfo(chromiumName('arm64'));
 const chromiumX64 = fileInfo(chromiumName('x64'));
-const wine = fileInfo(wineName);
-const engine = fileInfo(engineName);
+const chromiumWindowsX64 = fileInfo(chromiumName('windows-x64'));
 
 function chromium(arch, info) {
-  const folder = arch === 'x64' ? 'chrome-mac-x64' : 'chrome-mac-arm64';
+  const windows = arch === 'windows-x64';
+  const folder = windows ? 'chrome-win64' : (arch === 'x64' ? 'chrome-mac-x64' : 'chrome-mac-arm64');
   const archive = chromiumName(arch);
   return {
     label: 'Chromium',
@@ -74,44 +72,22 @@ function chromium(arch, info) {
     size: info.size,
     sha256: info.sha256,
     root: 'ms-playwright',
-    entry: `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-    verify: `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app`,
-    format: 'tar.xz',
-  };
-}
-
-function wineItem(requiresRosetta) {
-  return {
-    label: 'Wine',
-    version: '11.0_1',
-    archive: wineName,
-    url: `/runtimes/${wineName}`,
-    size: wine.size,
-    sha256: wine.sha256,
-    entry: 'Wine Stable.app/Contents/Resources/wine/bin/wine',
-    verify: 'Wine Stable.app',
-    format: 'tar.xz',
-    ...(requiresRosetta ? { requiresRosetta: true } : {}),
+    entry: windows
+      ? `ms-playwright/chromium-${chromiumRevision}/${folder}/chrome.exe`
+      : `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    verify: windows
+      ? `ms-playwright/chromium-${chromiumRevision}/${folder}/chrome.exe`
+      : `ms-playwright/chromium-${chromiumRevision}/${folder}/Google Chrome for Testing.app`,
+    format: windows ? 'tar.gz' : 'tar.xz',
   };
 }
 
 const payload = {
   generatedAt: new Date().toISOString(),
   platforms: {
-    'darwin-arm64': { chromium: chromium('arm64', chromiumArm), wine: wineItem(true) },
-    'darwin-x64': { chromium: chromium('x64', chromiumX64), wine: wineItem(false) },
-  },
-  engine: {
-    label: 'Checkout engine',
-    version: `sha256-${engineSourceSha256.slice(0, 16)}`,
-    archive: engineName,
-    url: `/runtimes/${engineName}`,
-    size: engine.size,
-    sha256: engine.sha256,
-    sourceSha256: engineSourceSha256,
-    entry: 'engine/backend.exe',
-    verify: 'engine/backend.exe',
-    format: 'tar.gz',
+    'darwin-arm64': { chromium: chromium('arm64', chromiumArm) },
+    'darwin-x64': { chromium: chromium('x64', chromiumX64) },
+    'win32-x64': { chromium: chromium('windows-x64', chromiumWindowsX64) },
   },
 };
 const document = {
@@ -122,5 +98,6 @@ const document = {
 const output = path.join(artifactsRoot, manifestName);
 fs.writeFileSync(output, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
 console.log(`Signed Zyn runtime manifest: ${output}`);
-console.log(`ARM runtime ${(chromiumArm.size + wine.size + engine.size) / 1048576 | 0} MiB`);
-console.log(`Intel runtime ${(chromiumX64.size + wine.size + engine.size) / 1048576 | 0} MiB`);
+console.log(`ARM runtime ${chromiumArm.size / 1048576 | 0} MiB`);
+console.log(`Intel runtime ${chromiumX64.size / 1048576 | 0} MiB`);
+console.log(`Windows runtime ${chromiumWindowsX64.size / 1048576 | 0} MiB`);

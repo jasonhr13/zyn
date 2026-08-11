@@ -5,19 +5,23 @@
     "runtime-paths.js": "fc0535fe8243b6acdfa5497134bf481580399332663466fdd3cc628574eaf223",
     "shape-bandwidth.mjs": {
       "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
-      "sha256": "7b706d784bbdfbb01391b38e379dd211a73048a45e340e22fac7648395b2fcbc",
-      "adaptation": "Retain the existing image/media/font bandwidth toggle while adopting the upstream native farmer."
+      "sha256": "6b7ba30428163122e58e0d8094a4b5c366a2632c63fee1b46ddf7d7c7e1adfec",
+      "adaptation": "Retain the existing image/media/font bandwidth toggle and add Chromium wire-transfer accounting that excludes cache and locally fulfilled requests."
     },
     "shape-browser-pool.mjs": {
       "upstreamSha256": "b8cb1d5353f472513609ba9eea6349361d5c1e2069efc4d9e4fd098ecc3f981b",
-      "sha256": "d39638bfc1db645c40320b52b50daaced366f59d5c87cb4cc5b338bfc3b9fb45",
-      "adaptation": "Keep New Headless and page-stability probing, while allowing each managed harvester to select any one detected browser or the automatic browser pool."
+      "sha256": "09b472eeeeef1df3604e1e298c8bf3f4aec65fc082466be46689654b1fee50e9",
+      "adaptation": "Keep New Headless and page-stability probing, while allowing each managed harvester to select any one detected browser, including an installed Opera browser, or the automatic browser pool."
+    },
+    "shape-browser-optimizer.mjs": {
+      "sha256": "eb560a21929b5631daa7ccd681caa0282c03cd701842f3fa7112fdc2d4d94159",
+      "adaptation": "Adaptive automatic-pool scheduling that explores every available browser, then favors measured cookie success, yield, latency, and bytes-per-cookie efficiency without letting one browser consume every worker."
     },
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "bc1f8280a85812c2ec7846e9aac49be8e5e90522d7ab92fef541565c57e52320",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry, browser selection, configurable worker pacing, and the selectable Target ATC V2 synthetic-PDP flow."
+      "sha256": "0ae51b6c44476316e77f1f2804976bed05c09f8c3747c89b54f81813dbf6028e",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, adaptive performance-based browser selection, configurable worker pacing, and the selectable Target ATC V2 synthetic-PDP flow."
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",

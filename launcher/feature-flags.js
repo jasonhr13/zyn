@@ -1,7 +1,7 @@
 'use strict';
 
 // Release capabilities stay explicit so every packaged build can be verified independently.
-const APP_RELEASE = 'R8.5';
+const APP_RELEASE = 'R8.14';
 
 const FEATURES = Object.freeze({
   designShell: true,
@@ -12,7 +12,7 @@ const FEATURES = Object.freeze({
   profileImap: true,
   managedProxies: true,
   cloudBackup: false,
-  taskScheduling: false,
+  taskScheduling: true,
   isolatedRenderer: false,
 });
 

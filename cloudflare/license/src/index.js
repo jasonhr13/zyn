@@ -15,11 +15,36 @@ const MAX_PROXY_LINES = 50000;
 const MAX_MANAGED_LISTS = 20;
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const BACKUP_RETENTION = 10;
+const MAX_HYPER_REQUEST_BYTES = 2 * 1024 * 1024;
+const MAX_HYPER_RESPONSE_BYTES = 4 * 1024 * 1024;
+const HYPER_TIMEOUT_MS = 30 * 1000;
+const HYPER_RATE_WINDOW_MS = 60 * 1000;
+const HYPER_RATE_MAX_REQUESTS = 1200;
+const ANALYTICS_BATCH_MAX = 20;
+const ANALYTICS_ITEMS_MAX = 20;
+const ANALYTICS_TEXT_MAX = 500;
+const ANALYTICS_MAX_AGE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+const ANALYTICS_FUTURE_SKEW_MS = 5 * 60 * 1000;
 // D1 limits both a string and a complete row to 2,000,000 bytes. Keep headroom for the remaining
 // columns and AES-GCM/base64 overhead; unusually incompressible pools get a useful split-list error.
 const MAX_STORED_PROXY_CHARS = 1800000;
 const COMPRESSED_PROXY_PREFIX = 'gz1:';
-const DOWNLOAD_SITE_ORIGIN = 'https://rcart.app';
+const DOWNLOAD_SITE_ORIGIN = 'https://zynbot.app';
+const HYPER_SERVICE_NAME = 'hyper';
+const POKEMON_QUEUE_SERVICE_NAME = 'pokemon-queue-events';
+const POKEMON_QUEUE_UPSTREAM = 'wss://polar-wss-production.up.railway.app';
+const POKEMON_QUEUE_UPSTREAM_VERSION = 'v0.0.45';
+const POKEMON_QUEUE_WIRE_KEY_HEX = '7011fb72b65c75f8212859f17b895cc76613b093eff302f79a27eda1b51d4ebb';
+const POKEMON_QUEUE_ROTATE_MS = 10 * 60 * 1000;
+const POKEMON_QUEUE_RECONNECT_MAX_MS = 30 * 1000;
+const POKEMON_QUEUE_MAX_MESSAGE_BYTES = 1024 * 1024;
+const HYPER_UPSTREAMS = Object.freeze({
+  reese84: 'https://incapsula.hypersolutions.co/reese84',
+  'datadome-tags': 'https://datadome.hypersolutions.co/tags',
+  'datadome-interstitial': 'https://datadome.hypersolutions.co/interstitial',
+  'datadome-slider': 'https://datadome.hypersolutions.co/slider',
+  'incapsula-utmvc': 'https://incapsula.hypersolutions.co/utmvc',
+});
 // Target is the always-available base module. Optional task types are registered here and inserted
 // into D1 on first use, so adding a future module does not require another schema redesign.
 const TASK_TYPE_REGISTRY = Object.freeze([
@@ -61,6 +86,424 @@ async function proxyEncryptionKey(env) {
   const bytes = base64UrlToBytes(String(env.PROXY_ENCRYPTION_KEY || ''));
   if (bytes.length !== 32) throw new Error('Managed proxy encryption key is not configured.');
   return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function serviceConfigEncryptionKey(env) {
+  const bytes = base64UrlToBytes(String(env.SERVICE_CONFIG_ENCRYPTION_KEY || ''));
+  if (bytes.length !== 32) throw new Error('Service configuration encryption key is not configured.');
+  return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+function serviceConfigAdditionalData(name) {
+  return encoder.encode(`zyn-service-config:${name}:v1`);
+}
+
+async function encryptServiceCredential(name, value, env) {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: serviceConfigAdditionalData(name) },
+    await serviceConfigEncryptionKey(env),
+    encoder.encode(value),
+  );
+  return {
+    encryptedValue: bytesToBase64Url(new Uint8Array(encrypted)),
+    iv: bytesToBase64Url(iv),
+    fingerprint: (await sha256(value)).slice(0, 16),
+  };
+}
+
+async function decryptServiceCredential(row, env) {
+  const plain = await crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: base64UrlToBytes(String(row.iv || '')),
+      additionalData: serviceConfigAdditionalData(String(row.name || '')),
+    },
+    await serviceConfigEncryptionKey(env),
+    base64UrlToBytes(String(row.encrypted_value || '')),
+  );
+  return decoder.decode(plain);
+}
+
+function hyperCredentialInput(body) {
+  const apiKey = String(body && body.apiKey || '').trim();
+  if (apiKey.length < 8 || apiKey.length > 512 || /[\0\r\n]/.test(apiKey)) {
+    return { error: 'Enter a valid Hyper API key between 8 and 512 characters.' };
+  }
+  return { apiKey };
+}
+
+function pokemonQueueCredentialInput(body) {
+  const licenseKey = String(body && body.licenseKey || '').trim();
+  if (licenseKey.length < 8 || licenseKey.length > 128 || /[\0\r\n]/.test(licenseKey)) {
+    return { error: 'Enter a valid queue event license between 8 and 128 characters.' };
+  }
+  return { licenseKey };
+}
+
+function serviceCredentialJson(row) {
+  return {
+    configured: Boolean(row),
+    fingerprint: row ? String(row.fingerprint || '') : '',
+    updatedAt: row ? Number(row.updated_at) || 0 : 0,
+  };
+}
+
+async function serviceCredentialRow(env, name) {
+  return env.DB.prepare(`
+    SELECT name, encrypted_value, iv, fingerprint, created_at, updated_at
+    FROM service_config WHERE name = ?
+  `).bind(name).first();
+}
+
+async function serviceCredentialValue(env, name) {
+  const row = await serviceCredentialRow(env, name);
+  return row ? decryptServiceCredential(row, env) : '';
+}
+
+function hexToBytes(value) {
+  if (!/^(?:[a-f0-9]{2})+$/i.test(String(value || ''))) throw new Error('Invalid hexadecimal value.');
+  return Uint8Array.from(String(value).match(/.{2}/g), (pair) => Number.parseInt(pair, 16));
+}
+
+function pokemonQueueUpstreamUrl(licenseKey) {
+  const url = new URL(POKEMON_QUEUE_UPSTREAM);
+  // Privacy boundary: the upstream protocol requires these two query parameters. Do not add
+  // user, device, task, product, presence, telemetry, cookie, Origin, or custom-header data.
+  url.searchParams.set('key', String(licenseKey || ''));
+  url.searchParams.set('version', POKEMON_QUEUE_UPSTREAM_VERSION);
+  return url.toString();
+}
+
+function pokemonQueueMessageData(message) {
+  let data = message && message.data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch { return null; }
+  }
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+}
+
+function normalizePokemonQueueEvent(message) {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  const envelopeType = String(message.type || '').trim().toLowerCase();
+  const data = pokemonQueueMessageData(message);
+  if (!data) return null;
+
+  if (envelopeType === 'cloud-ping') {
+    const site = String(data.site || '').replace(/[\s_-]/g, '').toLowerCase();
+    const eventType = String(data.type || '').trim().toLowerCase();
+    if (site !== 'pokemoncenter') return null;
+    if (eventType === 'queue is up!') return { kind: 'queue' };
+    if (eventType === 'hcaptcha is up (stage 2)') return { kind: 'captcha' };
+    return null;
+  }
+
+  if (envelopeType === 'zephyr-ping') {
+    const eventType = String(data.type || '').trim().toLowerCase();
+    if (eventType === 'pokemon_center_queue') return { kind: 'queue' };
+    if (eventType === 'pokemon_center_captcha') return { kind: 'captcha' };
+  }
+  return null;
+}
+
+async function pokemonQueueMessageBytes(value) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return new Uint8Array(await value.arrayBuffer());
+  return null;
+}
+
+async function decodePokemonQueueMessage(value, subtle = crypto.subtle) {
+  const bytes = await pokemonQueueMessageBytes(value);
+  if (!bytes || bytes.length < 29 || bytes.length > POKEMON_QUEUE_MAX_MESSAGE_BYTES) return null;
+  const key = await subtle.importKey('raw', hexToBytes(POKEMON_QUEUE_WIRE_KEY_HEX), 'AES-GCM', false, ['decrypt']);
+  let plain;
+  try {
+    plain = await subtle.decrypt(
+      { name: 'AES-GCM', iv: bytes.subarray(0, 12), tagLength: 128 },
+      key,
+      bytes.subarray(12),
+    );
+  } catch { return null; }
+  try {
+    const parsed = JSON.parse(decoder.decode(plain));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+}
+
+function pokemonQueueReconnectDelay(attempt) {
+  return Math.min(POKEMON_QUEUE_RECONNECT_MAX_MS, 1000 * (2 ** Math.min(5, Math.max(0, attempt))));
+}
+
+export class PokemonQueueRelay {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+    this.upstream = null;
+    this.candidate = null;
+    this.endedSockets = new WeakSet();
+    this.reconnectAttempt = 0;
+    this.sequence = 0;
+    this.health = {
+      configured: false,
+      connected: false,
+      connecting: false,
+      lastConnectedAt: 0,
+      lastMessageAt: 0,
+      lastEventAt: 0,
+    };
+  }
+
+  publicHealth() {
+    return {
+      type: 'pokemon-center-queue-health',
+      configured: this.health.configured === true,
+      connected: this.health.connected === true,
+      connecting: this.health.connecting === true,
+      lastConnectedAt: Number(this.health.lastConnectedAt) || 0,
+      lastMessageAt: Number(this.health.lastMessageAt) || 0,
+      lastEventAt: Number(this.health.lastEventAt) || 0,
+    };
+  }
+
+  clients() {
+    return this.state.getWebSockets().filter((socket) => socket.readyState === 1);
+  }
+
+  broadcast(payload) {
+    const encoded = JSON.stringify(payload);
+    for (const socket of this.clients()) {
+      try { socket.send(encoded); } catch {}
+    }
+  }
+
+  async scheduleAlarm(delay) {
+    await this.state.storage.setAlarm(Date.now() + Math.max(1000, Number(delay) || 1000));
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === '/client') {
+      if (String(request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
+        return new Response('WebSocket upgrade required.', { status: 426 });
+      }
+      const [client, server] = Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      server.serializeAttachment({ role: 'licensed-client' });
+      server.send(JSON.stringify(this.publicHealth()));
+      this.ensureUpstream().catch(() => this.upstreamEnded(this.candidate));
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    if (url.pathname === '/reconfigure' && request.method === 'POST') {
+      await this.ensureUpstream({ replace: true });
+      return new Response(JSON.stringify(this.publicHealth()), {
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
+    }
+    return new Response('Not found.', { status: 404 });
+  }
+
+  async ensureUpstream({ replace = false } = {}) {
+    const activeClients = this.clients().length;
+    let licenseKey = '';
+    try { licenseKey = await serviceCredentialValue(this.env, POKEMON_QUEUE_SERVICE_NAME); }
+    catch {
+      this.health.configured = false;
+      this.health.connecting = false;
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    this.health.configured = Boolean(licenseKey);
+    if (!licenseKey) {
+      await this.stopUpstream();
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    if (!activeClients) {
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    if (this.candidate && (this.candidate.readyState === 0 || this.candidate.readyState === 1)) return;
+    if (!replace && this.upstream && this.upstream.readyState === 1) return;
+
+    let socket;
+    try {
+      // The Web Standard constructor has no custom-header option. This connector also never calls
+      // send(), making it receive-only apart from automatic WebSocket control frames.
+      socket = new WebSocket(pokemonQueueUpstreamUrl(licenseKey));
+    } catch {
+      this.health.connected = false;
+      this.health.connecting = false;
+      this.broadcast(this.publicHealth());
+      await this.scheduleReconnect();
+      return;
+    }
+    this.candidate = socket;
+    this.health.connecting = true;
+    this.broadcast(this.publicHealth());
+
+    socket.addEventListener('open', () => {
+      if (this.candidate !== socket) {
+        try { socket.close(1000); } catch {}
+        return;
+      }
+      const previous = this.upstream;
+      this.candidate = null;
+      this.upstream = socket;
+      this.reconnectAttempt = 0;
+      this.health.connected = true;
+      this.health.connecting = false;
+      this.health.lastConnectedAt = Date.now();
+      this.broadcast(this.publicHealth());
+      this.scheduleAlarm(POKEMON_QUEUE_ROTATE_MS).catch(() => {});
+      if (previous && previous !== socket) {
+        try { previous.close(1000); } catch {}
+      }
+    });
+    socket.addEventListener('message', (event) => {
+      this.handleUpstreamMessage(socket, event.data).catch(() => {});
+    });
+    socket.addEventListener('error', () => this.upstreamEnded(socket));
+    socket.addEventListener('close', () => this.upstreamEnded(socket));
+  }
+
+  async handleUpstreamMessage(socket, value) {
+    if (socket !== this.upstream) return;
+    const message = await decodePokemonQueueMessage(value);
+    if (!message) return;
+    this.health.lastMessageAt = Date.now();
+    const event = normalizePokemonQueueEvent(message);
+    if (!event) {
+      this.broadcast(this.publicHealth());
+      return;
+    }
+    this.health.lastEventAt = Date.now();
+    this.sequence += 1;
+    this.broadcast({
+      type: 'pokemon-center-protection',
+      kind: event.kind,
+      detectedAt: this.health.lastEventAt,
+      sequence: this.sequence,
+    });
+  }
+
+  async scheduleReconnect() {
+    if (!this.clients().length || !this.health.configured) return;
+    const delay = pokemonQueueReconnectDelay(this.reconnectAttempt);
+    this.reconnectAttempt += 1;
+    await this.scheduleAlarm(delay);
+  }
+
+  upstreamEnded(socket) {
+    if (!socket || this.endedSockets.has(socket)) return;
+    this.endedSockets.add(socket);
+    const wasCandidate = this.candidate === socket;
+    const wasUpstream = this.upstream === socket;
+    if (wasCandidate) this.candidate = null;
+    if (wasUpstream) this.upstream = null;
+    if (!wasCandidate && !wasUpstream) return;
+    if (this.upstream && this.upstream.readyState === 1) {
+      this.health.connected = true;
+      this.health.connecting = false;
+      this.scheduleAlarm(60 * 1000).catch(() => {});
+      return;
+    }
+    this.health.connected = false;
+    this.health.connecting = false;
+    this.broadcast(this.publicHealth());
+    this.scheduleReconnect().catch(() => {});
+  }
+
+  async stopUpstream() {
+    const sockets = [this.candidate, this.upstream].filter(Boolean);
+    this.candidate = null;
+    this.upstream = null;
+    this.health.connected = false;
+    this.health.connecting = false;
+    for (const socket of sockets) {
+      this.endedSockets.add(socket);
+      try { socket.close(1000); } catch {}
+    }
+    try { await this.state.storage.deleteAlarm(); } catch {}
+  }
+
+  async alarm() {
+    if (!this.clients().length) {
+      await this.stopUpstream();
+      return;
+    }
+    if (this.upstream && this.upstream.readyState === 1) {
+      await this.ensureUpstream({ replace: true });
+      return;
+    }
+    await this.ensureUpstream();
+  }
+
+  webSocketMessage() {
+    // Licensed clients are receive-only. In particular, their messages are never forwarded to the
+    // upstream connection.
+  }
+
+  async webSocketClose() {
+    if (!this.clients().length) await this.stopUpstream();
+  }
+
+  async webSocketError() {
+    if (!this.clients().length) await this.stopUpstream();
+  }
+}
+
+function brokerError(message, status, code) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+async function boundedBodyBytes(body, maximum, tooLargeMessage, status = 413, code = 'request_too_large') {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks = [];
+  let length = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+    length += chunk.length;
+    if (length > maximum) {
+      await reader.cancel(tooLargeMessage);
+      throw brokerError(tooLargeMessage, status, code);
+    }
+    chunks.push(chunk);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
+async function hyperRequestBody(request) {
+  const type = String(request.headers.get('content-type') || '').toLowerCase();
+  if (!type.includes('application/json')) {
+    throw brokerError('Hyper requests require a JSON body.', 415, 'json_required');
+  }
+  const declared = request.headers.get('content-length');
+  if (declared && (!/^\d+$/.test(declared) || Number(declared) > MAX_HYPER_REQUEST_BYTES)) {
+    throw brokerError('Hyper request body is too large.', 413, 'request_too_large');
+  }
+  const bytes = await boundedBodyBytes(request.body, MAX_HYPER_REQUEST_BYTES, 'Hyper request body is too large.');
+  if (!bytes.length) throw brokerError('Hyper requests require a JSON body.', 400, 'invalid_json');
+  try {
+    const parsed = JSON.parse(decoder.decode(bytes));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('object required');
+  } catch {
+    throw brokerError('Hyper request body must be a JSON object.', 400, 'invalid_json');
+  }
+  return bytes;
 }
 
 async function gzipBytes(bytes) {
@@ -543,6 +986,407 @@ async function authenticatedLicense(request, env) {
   return row;
 }
 
+function analyticsText(value, max = ANALYTICS_TEXT_MAX) {
+  return String(value == null ? '' : value).trim().slice(0, max);
+}
+
+function analyticsSite(value) {
+  const compact = analyticsText(value, 80).toLowerCase().replace(/[^a-z]/g, '');
+  if (compact === 'target') return 'Target';
+  if (compact === 'pokemoncenter' || compact === 'pokemoncenterus') return 'Pokemon Center US';
+  return '';
+}
+
+function analyticsInteger(value, min, max, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeAnalyticsEvent(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const eventId = analyticsText(value.eventId, 80);
+  const eventType = analyticsText(value.eventType, 20).toLowerCase();
+  const site = analyticsSite(value.site);
+  if (!/^[a-z0-9-]{16,80}$/i.test(eventId)
+      || !['carted', 'checkout', 'decline'].includes(eventType) || !site) return null;
+  const occurredAt = analyticsInteger(value.occurredAt, 0, now + ANALYTICS_FUTURE_SKEW_MS, now);
+  if (occurredAt < now - ANALYTICS_MAX_AGE_MS) return null;
+  const rawItems = Array.isArray(value.items) ? value.items.slice(0, ANALYTICS_ITEMS_MAX) : [];
+  const items = rawItems.map((item) => {
+    const input = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+    const productUrl = analyticsText(input.productUrl, 1000);
+    return {
+      sku: analyticsText(input.sku, 120),
+      name: analyticsText(input.name, 300),
+      image: analyticsText(input.image, 1000),
+      productUrl: /^https?:\/\//i.test(productUrl) ? productUrl : '',
+      size: analyticsText(input.size, 120),
+      unitPriceCents: analyticsInteger(input.unitPriceCents, 0, 100000000, 0),
+      quantity: analyticsInteger(input.quantity, 1, 999, 1),
+    };
+  });
+  return {
+    eventId,
+    eventType,
+    site,
+    taskId: analyticsText(value.taskId, 160),
+    runId: analyticsText(value.runId, 160),
+    orderNumber: analyticsText(value.orderNumber, 160),
+    totalCents: analyticsInteger(value.totalCents, 0, 1000000000, 0),
+    occurredAt,
+    items,
+  };
+}
+
+function analyticsWindow(url, now = Date.now()) {
+  const ranges = { today: 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000, '90d': 90 * 24 * 60 * 60 * 1000 };
+  const range = Object.hasOwn(ranges, url.searchParams.get('range')) ? url.searchParams.get('range') : 'all';
+  const rawFrom = url.searchParams.get('from');
+  const rawTo = url.searchParams.get('to');
+  const requestedFrom = rawFrom == null ? Number.NaN : Number(rawFrom);
+  const requestedTo = rawTo == null ? Number.NaN : Number(rawTo);
+  const fallbackFrom = range === 'all' ? 0 : now - ranges[range];
+  const from = Number.isSafeInteger(requestedFrom)
+    ? Math.max(0, Math.min(now + ANALYTICS_FUTURE_SKEW_MS, requestedFrom)) : fallbackFrom;
+  const to = Number.isSafeInteger(requestedTo)
+    ? Math.max(from, Math.min(now + ANALYTICS_FUTURE_SKEW_MS, requestedTo)) : now + 1;
+  return { range, from, to };
+}
+
+async function ingestAnalytics(request, env) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const body = await bodyJson(request);
+  if (!Array.isArray(body.events) || body.events.length < 1 || body.events.length > ANALYTICS_BATCH_MAX) {
+    return json({ ok: false, message: `Submit 1-${ANALYTICS_BATCH_MAX} analytics events.` }, 400);
+  }
+  const now = Date.now();
+  const events = body.events.map(value => normalizeAnalyticsEvent(value, now));
+  if (events.some(event => !event)) return json({ ok: false, message: 'An analytics event is invalid.' }, 400);
+
+  const ingestId = crypto.randomUUID();
+  const statementGroups = [];
+  for (const event of events) {
+    const statements = [env.DB.prepare(`
+      INSERT OR IGNORE INTO analytics_events
+        (user_id, event_id, event_type, site, task_id, run_id, order_number,
+         total_cents, occurred_at, created_at, ingest_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      license.user_id, event.eventId, event.eventType, event.site, event.taskId, event.runId,
+      event.orderNumber, event.totalCents, event.occurredAt, now, ingestId,
+    )];
+    event.items.forEach((item, lineNumber) => {
+      statements.push(env.DB.prepare(`
+        INSERT OR IGNORE INTO analytics_items
+          (user_id, event_id, line_number, sku, name, image, product_url, size, unit_price_cents, quantity)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM analytics_events
+          WHERE user_id = ? AND event_id = ? AND ingest_id = ?
+        )
+      `).bind(
+        license.user_id, event.eventId, lineNumber, item.sku, item.name, item.image,
+        item.productUrl, item.size, item.unitPriceCents, item.quantity,
+        license.user_id, event.eventId, ingestId,
+      ));
+    });
+    statementGroups.push(statements);
+  }
+  // Keep every event and its item rows in one transactional D1 batch while placing a conservative
+  // ceiling on each request. If a later group fails, replaying the desktop outbox remains safe.
+  let chunk = [];
+  for (const group of statementGroups) {
+    if (chunk.length && chunk.length + group.length > 50) {
+      await env.DB.batch(chunk);
+      chunk = [];
+    }
+    chunk.push(...group);
+  }
+  if (chunk.length) await env.DB.batch(chunk);
+  return json({ ok: true, accepted: events.length });
+}
+
+async function analyticsDashboard(request, env, url) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const window = analyticsWindow(url);
+  const summary = await env.DB.prepare(`
+    SELECT
+      SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+      SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+      SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+      SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+        SELECT 1 FROM analytics_events terminal
+        WHERE terminal.user_id = e.user_id
+          AND e.run_id != '' AND terminal.run_id = e.run_id
+          AND terminal.event_type IN ('checkout', 'decline')
+          AND terminal.occurred_at >= e.occurred_at
+      ) THEN 1 ELSE 0 END) AS stuck_in_cart
+    FROM analytics_events e
+    WHERE e.user_id = ? AND e.occurred_at >= ? AND e.occurred_at < ?
+  `).bind(license.user_id, window.from, window.to).first();
+  const series = await env.DB.prepare(`
+    SELECT date(occurred_at / 1000, 'unixepoch') AS day,
+      SUM(CASE WHEN event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+      SUM(CASE WHEN event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+      SUM(CASE WHEN event_type = 'checkout' THEN total_cents ELSE 0 END) AS total_spent_cents
+    FROM analytics_events
+    WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+    GROUP BY day ORDER BY day ASC LIMIT 4000
+  `).bind(license.user_id, window.from, window.to).all();
+  return json({
+    ok: true,
+    window,
+    summary: {
+      checkouts: Number(summary && summary.checkouts) || 0,
+      declines: Number(summary && summary.declines) || 0,
+      totalSpentCents: Number(summary && summary.total_spent_cents) || 0,
+      stuckInCart: Number(summary && summary.stuck_in_cart) || 0,
+    },
+    series: (series.results || []).map(row => ({
+      day: String(row.day || ''),
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+    })),
+  });
+}
+
+async function analyticsCheckouts(request, env, url) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.user_id = ? AND e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR e.site LIKE ? COLLATE NOCASE OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+      SELECT 1 FROM analytics_items ai
+      WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
+        AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
+    ))`;
+  const bindings = [license.user_id, window.from, window.to, search, like, like, like, like];
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM analytics_events e WHERE ${filter}`)
+    .bind(...bindings).first();
+  const rows = await env.DB.prepare(`
+    SELECT e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+      i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
+    FROM (
+      SELECT e.* FROM analytics_events e WHERE ${filter}
+      ORDER BY e.occurred_at DESC LIMIT ? OFFSET ?
+    ) e
+    LEFT JOIN analytics_items i ON i.user_id = e.user_id AND i.event_id = e.event_id
+    ORDER BY e.occurred_at DESC, i.line_number ASC
+  `).bind(...bindings, pageSize, (page - 1) * pageSize).all();
+  const checkouts = [];
+  const byId = new Map();
+  for (const row of (rows.results || [])) {
+    let checkout = byId.get(row.event_id);
+    if (!checkout) {
+      checkout = {
+        eventId: row.event_id, site: row.site, orderNumber: row.order_number,
+        totalCents: Number(row.total_cents) || 0, occurredAt: Number(row.occurred_at) || 0, items: [],
+      };
+      byId.set(row.event_id, checkout);
+      checkouts.push(checkout);
+    }
+    if (row.line_number != null) checkout.items.push({
+      sku: row.sku, name: row.name, image: row.image, productUrl: row.product_url, size: row.size,
+      unitPriceCents: Number(row.unit_price_cents) || 0, quantity: Number(row.quantity) || 1,
+    });
+  }
+  return json({ ok: true, window, page, pageSize, total: Number(totalRow && totalRow.total) || 0, checkouts });
+}
+
+async function deleteAnalytics(request, env) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const result = await env.DB.prepare('DELETE FROM analytics_events WHERE user_id = ?').bind(license.user_id).run();
+  return json({ ok: true, deleted: Number(result.meta && result.meta.changes) || 0 });
+}
+
+async function consumeHyperQuota(env, userId, now = Date.now()) {
+  const windowStartedAt = Math.floor(now / HYPER_RATE_WINDOW_MS) * HYPER_RATE_WINDOW_MS;
+  await env.DB.prepare(`
+    INSERT INTO service_rate_windows
+      (user_id, service, window_started_at, request_count, updated_at)
+    VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(user_id, service) DO UPDATE SET
+      request_count = CASE
+        WHEN service_rate_windows.window_started_at = excluded.window_started_at
+          THEN service_rate_windows.request_count + 1
+        ELSE 1
+      END,
+      window_started_at = excluded.window_started_at,
+      updated_at = excluded.updated_at
+  `).bind(userId, HYPER_SERVICE_NAME, windowStartedAt, now).run();
+  const row = await env.DB.prepare(`
+    SELECT request_count FROM service_rate_windows WHERE user_id = ? AND service = ?
+  `).bind(userId, HYPER_SERVICE_NAME).first();
+  const count = Number(row && row.request_count) || 1;
+  return {
+    allowed: count <= HYPER_RATE_MAX_REQUESTS,
+    count,
+    retryAfter: Math.max(1, Math.ceil((windowStartedAt + HYPER_RATE_WINDOW_MS - now) / 1000)),
+  };
+}
+
+function safeHyperResponseType(response) {
+  const type = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (type === 'application/json' || type.endsWith('+json')) return `${type}; charset=utf-8`;
+  if (type === 'text/plain') return 'text/plain; charset=utf-8';
+  return 'application/octet-stream';
+}
+
+async function hyperResponseBody(response, apiKey) {
+  const declared = response.headers.get('content-length');
+  if (declared && /^\d+$/.test(declared) && Number(declared) > MAX_HYPER_RESPONSE_BYTES) {
+    if (response.body) await response.body.cancel('Hyper response body is too large.');
+    throw brokerError('Hyper returned an oversized response.', 502, 'upstream_response_too_large');
+  }
+  const bytes = await boundedBodyBytes(
+    response.body,
+    MAX_HYPER_RESPONSE_BYTES,
+    'Hyper returned an oversized response.',
+    502,
+    'upstream_response_too_large',
+  );
+  const raw = decoder.decode(bytes);
+  return raw.includes(apiKey) ? encoder.encode(raw.replaceAll(apiKey, '[redacted]')) : bytes;
+}
+
+async function hyperUpstreamRequest(operation, requestBody, apiKey) {
+  const headers = { 'content-type': 'application/json', 'x-api-key': apiKey };
+  if (operation === 'incapsula-utmvc') {
+    headers['content-encoding'] = 'gzip';
+    return { headers, body: await gzipBytes(requestBody) };
+  }
+  return { headers, body: requestBody };
+}
+
+async function brokerHyper(request, env, operation, dependencies = {}) {
+  const upstream = HYPER_UPSTREAMS[operation];
+  if (!upstream) return json({ ok: false, code: 'operation_not_found', message: 'Hyper operation not found.' }, 404);
+  if (request.method !== 'POST') return json({ ok: false, message: 'Method not allowed.' }, 405);
+
+  const authenticate = dependencies.authenticate || authenticatedLicense;
+  const entitlementsFor = dependencies.entitlements || taskTypeEntitlements;
+  const credentialFor = dependencies.credential || serviceCredentialValue;
+  const rateLimit = dependencies.rateLimit || consumeHyperQuota;
+  const upstreamFetch = dependencies.fetch || fetch;
+
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to use Pokémon Center.' }, 401);
+  }
+  const entitlements = await entitlementsFor(env, identity);
+  if (!entitlements.pokemoncenter) {
+    return json({ ok: false, code: 'task_type_denied', message: 'Pokémon Center access is not enabled.' }, 403);
+  }
+
+  let requestBody;
+  try {
+    requestBody = await hyperRequestBody(request);
+  } catch (error) {
+    return json({ ok: false, code: error.code || 'invalid_request', message: error.message }, error.status || 400);
+  }
+
+  let apiKey;
+  try {
+    apiKey = await credentialFor(env, HYPER_SERVICE_NAME);
+  } catch (error) {
+    console.error('Hyper credential could not be decrypted', error && error.message);
+    return json({ ok: false, code: 'service_unavailable', message: 'Hyper service configuration is unavailable.' }, 503);
+  }
+  if (!apiKey) {
+    return json({ ok: false, code: 'service_unconfigured', message: 'Hyper service is not configured.' }, 503);
+  }
+
+  const quota = await rateLimit(env, identity.user_id);
+  if (!quota.allowed) {
+    return json(
+      { ok: false, code: 'service_rate_limited', message: 'Hyper request limit reached. Try again shortly.' },
+      429,
+      { 'retry-after': String(quota.retryAfter) },
+    );
+  }
+
+  let response;
+  try {
+    const upstreamRequest = await hyperUpstreamRequest(operation, requestBody, apiKey);
+    response = await upstreamFetch(upstream, {
+      method: 'POST',
+      ...upstreamRequest,
+      signal: AbortSignal.timeout(HYPER_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const timedOut = error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+    return json({
+      ok: false,
+      code: timedOut ? 'upstream_timeout' : 'upstream_unavailable',
+      message: timedOut ? 'Hyper request timed out.' : 'Hyper service is unavailable.',
+    }, timedOut ? 504 : 502);
+  }
+
+  let responseBody;
+  try {
+    responseBody = await hyperResponseBody(response, apiKey);
+  } catch (error) {
+    return json({ ok: false, code: error.code || 'upstream_error', message: error.message }, error.status || 502);
+  }
+  const headers = { 'content-type': safeHyperResponseType(response) };
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) headers['retry-after'] = retryAfter;
+  return new Response(responseBody, { status: response.status, headers: apiHeaders(headers) });
+}
+
+function pokemonQueueRelayStub(env) {
+  if (!env.POKEMON_QUEUE_RELAY) return null;
+  const id = env.POKEMON_QUEUE_RELAY.idFromName('pokemon-center-us');
+  return env.POKEMON_QUEUE_RELAY.get(id);
+}
+
+async function notifyPokemonQueueRelay(env) {
+  const stub = pokemonQueueRelayStub(env);
+  if (!stub) return;
+  try {
+    await stub.fetch(new Request('https://queue-relay.internal/reconfigure', { method: 'POST' }));
+  } catch {
+    // Saving or removing the credential remains authoritative. A licensed client connection will
+    // also wake and reconfigure the Durable Object, so a transient notification failure is safe.
+  }
+}
+
+async function brokerPokemonQueueEvents(request, env, dependencies = {}) {
+  if (request.method !== 'GET') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  if (String(request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
+    return json({ ok: false, code: 'websocket_required', message: 'WebSocket upgrade required.' }, 426);
+  }
+  const authenticate = dependencies.authenticate || authenticatedLicense;
+  const entitlementsFor = dependencies.entitlements || taskTypeEntitlements;
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to monitor Pokémon Center.' }, 401);
+  }
+  const entitlements = await entitlementsFor(env, identity);
+  if (!entitlements.pokemoncenter) {
+    return json({ ok: false, code: 'task_type_denied', message: 'Pokémon Center access is not enabled.' }, 403);
+  }
+  const stub = dependencies.stub || pokemonQueueRelayStub(env);
+  if (!stub) {
+    return json({ ok: false, code: 'service_unavailable', message: 'Queue event monitoring is unavailable.' }, 503);
+  }
+  // The authenticated device headers terminate here. Constructing a new internal request prevents
+  // the bearer token, device ID, user agent, IP metadata, or any other client header from reaching
+  // the upstream connector.
+  return stub.fetch(new Request('https://queue-relay.internal/client', {
+    headers: { Upgrade: 'websocket' },
+  }));
+}
+
 function backupJson(row) {
   return {
     id: row.id,
@@ -726,7 +1570,15 @@ async function audit(env, action, user = null, detail = '') {
   `).bind(crypto.randomUUID(), action, user && user.id, user && user.email, detail, Date.now()).run();
 }
 
-async function mintDownloadLink(env, user) {
+export function downloadSiteOrigin(request, env = {}) {
+  const hostname = new URL(request.url).hostname.toLowerCase();
+  if (hostname === 'license.rcart.app' || hostname === 'license.zynbot.app') return DOWNLOAD_SITE_ORIGIN;
+  const configured = String(env.DOWNLOAD_SITE_ORIGIN || '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  return DOWNLOAD_SITE_ORIGIN;
+}
+
+async function mintDownloadLink(request, env, user) {
   if (!Number(user.active)) {
     const error = new Error('Enable this account before generating a download link.');
     error.code = 'ACCOUNT_DISABLED';
@@ -748,16 +1600,16 @@ async function mintDownloadLink(env, user) {
     `).bind(crypto.randomUUID(), user.id, await sha256(token), now, expiresAt),
   ]);
   await audit(env, 'download_link_generated', user, String(expiresAt));
-  const origin = String(env.DOWNLOAD_SITE_ORIGIN || DOWNLOAD_SITE_ORIGIN).replace(/\/+$/, '');
+  const origin = downloadSiteOrigin(request, env);
   return {
     downloadUrl: `${origin}/download?key=${encodeURIComponent(token)}`,
     expiresAt,
   };
 }
 
-async function createDownloadLink(env, user) {
+async function createDownloadLink(request, env, user) {
   try {
-    return json({ ok: true, ...await mintDownloadLink(env, user) });
+    return json({ ok: true, ...await mintDownloadLink(request, env, user) });
   } catch (error) {
     if (error && error.code === 'ACCOUNT_DISABLED') return json({ ok: false, message: error.message }, 409);
     throw error;
@@ -872,6 +1724,171 @@ async function adminUsers(env) {
   return json({ ok: true, taskTypes, users });
 }
 
+async function adminAnalyticsDashboard(env, url) {
+  const window = analyticsWindow(url);
+  const [summary, series] = await Promise.all([
+    env.DB.prepare(`
+      SELECT
+        COUNT(DISTINCT e.user_id) AS active_users,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+        SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+          SELECT 1 FROM analytics_events terminal
+          WHERE terminal.user_id = e.user_id
+            AND e.run_id != '' AND terminal.run_id = e.run_id
+            AND terminal.event_type IN ('checkout', 'decline')
+            AND terminal.occurred_at >= e.occurred_at
+        ) THEN 1 ELSE 0 END) AS stuck_in_cart
+      FROM analytics_events e
+      WHERE e.occurred_at >= ? AND e.occurred_at < ?
+    `).bind(window.from, window.to).first(),
+    env.DB.prepare(`
+      SELECT date(occurred_at / 1000, 'unixepoch') AS day,
+        COUNT(DISTINCT user_id) AS active_users,
+        SUM(CASE WHEN event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN event_type = 'checkout' THEN total_cents ELSE 0 END) AS total_spent_cents
+      FROM analytics_events
+      WHERE occurred_at >= ? AND occurred_at < ?
+      GROUP BY day ORDER BY day ASC LIMIT 4000
+    `).bind(window.from, window.to).all(),
+  ]);
+  return json({
+    ok: true,
+    window,
+    summary: {
+      activeUsers: Number(summary && summary.active_users) || 0,
+      checkouts: Number(summary && summary.checkouts) || 0,
+      declines: Number(summary && summary.declines) || 0,
+      totalSpentCents: Number(summary && summary.total_spent_cents) || 0,
+      stuckInCart: Number(summary && summary.stuck_in_cart) || 0,
+    },
+    series: (series.results || []).map(row => ({
+      day: String(row.day || ''),
+      activeUsers: Number(row.active_users) || 0,
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+    })),
+  });
+}
+
+async function adminAnalyticsUsers(env, url) {
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR u.email LIKE ? COLLATE NOCASE)`;
+  const bindings = [window.from, window.to, search, like];
+  const [totalRow, rows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(DISTINCT e.user_id) AS total
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+    `).bind(...bindings).first(),
+    env.DB.prepare(`
+      SELECT u.id AS user_id, u.email, u.active,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+        SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+          SELECT 1 FROM analytics_events terminal
+          WHERE terminal.user_id = e.user_id
+            AND e.run_id != '' AND terminal.run_id = e.run_id
+            AND terminal.event_type IN ('checkout', 'decline')
+            AND terminal.occurred_at >= e.occurred_at
+        ) THEN 1 ELSE 0 END) AS stuck_in_cart,
+        MAX(CASE WHEN e.event_type = 'checkout' THEN e.occurred_at ELSE NULL END) AS last_checkout_at,
+        MAX(e.occurred_at) AS last_event_at
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+      GROUP BY u.id, u.email, u.active
+      ORDER BY total_spent_cents DESC, checkouts DESC, last_event_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(...bindings, pageSize, (page - 1) * pageSize).all(),
+  ]);
+  return json({
+    ok: true,
+    window,
+    page,
+    pageSize,
+    total: Number(totalRow && totalRow.total) || 0,
+    users: (rows.results || []).map(row => ({
+      userId: row.user_id,
+      email: row.email,
+      active: Number(row.active) === 1,
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+      stuckInCart: Number(row.stuck_in_cart) || 0,
+      lastCheckoutAt: Number(row.last_checkout_at) || 0,
+      lastEventAt: Number(row.last_event_at) || 0,
+    })),
+  });
+}
+
+async function adminAnalyticsCheckouts(env, url) {
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR u.email LIKE ? COLLATE NOCASE OR e.site LIKE ? COLLATE NOCASE
+      OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+        SELECT 1 FROM analytics_items ai
+        WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
+          AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
+      ))`;
+  const bindings = [window.from, window.to, search, like, like, like, like, like];
+  const [totalRow, rows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+    `).bind(...bindings).first(),
+    env.DB.prepare(`
+      SELECT e.user_id, u.email, e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+        i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
+      FROM (
+        SELECT e.* FROM analytics_events e JOIN users u ON u.id = e.user_id
+        WHERE ${filter}
+        ORDER BY e.occurred_at DESC LIMIT ? OFFSET ?
+      ) e
+      JOIN users u ON u.id = e.user_id
+      LEFT JOIN analytics_items i ON i.user_id = e.user_id AND i.event_id = e.event_id
+      ORDER BY e.occurred_at DESC, i.line_number ASC
+    `).bind(...bindings, pageSize, (page - 1) * pageSize).all(),
+  ]);
+  const checkouts = [];
+  const byId = new Map();
+  for (const row of (rows.results || [])) {
+    const key = `${row.user_id}\u0000${row.event_id}`;
+    let checkout = byId.get(key);
+    if (!checkout) {
+      checkout = {
+        userId: row.user_id, email: row.email, eventId: row.event_id, site: row.site,
+        orderNumber: row.order_number, totalCents: Number(row.total_cents) || 0,
+        occurredAt: Number(row.occurred_at) || 0, items: [],
+      };
+      byId.set(key, checkout);
+      checkouts.push(checkout);
+    }
+    if (row.line_number != null) checkout.items.push({
+      sku: row.sku, name: row.name, image: row.image, productUrl: row.product_url, size: row.size,
+      unitPriceCents: Number(row.unit_price_cents) || 0, quantity: Number(row.quantity) || 1,
+    });
+  }
+  return json({
+    ok: true, window, page, pageSize,
+    total: Number(totalRow && totalRow.total) || 0,
+    checkouts,
+  });
+}
+
 async function adminTaskTypes(env) {
   return json({ ok: true, taskTypes: await taskTypeDefinitions(env) });
 }
@@ -957,7 +1974,7 @@ async function adminWaitlist(env) {
   return json({ ok: true, entries: result.results || [] });
 }
 
-async function inviteWaitlistEntry(env, id) {
+async function inviteWaitlistEntry(request, env, id) {
   const entry = await env.DB.prepare(`
     SELECT id, email, invited_at, user_id FROM waitlist_entries WHERE id = ?
   `).bind(id).first();
@@ -978,7 +1995,7 @@ async function inviteWaitlistEntry(env, id) {
     return json({ ok: false, message: 'This email already has a disabled account. Enable it before inviting.' }, 409);
   }
 
-  const download = await mintDownloadLink(env, user);
+  const download = await mintDownloadLink(request, env, user);
   const invitedAt = Date.now();
   await env.DB.prepare(`
     UPDATE waitlist_entries SET invited_at = ?, updated_at = ?, user_id = ? WHERE id = ?
@@ -1143,6 +2160,96 @@ async function adminProxyLists(env) {
   return json({ ok: true, proxyLists: lists });
 }
 
+async function adminHyperCredential(env) {
+  return json({ ok: true, ...serviceCredentialJson(await serviceCredentialRow(env, HYPER_SERVICE_NAME)) });
+}
+
+async function putHyperCredential(request, env) {
+  const input = hyperCredentialInput(await bodyJson(request));
+  if (input.error) return json({ ok: false, message: input.error }, 400);
+  const encrypted = await encryptServiceCredential(HYPER_SERVICE_NAME, input.apiKey, env);
+  const now = Date.now();
+  await env.DB.prepare(`
+    INSERT INTO service_config
+      (name, encrypted_value, iv, fingerprint, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      encrypted_value = excluded.encrypted_value,
+      iv = excluded.iv,
+      fingerprint = excluded.fingerprint,
+      updated_at = excluded.updated_at
+  `).bind(
+    HYPER_SERVICE_NAME,
+    encrypted.encryptedValue,
+    encrypted.iv,
+    encrypted.fingerprint,
+    now,
+    now,
+  ).run();
+  await audit(env, 'service_credential_updated', null, `${HYPER_SERVICE_NAME}:${encrypted.fingerprint}`);
+  return json({ ok: true, configured: true, fingerprint: encrypted.fingerprint, updatedAt: now });
+}
+
+async function deleteHyperCredential(env) {
+  const current = await serviceCredentialRow(env, HYPER_SERVICE_NAME);
+  if (current) {
+    await env.DB.prepare('DELETE FROM service_config WHERE name = ?').bind(HYPER_SERVICE_NAME).run();
+    await audit(env, 'service_credential_deleted', null, `${HYPER_SERVICE_NAME}:${current.fingerprint}`);
+  }
+  return json({ ok: true, ...serviceCredentialJson(null) });
+}
+
+async function adminPokemonQueueCredential(env) {
+  return json({
+    ok: true,
+    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+    ...serviceCredentialJson(await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME)),
+  });
+}
+
+async function putPokemonQueueCredential(request, env) {
+  const input = pokemonQueueCredentialInput(await bodyJson(request));
+  if (input.error) return json({ ok: false, message: input.error }, 400);
+  const encrypted = await encryptServiceCredential(POKEMON_QUEUE_SERVICE_NAME, input.licenseKey, env);
+  const now = Date.now();
+  await env.DB.prepare(`
+    INSERT INTO service_config
+      (name, encrypted_value, iv, fingerprint, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      encrypted_value = excluded.encrypted_value,
+      iv = excluded.iv,
+      fingerprint = excluded.fingerprint,
+      updated_at = excluded.updated_at
+  `).bind(
+    POKEMON_QUEUE_SERVICE_NAME,
+    encrypted.encryptedValue,
+    encrypted.iv,
+    encrypted.fingerprint,
+    now,
+    now,
+  ).run();
+  await audit(env, 'service_credential_updated', null, `${POKEMON_QUEUE_SERVICE_NAME}:${encrypted.fingerprint}`);
+  await notifyPokemonQueueRelay(env);
+  return json({
+    ok: true,
+    configured: true,
+    fingerprint: encrypted.fingerprint,
+    updatedAt: now,
+    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+  });
+}
+
+async function deletePokemonQueueCredential(env) {
+  const current = await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME);
+  if (current) {
+    await env.DB.prepare('DELETE FROM service_config WHERE name = ?').bind(POKEMON_QUEUE_SERVICE_NAME).run();
+    await audit(env, 'service_credential_deleted', null, `${POKEMON_QUEUE_SERVICE_NAME}:${current.fingerprint}`);
+  }
+  await notifyPokemonQueueRelay(env);
+  return json({ ok: true, version: POKEMON_QUEUE_UPSTREAM_VERSION, ...serviceCredentialJson(null) });
+}
+
 async function createProxyList(request, env) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS count FROM managed_proxy_lists').first();
   if (Number(count && count.count) >= MAX_MANAGED_LISTS) {
@@ -1219,10 +2326,30 @@ async function adminRoute(request, env, url) {
   }
   if (url.pathname === '/api/admin/users' && request.method === 'GET') return adminUsers(env);
   if (url.pathname === '/api/admin/users' && request.method === 'POST') return createUser(request, env);
+  if (url.pathname === '/api/admin/analytics/dashboard' && request.method === 'GET') return adminAnalyticsDashboard(env, url);
+  if (url.pathname === '/api/admin/analytics/users' && request.method === 'GET') return adminAnalyticsUsers(env, url);
+  if (url.pathname === '/api/admin/analytics/checkouts' && request.method === 'GET') return adminAnalyticsCheckouts(env, url);
+  if (url.pathname.startsWith('/api/admin/analytics')) return json({ ok: false, message: 'Method not allowed.' }, 405);
   if (url.pathname === '/api/admin/waitlist' && request.method === 'GET') return adminWaitlist(env);
   if (url.pathname === '/api/admin/task-types' && request.method === 'GET') return adminTaskTypes(env);
   if (url.pathname === '/api/admin/proxy-lists' && request.method === 'GET') return adminProxyLists(env);
   if (url.pathname === '/api/admin/proxy-lists' && request.method === 'POST') return createProxyList(request, env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'GET') return adminHyperCredential(env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'PUT') return putHyperCredential(request, env);
+  if (url.pathname === '/api/admin/service-config/hyper' && request.method === 'DELETE') return deleteHyperCredential(env);
+  if (url.pathname === '/api/admin/service-config/hyper') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'GET') {
+    return adminPokemonQueueCredential(env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'PUT') {
+    return putPokemonQueueCredential(request, env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'DELETE') {
+    return deletePokemonQueueCredential(env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events') {
+    return json({ ok: false, message: 'Method not allowed.' }, 405);
+  }
 
   const proxyMatch = url.pathname.match(/^\/api\/admin\/proxy-lists\/([0-9a-f-]+)$/i);
   if (proxyMatch && request.method === 'PUT') return updateProxyList(request, env, proxyMatch[1]);
@@ -1235,7 +2362,7 @@ async function adminRoute(request, env, url) {
 
   const waitlistMatch = url.pathname.match(/^\/api\/admin\/waitlist\/([0-9a-f-]+)(?:\/(invite))?$/i);
   if (waitlistMatch && waitlistMatch[2] === 'invite' && request.method === 'POST') {
-    return inviteWaitlistEntry(env, waitlistMatch[1]);
+    return inviteWaitlistEntry(request, env, waitlistMatch[1]);
   }
   if (waitlistMatch && !waitlistMatch[2] && request.method === 'DELETE') {
     return deleteWaitlistEntry(env, waitlistMatch[1]);
@@ -1248,7 +2375,7 @@ async function adminRoute(request, env, url) {
   if (!user) return json({ ok: false, message: 'User not found.' }, 404);
   if (match[2] === 'revoke' && request.method === 'POST') return revokeUser(env, user);
   if (match[2] === 'reset-password' && request.method === 'POST') return resetUserPassword(env, user);
-  if (match[2] === 'download-link' && request.method === 'POST') return createDownloadLink(env, user);
+  if (match[2] === 'download-link' && request.method === 'POST') return createDownloadLink(request, env, user);
   if (!match[2] && request.method === 'PATCH') return updateUser(request, env, user);
   if (!match[2] && request.method === 'DELETE') return deleteUser(env, user);
   return json({ ok: false, message: 'Method not allowed.' }, 405);
@@ -1256,6 +2383,11 @@ async function adminRoute(request, env, url) {
 
 async function api(request, env, url) {
   if (url.pathname.startsWith('/api/admin/')) return adminRoute(request, env, url);
+  const hyperMatch = url.pathname.match(/^\/api\/services\/hyper\/([a-z0-9-]+)$/i);
+  if (hyperMatch) return brokerHyper(request, env, hyperMatch[1].toLowerCase());
+  if (url.pathname === '/api/services/pokemon-center/queue-events') {
+    return brokerPokemonQueueEvents(request, env);
+  }
   if (url.pathname === '/api/waitlist' && request.method === 'POST') return joinWaitlist(request, env);
   if (url.pathname === '/api/download/redeem' && request.method === 'POST') return redeemDownloadAccess(request, env);
   if (url.pathname === '/api/download/session' && request.method === 'POST') return validateDownloadSession(request, env);
@@ -1264,6 +2396,11 @@ async function api(request, env, url) {
   if (url.pathname === '/api/license/validate' && request.method === 'POST') return validateLicense(request, env);
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env);
   if (url.pathname === '/api/backups' && request.method === 'GET') return listBackups(request, env);
+  if (url.pathname === '/api/analytics/events' && request.method === 'POST') return ingestAnalytics(request, env);
+  if (url.pathname === '/api/analytics/dashboard' && request.method === 'GET') return analyticsDashboard(request, env, url);
+  if (url.pathname === '/api/analytics/checkouts' && request.method === 'GET') return analyticsCheckouts(request, env, url);
+  if (url.pathname === '/api/analytics' && request.method === 'DELETE') return deleteAnalytics(request, env);
+  if (url.pathname.startsWith('/api/analytics')) return json({ ok: false, message: 'Method not allowed.' }, 405);
   const backupMatch = url.pathname.match(/^\/api\/backups\/([0-9a-f-]+)$/i);
   if (backupMatch && request.method === 'PUT') return putBackup(request, env, backupMatch[1]);
   if (backupMatch && request.method === 'GET') return getBackup(request, env, backupMatch[1]);
@@ -1280,6 +2417,23 @@ function secureAsset(response) {
   headers.set('x-frame-options', 'DENY');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
+
+export const __test = Object.freeze({
+  HYPER_UPSTREAMS,
+  POKEMON_QUEUE_UPSTREAM_VERSION,
+  brokerPokemonQueueEvents,
+  brokerHyper,
+  decodePokemonQueueMessage,
+  decryptServiceCredential,
+  encryptServiceCredential,
+  hyperCredentialInput,
+  normalizePokemonQueueEvent,
+  pokemonQueueCredentialInput,
+  pokemonQueueUpstreamUrl,
+  serviceCredentialJson,
+  analyticsWindow,
+  normalizeAnalyticsEvent,
+});
 
 export default {
   async fetch(request, env) {

@@ -24,7 +24,6 @@ const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
 const payload = verifyManifest(manifest);
 const runtimeItems = [...new Map([
   ...Object.values(payload.platforms || {}).flatMap(platform => Object.values(platform)),
-  payload.engine,
 ].filter(Boolean).map(item => [item.archive, item])).values()];
 const assets = [
   ...runtimeItems.map(item => ({

@@ -31,6 +31,7 @@ for (const input of appPaths) {
   assert.match(rendererText, /Zyn/, `${app} renderer does not contain Zyn branding`);
   assert.doesNotMatch(productCopy, /rCart/, `${app} still contains retired rCart product copy`);
   assert.doesNotMatch(productCopy, /\bHope\b/i, `${app} still contains previous product copy`);
+  assert.doesNotMatch(rendererText, /\bPolar\b/i, `${app} renderer still contains previous product copy`);
   assert.doesNotMatch(productCopy, /control[ -]plane/i, `${app} still contains retired terminology`);
 
   console.log(JSON.stringify({ ok: true, app, rendererFiles: asar.listPackage(archive).filter(file => /^\/build\//.test(file)).length }));

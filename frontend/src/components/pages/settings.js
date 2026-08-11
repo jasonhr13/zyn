@@ -41,6 +41,7 @@ class Settings extends Component {
       targetVerboseLogs: false, shapeMethod: 'In Bot',
       licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
       signingOut: false,
+      clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
     };
   }
@@ -141,6 +142,23 @@ class Settings extends Component {
     catch { this.setState({ signingOut: false }); }
   };
 
+  clearAnalytics = async () => {
+    if (!window.confirm(
+      'Permanently delete all analytics data for this Zyn account?\n\n' +
+      'This removes checkout history, declines, cart events, total-spent data, and chart history from every signed-in device.\n\n' +
+      'This cannot be undone.'
+    )) return;
+    this.setState({ clearingAnalytics: true, analyticsMsg: '', analyticsColor: 'var(--muted)' });
+    try {
+      const result = await ipcRenderer.invoke('deleteAnalytics');
+      this.setState(result && result.ok
+        ? { clearingAnalytics: false, analyticsMsg: '✓ Analytics data deleted.', analyticsColor: 'var(--ok)' }
+        : { clearingAnalytics: false, analyticsMsg: `Could not delete analytics: ${(result && result.message) || 'unknown error'}`, analyticsColor: 'var(--danger)' });
+    } catch (error) {
+      this.setState({ clearingAnalytics: false, analyticsMsg: `Could not delete analytics: ${error.message}`, analyticsColor: 'var(--danger)' });
+    }
+  };
+
   exportData = async () => {
     if (!window.confirm(
       'The exported file will contain your CARD DETAILS, SITE PASSWORDS, MAILBOX PASSWORDS, and DISCORD TOKEN in plain text.\n\n' +
@@ -197,7 +215,8 @@ class Settings extends Component {
       targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, shapeMethod,
-      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut } = this.state;
+      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut,
+      clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
     // would not reach a state copy until the next settings update.
     const operatorMode = !!(this.props.settings || {}).operatorMode;
@@ -452,6 +471,20 @@ class Settings extends Component {
             {this.state.ioMsg
               ? <div style={{ fontSize: 11, color: this.state.ioColor, marginTop: 6 }}>{this.state.ioMsg}</div>
               : null}
+          </div>
+
+          <div className="settings-section settings-danger-section">
+            <div className="settings-section-title">Data &amp; Privacy</div>
+            <div className="settings-danger-row">
+              <div>
+                <strong>Clear analytics data</strong>
+                <span>Permanently removes checkout history, declines, cart events, spending totals, and chart history for this Zyn account on every device.</span>
+              </div>
+              <button className="btn btn-danger btn-sm" type="button" onClick={this.clearAnalytics} disabled={clearingAnalytics}>
+                <i className="ion-md-trash" style={{ fontSize: 12 }} /> {clearingAnalytics ? 'Deleting…' : 'Clear analytics data'}
+              </button>
+            </div>
+            {analyticsMsg ? <div className="settings-danger-message" style={{ color: analyticsColor }}>{analyticsMsg}</div> : null}
           </div>
         </div>
       </div>

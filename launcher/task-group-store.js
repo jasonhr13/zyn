@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const TASK_GROUP_SCHEMA_VERSION = 1;
+const TASK_GROUP_SCHEMA_VERSION = 3;
 const TASK_GROUP_FILE = 'task-groups.json';
 const LEGACY_TARGET_FILE = 'target-tasks.json';
 const MAX_GROUPS = 200;
@@ -19,6 +19,18 @@ function quantity(value) {
   return Math.max(1, Math.min(99, Number.parseInt(value, 10) || 2));
 }
 
+function normalizeSchedule(raw, site = 'target') {
+  if (String(site || '').toLowerCase() !== 'target' || !raw || typeof raw !== 'object') return null;
+  const epoch = value => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.floor(number) : null;
+  };
+  const startAt = epoch(raw.startAt);
+  let stopAt = epoch(raw.stopAt);
+  if (startAt != null && stopAt != null && stopAt <= startAt) stopAt = null;
+  return startAt == null && stopAt == null ? null : { startAt, stopAt };
+}
+
 function safeId(value, prefix, createId) {
   return boundedText(value, 120) || `${prefix}_${createId()}`;
 }
@@ -27,12 +39,18 @@ function normalizeTask(raw, group, index, createId) {
   const task = raw && typeof raw === 'object' ? raw : {};
   const accountId = boundedText(task.accountId, 160);
   if (!accountId) return null;
+  const hasLoopSetting = task.loopCheckout != null || task.repeatCheckout != null;
   return {
     id: safeId(task.id, `task${index + 1}`, createId),
     accountId,
     profileId: boundedText(task.profileId, 160),
     proxyListName: boundedText(task.proxyListName, 240, group.proxyListName),
     cardId: boundedText(task.cardId, 160),
+    // `repeatCheckout` was briefly emitted by scheduled launches but never persisted. Accept it as
+    // a migration alias while storing the native contract's canonical `loopCheckout` name.
+    loopCheckout: hasLoopSetting
+      ? (task.loopCheckout != null ? task.loopCheckout === true : task.repeatCheckout === true)
+      : group.loopCheckout === true,
     createdAt: Number(task.createdAt) > 0 ? Math.floor(Number(task.createdAt)) : group.createdAt,
   };
 }
@@ -49,10 +67,15 @@ function normalizeGroup(raw, index = 0, options = {}) {
     skus: String(group.skus || '').slice(0, 20000),
     qty: quantity(group.qty),
     proxyListName: boundedText(group.proxyListName, 240),
+    loopCheckout: group.loopCheckout != null
+      ? group.loopCheckout === true
+      : group.repeatCheckout === true,
     createdAt,
     updatedAt: Number(group.updatedAt) > 0 ? Math.floor(Number(group.updatedAt)) : now,
     tasks: [],
   };
+  const schedule = normalizeSchedule(group.schedule, normalized.site);
+  if (schedule) normalized.schedule = schedule;
   normalized.tasks = (Array.isArray(group.tasks) ? group.tasks : [])
     .slice(0, MAX_TASKS_PER_GROUP)
     .map((task, taskIndex) => normalizeTask(task, normalized, taskIndex, createId))
@@ -164,6 +187,7 @@ function createTaskGroupStore(dataDirectory, options = {}) {
 
 module.exports = {
   TASK_GROUP_SCHEMA_VERSION,
+  normalizeSchedule,
   normalizeGroup,
   normalizeGroups,
   createTaskGroupStore,

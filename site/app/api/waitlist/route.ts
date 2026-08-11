@@ -1,4 +1,10 @@
-const LICENSE_ORIGIN = process.env.RCART_LICENSE_ORIGIN || "https://license.rcart.app";
+import { serviceOriginForRequest } from "../../domain";
+
+function licenseOrigin(request: Request) {
+  return process.env.ZYN_LICENSE_ORIGIN
+    || process.env.RCART_LICENSE_ORIGIN
+    || serviceOriginForRequest(request, "license");
+}
 
 function redirect(request: Request, path: string) {
   return new Response(null, {
@@ -24,7 +30,7 @@ export async function POST(request: Request) {
   if (!validEmail(email)) return redirect(request, "/join?error=email");
 
   try {
-    const response = await fetch(`${LICENSE_ORIGIN}/api/waitlist`, {
+    const response = await fetch(`${licenseOrigin(request)}/api/waitlist`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email }),

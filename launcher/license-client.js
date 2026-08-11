@@ -7,9 +7,11 @@ const http = require('http');
 const https = require('https');
 const { execFileSync } = require('child_process');
 const { URL } = require('url');
+const WebSocket = require('ws');
 
 const DEFAULT_API_BASE = 'https://license.rcart.app';
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+const MAX_QUEUE_EVENT_BYTES = 64 * 1024;
 // Preserve the established device namespace so existing license/device bindings survive rebranding.
 const DEVICE_NAMESPACE = String.fromCharCode(104, 111, 112, 101);
 
@@ -41,7 +43,9 @@ function computeHwid() {
   return crypto.createHash('sha256').update(`${DEVICE_NAMESPACE}:${parts.join('|')}`).digest('hex').slice(0, 32);
 }
 
-function requestApi(apiBase, pathname, { method = 'GET', body = null, token = '', headers = {}, binary = false } = {}) {
+function requestApi(apiBase, pathname, {
+  method = 'GET', body = null, token = '', headers = {}, binary = false, rawResponse = false,
+} = {}) {
   return new Promise((resolve, reject) => {
     const data = body == null
       ? null
@@ -86,6 +90,17 @@ function requestApi(apiBase, pathname, { method = 'GET', body = null, token = ''
         }
         let parsed = {};
         try { parsed = JSON.parse(raw.toString('utf8')); } catch {}
+        if (rawResponse) {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode || 0,
+            body: raw.toString('utf8'),
+            headers: response.headers,
+            code: String(parsed.code || ''),
+            message: String(parsed.message || ''),
+          });
+          return;
+        }
         resolve({ status: response.statusCode || 0, ...parsed });
       });
     });
@@ -98,6 +113,15 @@ function requestApi(apiBase, pathname, { method = 'GET', body = null, token = ''
 
 function post(apiBase, pathname, body, token = '') {
   return requestApi(apiBase, pathname, { method: 'POST', body: body || {}, token });
+}
+
+function analyticsQuery(pathname, query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== '' && value != null) params.set(key, String(value));
+  }
+  const suffix = params.toString();
+  return suffix ? `${pathname}?${suffix}` : pathname;
 }
 
 function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
@@ -116,6 +140,46 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
     },
     logout(token) {
       return post(apiBase, '/api/auth/logout', {}, token);
+    },
+    hyper(token, operation, payload) {
+      const allowed = new Set([
+        'reese84', 'datadome-tags', 'datadome-interstitial', 'datadome-slider', 'incapsula-utmvc',
+      ]);
+      if (!allowed.has(operation)) return Promise.reject(new Error('unsupported Hyper operation'));
+      return requestApi(apiBase, `/api/services/hyper/${operation}`, {
+        method: 'POST',
+        body: payload || {},
+        token,
+        rawResponse: true,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    queueEvents(token, handlers = {}) {
+      const target = new URL('/api/services/pokemon-center/queue-events', `${apiBase.replace(/\/$/, '')}/`);
+      target.protocol = target.protocol === 'http:' ? 'ws:' : 'wss:';
+      const socket = new WebSocket(target, {
+        headers: {
+          authorization: `Bearer ${String(token || '')}`,
+          'x-rcart-device-id': deviceId,
+        },
+        followRedirects: false,
+        handshakeTimeout: 15000,
+        maxPayload: MAX_QUEUE_EVENT_BYTES,
+        perMessageDeflate: false,
+      });
+      if (typeof handlers.open === 'function') socket.on('open', handlers.open);
+      if (typeof handlers.close === 'function') socket.on('close', handlers.close);
+      if (typeof handlers.error === 'function') socket.on('error', handlers.error);
+      if (typeof handlers.message === 'function') {
+        socket.on('message', (data) => {
+          const bytes = Buffer.from(data);
+          if (bytes.length > MAX_QUEUE_EVENT_BYTES) return;
+          let message;
+          try { message = JSON.parse(bytes.toString('utf8')); } catch { return; }
+          if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);
+        });
+      }
+      return socket;
     },
     listBackups(token) {
       return requestApi(apiBase, '/api/backups', {
@@ -150,7 +214,28 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
         headers: { 'x-rcart-device-id': deviceId },
       });
     },
+    analyticsEvents(token, events) {
+      return requestApi(apiBase, '/api/analytics/events', {
+        method: 'POST', body: { events: Array.isArray(events) ? events : [] }, token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    analyticsDashboard(token, query = {}) {
+      return requestApi(apiBase, analyticsQuery('/api/analytics/dashboard', query), {
+        token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    analyticsCheckouts(token, query = {}) {
+      return requestApi(apiBase, analyticsQuery('/api/analytics/checkouts', query), {
+        token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    deleteAnalytics(token) {
+      return requestApi(apiBase, '/api/analytics', {
+        method: 'DELETE', token, headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
   };
 }
 
-module.exports = { createClient, computeHwid, DEFAULT_API_BASE, __test: { requestApi } };
+module.exports = { createClient, computeHwid, DEFAULT_API_BASE, __test: { requestApi, analyticsQuery } };

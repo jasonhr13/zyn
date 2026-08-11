@@ -1,0 +1,16 @@
+{
+  "name": "Zyn",
+  "short_name": "Zyn",
+  "description": "Precision retail operations from one focused desktop workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1012",
+  "theme_color": "#121315",
+  "icons": [
+    {
+      "src": "/zyn-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
