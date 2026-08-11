@@ -9,9 +9,9 @@ extension separately as a ZIP; it is not bundled with, loaded into, or executed 
    [updates.zynbot.app/download/extension](https://updates.zynbot.app/download/extension).
 2. In a dedicated Chrome or Brave profile, extract it to a durable `Zyn-Harvester` directory and load
    that directory as an unpacked extension on the browser's extensions page.
-3. Copy the 32-character ID shown beneath the extension.
-4. In Zyn Settings, open **Target — Chrome Extension Harvester**, turn extension harvesting on,
-   paste the ID, and save.
+3. Copy the 32-character ID shown beneath the extension in each browser profile you use.
+4. In Zyn Settings, open **Target — Browser Extension Harvesters**, turn extension harvesting on,
+   paste one extension ID per line, and save.
 5. Open a Target product page in the dedicated profile and click the extension toolbar button.
 
 For an update, download the ZIP again, replace the contents of the same unpacked

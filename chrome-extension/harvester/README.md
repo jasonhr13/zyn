@@ -21,9 +21,9 @@ can instead load `chrome-extension/harvester` directly and keep using that path.
 ## Connect to Zyn
 
 1. Open Zyn and sign in
-2. On the browser's extensions page, copy the 32-character ID shown for **Zyn Harvester**
-3. In Zyn **Settings** → **Target — Chrome Extension Harvester**, turn extension harvesting on,
-   paste the ID, and save.
+2. On each browser's extensions page, copy the 32-character ID shown for **Zyn Harvester**
+3. In Zyn **Settings** → **Target — Browser Extension Harvesters**, turn extension harvesting on,
+   paste one extension ID per line, and save.
 4. Open this extension’s popup → **Connection** should show **Live**
 
 Extension harvesting is additive. It can run alongside Zyn’s in-app harvesters, and both sources feed
@@ -36,7 +36,7 @@ the same Target cookie bank.
 | `127.0.0.1:4312` | Extension ↔ Zyn bridge (status / save / proxies) |
 | `127.0.0.1:4727` | Zyn cookie bank (bridge translates; extension never dials this) |
 
-If something else already owns **4312** (old Polar AIO, another bot), quit it first.
+If another local app already owns **4312**, quit it first.
 
 ## Proxies
 
@@ -57,8 +57,8 @@ Banked cookies are tagged `source: extension` and use Zyn’s **Cookie TTL** set
 
 ## Notes
 
-- The local protocol remains compatible with the Polar-era companion. This build also sends optional
-  `clientId` and `browser` attribution fields that older Zyn builds safely ignore.
+- The local protocol remains backward compatible. This build also sends optional `clientId` and
+  `browser` attribution fields that older Zyn builds safely ignore.
 - UI settings use `zynHarvesterState`. The stable per-browser installation ID uses
   `chrome.storage.local` key `zynHarvesterClientId`.
 - Permissions (`debugger`, `proxy`, `<all_urls>`, etc.) are required for the harvest flow.

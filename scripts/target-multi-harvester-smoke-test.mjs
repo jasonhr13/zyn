@@ -18,8 +18,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-multi-harvester-'));
 const botDirectory = path.join(temporary, 'bot');
 const token = 'multi-harvester-smoke-token';
-const extensionId = 'a'.repeat(32);
-const extensionOrigin = `chrome-extension://${extensionId}`;
+const extensionIds = ['a'.repeat(32), 'b'.repeat(32)];
+const extensionOrigins = extensionIds.map(id => `chrome-extension://${id}`);
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -54,8 +54,8 @@ const request = (port, method, requestPath, payload, authenticated = false) => n
   req.end();
 });
 
-const extensionRequest = (url, payload) => new Promise((resolve, reject) => {
-  const socket = new WebSocket(url, { origin: extensionOrigin, handshakeTimeout: 2000 });
+const extensionRequest = (url, payload, origin = extensionOrigins[0]) => new Promise((resolve, reject) => {
+  const socket = new WebSocket(url, { origin, handshakeTimeout: 2000 });
   let settled = false;
   const finish = (error, value) => {
     if (settled) return;
@@ -175,7 +175,7 @@ try {
     port: 0,
     brokerPort: port,
     enabled: () => true,
-    allowedExtensionId: () => extensionId,
+    allowedExtensionIds: () => extensionIds,
     ensureBroker: () => {},
     saveCookie: cookie => request(port, 'POST', '/saveCookies', cookie, true),
     logger: { warn() {} },
@@ -187,32 +187,44 @@ try {
     expiresAt: Date.now() + 30000, harvesterId: 'proxy', source: 'inBotV2',
   }, true);
   assert.equal(managedSave.saved, 1);
-  const extensionSave = await extensionRequest(
-    `ws://127.0.0.1:${extensionAddress.port}/ws`,
-    {
+  const extensionUrl = `ws://127.0.0.1:${extensionAddress.port}/ws`;
+  const [chromeSave, braveSave] = await Promise.all([
+    extensionRequest(extensionUrl, {
       action: 'save', type: 'atc', headers: shapeHeaders,
       proxy: '127.0.0.1:9001:extension:user', expiry: Date.now() + 30000,
-    },
-  );
-  assert.deepEqual(extensionSave, { ok: true, saved: 1 });
+      clientId: 'c'.repeat(32), browser: 'Chrome',
+    }, extensionOrigins[0]),
+    extensionRequest(extensionUrl, {
+      action: 'save', type: 'atc', headers: shapeHeaders,
+      proxy: '127.0.0.1:9002:extension:user', expiry: Date.now() + 30000,
+      clientId: 'd'.repeat(32), browser: 'Brave',
+    }, extensionOrigins[1]),
+  ]);
+  assert.deepEqual(chromeSave, { ok: true, saved: 1 });
+  assert.deepEqual(braveSave, { ok: true, saved: 1 });
 
   const tandemStatus = await request(port, 'GET', '/status');
-  assert.equal(tandemStatus.pools.atc, 2,
-    'managed and extension captures must add to the same cookie bank');
+  assert.equal(tandemStatus.pools.atc, 3,
+    'managed, Chrome, and Brave captures must add to the same cookie bank');
   assert.equal(tandemStatus.harvesters.some(item => item.id === 'actual'), true,
     'accepting an extension capture must not stop the managed producer');
 
   const tandemCookies = [];
-  for (let index = 0; index < 2; index++) {
+  for (let index = 0; index < 3; index++) {
     const result = await request(port, 'GET', '/cookie?type=atc', null, true);
     assert.equal(result.ok, true);
     tandemCookies.push(result.cookie);
   }
-  const cookiesBySource = Object.fromEntries(tandemCookies.map(cookie => [cookie.source, cookie]));
-  assert.equal(cookiesBySource.inBotV2.proxy, '127.0.0.1:9000:user:pass');
-  assert.equal(cookiesBySource.inBotV2.harvesterId, 'proxy');
-  assert.equal(cookiesBySource.extension.proxy, '127.0.0.1:9001:extension:user');
-  assert.equal(cookiesBySource.extension.harvesterId, 'chrome-extension');
+  const managedCookie = tandemCookies.find(cookie => cookie.source === 'inBotV2');
+  const extensionCookies = tandemCookies.filter(cookie => cookie.source === 'extension');
+  assert.equal(managedCookie.proxy, '127.0.0.1:9000:user:pass');
+  assert.equal(managedCookie.harvesterId, 'proxy');
+  assert.deepEqual(extensionCookies.map(cookie => cookie.proxy).sort(), [
+    '127.0.0.1:9001:extension:user',
+    '127.0.0.1:9002:extension:user',
+  ]);
+  assert.equal(new Set(extensionCookies.map(cookie => cookie.harvesterId)).size, 2,
+    'Chrome and Brave cookies must retain distinct harvester attribution');
   assert.ok(tandemCookies.every(cookie => cookie.type === 'atc' && cookie.expiresAt > Date.now()));
 
   await request(port, 'POST', '/saveCookies', {

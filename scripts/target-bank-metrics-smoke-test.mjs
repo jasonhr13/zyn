@@ -7,6 +7,28 @@ import {
   targetBankMetrics,
   targetBankPresentation,
 } from '../frontend/src/components/target-bank-metrics.mjs';
+import {
+  harvesterExtensionIdsFromSettings,
+  normalizeHarvesterExtensionIds,
+  parseHarvesterExtensionIds,
+} from '../frontend/src/components/harvester-extension-ids.mjs';
+
+assert.equal(normalizeHarvesterExtensionIds(
+  `${'A'.repeat(32)}\n${'b'.repeat(32)}\n${'a'.repeat(32)}`),
+`${'a'.repeat(32)}\n${'b'.repeat(32)}`);
+assert.equal(harvesterExtensionIdsFromSettings({
+  targetHarvesterExtensionIds: `${'b'.repeat(32)}\n${'c'.repeat(32)}`,
+  targetHarvesterExtensionId: 'a'.repeat(32),
+}), `${'b'.repeat(32)}\n${'c'.repeat(32)}\n${'a'.repeat(32)}`,
+'merging a singular-ID backup must not hide it behind existing plural settings');
+assert.match(parseHarvesterExtensionIds(
+  `${'a'.repeat(32)}\nnot-an-extension-id\n${'b'.repeat(32)}`,
+  { requireOne: true }).error, /line 2/);
+assert.match(parseHarvesterExtensionIds('', { requireOne: true }).error, /at least one/);
+const tooManyExtensionIds = Array.from({ length: 17 }, (_value, index) =>
+  `${'a'.repeat(30)}${String.fromCharCode(97 + Math.floor(index / 16))}${String.fromCharCode(97 + (index % 16))}`);
+assert.match(parseHarvesterExtensionIds(tooManyExtensionIds.join('\n'), { requireOne: true }).error,
+  /no more than 16/);
 
 assert.equal(targetBankMetrics(null).online, false);
 
@@ -165,35 +187,73 @@ const extensionConfigured = targetBankPresentation(dynamicDemand, [], {
   now, externalAtcHarvesterEnabled: true,
 });
 assert.equal(extensionConfigured.state, 'working');
-assert.equal(extensionConfigured.label, 'Waiting for Chrome extension');
+assert.equal(extensionConfigured.label, 'Waiting for browser extensions');
 assert.equal(extensionConfigured.activeHarvesters, 0,
   'an external extension must not corrupt managed-harvester totals');
 assert.equal(extensionConfigured.activeAtcHarvesters, 0,
   'an external extension must not be presented as a managed ATC harvester');
+
+const disabledExtensionWithStaleClients = targetBankPresentation({
+  ...dynamicDemand,
+  extensionHarvester: {
+    enabled: false,
+    configured: false,
+    lastSeenAt: now - 1000,
+    clientCount: 1,
+    clients: [{
+      id: 'stale-chrome-client',
+      browser: 'Chrome',
+      lastSeenAt: now - 1000,
+      lastStatusAt: now - 1000,
+    }],
+  },
+}, [], { now });
+assert.equal(disabledExtensionWithStaleClients.extensionHarvesterEnabled, false);
+assert.equal(disabledExtensionWithStaleClients.extensionHarvesterReachable, false);
+assert.equal(disabledExtensionWithStaleClients.extensionHarvesterClientCount, 0);
+assert.equal(disabledExtensionWithStaleClients.extensionHarvesterReachableCount, 0,
+  'disabled extension activity must not expose stale clients as live');
+assert.deepEqual(disabledExtensionWithStaleClients.extensionHarvesterBrowsers, []);
+assert.equal(disabledExtensionWithStaleClients.extensionConnectionLabel, '');
+assert.equal(disabledExtensionWithStaleClients.extensionConnectionCompactLabel, '');
 
 const reachableExtensionBank = {
   ...dynamicDemand,
   extensionHarvester: {
     enabled: true, configured: true, listening: true,
     lastSeenAt: now - 5000, lastStatusAt: now - 5000,
+    clientCount: 2,
+    clients: [
+      { id: 'chrome-client', browser: 'Chrome', lastSeenAt: now - 5000, lastStatusAt: now - 5000 },
+      { id: 'brave-client', browser: 'Brave', lastSeenAt: now - 4000, lastStatusAt: now - 4000 },
+    ],
   },
 };
 const extensionReachable = targetBankPresentation(reachableExtensionBank, [], { now });
 assert.equal(extensionReachable.state, 'working');
-assert.equal(extensionReachable.label, 'Waiting for extension cookies');
+assert.equal(extensionReachable.label, 'Waiting for browser cookies');
 assert.equal(extensionReachable.extensionHarvesterReachable, true);
+assert.equal(extensionReachable.extensionHarvesterReachableCount, 2);
+assert.deepEqual(extensionReachable.extensionHarvesterBrowsers, ['Chrome', 'Brave']);
+assert.match(extensionReachable.description, /2 browser harvesters are reachable/);
 
 const extensionRecentlySaved = targetBankPresentation({
   ...reachableExtensionBank,
   extensionHarvester: {
     ...reachableExtensionBank.extensionHarvester,
     lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 2,
+    clients: reachableExtensionBank.extensionHarvester.clients.map(client => ({
+      ...client, lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 1,
+    })),
   },
 }, [], { now });
 assert.equal(extensionRecentlySaved.state, 'filling');
 assert.equal(extensionRecentlySaved.label, 'Filling ATC bank');
 assert.equal(extensionRecentlySaved.extensionAtcRecentlySaved, true);
-assert.match(extensionRecentlySaved.description, /Chrome extension recently saved an ATC cookie/);
+assert.match(extensionRecentlySaved.description, /2 browser harvesters recently saved an ATC cookie/);
+assert.equal(extensionRecentlySaved.extensionConnectionLabel,
+  '2 browser harvesters live (Chrome, Brave) · 2 accepted this session');
+assert.equal(extensionRecentlySaved.extensionConnectionCompactLabel, '2 ext live · 2 saved');
 
 const staleExtensionSave = targetBankPresentation({
   ...reachableExtensionBank,
@@ -201,10 +261,13 @@ const staleExtensionSave = targetBankPresentation({
     ...reachableExtensionBank.extensionHarvester,
     lastSeenAt: now - 31000, lastStatusAt: now - 31000,
     lastSavedAt: now - 31000, lastSavedType: 'atc', savedCount: 2,
+    clients: reachableExtensionBank.extensionHarvester.clients.map(client => ({
+      ...client, lastSeenAt: now - 31000, lastStatusAt: now - 31000,
+    })),
   },
 }, [], { now });
 assert.equal(staleExtensionSave.state, 'working');
-assert.equal(staleExtensionSave.label, 'Waiting for Chrome extension');
+assert.equal(staleExtensionSave.label, 'Waiting for browser extensions');
 assert.equal(staleExtensionSave.extensionAtcRecentlySaved, false);
 
 const recentLoginSave = targetBankPresentation({
@@ -215,6 +278,28 @@ const recentLoginSave = targetBankPresentation({
   },
 }, [], { now });
 assert.equal(recentLoginSave.state, 'working', 'a login save must not claim the ATC bank is filling');
+
+const mixedRecentSaves = targetBankPresentation({
+  ...reachableExtensionBank,
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    // Brave saved login most recently, but Chrome's earlier ATC save is still inside the active window.
+    lastSavedAt: now - 2000, lastSavedType: 'login', savedCount: 2,
+    clients: [
+      {
+        ...reachableExtensionBank.extensionHarvester.clients[0],
+        lastSavedAt: now - 10000, lastSavedType: 'atc', savedCount: 1,
+      },
+      {
+        ...reachableExtensionBank.extensionHarvester.clients[1],
+        lastSavedAt: now - 2000, lastSavedType: 'login', savedCount: 1,
+      },
+    ],
+  },
+}, [], { now });
+assert.equal(mixedRecentSaves.state, 'filling',
+  'a newer login save from one browser must not hide another browser\'s recent ATC save');
+assert.match(mixedRecentSaves.description, /Chrome harvester recently saved an ATC cookie/);
 
 const extensionReady = targetBankPresentation({
   ...reachableExtensionBank,
@@ -240,10 +325,13 @@ const tandemExtensionSave = targetBankPresentation({
   extensionHarvester: {
     ...reachableExtensionBank.extensionHarvester,
     lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 1,
+    clients: reachableExtensionBank.extensionHarvester.clients.map((client, index) => index === 0
+      ? { ...client, lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 1 }
+      : client),
   },
 }, [{ id: 'managed-atc', enabled: true, type: 'atc' }], { now });
 assert.equal(tandemExtensionSave.label, 'Filling ATC bank');
-assert.match(tandemExtensionSave.description, /Chrome extension also recently saved/,
+assert.match(tandemExtensionSave.description, /The Chrome harvester also recently saved/,
   'tandem presentation must preserve visible extension attribution');
 
 const pausedDynamic = targetBankPresentation({

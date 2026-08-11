@@ -8,12 +8,14 @@ const path = require('node:path');
 const WebSocket = require('../launcher/node_modules/ws');
 const {
   createHarvesterExtensionBridge,
+  extensionClientIdentity,
   extensionCookie,
   extensionStatus,
   isChromeExtensionOrigin,
   jsonRequest,
   localProxyGroups,
   normalizeChromeExtensionId,
+  normalizeChromeExtensionIds,
 } = require('../launcher/harvester-extension-bridge');
 
 const EXTENSION_ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
@@ -25,6 +27,12 @@ const SHAPE_HEADERS = Object.fromEntries([
   'x-gyjwza5z-d', 'x-gyjwza5z-f', 'x-gyjwza5z-z',
 ].map(name => [name, `captured-${name}`]));
 const project = path.resolve(__dirname, '..');
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(next => { resolve = next; });
+  return { promise, resolve };
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -128,16 +136,26 @@ function httpGet(port, path, origin) {
   let savedCookie = null;
   let saveRequests = 0;
   let statusTokenSeen = false;
+  const deferredStatusRequests = [];
   const broker = http.createServer((request, response) => {
     if (request.method === 'GET' && request.url === '/status') {
       statusTokenSeen = !!request.headers['x-zyn-token'];
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({
-        pools: { login: 2, atc: 5 },
-        demand: { activeTasks: 0, effectiveTasks: 4, targets: { login: 4, atc: 8 } },
-        targets: { login: 4, atc: 8 },
-        activity: { waiting: { login: 0, atc: 1 } },
-      }));
+      const sendStatus = () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          pools: { login: 2, atc: 5 },
+          demand: { activeTasks: 0, effectiveTasks: 4, targets: { login: 4, atc: 8 } },
+          targets: { login: 4, atc: 8 },
+          activity: { waiting: { login: 0, atc: 1 } },
+        }));
+      };
+      const pending = deferredStatusRequests.shift();
+      if (pending) {
+        pending.reached.resolve();
+        pending.release.promise.then(sendStatus);
+      } else {
+        sendStatus();
+      }
       return;
     }
     if (request.method === 'POST' && request.url === '/saveCookies') {
@@ -204,18 +222,24 @@ function httpGet(port, path, origin) {
     assert.deepEqual(bridge.activity(), {
       enabled: true,
       configured: true,
+      authorizedIdCount: 1,
       listening: true,
       lastSeenAt: 0,
       lastStatusAt: 0,
       lastSavedAt: 0,
       lastSavedType: '',
       savedCount: 0,
+      clientCount: 0,
+      clients: [],
     });
 
     assert.equal(isChromeExtensionOrigin(EXTENSION_ORIGIN), true);
     assert.equal(isChromeExtensionOrigin('https://target.com'), false);
     assert.equal(normalizeChromeExtensionId('A'.repeat(32)), 'a'.repeat(32));
     assert.equal(normalizeChromeExtensionId('not-an-extension-id'), '');
+    assert.deepEqual(normalizeChromeExtensionIds([
+      ` ${'A'.repeat(32)},${'b'.repeat(32)} `, 'a'.repeat(32), 'invalid',
+    ]), ['a'.repeat(32), 'b'.repeat(32)]);
     assert.deepEqual(extensionStatus({
       pools: { login: 1, atc: 3 },
       demand: { activeTasks: 2, effectiveTasks: 7, targets: { atc: 10 } },
@@ -299,7 +323,7 @@ function httpGet(port, path, origin) {
       headers: { ...SHAPE_HEADERS, 'x-gyjwza5z-a': 'captured' },
       proxy: '9.8.7.6:3128:user:pass',
       expiresAt: savedCookie.expiresAt,
-      harvesterId: 'chrome-extension',
+      harvesterId: extensionClientIdentity({}, configuredExtensionId).harvesterId,
       source: 'extension',
     });
     assert.ok(savedCookie.expiresAt >= beforeSave + 119000
@@ -313,12 +337,23 @@ function httpGet(port, path, origin) {
     assert.deepEqual(bridge.activity(), {
       enabled: true,
       configured: true,
+      authorizedIdCount: 1,
       listening: true,
       lastSeenAt: activityNow,
       lastStatusAt: activityNow - 1000,
       lastSavedAt: activityNow,
       lastSavedType: 'atc',
       savedCount: 1,
+      clientCount: 1,
+      clients: [{
+        id: extensionClientIdentity({}, configuredExtensionId).harvesterId,
+        browser: 'Browser extension',
+        lastSeenAt: activityNow,
+        lastStatusAt: activityNow - 1000,
+        lastSavedAt: activityNow,
+        lastSavedType: 'atc',
+        savedCount: 1,
+      }],
     }, 'an accepted extension capture must publish source-specific bank activity');
 
     const savesBeforeIncomplete = saveRequests;
@@ -369,12 +404,15 @@ function httpGet(port, path, origin) {
     assert.deepEqual(bridge.activity(), {
       enabled: true,
       configured: true,
+      authorizedIdCount: 1,
       listening: true,
       lastSeenAt: 0,
       lastStatusAt: 0,
       lastSavedAt: 0,
       lastSavedType: '',
       savedCount: 0,
+      clientCount: 0,
+      clients: [],
     }, 'changing the configured extension ID must clear the previous extension activity');
     activityNow += 1000;
     await wsRequest(wsUrl, { action: 'status' }, OTHER_EXTENSION_ORIGIN);
@@ -398,12 +436,15 @@ function httpGet(port, path, origin) {
     assert.deepEqual(bridge.activity(), {
       enabled: false,
       configured: true,
+      authorizedIdCount: 1,
       listening: true,
       lastSeenAt: 0,
       lastStatusAt: 0,
       lastSavedAt: 0,
       lastSavedType: '',
       savedCount: 0,
+      clientCount: 0,
+      clients: [],
     }, 'turning extension harvesting off must end its activity session');
     bridgeEnabled = true;
     assert.equal(bridge.activity().lastStatusAt, 0,
@@ -416,6 +457,153 @@ function httpGet(port, path, origin) {
     assert.equal(bridge.activity().lastSeenAt, 0,
       'a socket opened under the previous extension ID remained authorized');
 
+    const multiBrowserCookies = [];
+    const deferredSaveRequests = [];
+    let multiBrowserIds = ['a'.repeat(32), 'b'.repeat(32)];
+    const multiBrowserBridge = createHarvesterExtensionBridge({
+      port: 0,
+      brokerPort: brokerAddress.port,
+      enabled: () => true,
+      allowedExtensionIds: () => multiBrowserIds,
+      saveCookie: async cookie => {
+        const pending = deferredSaveRequests.shift();
+        if (pending) {
+          pending.reached.resolve(cookie);
+          const response = await pending.release.promise;
+          if (response && response.ok !== false && Number(response.saved) > 0) {
+            multiBrowserCookies.push(cookie);
+          }
+          return response;
+        }
+        multiBrowserCookies.push(cookie);
+        return { ok: true, saved: 1 };
+      },
+      clock: () => activityNow,
+      logger: { warn() {} },
+    });
+    try {
+      const multiAddress = await multiBrowserBridge.start();
+      const multiUrl = `ws://127.0.0.1:${multiAddress.port}/ws`;
+      const chrome = { clientId: 'c'.repeat(32), browser: 'Chrome' };
+      const chromeProfileTwo = { clientId: 'd'.repeat(32), browser: 'Chrome' };
+      const brave = { clientId: 'e'.repeat(32), browser: 'Brave' };
+
+      await Promise.all([
+        wsRequest(multiUrl, { action: 'status', ...chrome }, EXTENSION_ORIGIN),
+        wsRequest(multiUrl, { action: 'status', ...chromeProfileTwo }, EXTENSION_ORIGIN),
+        wsRequest(multiUrl, { action: 'status', ...brave }, OTHER_EXTENSION_ORIGIN),
+      ]);
+      assert.deepEqual(multiBrowserBridge.activity().clients.map(client => client.browser).sort(),
+        ['Brave', 'Chrome', 'Chrome'],
+        'same-origin profiles and different Chromium browsers must be tracked independently');
+
+      const saveResults = await Promise.all([
+        wsRequest(multiUrl, {
+          action: 'save', ...chrome, type: 'atc', headers: SHAPE_HEADERS, proxy: 'chrome-proxy',
+        }, EXTENSION_ORIGIN),
+        wsRequest(multiUrl, {
+          action: 'save', ...chromeProfileTwo, type: 'atc', headers: SHAPE_HEADERS, proxy: 'chrome-profile-two',
+        }, EXTENSION_ORIGIN),
+        wsRequest(multiUrl, {
+          action: 'save', ...brave, type: 'atc', headers: SHAPE_HEADERS, proxy: 'brave-proxy',
+        }, OTHER_EXTENSION_ORIGIN),
+      ]);
+      assert.ok(saveResults.every(result => result.ok === true && result.saved === 1));
+      assert.equal(multiBrowserCookies.length, 3);
+      assert.equal(new Set(multiBrowserCookies.map(cookie => cookie.harvesterId)).size, 3,
+        'each browser/profile capture needs a distinct bank attribution');
+      assert.equal(multiBrowserBridge.activity().savedCount, 3);
+      assert.equal(multiBrowserBridge.activity().clientCount, 3);
+      await assert.rejects(
+        wsRequest(multiUrl, { action: 'status', clientId: 'f'.repeat(32), browser: 'Edge' },
+          `chrome-extension://${'c'.repeat(32)}`),
+        /Unexpected server response: 403|socket hang up/,
+      );
+
+      const braveSocket = await openWebSocket(multiUrl, OTHER_EXTENSION_ORIGIN);
+      multiBrowserIds = ['a'.repeat(32)];
+      await assert.rejects(sendOnWebSocket(braveSocket, { action: 'status', ...brave }),
+        /closed before reply/);
+      await wsRequest(multiUrl, { action: 'status', ...chrome }, EXTENSION_ORIGIN);
+      assert.equal(multiBrowserBridge.activity().clients.some(client => client.browser === 'Chrome'), true,
+        'removing Brave authorization disrupted the still-authorized Chrome harvester');
+      assert.equal(multiBrowserBridge.activity().clients.some(client => client.browser === 'Brave'), false,
+        'removed browser authorization retained stale activity');
+
+      await Promise.all(Array.from({ length: 70 }, (_value, index) => wsRequest(multiUrl, {
+        action: 'status',
+        clientId: `flood${String(index).padStart(8, '0')}`,
+        browser: 'Chromium',
+      }, EXTENSION_ORIGIN)));
+      assert.equal(multiBrowserBridge.activity().clientCount, 64,
+        'message-supplied client IDs must not grow bridge activity without bound');
+
+      multiBrowserBridge.resetActivity();
+      const statusBeforeReset = { reached: deferred(), release: deferred() };
+      deferredStatusRequests.push(statusBeforeReset);
+      const pendingStatusBeforeReset = wsRequest(
+        multiUrl, { action: 'status', ...chrome }, EXTENSION_ORIGIN,
+      );
+      await statusBeforeReset.reached.promise;
+      multiBrowserBridge.resetActivity();
+      statusBeforeReset.release.resolve();
+      await assert.rejects(pendingStatusBeforeReset, /closed before reply/,
+        'a status admitted before an activity reset received a reply in the new session');
+      assert.equal(multiBrowserBridge.activity().clientCount, 0,
+        'a deferred pre-reset status completion repopulated extension activity');
+
+      multiBrowserIds = ['a'.repeat(32), 'b'.repeat(32)];
+      multiBrowserBridge.activity();
+      const statusBeforeRevocation = { reached: deferred(), release: deferred() };
+      deferredStatusRequests.push(statusBeforeRevocation);
+      const pendingStatusBeforeRevocation = wsRequest(
+        multiUrl, { action: 'status', ...brave }, OTHER_EXTENSION_ORIGIN,
+      );
+      await statusBeforeRevocation.reached.promise;
+      multiBrowserIds = ['a'.repeat(32)];
+      statusBeforeRevocation.release.resolve();
+      await assert.rejects(pendingStatusBeforeRevocation, /closed before reply/,
+        'a status admitted before ID revocation received a reply after revocation');
+      assert.equal(multiBrowserBridge.activity().clients.some(client => client.browser === 'Brave'), false,
+        'a deferred status from a revoked extension repopulated activity');
+
+      const cookiesBeforeResetSave = multiBrowserCookies.length;
+      const saveBeforeReset = { reached: deferred(), release: deferred() };
+      deferredSaveRequests.push(saveBeforeReset);
+      const pendingSaveBeforeReset = wsRequest(multiUrl, {
+        action: 'save', ...chrome, type: 'atc', headers: SHAPE_HEADERS, proxy: 'reset-race-proxy',
+      }, EXTENSION_ORIGIN);
+      await saveBeforeReset.reached.promise;
+      multiBrowserBridge.resetActivity();
+      saveBeforeReset.release.resolve({ ok: true, saved: 1 });
+      assert.deepEqual(await pendingSaveBeforeReset, { ok: true, saved: 1 },
+        'an accepted pre-reset save must be acknowledged so the extension does not retry it');
+      assert.equal(multiBrowserCookies.length, cookiesBeforeResetSave + 1,
+        'resetting activity cancelled a save already accepted by the cookie bank');
+      assert.equal(multiBrowserBridge.activity().savedCount, 0,
+        'an accepted pre-reset save completion repopulated extension activity');
+
+      multiBrowserIds = ['a'.repeat(32), 'b'.repeat(32)];
+      multiBrowserBridge.activity();
+      const cookiesBeforeRevokedSave = multiBrowserCookies.length;
+      const saveBeforeRevocation = { reached: deferred(), release: deferred() };
+      deferredSaveRequests.push(saveBeforeRevocation);
+      const pendingSaveBeforeRevocation = wsRequest(multiUrl, {
+        action: 'save', ...brave, type: 'atc', headers: SHAPE_HEADERS, proxy: 'revoked-race-proxy',
+      }, OTHER_EXTENSION_ORIGIN);
+      await saveBeforeRevocation.reached.promise;
+      multiBrowserIds = ['a'.repeat(32)];
+      saveBeforeRevocation.release.resolve({ ok: true, saved: 1 });
+      assert.deepEqual(await pendingSaveBeforeRevocation, { ok: true, saved: 1 },
+        'an accepted save from a revoked ID must still be acknowledged exactly once');
+      assert.equal(multiBrowserCookies.length, cookiesBeforeRevokedSave + 1,
+        'revoking an extension cancelled a save already accepted by the cookie bank');
+      assert.equal(multiBrowserBridge.activity().clients.some(client => client.browser === 'Brave'), false,
+        'an accepted save from a revoked extension repopulated activity');
+    } finally {
+      await multiBrowserBridge.stop();
+    }
+
     const bootstrap = fs.readFileSync(path.join(project, 'launcher', 'bootstrap.js'), 'utf8');
     const macBuild = fs.readFileSync(path.join(project, 'scripts', 'build-zyn.sh'), 'utf8');
     const windowsBuild = fs.readFileSync(path.join(project, 'scripts', 'build-zyn-windows.sh'), 'utf8');
@@ -425,8 +613,8 @@ function httpGet(port, path, origin) {
       'Zyn bootstrap does not create the extension compatibility bridge');
     assert.match(bootstrap, /allowProxyImport: \(\) => false/,
       'Zyn bootstrap can expose proxy credentials through the legacy endpoint');
-    assert.match(bootstrap, /allowedExtensionId: configuredExtensionId/,
-      'Zyn bootstrap does not pin the configured Chrome extension ID');
+    assert.match(bootstrap, /allowedExtensionIds: configuredExtensionIds/,
+      'Zyn bootstrap does not pin the configured browser extension IDs');
     assert.match(bootstrap, /saveCookie: cookie =>/,
       'Zyn bootstrap does not use the Target engine authenticated-save capability');
     assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,

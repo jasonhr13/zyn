@@ -10,6 +10,10 @@ import {
   targetHarvesterBandwidth,
 } from '../target-bank-metrics.mjs';
 import {
+  harvesterExtensionIdsFromSettings,
+  hasHarvesterExtensionId,
+} from '../harvester-extension-ids.mjs';
+import {
   buildScheduleFromDraft,
   draftFromSchedule,
   emptyScheduleDraft,
@@ -419,7 +423,7 @@ class TaskGroups extends Component {
   extensionHarvesterConfigured = () => {
     const settings = this.props.settings || {};
     return /^harvester$/i.test(String(settings.shapeMethod || '').trim())
-      && /^[a-p]{32}$/.test(String(settings.targetHarvesterExtensionId || '').trim().toLowerCase());
+      && hasHarvesterExtensionId(harvesterExtensionIdsFromSettings(settings));
   };
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
@@ -1009,7 +1013,13 @@ class TaskGroups extends Component {
           />
           <small id="target-atc-demand-formula">{presentation.demandLabel}</small>
         </label>
-        <span className="cookie-bank-broker"><i />{presentation.brokerLabel}</span>
+        <span className="cookie-bank-broker" title={presentation.extensionConnectionLabel
+          ? `${presentation.brokerLabel} · ${presentation.extensionConnectionLabel}`
+          : presentation.brokerLabel}>
+          <i /><span>{presentation.brokerLabel}
+            {presentation.extensionConnectionCompactLabel
+              ? ` · ${presentation.extensionConnectionCompactLabel}` : ''}</span>
+        </span>
       </section>
     );
   }

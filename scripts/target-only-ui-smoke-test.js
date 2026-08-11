@@ -42,19 +42,27 @@ assert.match(routes, /<Redirect to="\/modules" \/>/);
 assert.match(settings, /Target workspace/);
 assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);
 
-const extensionSettings = settings.indexOf('Target — Chrome Extension Harvester');
+const extensionSettings = settings.indexOf('Target — Browser Extension Harvesters');
 const operatorSettings = settings.indexOf('{operatorMode && (<>');
 assert.ok(extensionSettings >= 0 && extensionSettings < operatorSettings,
   'Chrome extension harvester settings must be visible without operator mode');
 const publicHarvesterSettings = settings.slice(extensionSettings, operatorSettings);
-assert.match(publicHarvesterSettings, /Chrome extension harvesting/);
-assert.match(publicHarvesterSettings, /value=\{targetHarvesterExtensionId\}/);
-assert.match(publicHarvesterSettings, /in-app harvesters can run at the same time and feed the same Target cookie bank/,
-  'Settings must explain that extension and in-app harvesting are additive');
+assert.match(publicHarvesterSettings, /Browser extension harvesting/);
+assert.match(publicHarvesterSettings, /value=\{targetHarvesterExtensionIds\}/);
+assert.match(publicHarvesterSettings, /Chrome, Brave, or multiple browser profiles at once/,
+  'Settings must explain simultaneous multi-browser harvesting');
+assert.match(publicHarvesterSettings, /Browser extension IDs/);
+assert.match(publicHarvesterSettings, /extensionIdsError/);
+assert.match(publicHarvesterSettings, /role="alert"/);
+assert.match(settings, /targetHarvesterExtensionIds\.split\('\\n'\)\[0\]/,
+  'saving multiple IDs must preserve the legacy singular setting');
+assert.match(settings,
+  /const targetHarvesterExtensionIds = !extensionModeEnabled && parsedExtensionIds\.error[\s\S]{0,100}\? previousExtensionIds[\s\S]{0,100}: parsedExtensionIds\.normalized/,
+  'turning harvesting off must preserve the prior valid IDs when the hidden draft is invalid');
 assert.match(settings, /ipcRenderer\.send\('resetHarvesterExtensionActivity'\)/,
   'changing extension settings must reset stale bridge activity');
 const advancedHarvesterSettings = settings.slice(operatorSettings, settings.indexOf('Email / OTP', operatorSettings));
-assert.doesNotMatch(advancedHarvesterSettings, /value=\{shapeMethod\}|value=\{targetHarvesterExtensionId\}/,
+assert.doesNotMatch(advancedHarvesterSettings, /value=\{shapeMethod\}|value=\{targetHarvesterExtensionIds\}/,
   'Chrome extension controls must not remain operator-only');
 
 console.log('Target and Pokemon Center UI smoke test passed');

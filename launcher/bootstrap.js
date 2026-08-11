@@ -298,16 +298,16 @@ function installHarvesterExtensionCompatibility(authority) {
       const seconds = Number.parseInt(String(settings.targetCookieTtlSec || ''), 10);
       return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 600)) * 1000;
     };
-    const configuredExtensionId = () => {
+    const configuredExtensionIds = () => {
       let settings = {};
       try { settings = dataManager.getSettings?.() || {}; } catch {}
-      const id = String(settings.targetHarvesterExtensionId || '').trim().toLowerCase();
-      return /^[a-p]{32}$/.test(id) ? id : '';
+      return [settings.targetHarvesterExtensionIds, settings.targetHarvesterExtensionId]
+        .filter(Boolean);
     };
     const bridge = createHarvesterExtensionBridge({
       enabled: selected,
       ensureBroker: () => targetEngine.ensureHarvesterBroker?.(),
-      allowedExtensionId: configuredExtensionId,
+      allowedExtensionIds: configuredExtensionIds,
       saveCookie: cookie => {
         if (typeof targetEngine.saveHarvesterCookie !== 'function') {
           throw new Error('Target engine does not expose authenticated extension saves');
@@ -320,13 +320,13 @@ function installHarvesterExtensionCompatibility(authority) {
       cookieTtlMs: configuredCookieTtl,
       logger: console,
     });
-    // Settings uses this no-payload signal only when the selected mode or pinned extension changes.
+    // Settings uses this no-payload signal only when the selected mode or pinned extension IDs change.
     // Reset immediately so an Off -> On cycle cannot revive a recent save from the prior session.
     ipcMain.on('resetHarvesterExtensionActivity', () => bridge.resetActivity());
     // The broker reports managed producer telemetry, but the external extension terminates at this
     // main-process bridge. Add its safe activity snapshot at the existing cookie-bank boundary so
     // the renderer can distinguish a configured/recently-saving extension without receiving the
-    // extension ID, broker token, captured headers, or proxy credentials.
+    // extension IDs, broker token, captured headers, or proxy credentials.
     if (typeof targetEngine.getCookieBank === 'function') {
       const getCookieBank = targetEngine.getCookieBank.bind(targetEngine);
       targetEngine.getCookieBank = async (...args) => {

@@ -1,5 +1,10 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import {
+  MAX_HARVESTER_EXTENSION_IDS,
+  harvesterExtensionIdsFromSettings,
+  parseHarvesterExtensionIds,
+} from '../harvester-extension-ids.mjs';
 const { ipcRenderer } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -44,7 +49,7 @@ class Settings extends Component {
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
       targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
-      targetVerboseLogs: false, shapeMethod: 'In Bot', targetHarvesterExtensionId: '',
+      targetVerboseLogs: false, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -68,7 +73,8 @@ class Settings extends Component {
       targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!s.targetVerboseLogs,
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
-      targetHarvesterExtensionId: String(s.targetHarvesterExtensionId || '').trim().toLowerCase(),
+      targetHarvesterExtensionIds: harvesterExtensionIdsFromSettings(s),
+      extensionIdsError: '',
     });
   }
 
@@ -114,6 +120,20 @@ class Settings extends Component {
     // Preserve every legacy setting in storage while this Target-only screen manages only the
     // settings it exposes. That keeps old backups reversible without leaking retired modules here.
     const previousSettings = this.props.settings || {};
+    const previousExtensionIds = harvesterExtensionIdsFromSettings(previousSettings);
+    const extensionModeEnabled = this.state.shapeMethod === 'Harvester';
+    const parsedExtensionIds = parseHarvesterExtensionIds(this.state.targetHarvesterExtensionIds, {
+      requireOne: extensionModeEnabled,
+    });
+    if (extensionModeEnabled && parsedExtensionIds.error) {
+      this.setState({ extensionIdsError: parsedExtensionIds.error, saved: false });
+      return;
+    }
+    // A malformed hidden draft must not erase or truncate the last valid configuration merely
+    // because harvesting was switched Off. When On, the visible validation above remains strict.
+    const targetHarvesterExtensionIds = !extensionModeEnabled && parsedExtensionIds.error
+      ? previousExtensionIds
+      : parsedExtensionIds.normalized;
     const settings = {
       ...previousSettings,
       discordWebhook: this.state.discordWebhook,
@@ -132,19 +152,20 @@ class Settings extends Component {
       targetBlockHeavyResources: this.state.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!this.state.targetVerboseLogs,
       shapeMethod: this.state.shapeMethod,
-      targetHarvesterExtensionId: this.state.targetHarvesterExtensionId.trim().toLowerCase(),
+      targetHarvesterExtensionIds,
+      // Keep the first ID under the legacy singular key so older backups/builds remain reversible.
+      targetHarvesterExtensionId: targetHarvesterExtensionIds.split('\n')[0] || '',
     };
     ipcRenderer.sendSync('saveSettings', settings);
     const previousExtensionMode = /^harvester$/i.test(String(previousSettings.shapeMethod || '').trim());
-    const previousExtensionId = String(previousSettings.targetHarvesterExtensionId || '').trim().toLowerCase();
     if (previousExtensionMode !== (settings.shapeMethod === 'Harvester')
-      || previousExtensionId !== settings.targetHarvesterExtensionId) {
+      || previousExtensionIds !== settings.targetHarvesterExtensionIds) {
       try { ipcRenderer.send('resetHarvesterExtensionActivity'); } catch {}
     }
     try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     try { ipcRenderer.invoke('targetCookieBank').catch(() => {}); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings } });
-    this.setState({ saved: true });
+    this.setState({ saved: true, extensionIdsError: '' });
     setTimeout(() => this.setState({ saved: false }), 2000);
   };
 
@@ -230,7 +251,7 @@ class Settings extends Component {
     const { discordWebhook, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
-      targetVerboseLogs, shapeMethod, targetHarvesterExtensionId,
+      targetVerboseLogs, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
       licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -316,14 +337,14 @@ class Settings extends Component {
           </div>
 
           <div className="settings-section">
-            <div className="settings-section-title">Target — Chrome Extension Harvester</div>
+            <div className="settings-section-title">Target — Browser Extension Harvesters</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
-              Optional companion for harvesting in Chrome. When enabled, the extension and Zyn&apos;s
-              in-app harvesters can run at the same time and feed the same Target cookie bank.
+              Run the companion in Chrome, Brave, or multiple browser profiles at once. Every copy
+              and Zyn&apos;s in-app harvesters feed the same Target cookie bank.
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">Chrome extension harvesting</label>
+                <label className="form-label">Browser extension harvesting</label>
                 <select
                   className="form-input"
                   value={shapeMethod}
@@ -335,20 +356,28 @@ class Settings extends Component {
               </div>
               {shapeMethod === 'Harvester' && (
                 <div className="form-group" style={{ flex: 2 }}>
-                  <FieldLabel help="Copy the 32-character ID shown for this unpacked extension on chrome://extensions. Zyn rejects every other Chrome extension origin.">
-                    Chrome extension ID
+                  <FieldLabel help={`Copy the 32-character ID shown on each browser's extensions page. Add one ID per line (up to ${MAX_HARVESTER_EXTENSION_IDS}); duplicate IDs are stored once.`}>
+                    Browser extension IDs
                   </FieldLabel>
-                  <input
+                  <textarea
                     className="form-input monospace"
-                    type="text"
-                    maxLength={32}
-                    pattern="[a-p]{32}"
+                    rows={3}
                     spellCheck={false}
                     autoComplete="off"
-                    placeholder="32 characters from chrome://extensions"
-                    value={targetHarvesterExtensionId}
-                    onChange={e => this.set('targetHarvesterExtensionId', e.target.value.toLowerCase())}
+                    placeholder={'Chrome extension ID\nBrave extension ID'}
+                    value={targetHarvesterExtensionIds}
+                    aria-invalid={!!extensionIdsError}
+                    onChange={e => this.setState({
+                      targetHarvesterExtensionIds: e.target.value.toLowerCase(),
+                      extensionIdsError: '',
+                      saved: false,
+                    })}
                   />
+                  {extensionIdsError && (
+                    <div role="alert" style={{ color: 'var(--danger)', fontSize: 10, marginTop: 5 }}>
+                      {extensionIdsError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

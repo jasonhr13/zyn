@@ -1,10 +1,10 @@
 'use strict';
 
-// Compatibility boundary for the external Chrome Target cookie harvester.
+// Compatibility boundary for external Chromium Target cookie harvesters.
 //
 // The extension speaks a small legacy protocol on 127.0.0.1:4312:
-//   WebSocket /ws  { action: 'status' }
-//   WebSocket /ws  { action: 'save', type, headers, proxy, expiry }
+//   WebSocket /ws  { action: 'status', clientId?, browser? }
+//   WebSocket /ws  { action: 'save', clientId?, browser?, type, headers, proxy, expiry }
 //   HTTP GET /proxies
 //
 // Zyn's native engine consumes a different, readable HTTP broker on :4727. Keep the opaque
@@ -12,6 +12,7 @@
 // bridge never returns banked headers or managed-proxy credentials.
 
 const http = require('http');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -21,6 +22,9 @@ const MAX_MESSAGE_BYTES = 256 * 1024;
 const DEFAULT_COOKIE_TTL_MS = 10 * 60 * 1000;
 const MIN_COOKIE_TTL_MS = 30 * 1000;
 const MAX_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_EXTENSION_IDS = 16;
+const MAX_ACTIVITY_CLIENTS = 64;
+const ACTIVITY_CLIENT_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/;
 const REQUIRED_CAPTURED_HEADER_NAMES = Object.freeze([
   'sec-ch-ua-platform',
@@ -45,6 +49,57 @@ function isChromeExtensionOrigin(value) {
 function normalizeChromeExtensionId(value) {
   const id = String(value || '').trim().toLowerCase();
   return /^[a-p]{32}$/.test(id) ? id : '';
+}
+
+function normalizeChromeExtensionIds(value) {
+  const values = Array.isArray(value) ? value : [value];
+  const ids = [];
+  const seen = new Set();
+  for (const item of values) {
+    for (const token of String(item || '').split(/[\s,;]+/)) {
+      const id = normalizeChromeExtensionId(token);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= MAX_EXTENSION_IDS) return ids;
+    }
+  }
+  return ids;
+}
+
+function normalizeHarvesterInstanceId(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9_-]{7,63}$/.test(id) ? id : '';
+}
+
+function normalizeBrowserName(value) {
+  const name = String(value || '').trim().toLowerCase();
+  const known = {
+    brave: 'Brave',
+    chrome: 'Chrome',
+    chromium: 'Chromium',
+    edge: 'Edge',
+    opera: 'Opera',
+    vivaldi: 'Vivaldi',
+  };
+  return known[name] || 'Browser extension';
+}
+
+function extensionClientIdentity(message = {}, extensionId = '') {
+  const normalizedExtensionId = normalizeChromeExtensionId(extensionId);
+  if (!normalizedExtensionId) throw new TypeError('invalid extension id');
+  const instanceId = normalizeHarvesterInstanceId(
+    message.harvesterInstanceId || message.clientId,
+  );
+  const key = `${normalizedExtensionId}:${instanceId || 'legacy'}`;
+  const digest = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
+  return {
+    key,
+    extensionId: normalizedExtensionId,
+    instanceId,
+    browser: normalizeBrowserName(message.browser),
+    harvesterId: `browser-extension-${digest}`,
+  };
 }
 
 function delay(milliseconds) {
@@ -134,6 +189,7 @@ function extensionStatus(status = {}) {
 function extensionCookie(message = {}, {
   now = Date.now(),
   maxTtlMs = DEFAULT_COOKIE_TTL_MS,
+  harvesterId = 'chrome-extension',
 } = {}) {
   const type = String(message.type || '').toLowerCase();
   if (type !== 'login' && type !== 'atc') throw new TypeError('cookie type must be login or atc');
@@ -158,7 +214,8 @@ function extensionCookie(message = {}, {
     headers,
     proxy: String(message.proxy || '').slice(0, 4096),
     expiresAt,
-    harvesterId: 'chrome-extension',
+    harvesterId: String(harvesterId || 'chrome-extension')
+      .replace(/[^a-z0-9_-]/gi, '').slice(0, 64) || 'chrome-extension',
     source: 'extension',
   };
 }
@@ -189,6 +246,7 @@ function createHarvesterExtensionBridge({
   ensureBroker = () => {},
   getProxyCatalog = () => ({ lists: [] }),
   allowProxyImport = () => false,
+  allowedExtensionIds = null,
   allowedExtensionId = () => '',
   saveCookie = null,
   cookieTtlMs = () => DEFAULT_COOKIE_TTL_MS,
@@ -201,12 +259,10 @@ function createHarvesterExtensionBridge({
   let webSockets = null;
   let listeningAddress = null;
   let pendingStart = null;
-  let lastSeenAt = 0;
-  let lastStatusAt = 0;
-  let lastSavedAt = 0;
-  let lastSavedType = '';
-  let savedCount = 0;
-  let activityExtensionId = '';
+  const clientActivity = new Map();
+  let activityEnabled = null;
+  let activityConfigurationKey = null;
+  let activityGeneration = 0;
 
   const timestamp = () => {
     try { return Math.max(0, Number(clock()) || 0); }
@@ -218,48 +274,133 @@ function createHarvesterExtensionBridge({
     catch { return false; }
   };
 
-  const configuredId = () => {
-    try { return normalizeChromeExtensionId(allowedExtensionId()); }
-    catch { return ''; }
+  const configuredIds = () => {
+    try {
+      const value = typeof allowedExtensionIds === 'function'
+        ? allowedExtensionIds()
+        : allowedExtensionIds == null ? allowedExtensionId() : allowedExtensionIds;
+      return normalizeChromeExtensionIds(value);
+    } catch { return []; }
   };
 
-  const selectActivityId = id => {
-    if (id === activityExtensionId) return;
-    activityExtensionId = id;
-    lastSeenAt = 0;
-    lastStatusAt = 0;
-    lastSavedAt = 0;
-    lastSavedType = '';
-    savedCount = 0;
+  const pruneClientActivity = (ids = configuredIds()) => {
+    const allowed = new Set(ids);
+    const now = timestamp();
+    for (const [key, client] of clientActivity) {
+      const stale = client.lastSeenAt > 0 && now >= client.lastSeenAt
+        && now - client.lastSeenAt > ACTIVITY_CLIENT_TTL_MS;
+      if (!allowed.has(client.extensionId) || stale) clientActivity.delete(key);
+    }
   };
 
-  const resetActivity = () => selectActivityId('');
+  const activityConfiguration = () => {
+    const isEnabled = available();
+    const ids = configuredIds();
+    const configurationKey = `${isEnabled ? 'enabled' : 'disabled'}:${[...ids].sort().join(',')}`;
+    if (activityConfigurationKey !== null && activityConfigurationKey !== configurationKey) {
+      activityGeneration += 1;
+    }
+    if (activityEnabled !== null && activityEnabled !== isEnabled) clientActivity.clear();
+    activityEnabled = isEnabled;
+    activityConfigurationKey = configurationKey;
+    pruneClientActivity(ids);
+    return { isEnabled, ids, generation: activityGeneration };
+  };
+
+  const resetActivity = () => {
+    clientActivity.clear();
+    activityGeneration += 1;
+  };
 
   const originAllowed = value => {
     const origin = String(value || '').toLowerCase();
     if (!isChromeExtensionOrigin(origin)) return false;
-    const id = configuredId();
-    return !!id && origin === `chrome-extension://${id}`;
+    const extensionId = origin.replace(/^chrome-extension:\/\//, '');
+    return configuredIds().includes(extensionId);
+  };
+
+  const noteClientActivity = (client, kind, {
+    saved = 0,
+    type = '',
+    generation = -1,
+  } = {}) => {
+    const access = activityConfiguration();
+    if (!access.isEnabled || access.generation !== generation
+        || !access.ids.includes(client.extensionId)) return false;
+    if (!clientActivity.has(client.key)) {
+      while (clientActivity.size >= MAX_ACTIVITY_CLIENTS) {
+        let oldestKey = '';
+        let oldestSeenAt = Infinity;
+        for (const [key, item] of clientActivity) {
+          if (item.lastSeenAt < oldestSeenAt) {
+            oldestKey = key;
+            oldestSeenAt = item.lastSeenAt;
+          }
+        }
+        if (!oldestKey) break;
+        clientActivity.delete(oldestKey);
+      }
+    }
+    const at = timestamp();
+    const previous = clientActivity.get(client.key) || {
+      extensionId: client.extensionId,
+      harvesterId: client.harvesterId,
+      browser: client.browser,
+      lastSeenAt: 0,
+      lastStatusAt: 0,
+      lastSavedAt: 0,
+      lastSavedType: '',
+      savedCount: 0,
+    };
+    const next = {
+      ...previous,
+      browser: client.browser === 'Browser extension' ? previous.browser : client.browser,
+      lastSeenAt: at,
+    };
+    if (kind === 'status') next.lastStatusAt = at;
+    if (kind === 'save') {
+      next.lastSavedAt = at;
+      next.lastSavedType = String(type || '').toLowerCase();
+      next.savedCount += Math.max(0, Number(saved) || 0);
+    }
+    clientActivity.set(client.key, next);
+    return true;
   };
 
   // The legacy client opens a one-request WebSocket rather than holding a connection open. Expose
   // only successful request/save timestamps; callers decide how recent is recent enough for their
   // presentation and never have to mistake the listening socket for a running harvester.
   const activity = () => {
-    const id = configuredId();
-    const isEnabled = available();
+    const { isEnabled, ids } = activityConfiguration();
     // Treat turning the feature off as the end of this activity session. Re-enabling the same
-    // extension ID must wait for fresh evidence instead of reviving a recent pre-disable save.
-    selectActivityId(isEnabled ? id : '');
+    // extension IDs must wait for fresh evidence instead of reviving a recent pre-disable save.
+    if (!isEnabled) clientActivity.clear();
+    const clients = [...clientActivity.values()]
+      .sort((a, b) => a.browser.localeCompare(b.browser) || a.harvesterId.localeCompare(b.harvesterId))
+      .map(client => ({
+        id: client.harvesterId,
+        browser: client.browser,
+        lastSeenAt: client.lastSeenAt,
+        lastStatusAt: client.lastStatusAt,
+        lastSavedAt: client.lastSavedAt,
+        lastSavedType: client.lastSavedType,
+        savedCount: client.savedCount,
+      }));
+    const latestSaved = clients.reduce((latest, client) => (
+      client.lastSavedAt >= (latest && latest.lastSavedAt || 0) ? client : latest
+    ), null);
     return {
       enabled: isEnabled,
-      configured: !!id,
+      configured: ids.length > 0,
+      authorizedIdCount: ids.length,
       listening: !!listeningAddress,
-      lastSeenAt,
-      lastStatusAt,
-      lastSavedAt,
-      lastSavedType,
-      savedCount,
+      lastSeenAt: Math.max(0, ...clients.map(client => client.lastSeenAt)),
+      lastStatusAt: Math.max(0, ...clients.map(client => client.lastStatusAt)),
+      lastSavedAt: latestSaved ? latestSaved.lastSavedAt : 0,
+      lastSavedType: latestSaved ? latestSaved.lastSavedType : '',
+      savedCount: clients.reduce((total, client) => total + client.savedCount, 0),
+      clientCount: clients.length,
+      clients,
     };
   };
 
@@ -305,14 +446,17 @@ function createHarvesterExtensionBridge({
     }
 
     try {
-      if (!available() || !socket.zynExtensionId
-        || socket.zynExtensionId !== configuredId()) {
+      const access = activityConfiguration();
+      if (!access.isEnabled || !socket.zynExtensionId
+        || !access.ids.includes(socket.zynExtensionId)) {
         throw new Error('extension is no longer authorized');
       }
+      const client = extensionClientIdentity(message, socket.zynExtensionId);
       if (message.action === 'status') {
         const status = await broker('/status');
-        selectActivityId(socket.zynExtensionId || '');
-        lastSeenAt = lastStatusAt = timestamp();
+        if (!noteClientActivity(client, 'status', { generation: access.generation })) {
+          throw new Error('extension activity session changed');
+        }
         send(socket, extensionStatus(status));
         return;
       }
@@ -324,16 +468,21 @@ function createHarvesterExtensionBridge({
         }
         const cookie = extensionCookie(message, {
           maxTtlMs: configuredTtl,
+          harvesterId: client.harvesterId,
         });
         const response = await saveCookie(cookie);
         const saved = Number(response && response.saved) || 0;
         if (!response || response.ok === false || saved < 1) {
           throw new Error('capture was not accepted by the Zyn cookie bank');
         }
-        selectActivityId(socket.zynExtensionId || '');
-        lastSeenAt = lastSavedAt = timestamp();
-        lastSavedType = cookie.type;
-        savedCount += saved;
+        // Once the bank has accepted a non-idempotent capture, always acknowledge it. Withholding
+        // success after a settings/reset race would make the extension retry an already-banked
+        // cookie. A stale generation suppresses only the new session's activity attribution.
+        noteClientActivity(client, 'save', {
+          saved,
+          type: cookie.type,
+          generation: access.generation,
+        });
         send(socket, { ok: true, saved });
         return;
       }
@@ -511,6 +660,10 @@ module.exports = {
   CAPTURED_HEADER_NAMES,
   isChromeExtensionOrigin,
   normalizeChromeExtensionId,
+  normalizeChromeExtensionIds,
+  normalizeHarvesterInstanceId,
+  normalizeBrowserName,
+  extensionClientIdentity,
   extensionStatus,
   extensionCookie,
   localProxyGroups,
