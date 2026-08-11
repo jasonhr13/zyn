@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.15",
+  "appRelease": "R8.16",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -15,7 +15,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.89",
+    "version": "1.6.90",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -55,6 +55,7 @@
     "Contents/Resources/app/task-type-ipc-guard.js",
     "Contents/Resources/app/task-group-store.js",
     "Contents/Resources/app/task-group-schedule.js",
+    "Contents/Resources/app/target-product-history.js",
     "Contents/Resources/app/task-group-scheduler.js",
     "Contents/Resources/app/target-group-launch.js",
     "Contents/Resources/app/window-size-state.js",

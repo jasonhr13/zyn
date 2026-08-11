@@ -145,6 +145,8 @@ class TaskGroups extends Component {
     showGroupModal: false,
     editingGroupId: '',
     groupDraft: { ...EMPTY_GROUP },
+    productHistory: [],
+    productHistoryFilter: '',
     showScheduleModal: false,
     scheduleDraft: emptyScheduleDraft(),
     scheduleError: '',
@@ -169,11 +171,16 @@ class TaskGroups extends Component {
 
   componentDidMount() {
     this.loadGroups();
+    this.loadProductHistory();
     this.pollBank();
     this.bankTimer = setInterval(this.pollBank, 5000);
     this.scheduleClockTimer = setInterval(() => this.setState({ scheduleNow: Date.now() }), 30000);
     this.onTaskGroupSchedule = () => this.loadGroups();
     ipcRenderer.on('taskGroupSchedule', this.onTaskGroupSchedule);
+    this.onTargetProductHistory = (_event, payload = {}) => {
+      this.setState({ productHistory: Array.isArray(payload.items) ? payload.items : [] });
+    };
+    ipcRenderer.on('targetProductHistory', this.onTargetProductHistory);
   }
 
   componentDidUpdate(prevProps) {
@@ -200,7 +207,14 @@ class TaskGroups extends Component {
     clearInterval(this.bankTimer);
     clearInterval(this.scheduleClockTimer);
     try { ipcRenderer.removeListener('taskGroupSchedule', this.onTaskGroupSchedule); } catch {}
+    try { ipcRenderer.removeListener('targetProductHistory', this.onTargetProductHistory); } catch {}
   }
+
+  loadProductHistory = () => {
+    let productHistory = [];
+    try { productHistory = ipcRenderer.sendSync('getTargetProductHistory') || []; } catch {}
+    this.setState({ productHistory: Array.isArray(productHistory) ? productHistory : [] });
+  };
 
   loadGroups = () => {
     let groups = [];
@@ -428,25 +442,41 @@ class TaskGroups extends Component {
     return sum;
   }, { groups: this.state.groups.length, tasks: 0, running: 0, attention: 0 });
 
-  openNewGroup = () => this.setState({
-    showGroupModal: true,
-    editingGroupId: '',
-    groupDraft: { ...EMPTY_GROUP },
-  });
+  openNewGroup = () => {
+    this.loadProductHistory();
+    this.setState({
+      showGroupModal: true,
+      editingGroupId: '',
+      groupDraft: { ...EMPTY_GROUP },
+      productHistoryFilter: '',
+    });
+  };
 
-  openEditGroup = group => this.setState({
-    showGroupModal: true,
-    editingGroupId: group.id,
-    groupDraft: {
-      name: group.name,
-      skus: group.skus || '',
-      qty: group.qty || 2,
-      proxyListName: group.proxyListName || '',
-      loopCheckout: group.loopCheckout === true,
-    },
-  });
+  openEditGroup = group => {
+    this.loadProductHistory();
+    this.setState({
+      showGroupModal: true,
+      editingGroupId: group.id,
+      groupDraft: {
+        name: group.name,
+        skus: group.skus || '',
+        qty: group.qty || 2,
+        proxyListName: group.proxyListName || '',
+        loopCheckout: group.loopCheckout === true,
+      },
+      productHistoryFilter: '',
+    });
+  };
 
   closeGroupModal = () => this.setState({ showGroupModal: false, editingGroupId: '' });
+
+  addProductFromHistory = sku => this.setState(previous => {
+    const id = String(sku || '').trim();
+    if (!id || parseSkus(previous.groupDraft.skus).includes(id)) return null;
+    const raw = String(previous.groupDraft.skus || '');
+    const separator = !raw.trim() || /[\n,]\s*$/.test(raw) ? '' : '\n';
+    return { groupDraft: { ...previous.groupDraft, skus: `${raw}${separator}${id}` } };
+  });
 
   setScheduleDraft = patch => this.setState(previous => ({
     scheduleDraft: { ...previous.scheduleDraft, ...patch },
@@ -1628,6 +1658,60 @@ class TaskGroups extends Component {
     );
   }
 
+  renderProductHistoryPicker(draft) {
+    const filter = this.state.productHistoryFilter.trim().toLowerCase();
+    const selected = new Set(parseSkus(draft.skus));
+    const history = this.state.productHistory.filter(item => {
+      if (!filter) return true;
+      return `${item.sku || ''} ${item.name || ''}`.toLowerCase().includes(filter);
+    }).slice(0, filter ? 100 : 20);
+    return (
+      <div className="target-product-history">
+        <div className="target-product-history-heading">
+          <span><strong>Recently monitored</strong><small>Select products you have tracked before.</small></span>
+          {this.state.productHistory.length > 4 && (
+            <input
+              className="form-input"
+              type="search"
+              aria-label="Search Target product history"
+              placeholder="Search SKU or name…"
+              value={this.state.productHistoryFilter}
+              onChange={event => this.setState({ productHistoryFilter: event.target.value })}
+            />
+          )}
+        </div>
+        {history.length ? (
+          <div className="target-product-history-list">
+            {history.map(item => {
+              const added = selected.has(item.sku);
+              return (
+                <button
+                  className={added ? 'added' : ''}
+                  type="button"
+                  key={item.sku}
+                  disabled={added}
+                  onClick={() => this.addProductFromHistory(item.sku)}
+                  title={item.name || `Target SKU ${item.sku}`}
+                >
+                  <span className="target-product-history-sku">{item.sku}</span>
+                  <span className="target-product-history-name">
+                    <strong className={item.name ? '' : 'pending'}>{item.name || 'Name not fetched yet'}</strong>
+                    <small>{item.useCount > 1 ? `Monitored ${item.useCount} times` : 'Previously monitored'}</small>
+                  </span>
+                  <span className="target-product-history-action">{added ? 'Added' : 'Add'}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="target-product-history-empty">
+            {filter ? 'No history matches that search.' : 'Products appear here after a Target monitor starts.'}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   renderGroupModal() {
     if (!this.state.showGroupModal) return null;
     const draft = this.state.groupDraft;
@@ -1638,7 +1722,8 @@ class TaskGroups extends Component {
           <div className="modal-header"><div><div className="modal-title">{editing ? 'Edit Target Group' : 'New Target Group'}</div><p>One shared watch list, with one checkout task per account.</p></div><button className="modal-close" onClick={this.closeGroupModal}>×</button></div>
           <div className="modal-body">
             <div className="form-group"><label className="form-label">Group name</label><input className="form-input" autoFocus value={draft.name} placeholder="Friday drop" onChange={event => this.setState({ groupDraft: { ...draft, name: event.target.value } })} /></div>
-            <div className="form-group"><label className="form-label">Target SKUs or product URLs</label><textarea className="form-input group-sku-input" value={draft.skus} placeholder={'12345678\nhttps://www.target.com/p/example/-/A-87654321'} onChange={event => this.setState({ groupDraft: { ...draft, skus: event.target.value } })} /><div className="form-hint">One per line or comma-separated. The existing engine receives the same parsed TCIN list as the legacy Target page.</div></div>
+            <div className="form-group"><label className="form-label">Target SKUs or product URLs</label><textarea className="form-input group-sku-input" value={draft.skus} placeholder={'12345678\nhttps://www.target.com/p/example/-/A-87654321'} onChange={event => this.setState({ groupDraft: { ...draft, skus: event.target.value } })} /><div className="form-hint">One per line or comma-separated. Product names stay outside this field so only valid TCINs reach the monitor.</div></div>
+            {this.renderProductHistoryPicker(draft)}
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
               <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>

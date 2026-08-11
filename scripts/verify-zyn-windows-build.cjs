@@ -23,6 +23,7 @@ const required = [
   'resources/app/bootstrap.js',
   'resources/app/license-session-reason.js',
   'resources/app/runtime-manager.js',
+  'resources/app/target-product-history.js',
   'resources/app/package.json',
   'resources/app/node_modules/imapflow/package.json',
   'resources/app/node_modules/ws/package.json',

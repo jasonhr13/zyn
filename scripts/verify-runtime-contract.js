@@ -291,6 +291,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Starting broker/, 'packaged task groups omit broker startup state');
   assert.match(rendererBundle, /only this task/, 'packaged task groups omit per-task logs');
   assert.match(rendererBundle, /editTargetTasks/, 'packaged task groups omit live SKU editing');
+  assert.match(rendererBundle, /Recently monitored/, 'packaged task groups omit Target product history');
+  assert.match(rendererBundle, /Search SKU or name/, 'packaged Target product history is not searchable');
   assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
   assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');

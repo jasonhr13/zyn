@@ -12,6 +12,7 @@ const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
 const { createTaskGroupScheduler } = require('./task-group-scheduler');
+const { createTargetProductHistoryStore } = require('./target-product-history');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
@@ -274,6 +275,7 @@ function installWindowSizePersistence() {
 
 let taskGroupStore = null;
 let taskGroupScheduler = null;
+let targetProductHistoryStore = null;
 let pokemonQueueEvents = null;
 let analyticsService = null;
 
@@ -300,6 +302,90 @@ function installTaskGroups() {
       try { event.returnValue = taskGroupStore.load(); } catch { event.returnValue = []; }
     }
   });
+}
+
+function pushTargetProductHistory(items) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('targetProductHistory', { items: Array.isArray(items) ? items : [] });
+      }
+    }
+  } catch {}
+}
+
+function installTargetProductHistory() {
+  if (!FEATURES.taskGroups || !taskGroupStore) return null;
+  try {
+    const store = createTargetProductHistoryStore(app.getPath('userData'));
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const skuTitles = require(path.join(originalAsar, 'public', 'helpers', 'sku-titles.js'));
+    let groups = [];
+    let titles = {};
+    try { groups = taskGroupStore.load(); } catch {}
+    try { titles = skuTitles.getTitles?.() || {}; } catch {}
+    store.initialize({ groups, titles });
+
+    const publish = result => {
+      if (result && result.changed) pushTargetProductHistory(result.items);
+      return result;
+    };
+    const touch = config => {
+      try { return publish(store.touchSkus(config && config.skus)); }
+      catch (error) {
+        console.error(`Could not update Target product history: ${error.message}`);
+        return null;
+      }
+    };
+
+    // Wrap the shared engine API rather than a renderer page. Every Target launch path—including
+    // scheduled task groups and the legacy workspace—calls this same exported function.
+    if (!targetEngine.__zynProductHistoryWrapped) {
+      for (const method of ['startTarget', 'editTargetTasks']) {
+        if (typeof targetEngine[method] !== 'function') continue;
+        const original = targetEngine[method].bind(targetEngine);
+        targetEngine[method] = (config, ...args) => {
+          const result = original(config, ...args);
+          if (method !== 'editTargetTasks' || (result && result.ok === true)) touch(config);
+          return result;
+        };
+      }
+      Object.defineProperty(targetEngine, '__zynProductHistoryWrapped', { value: true });
+    }
+
+    // The native monitor already resolves titles and writes the legacy title cache. Mirror only
+    // the affected, normalized entries into the richer history after that existing merge succeeds.
+    if (!skuTitles.__zynProductHistoryWrapped && typeof skuTitles.mergeTitles === 'function') {
+      const originalMergeTitles = skuTitles.mergeTitles.bind(skuTitles);
+      skuTitles.mergeTitles = incoming => {
+        const merged = originalMergeTitles(incoming);
+        try {
+          const cached = skuTitles.getTitles?.() || {};
+          const resolved = {};
+          for (const sku of Object.keys(incoming || {})) {
+            if (cached[sku]) resolved[sku] = cached[sku];
+          }
+          publish(store.mergeTitles(resolved));
+        } catch (error) {
+          console.error(`Could not save Target product names to history: ${error.message}`);
+        }
+        return merged;
+      };
+      Object.defineProperty(skuTitles, '__zynProductHistoryWrapped', { value: true });
+    }
+
+    ipcMain.on('getTargetProductHistory', (event) => {
+      try { event.returnValue = store.list(); }
+      catch (error) {
+        console.error(`Could not load Target product history: ${error.message}`);
+        event.returnValue = [];
+      }
+    });
+    return store;
+  } catch (error) {
+    console.error(`Could not install Target product history: ${error.message}`);
+    return null;
+  }
 }
 
 function pushTaskGroupSchedule(payload = {}) {
@@ -855,6 +941,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   installTaskGroups();
+  targetProductHistoryStore = installTargetProductHistory();
   const profileImapControl = installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
