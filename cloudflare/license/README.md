@@ -22,6 +22,7 @@ The admin page can:
 
 - review waiting-list signups and invite them with a complete ready-to-copy message;
 - create a user and generate a one-time temporary password;
+- set each account's active-device limit from 1 to 10;
 - generate a seven-day, single-use link to the private Zyn download page;
 - create and edit encrypted managed proxy lists;
 - save, replace, or remove the server-side Hyper API key without exposing it back to the browser;
@@ -62,12 +63,15 @@ their current password. Removing a waiting-list entry does not delete its Zyn ac
 1. The admin creates the user's email and shares the generated temporary password.
 2. The user signs into Zyn.
 3. The first login requires a new password of at least 10 characters.
-4. The API mints one active license for that user and device, ending any earlier active session.
-5. Zyn validates the license every five minutes. A sign-in on another device asks the user to sign
-   in again and says why; expiration, password changes, administrator revocation, and account
-   disablement have distinct messages. Any definite session end immediately returns the app to its
-   sign-in gate and stops running tasks. Transient network failures have a bounded 15-minute grace
-   period.
+4. The API mints a device-bound license and enforces the account's assigned active-device limit,
+   which can be set from 1 to 10 and defaults to 1. A repeat login replaces that device's previous
+   session. When the account is already at its limit, a new device sign-in replaces the least
+   recently active session.
+5. Zyn validates each license every five minutes. A session replaced by another sign-in, or ended
+   because an administrator reduced the account's device limit, asks the user to sign in again and
+   says why. Expiration, password changes, administrator revocation, and account disablement have
+   distinct messages. Any definite session end immediately returns the app to its sign-in gate and
+   stops running tasks. Transient network failures have a bounded 15-minute grace period.
 
 When `proxy_access` is enabled for a user, login returns the current managed proxy lists. Every
 five-minute validation sends the revision already in memory; an unchanged revision returns only a

@@ -5,6 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const asar = require('../frontend/node_modules/@electron/asar');
+const { verifyNativeWebhookBrand } = require('./verify-zyn-native-webhook-brand.cjs');
 
 const appPaths = process.argv.slice(2);
 if (!appPaths.length) {
@@ -33,6 +34,13 @@ for (const input of appPaths) {
   assert.doesNotMatch(productCopy, /\bHope\b/i, `${app} still contains previous product copy`);
   assert.doesNotMatch(rendererText, /\bPolar\b/i, `${app} renderer still contains previous product copy`);
   assert.doesNotMatch(productCopy, /control[ -]plane/i, `${app} still contains retired terminology`);
+  verifyNativeWebhookBrand(path.join(resources, 'engine', 'backend'));
+  for (const name of ['pbandai-buyer.cjs', 'shared.mjs']) {
+    const source = fs.readFileSync(path.join(resources, 'bot', name), 'utf8');
+    assert.match(source, /username\s*:\s*["']Zyn["']/, `${app} ${name} omits the Zyn webhook identity`);
+    assert.doesNotMatch(source, /username\s*:\s*["'](?:Hope|Polar AIO)["']/,
+      `${app} ${name} retains a legacy webhook identity`);
+  }
 
   console.log(JSON.stringify({ ok: true, app, rendererFiles: asar.listPackage(archive).filter(file => /^\/build\//.test(file)).length }));
 }

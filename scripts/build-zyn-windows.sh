@@ -110,6 +110,7 @@ node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$RESOURCES/bot/pbandai-buyer.cjs"
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
+node "$PROJECT_DIR/scripts/patch-zyn-bot-webhook-brand.cjs" "$RESOURCES/bot"
 mkdir -p "$RESOURCES/bot/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/bot/node_modules/"
 

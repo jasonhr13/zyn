@@ -1,8 +1,9 @@
 # Native checkout backend
 
-The architecture-specific `backend` executables in this directory are built from the
-`zyn-native-backend` branch of `polar-backend-source`. They use the `zyn` build tag, which links the
-Target and Pokémon Center US modules. The native process starts without Polar cloud authentication,
+The architecture-specific `backend` executables in this directory are built from the sibling
+`polar-backend-source` repository. They use the `zyn` build tag, which links the Target and Pokémon
+Center US modules and selects Zyn's Discord webhook identity while leaving the default engine brand
+unchanged. The native process starts without Polar cloud authentication,
 Luca, embedded Hyper credentials, PKC, or security services. Pokémon Center retains the existing
 Railway queue-status check; Hyper operations cross the authenticated local bridge to Zyn's licensed
 server broker, and hCaptcha is solved manually in an isolated Electron window.

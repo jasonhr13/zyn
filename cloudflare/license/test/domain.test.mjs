@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -31,8 +32,17 @@ test('distinguishes a replacement sign-in from revoked and expired sessions', ()
     ...active, revoked_at: 900, revoked_reason: 'new_login',
   }, 'device-a', 1000), {
     code: 'session_replaced',
-    message: 'You were signed out because this account was signed in somewhere else. Sign in again to use Zyn here.',
+    message: 'You were signed out because another sign-in replaced this session. Sign in again to use Zyn here.',
   });
+  assert.equal(__test.licenseFailure({
+    ...active, revoked_at: 900, revoked_reason: 'device_limit',
+  }, 'device-a', 1000).code, 'session_replaced');
+  assert.equal(__test.licenseFailure({
+    ...active, revoked_at: 900, revoked_reason: 'device_limit_reduced',
+  }, 'device-a', 1000).code, 'session_limit_reduced');
+  assert.equal(__test.licenseFailure({
+    ...active, revoked_at: 900, revoked_reason: 'expired',
+  }, 'device-a', 1000).code, 'session_expired');
   assert.equal(__test.licenseFailure({
     ...active, revoked_at: 900, revoked_reason: 'admin_revoked',
   }, 'device-a', 1000).code, 'session_revoked');
@@ -40,14 +50,198 @@ test('distinguishes a replacement sign-in from revoked and expired sessions', ()
   assert.equal(__test.licenseFailure(active, 'device-a', 1000), null);
 });
 
+test('validates active-device limits and builds an atomic per-device mint plan', () => {
+  for (const value of [1, 2, 10]) assert.equal(__test.validMaxActiveDevices(value), true);
+  for (const value of [0, 11, 1.5, '2', null, undefined]) {
+    assert.equal(__test.validMaxActiveDevices(value), false);
+  }
+  assert.equal(__test.maxActiveDevicesForUser({ max_active_devices: 7 }), 7);
+  assert.equal(__test.maxActiveDevicesForUser({}), 1);
+
+  const prepared = [];
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...bindings) {
+          const statement = { sql, bindings };
+          prepared.push(statement);
+          return statement;
+        },
+      };
+    },
+  };
+  const statements = __test.mintLicenseStatements(db, {
+    userId: 'user-1',
+    authenticatedPasswordHash: 'authenticated-password-hash',
+    licenseId: 'license-new',
+    tokenHash: 'token-hash',
+    deviceId: '0123456789abcdef',
+    deviceName: 'Mac',
+    now: 1000,
+    expiresAt: 2000,
+  });
+
+  assert.equal(statements.length, 5);
+  assert.equal(prepared.length, 5);
+  assert.match(statements[0].sql, /revoked_reason = 'expired'/);
+  assert.match(statements[1].sql, /device_id = \?/);
+  assert.match(statements[1].sql, /active = 1 AND must_reset_password = 0 AND password_hash = \?/);
+  assert.deepEqual(statements[1].bindings, [
+    1000, 'user-1', '0123456789abcdef', 'user-1', 'authenticated-password-hash',
+  ]);
+  assert.match(statements[2].sql, /INSERT INTO licenses/);
+  assert.match(statements[2].sql, /active = 1 AND must_reset_password = 0 AND password_hash = \?/);
+  assert.deepEqual(statements[2].bindings, [
+    'license-new', 'token-hash', '0123456789abcdef', 'Mac', 1000, 1000, 2000,
+    'user-1', 'authenticated-password-hash',
+  ]);
+  assert.match(statements[3].sql, /revoked_reason = \?/);
+  assert.match(statements[3].sql, /last_validated_at DESC, created_at DESC, id DESC/);
+  assert.match(statements[3].sql, /SELECT max_active_devices FROM users/);
+  assert.deepEqual(statements[3].bindings, [
+    1000, 'device_limit', 'user-1', 'user-1', 1000, 'license-new', 'user-1',
+  ]);
+  assert.match(statements[4].sql, /UPDATE users SET last_login_at/);
+  assert.match(statements[4].sql, /password_hash = \?/);
+  assert.deepEqual(statements[4].bindings, [
+    1000, 1000, 'user-1', 'authenticated-password-hash',
+  ]);
+
+  const deviceLimitStatements = __test.activeDeviceLimitStatements(db, {
+    userId: 'user-1',
+    maxActiveDevices: 4,
+    now: 3000,
+  });
+  assert.equal(deviceLimitStatements.length, 2);
+  assert.match(deviceLimitStatements[0].sql, /UPDATE users SET max_active_devices = \?/);
+  assert.deepEqual(deviceLimitStatements[0].bindings, [4, 3000, 'user-1']);
+  assert.match(deviceLimitStatements[1].sql, /SELECT max_active_devices FROM users/);
+  assert.deepEqual(deviceLimitStatements[1].bindings, [
+    3000, 'device_limit_reduced', 'user-1', 'user-1', 3000, '', 'user-1',
+  ]);
+});
+
+test('executes the active-device lifecycle against SQLite', async (context) => {
+  const sqlite = spawnSync('sqlite3', ['-version'], { encoding: 'utf8' });
+  if (sqlite.error && sqlite.error.code === 'ENOENT') {
+    context.skip('sqlite3 is unavailable');
+    return;
+  }
+  assert.equal(sqlite.status, 0, sqlite.stderr);
+
+  const recordingDb = () => ({
+    prepare(sql) {
+      return { bind: (...bindings) => ({ sql, bindings }) };
+    },
+  });
+  const sqlLiteral = value => {
+    if (value == null) return 'NULL';
+    if (typeof value === 'number') return String(value);
+    return `'${String(value).replaceAll("'", "''")}'`;
+  };
+  const boundSql = statement => {
+    let index = 0;
+    const sql = statement.sql.replaceAll('?', () => sqlLiteral(statement.bindings[index++]));
+    assert.equal(index, statement.bindings.length, 'statement binding count changed');
+    return `${sql};`;
+  };
+  const transaction = statements => `BEGIN;\n${statements.map(boundSql).join('\n')}\nCOMMIT;`;
+  const mint = ({ id, deviceId, now, expiresAt = 10_000, passwordHash = 'hash' }) => transaction(
+    __test.mintLicenseStatements(recordingDb(), {
+      userId: 'user-1',
+      authenticatedPasswordHash: passwordHash,
+      licenseId: id,
+      tokenHash: `token-${id}`,
+      deviceId,
+      deviceName: deviceId,
+      now,
+      expiresAt,
+    }),
+  );
+  const setLimit = (maxActiveDevices, now) => transaction(__test.activeDeviceLimitStatements(
+    recordingDb(), { userId: 'user-1', maxActiveDevices, now },
+  ));
+  const activeIds = label => `
+    SELECT '${label}:' || COALESCE(group_concat(id, ','), '') FROM (
+      SELECT id FROM licenses
+      WHERE user_id = 'user-1' AND revoked_at IS NULL AND expires_at > 0
+      ORDER BY id
+    );
+  `;
+
+  const initial = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+  const deviceLimits = await readFile(new URL('../migrations/0010_active_device_limits.sql', import.meta.url), 'utf8');
+  const script = `
+    ${initial}
+    ${deviceLimits}
+    INSERT INTO users
+      (id, email, password_hash, password_salt, password_iterations,
+       must_reset_password, active, created_at, updated_at)
+    VALUES ('user-1', 'device-test@example.com', 'hash', 'salt', 100000, 0, 1, 1, 1);
+
+    ${mint({ id: 'a', deviceId: 'A', now: 100 })}
+    ${mint({ id: 'b', deviceId: 'B', now: 200 })}
+    ${activeIds('limit-one')}
+
+    ${setLimit(3, 250)}
+    ${mint({ id: 'c', deviceId: 'C', now: 300 })}
+    ${mint({ id: 'd', deviceId: 'D', now: 400 })}
+    ${activeIds('limit-three')}
+
+    ${mint({ id: 'e', deviceId: 'E', now: 500 })}
+    ${activeIds('overflow')}
+
+    ${mint({ id: 'd2', deviceId: 'D', now: 600 })}
+    ${activeIds('same-device')}
+
+    INSERT INTO licenses
+      (id, user_id, token_hash, device_id, device_name, created_at, last_validated_at, expires_at)
+    VALUES ('expired', 'user-1', 'token-expired', 'F', 'F', 50, 50, 650);
+    ${mint({ id: 'g', deviceId: 'G', now: 700 })}
+    ${activeIds('expired-cleanup')}
+    SELECT 'expired-reason:' || revoked_reason FROM licenses WHERE id = 'expired';
+
+    ${setLimit(1, 800)}
+    ${activeIds('reduced')}
+    SELECT 'reduced-count:' || COUNT(*) FROM licenses
+      WHERE revoked_at = 800 AND revoked_reason = 'device_limit_reduced';
+
+    UPDATE users SET active = 0 WHERE id = 'user-1';
+    ${mint({ id: 'disabled', deviceId: 'H', now: 900 })}
+    SELECT 'disabled-insert:' || COUNT(*) FROM licenses WHERE id = 'disabled';
+
+    UPDATE users SET active = 1, password_hash = 'new-hash' WHERE id = 'user-1';
+    ${mint({ id: 'stale-password', deviceId: 'G', now: 1000 })}
+    SELECT 'stale-password-insert:' || COUNT(*) FROM licenses WHERE id = 'stale-password';
+    SELECT 'current-session-preserved:' || COUNT(*) FROM licenses
+      WHERE id = 'g' AND revoked_at IS NULL;
+  `;
+  const executed = spawnSync('sqlite3', [':memory:'], { input: script, encoding: 'utf8' });
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.deepEqual(executed.stdout.trim().split('\n'), [
+    'limit-one:b',
+    'limit-three:b,c,d',
+    'overflow:c,d,e',
+    'same-device:c,d2,e',
+    'expired-cleanup:d2,e,g',
+    'expired-reason:expired',
+    'reduced:g',
+    'reduced-count:2',
+    'disabled-insert:0',
+    'stale-password-insert:0',
+    'current-session-preserved:1',
+  ]);
+});
+
 test('ships the Zyn-branded admin assets and both custom domains', async () => {
-  const [html, css, javascript, wrangler, migration, analyticsIndexes, workerSource] = await Promise.all([
+  const [html, css, javascript, wrangler, migration, analyticsIndexes, deviceLimits, workerSource] = await Promise.all([
     readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.css', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.js', import.meta.url), 'utf8'),
     readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0007_service_config.sql', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0009_global_analytics_indexes.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../migrations/0010_active_device_limits.sql', import.meta.url), 'utf8'),
     readFile(new URL('../src/index.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /Zyn License Admin/);
@@ -92,8 +286,17 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(javascript, /window\.history\.replaceState/);
   assert.match(javascript, /\[data-admin-page\]/);
   assert.match(css, /\.analytics-chart-line/);
+  assert.match(css, /\.user-device-limit/);
   assert.match(analyticsIndexes, /analytics_events_type_time_idx/);
+  assert.match(deviceLimits, /max_active_devices INTEGER NOT NULL DEFAULT 1/);
+  assert.match(deviceLimits, /BETWEEN 1 AND 10/);
+  assert.match(deviceLimits, /licenses_user_active_device_idx/);
+  assert.match(html, /Active devices/);
+  assert.match(html, /<th>Devices<\/th>/);
+  assert.match(javascript, /maxActiveDevices: nextMaxActiveDevices/);
+  assert.match(javascript, /value <= 10/);
   assert.match(workerSource, /async function adminAnalyticsDashboard/);
+  assert.match(workerSource, /COUNT\(DISTINCT CASE/);
   assert.match(workerSource, /COUNT\(DISTINCT e\.user_id\) AS active_users/);
   await access(new URL('../public/zyn-icon.png', import.meta.url));
   await access(new URL('../public/favicon.png', import.meta.url));

@@ -125,7 +125,7 @@ class LicenseGate extends Component {
             <button type="button" className="btn btn-secondary btn-sm" onClick={this.backToLogin} disabled={busy}>Back to sign in</button>
           )}
           <div className="license-gate-footnote">
-            Zyn allows one active sign-in at a time. Signing in elsewhere signs out this device; Zyn will say separately if access was revoked or disabled.
+            Your account has an assigned active-device limit. When it is full, signing in on another device replaces the least recently active session; Zyn identifies revocation or account disablement separately.
           </div>
         </form>
       </div>

@@ -11,8 +11,8 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.16}"
-APP_VERSION="${ZYN_VERSION:-1.6.90}"
+APP_RELEASE="${ZYN_RELEASE:-R8.17}"
+APP_VERSION="${ZYN_VERSION:-1.6.91}"
 NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
@@ -109,6 +109,7 @@ fi
 
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
+node "$PROJECT_DIR/scripts/patch-zyn-bot-webhook-brand.cjs" "$RESOURCES/bot"
 rm -rf "$RESOURCES/engine"
 mkdir -p "$RESOURCES/engine"
 cp "$NATIVE_BACKEND" "$RESOURCES/engine/backend"

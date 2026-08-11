@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.16",
+  "appRelease": "R8.17",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -15,7 +15,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.90",
+    "version": "1.6.91",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "1cd3e226c74f9f658db243cbf07481adc8fc088d135d84cbc8504080fc59415e"
+      "sha256": "d525770428c0c787cf479e871304f23f4d83356a6017f6050c944c8bf62e7458"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "3b84a40a8979885e36b32ef03b17580e5c584f8752d316f56d1c5df1cafc9554"
+      "sha256": "b54e66f4a8298e075769ec2597c1635c3838f0b0a0884be1bb5d34acd51b8d38"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "91de70fd94787e547cd56cc0fc780d4f772ac0435eb7d8d3c13e3698703f1f0c"
+      "sha256": "86ab6f066efd33b4549b63bbeef5d7fd725c83e63fd75d6564d183a5a51add8a"
     }
   },
   "requiredResources": [

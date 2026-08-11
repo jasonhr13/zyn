@@ -136,6 +136,11 @@ tr:last-child td { border-bottom: 0; }
 .user-task-type { display: grid; gap: 4px; }
 .user-task-type label { margin: 0; color: var(--muted); font-size: 9px; }
 .user-task-type select { padding: 7px 9px; border-radius: 8px; font-size: 10px; }
+.user-device-license { display: grid; gap: 8px; min-width: 125px; }
+.user-device-summary { color: var(--text); font-weight: 750; }
+.user-device-limit { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 9px; }
+.user-device-limit span { white-space: nowrap; }
+.user-device-limit select { width: 58px; padding: 7px 9px; border-radius: 8px; font-size: 10px; }
 .empty { padding: 48px; text-align: center; }
 
 .modal { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(5, 5, 7, .8); backdrop-filter: blur(8px); }

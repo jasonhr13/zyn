@@ -47,6 +47,7 @@ build_arch() {
   )
   chmod 0755 "$temporary"
   mv "$temporary" "$output"
+  node "$PROJECT_DIR/scripts/verify-zyn-native-webhook-brand.cjs" "$output"
   trap - RETURN
 
   local description

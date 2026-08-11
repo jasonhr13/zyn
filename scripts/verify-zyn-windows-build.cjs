@@ -5,6 +5,7 @@ const assert = require('assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { verifyNativeWebhookBrand } = require('./verify-zyn-native-webhook-brand.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const appPath = process.argv[2] && path.resolve(process.argv[2]);
@@ -55,6 +56,7 @@ for (const relative of ['Zyn.exe', 'resources/engine/backend.exe', 'resources/ve
 
 const expectedEngine = contract.nativeEngines['windows-x64'];
 assert.ok(expectedEngine, 'Windows native-engine contract is missing');
+verifyNativeWebhookBrand(path.join(appPath, expectedEngine.path));
 assert.equal(
   sha256(path.join(appPath, expectedEngine.path)),
   expectedEngine.sha256,
@@ -90,6 +92,18 @@ const originalPackage = JSON.parse(asar.extractFile(
 assert.equal(originalPackage.name, 'zyn');
 assert.equal(originalPackage.productName, 'Zyn');
 assert.equal(originalPackage.version, contract.product.version);
+
+for (const name of ['pbandai-buyer.cjs', 'shared.mjs']) {
+  const source = fs.readFileSync(path.join(resources, 'bot', name), 'utf8');
+  assert.match(source, /username\s*:\s*["']Zyn["']/,
+    `${name} does not identify user webhook posts as Zyn`);
+  assert.match(source, /footer\s*:\s*\{\s*text\s*:\s*["']Zyn["']/,
+    `${name} does not carry the Zyn webhook footer`);
+  assert.match(source, /https:\/\/zynbot\.app\/zyn-icon\.png/,
+    `${name} does not carry the Zyn webhook avatar`);
+  assert.doesNotMatch(source, /username\s*:\s*["'](?:Hope|Polar AIO)["']/,
+    `${name} retains a legacy webhook identity`);
+}
 
 console.log(JSON.stringify({
   ok: true,

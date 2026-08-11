@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { verifyNativeWebhookBrand } = require('./verify-zyn-native-webhook-brand.cjs');
 
 const projectDir = path.resolve(__dirname, '..');
 const appPath = process.argv[2] && path.resolve(process.argv[2]);
@@ -105,6 +106,7 @@ check('native Target backend', () => {
   const file = path.join(appPath, nativeEngine.path);
   assert.equal(sha256(file), nativeEngine.sha256, 'SHA-256 does not match the architecture contract');
   assert.match(fileDescription(file), appArch === 'x64' ? /Mach-O.*x86_64/ : /Mach-O.*arm64/);
+  verifyNativeWebhookBrand(file);
 });
 
 check('feature flags', () => {
@@ -150,6 +152,11 @@ check('Zyn runtime branding', () => {
     path.join(appPath, 'Contents', 'Resources', 'app', 'pokemon-queue-events.js'),
     'utf8',
   );
+  const botDir = path.join(appPath, 'Contents', 'Resources', 'bot');
+  const userWebhookBots = ['pbandai-buyer.cjs', 'shared.mjs'].map(name => ({
+    name,
+    source: fs.readFileSync(path.join(botDir, name), 'utf8'),
+  }));
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
@@ -204,6 +211,16 @@ check('Zyn runtime branding', () => {
     'packaged queue event client bypasses the license authority');
   assert.doesNotMatch(queueEvents, /polar-wss-production|licenseKey|siteConfigs/,
     'packaged queue event client contains upstream secrets or unrelated cloud handling');
+  for (const { name, source } of userWebhookBots) {
+    assert.match(source, /username\s*:\s*["']Zyn["']/,
+      `${name} does not identify user webhook posts as Zyn`);
+    assert.match(source, /footer\s*:\s*\{\s*text\s*:\s*["']Zyn["']/,
+      `${name} does not carry the Zyn webhook footer`);
+    assert.match(source, /https:\/\/zynbot\.app\/zyn-icon\.png/,
+      `${name} does not carry the Zyn webhook avatar`);
+    assert.doesNotMatch(source, /username\s*:\s*["'](?:Hope|Polar AIO)["']/,
+      `${name} retains a legacy webhook identity`);
+  }
 });
 
 check('build receipt', () => {

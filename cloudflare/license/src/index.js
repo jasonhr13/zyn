@@ -25,6 +25,8 @@ const ANALYTICS_ITEMS_MAX = 20;
 const ANALYTICS_TEXT_MAX = 500;
 const ANALYTICS_MAX_AGE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 const ANALYTICS_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const MIN_ACTIVE_DEVICES = 1;
+const MAX_ACTIVE_DEVICES = 10;
 // D1 limits both a string and a complete row to 2,000,000 bytes. Keep headroom for the remaining
 // columns and AES-GCM/base64 overhead; unusually incompressible pools get a useful split-list error.
 const MAX_STORED_PROXY_CHARS = 1800000;
@@ -619,6 +621,18 @@ function validDeviceId(value) {
   return /^[a-f0-9]{16,128}$/i.test(String(value || ''));
 }
 
+function validMaxActiveDevices(value) {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= MIN_ACTIVE_DEVICES
+    && value <= MAX_ACTIVE_DEVICES;
+}
+
+function maxActiveDevicesForUser(user) {
+  const value = Number(user && user.max_active_devices);
+  return validMaxActiveDevices(value) ? value : MIN_ACTIVE_DEVICES;
+}
+
 function apiHeaders(extra = {}) {
   return {
     'cache-control': 'no-store',
@@ -787,24 +801,103 @@ async function licenseEntitlements(env, user, knownRevision = '') {
   };
 }
 
+function pruneExcessLicensesStatement(db, {
+  userId,
+  now,
+  reason,
+  preserveLicenseId = '',
+}) {
+  return db.prepare(`
+    UPDATE licenses SET revoked_at = ?, revoked_reason = ?
+    WHERE user_id = ? AND revoked_at IS NULL AND id IN (
+      SELECT id FROM licenses
+      WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
+      ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END,
+        last_validated_at DESC, created_at DESC, id DESC
+      LIMIT -1 OFFSET (
+        SELECT max_active_devices FROM users WHERE id = ?
+      )
+    )
+  `).bind(now, reason, userId, userId, now, preserveLicenseId, userId);
+}
+
+function mintLicenseStatements(db, {
+  userId,
+  authenticatedPasswordHash,
+  licenseId,
+  tokenHash,
+  deviceId,
+  deviceName,
+  now,
+  expiresAt,
+}) {
+  return [
+    db.prepare(`
+      UPDATE licenses SET revoked_at = ?, revoked_reason = 'expired'
+      WHERE user_id = ? AND revoked_at IS NULL AND expires_at <= ?
+    `).bind(now, userId, now),
+    db.prepare(`
+      UPDATE licenses SET revoked_at = ?, revoked_reason = 'new_login'
+      WHERE user_id = ? AND device_id = ? AND revoked_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM users
+          WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
+        )
+    `).bind(now, userId, deviceId, userId, authenticatedPasswordHash),
+    db.prepare(`
+      INSERT INTO licenses
+        (id, user_id, token_hash, device_id, device_name, created_at, last_validated_at, expires_at)
+      SELECT ?, id, ?, ?, ?, ?, ?, ? FROM users
+      WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
+    `).bind(
+      licenseId, tokenHash, deviceId, deviceName, now, now, expiresAt,
+      userId, authenticatedPasswordHash,
+    ),
+    pruneExcessLicensesStatement(db, {
+      userId,
+      now,
+      reason: 'device_limit',
+      preserveLicenseId: licenseId,
+    }),
+    db.prepare(`
+      UPDATE users SET last_login_at = ?, updated_at = ?
+      WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
+    `).bind(now, now, userId, authenticatedPasswordHash),
+  ];
+}
+
+function activeDeviceLimitStatements(db, { userId, maxActiveDevices, now }) {
+  return [
+    db.prepare(`
+      UPDATE users SET max_active_devices = ?, updated_at = ? WHERE id = ?
+    `).bind(maxActiveDevices, now, userId),
+    // Always enforce the just-written value inside this batch. Another admin request may have
+    // changed the limit after this request read the user, so a value that looked like an increase
+    // can still be a reduction relative to the transaction's current state.
+    pruneExcessLicensesStatement(db, {
+      userId,
+      now,
+      reason: 'device_limit_reduced',
+    }),
+  ];
+}
+
 async function mintLicense(env, user, deviceId, deviceName) {
   const now = Date.now();
   const token = randomToken(32);
   const tokenHash = await sha256(token);
   const expiresAt = now + LICENSE_TTL_MS;
-  await env.DB.batch([
-    env.DB.prepare(`
-      UPDATE licenses SET revoked_at = ?, revoked_reason = 'new_login'
-      WHERE user_id = ? AND revoked_at IS NULL
-    `).bind(now, user.id),
-    env.DB.prepare(`
-      INSERT INTO licenses
-        (id, user_id, token_hash, device_id, device_name, created_at, last_validated_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(crypto.randomUUID(), user.id, tokenHash, deviceId, deviceName, now, now, expiresAt),
-    env.DB.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?')
-      .bind(now, now, user.id),
-  ]);
+  const results = await env.DB.batch(mintLicenseStatements(env.DB, {
+    userId: user.id,
+    authenticatedPasswordHash: user.password_hash,
+    licenseId: crypto.randomUUID(),
+    tokenHash,
+    deviceId,
+    deviceName,
+    now,
+    expiresAt,
+  }));
+  if (!Number(results[2] && results[2].meta && results[2].meta.changes)) return null;
   return {
     ok: true,
     licenseToken: token,
@@ -860,7 +953,15 @@ async function login(request, env) {
     }, 403);
   }
 
-  return json(await mintLicense(env, user, deviceId, deviceName));
+  const license = await mintLicense(env, user, deviceId, deviceName);
+  if (!license) {
+    return json({
+      ok: false,
+      code: 'sign_in_changed',
+      message: 'Your account changed while you were signing in. Sign in again.',
+    }, 409);
+  }
+  return json(license);
 }
 
 async function resetPassword(request, env) {
@@ -895,7 +996,19 @@ async function resetPassword(request, env) {
       WHERE user_id = ? AND revoked_at IS NULL
     `).bind(now, row.id),
   ]);
-  return json(await mintLicense(env, row, deviceId, deviceName));
+  const license = await mintLicense(env, {
+    ...row,
+    password_hash: record.hash,
+    must_reset_password: 0,
+  }, deviceId, deviceName);
+  if (!license) {
+    return json({
+      ok: false,
+      code: 'sign_in_changed',
+      message: 'Your account changed while you were signing in. Sign in again.',
+    }, 401);
+  }
+  return json(license);
 }
 
 function bearer(request) {
@@ -911,10 +1024,16 @@ function licenseFailure(row, deviceId, now) {
     return { code: 'account_disabled', message: 'This account has been disabled. Contact support if you think this is a mistake.' };
   }
   if (row.revoked_at) {
-    if (row.revoked_reason === 'new_login') {
+    if (row.revoked_reason === 'new_login' || row.revoked_reason === 'device_limit') {
       return {
         code: 'session_replaced',
-        message: 'You were signed out because this account was signed in somewhere else. Sign in again to use Zyn here.',
+        message: 'You were signed out because another sign-in replaced this session. Sign in again to use Zyn here.',
+      };
+    }
+    if (row.revoked_reason === 'device_limit_reduced') {
+      return {
+        code: 'session_limit_reduced',
+        message: 'You were signed out because an administrator reduced this account\u2019s active-device limit. Sign in again or contact support if this was unexpected.',
       };
     }
     if (row.revoked_reason === 'password_reset' || row.revoked_reason === 'admin_password_reset') {
@@ -925,6 +1044,9 @@ function licenseFailure(row, deviceId, now) {
     }
     if (row.revoked_reason === 'logout') {
       return { code: 'signed_out', message: 'You are signed out. Sign in again to continue.' };
+    }
+    if (row.revoked_reason === 'expired') {
+      return { code: 'session_expired', message: 'Your Zyn session expired. Sign in again to continue.' };
     }
     return {
       code: 'session_revoked',
@@ -1733,8 +1855,10 @@ async function adminUsers(env) {
   const [result, taskTypes, overrideResult] = await Promise.all([
     env.DB.prepare(`
     SELECT u.id, u.email, u.active, u.proxy_access, u.must_reset_password,
-      u.created_at, u.updated_at, u.last_login_at,
-      SUM(CASE WHEN l.revoked_at IS NULL AND l.expires_at > ? THEN 1 ELSE 0 END) AS active_licenses,
+      u.max_active_devices, u.created_at, u.updated_at, u.last_login_at,
+      COUNT(DISTINCT CASE
+        WHEN l.revoked_at IS NULL AND l.expires_at > ? THEN l.device_id
+      END) AS active_licenses,
       MAX(l.last_validated_at) AS last_validated_at
     FROM users u LEFT JOIN licenses l ON l.user_id = u.id
     GROUP BY u.id ORDER BY u.created_at DESC
@@ -1968,7 +2092,13 @@ async function createUserRecord(env, email, auditDetail = '') {
   `).bind(user.id, email, record.hash, record.salt, record.iterations, now, now).run();
   await audit(env, 'user_created', user, auditDetail);
   return {
-    user: { ...user, active: 1, proxy_access: 0, must_reset_password: 1 },
+    user: {
+      ...user,
+      active: 1,
+      proxy_access: 0,
+      must_reset_password: 1,
+      max_active_devices: MIN_ACTIVE_DEVICES,
+    },
     temporaryPassword: password,
   };
 }
@@ -2020,7 +2150,8 @@ async function inviteWaitlistEntry(request, env, id) {
   if (!entry) return json({ ok: false, message: 'Waiting-list entry not found.' }, 404);
 
   let user = await env.DB.prepare(`
-    SELECT id, email, active, proxy_access, must_reset_password FROM users WHERE email = ?
+    SELECT id, email, active, proxy_access, must_reset_password, max_active_devices
+    FROM users WHERE email = ?
   `).bind(entry.email).first();
   let temporaryPassword = '';
   let accountCreated = false;
@@ -2060,7 +2191,8 @@ async function deleteWaitlistEntry(env, id) {
 
 async function adminUser(env, id) {
   return env.DB.prepare(
-    'SELECT id, email, active, proxy_access, must_reset_password FROM users WHERE id = ?',
+    `SELECT id, email, active, proxy_access, must_reset_password, max_active_devices
+      FROM users WHERE id = ?`,
   ).bind(id).first();
 }
 
@@ -2098,6 +2230,12 @@ async function updateUser(request, env, user) {
   const statements = [];
   let active = Number(user.active) === 1;
   let proxyAccess = Number(user.proxy_access) === 1;
+  let maxActiveDevices = maxActiveDevicesForUser(user);
+  const previousMaxActiveDevices = maxActiveDevices;
+  const changesMaxActiveDevices = Object.hasOwn(body, 'maxActiveDevices');
+  if (changesMaxActiveDevices && !validMaxActiveDevices(body.maxActiveDevices)) {
+    return json({ ok: false, message: 'Active-device limit must be a whole number from 1 to 10.' }, 400);
+  }
   if (typeof body.active === 'boolean') {
     active = body.active;
     statements.push(env.DB.prepare('UPDATE users SET active = ?, updated_at = ? WHERE id = ?')
@@ -2115,6 +2253,17 @@ async function updateUser(request, env, user) {
     proxyAccess = body.proxyAccess;
     statements.push(env.DB.prepare('UPDATE users SET proxy_access = ?, updated_at = ? WHERE id = ?')
       .bind(proxyAccess ? 1 : 0, now, user.id));
+  }
+  let devicePruneIndex = -1;
+  if (changesMaxActiveDevices) {
+    maxActiveDevices = body.maxActiveDevices;
+    const deviceStatements = activeDeviceLimitStatements(env.DB, {
+      userId: user.id,
+      maxActiveDevices,
+      now,
+    });
+    devicePruneIndex = statements.length + 1;
+    statements.push(...deviceStatements);
   }
   const taskTypeChanges = [];
   if (body.taskTypeOverrides && typeof body.taskTypeOverrides === 'object' && !Array.isArray(body.taskTypeOverrides)) {
@@ -2140,7 +2289,10 @@ async function updateUser(request, env, user) {
     }
   }
   if (!statements.length) return json({ ok: false, message: 'No supported changes supplied.' }, 400);
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
+  const revoked = devicePruneIndex >= 0
+    ? Number(results[devicePruneIndex] && results[devicePruneIndex].meta && results[devicePruneIndex].meta.changes) || 0
+    : 0;
   if (typeof body.active === 'boolean') await audit(env, active ? 'user_enabled' : 'user_disabled', user);
   if (typeof body.proxyAccess === 'boolean') {
     await audit(env, proxyAccess ? 'proxy_access_enabled' : 'proxy_access_disabled', user);
@@ -2149,7 +2301,22 @@ async function updateUser(request, env, user) {
     const mode = change.override === null ? 'inherit' : (change.override ? 'enabled' : 'disabled');
     await audit(env, 'user_task_type_changed', user, `${change.type.key}:${mode}`);
   }
-  return json({ ok: true, active, proxyAccess, taskTypes: await taskTypeEntitlements(env, user) });
+  if (changesMaxActiveDevices) {
+    await audit(
+      env,
+      'active_device_limit_changed',
+      user,
+      `${previousMaxActiveDevices}->${maxActiveDevices};revoked:${revoked}`,
+    );
+  }
+  return json({
+    ok: true,
+    active,
+    proxyAccess,
+    maxActiveDevices,
+    revoked,
+    taskTypes: await taskTypeEntitlements(env, user),
+  });
 }
 
 async function deleteUser(env, user) {
@@ -2458,6 +2625,7 @@ function secureAsset(response) {
 }
 
 export const __test = Object.freeze({
+  activeDeviceLimitStatements,
   HYPER_UPSTREAMS,
   POKEMON_QUEUE_UPSTREAM_VERSION,
   brokerPokemonQueueEvents,
@@ -2468,9 +2636,12 @@ export const __test = Object.freeze({
   hyperCredentialInput,
   normalizePokemonQueueEvent,
   licenseFailure,
+  maxActiveDevicesForUser,
+  mintLicenseStatements,
   pokemonQueueCredentialInput,
   pokemonQueueUpstreamUrl,
   serviceCredentialJson,
+  validMaxActiveDevices,
   analyticsWindow,
   normalizeAnalyticsEvent,
 });

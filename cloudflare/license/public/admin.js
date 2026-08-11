@@ -208,12 +208,65 @@ function userRow(user) {
   proxyAccess.style.justifyContent = 'flex-start';
   cell(row, proxyAccess);
 
+  const activeDevices = Math.max(0, Number(user.active_licenses) || 0);
+  const configuredDeviceLimit = Number(user.max_active_devices);
+  const maxActiveDevices = Number.isInteger(configuredDeviceLimit)
+    ? Math.min(10, Math.max(1, configuredDeviceLimit))
+    : 1;
   const license = document.createElement('div');
-  license.textContent = user.active_licenses ? `${user.active_licenses} active` : 'None';
+  license.className = 'user-device-license';
+  const deviceSummary = document.createElement('div');
+  deviceSummary.className = 'user-device-summary';
+  deviceSummary.textContent = `${activeDevices} of ${maxActiveDevices} active`;
+  const deviceLimit = document.createElement('label');
+  deviceLimit.className = 'user-device-limit';
+  const deviceLimitLabel = document.createElement('span');
+  deviceLimitLabel.textContent = 'Device limit';
+  const deviceLimitSelect = document.createElement('select');
+  deviceLimitSelect.setAttribute('aria-label', `Active-device limit for ${user.email}`);
+  for (let value = 1; value <= 10; value += 1) {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = String(value);
+    deviceLimitSelect.append(option);
+  }
+  deviceLimitSelect.value = String(maxActiveDevices);
+  deviceLimitSelect.addEventListener('change', async () => {
+    const nextMaxActiveDevices = Number(deviceLimitSelect.value);
+    if (nextMaxActiveDevices < maxActiveDevices && nextMaxActiveDevices < activeDevices) {
+      const excessDevices = activeDevices - nextMaxActiveDevices;
+      const confirmed = confirm(
+        `Lower the active-device limit for ${user.email} from ${maxActiveDevices} to ${nextMaxActiveDevices}? `
+        + `This immediately signs out the ${excessDevices} least recently active device${excessDevices === 1 ? '' : 's'}.`,
+      );
+      if (!confirmed) {
+        deviceLimitSelect.value = String(maxActiveDevices);
+        return;
+      }
+    }
+    deviceLimitSelect.disabled = true;
+    try {
+      const result = await request(`/api/admin/users/${user.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ maxActiveDevices: nextMaxActiveDevices }),
+      });
+      const revoked = Math.max(0, Number(result.revoked) || 0);
+      toast(revoked
+        ? `Device limit updated to ${nextMaxActiveDevices} for ${user.email}; ${revoked} device${revoked === 1 ? '' : 's'} signed out.`
+        : `Device limit updated to ${nextMaxActiveDevices} for ${user.email}.`);
+      deviceLimitSelect.disabled = false;
+      loadUsers();
+    } catch (error) {
+      deviceLimitSelect.value = String(maxActiveDevices);
+      deviceLimitSelect.disabled = false;
+      toast(error.message, true);
+    }
+  });
+  deviceLimit.append(deviceLimitLabel, deviceLimitSelect);
   const login = document.createElement('div');
   login.className = 'meta';
   login.textContent = `Last login: ${formatDate(user.last_login_at)}`;
-  license.append(login);
+  license.append(deviceSummary, deviceLimit, login);
   cell(row, license);
   cell(row, formatDate(user.last_validated_at));
 
