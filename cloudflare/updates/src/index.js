@@ -393,7 +393,7 @@ async function postDiscordRelease(webhook, metadata) {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'user-agent': 'Zyn Release Publisher/1.0 (+https://zynbot.app)',
+          'user-agent': 'DiscordBot (https://zynbot.app, 1.0)',
         },
         body,
         redirect: 'error',

@@ -374,7 +374,7 @@ test('publishes verified metadata and sends one branded Discord notification', a
     assert.equal(calls[0].options.redirect, 'error');
     assert.equal(
       calls[0].options.headers['user-agent'],
-      'Zyn Release Publisher/1.0 (+https://zynbot.app)',
+      'DiscordBot (https://zynbot.app, 1.0)',
     );
     const payload = JSON.parse(calls[0].options.body);
     assert.equal(payload.username, 'Zyn');
