@@ -370,7 +370,7 @@ test('publishes verified metadata and sends one branded Discord notification', a
     });
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, 'https://discord.com/api/webhooks/123/test-token?wait=true');
+    assert.equal(calls[0].url, 'https://discord.com/api/v10/webhooks/123/test-token?wait=true');
     assert.equal(calls[0].options.redirect, 'manual');
     assert.equal(
       calls[0].options.headers['user-agent'],

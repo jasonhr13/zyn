@@ -346,12 +346,15 @@ function validDiscordWebhook(rawUrl) {
   if (typeof rawUrl !== 'string' || !rawUrl) return null;
   try {
     const url = new URL(rawUrl);
+    const match = url.pathname.match(/^\/api\/(?:v10\/)?webhooks\/([0-9]+)\/([^/]+)$/);
     if (url.protocol !== 'https:'
         || (url.hostname !== 'discord.com' && url.hostname !== 'discordapp.com')
-        || !/^\/api\/webhooks\/[0-9]+\/[^/]+$/.test(url.pathname)
+        || !match
         || url.username || url.password || url.hash || url.search) {
       return null;
     }
+    url.hostname = 'discord.com';
+    url.pathname = `/api/v10/webhooks/${match[1]}/${match[2]}`;
     url.searchParams.set('wait', 'true');
     return url;
   } catch {
