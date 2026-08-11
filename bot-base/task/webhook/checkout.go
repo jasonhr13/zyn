@@ -152,8 +152,8 @@ func SendProductCheckout(data task.ProductWebhookData) {
 				"fields":      fields,
 				"description": description,
 				"footer": map[string]interface{}{
-					"text":     "Polar AIO",
-					"icon_url": "https://media.discordapp.net/attachments/1443088896396361731/1487029472778518558/Adobe_Express_-_file.png",
+					"text":     productWebhookBrand,
+					"icon_url": productWebhookAvatarURL,
 				},
 				"timestamp": time.Now().UTC().Format(time.RFC3339),
 				"thumbnail": map[string]interface{}{
@@ -161,8 +161,8 @@ func SendProductCheckout(data task.ProductWebhookData) {
 				},
 			},
 		},
-		"username":    "Polar AIO",
-		"avatar_url":  "https://media.discordapp.net/attachments/1443088896396361731/1487029472778518558/Adobe_Express_-_file.png",
+		"username":    productWebhookBrand,
+		"avatar_url":  productWebhookAvatarURL,
 		"attachments": []interface{}{},
 	}
 
