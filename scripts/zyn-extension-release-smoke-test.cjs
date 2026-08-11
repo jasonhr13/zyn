@@ -185,8 +185,8 @@ async function run() {
 
     const live = { ...metadata };
     const urls = releaseUrls(metadata);
-    assert.equal(urls.downloadUrl, 'https://zynbot.app/download/extension');
-    assert.equal(urls.versionedDownloadUrl, `https://zynbot.app/download/extension/${version}`);
+    assert.equal(urls.downloadUrl, 'https://updates.zynbot.app/download/extension');
+    assert.equal(urls.versionedDownloadUrl, `https://updates.zynbot.app/download/extension/${version}`);
     assert.equal(urls.artifactUrl, `https://updates.zynbot.app/extension/${filename}`);
     assert.deepEqual(validateLiveMetadata({ ...live }), live);
     assert.throws(() => validateLiveMetadata({ ...live, extra: true }), /must contain exactly/);
@@ -218,9 +218,6 @@ async function run() {
         });
       }
       if (url.startsWith('https://updates.zynbot.app/extension/latest.json?')) return jsonResponse(live);
-      if (url === 'https://zynbot.app/download/extension' && method === 'HEAD') {
-        return redirectResponse('https://updates.zynbot.app/download/extension');
-      }
       if (url === 'https://updates.zynbot.app/download/extension' && method === 'HEAD') {
         return redirectResponse(urls.artifactUrl);
       }

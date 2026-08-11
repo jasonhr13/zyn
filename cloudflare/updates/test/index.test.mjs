@@ -234,6 +234,14 @@ test('routes the stable extension download and rejects malformed feeds', async (
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('location'), 'https://updates.zynbot.app/extension/Zyn-Harvester-1.1.2.zip');
     assert.equal(response.headers.get('cache-control'), 'no-store');
+
+    const versioned = await worker.fetch(new Request(
+      'https://updates.zynbot.app/download/extension/1.1.2',
+      { method },
+    ), env);
+    assert.equal(versioned.status, 302);
+    assert.equal(versioned.headers.get('location'), 'https://updates.zynbot.app/extension/Zyn-Harvester-1.1.2.zip');
+    assert.equal(versioned.headers.get('cache-control'), 'no-store');
   }
 
   const missing = await worker.fetch(new Request('https://updates.zynbot.app/download/extension'), {
@@ -261,6 +269,10 @@ test('extension release paths reject nesting, traversal, and unsupported methods
   }), env);
   assert.equal(response.status, 405);
   assert.equal(response.headers.get('allow'), 'GET, HEAD');
+  const invalidVersion = await worker.fetch(new Request(
+    'https://updates.zynbot.app/download/extension/0.0.0',
+  ), env);
+  assert.equal(invalidVersion.status, 404);
 });
 
 test('blocks generic extension metadata writes and all extension multipart actions', async () => {
@@ -353,7 +365,7 @@ test('publishes verified metadata and sends one branded Discord notification', a
       notified: true,
       duplicate: false,
       version: '1.1.2',
-      downloadUrl: 'https://zynbot.app/download/extension/1.1.2',
+      downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
       messageId: 'discord-message-1',
     });
 
@@ -365,8 +377,8 @@ test('publishes verified metadata and sends one branded Discord notification', a
     assert.equal(payload.avatar_url, 'https://zynbot.app/zyn-icon.png');
     assert.deepEqual(payload.allowed_mentions, { parse: [] });
     assert.equal(payload.embeds[0].title, 'Zyn Harvester v1.1.2 is ready');
-    assert.equal(payload.embeds[0].url, 'https://zynbot.app/download/extension/1.1.2');
-    assert.match(payload.embeds[0].description, /https:\/\/zynbot\.app\/download\/extension\/1\.1\.2/);
+    assert.equal(payload.embeds[0].url, 'https://updates.zynbot.app/download/extension/1.1.2');
+    assert.match(payload.embeds[0].description, /https:\/\/updates\.zynbot\.app\/download\/extension\/1\.1\.2/);
     assert.equal(payload.embeds[0].thumbnail.url, 'https://zynbot.app/zyn-icon.png');
     assert.equal(payload.embeds[0].footer.icon_url, 'https://zynbot.app/zyn-icon.png');
     assert.equal(payload.embeds[0].color, 14753096);
@@ -386,7 +398,7 @@ test('publishes verified metadata and sends one branded Discord notification', a
       notified: true,
       duplicate: true,
       version: '1.1.2',
-      downloadUrl: 'https://zynbot.app/download/extension/1.1.2',
+      downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
       messageId: 'discord-message-1',
     });
     assert.equal(calls.length, 1);
@@ -476,7 +488,7 @@ test('keeps a verified feed live and safely retries a failed Discord notificatio
     notified: false,
     duplicate: false,
     version: '1.1.2',
-    downloadUrl: 'https://zynbot.app/download/extension/1.1.2',
+    downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
     error: 'Discord notification failed.',
   });
   assert.equal(env.RELEASES.records.has('extension/latest.json'), true);
@@ -497,7 +509,7 @@ test('keeps a verified feed live and safely retries a failed Discord notificatio
       notified: true,
       duplicate: true,
       version: '1.1.2',
-      downloadUrl: 'https://zynbot.app/download/extension/1.1.2',
+      downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
       messageId: 'discord-message-retry',
     });
     assert.equal(calls, 2);
@@ -531,7 +543,7 @@ test('publish authentication is non-enumerable and invalid webhook errors stay s
     notified: false,
     duplicate: false,
     version: '1.1.2',
-    downloadUrl: 'https://zynbot.app/download/extension/1.1.2',
+    downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
     error: 'Discord notification failed.',
   });
 });

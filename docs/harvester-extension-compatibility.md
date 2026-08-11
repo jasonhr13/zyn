@@ -5,7 +5,8 @@ extension separately as a ZIP; it is not bundled with, loaded into, or executed 
 
 ## Install or update it
 
-1. Download the current ZIP from [zynbot.app/download/extension](https://zynbot.app/download/extension).
+1. Download the current ZIP from
+   [updates.zynbot.app/download/extension](https://updates.zynbot.app/download/extension).
 2. In a dedicated Chrome or Brave profile, extract it to a durable `Zyn-Harvester` directory and load
    that directory as an unpacked extension on the browser's extensions page.
 3. Copy the 32-character ID shown beneath the extension.

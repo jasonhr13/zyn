@@ -68,7 +68,7 @@ async function verifyExtension() {
   assert.ok(Number.isFinite(Date.parse(metadata.publishedAt)), 'extension publication date is invalid');
 
   const artifactUrl = `${updateOrigin}/extension/${metadata.filename}`;
-  const stableDownloadUrl = 'https://zynbot.app/download/extension';
+  const stableDownloadUrl = `${updateOrigin}/download/extension`;
   const versionedDownloadUrl = `${stableDownloadUrl}/${extensionVersion}`;
   if (metadata.artifactUrl !== undefined) assert.equal(metadata.artifactUrl, artifactUrl);
   if (metadata.downloadUrl !== undefined) assert.equal(metadata.downloadUrl, versionedDownloadUrl);
@@ -91,10 +91,6 @@ async function verifyExtension() {
   });
   assert.equal(updatesDownload.status, 302, 'extension update download route did not redirect');
   assert.equal(updatesDownload.headers.get('location'), artifactUrl);
-
-  const stableDownload = await fetch(stableDownloadUrl, { method: 'HEAD', redirect: 'manual' });
-  assert.equal(stableDownload.status, 302, 'extension stable download route did not redirect');
-  assert.equal(stableDownload.headers.get('location'), `${updateOrigin}/download/extension`);
 
   const versionedDownload = await fetch(versionedDownloadUrl, { method: 'HEAD', redirect: 'manual' });
   assert.equal(versionedDownload.status, 302, 'extension versioned download route did not redirect');

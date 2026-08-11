@@ -6,7 +6,7 @@ const CURRENT_MAC_VERSION = '1.6.92';
 const EXTENSION_NAME = 'Zyn Harvester';
 const EXTENSION_METADATA_KEY = 'extension/latest.json';
 const EXTENSION_ICON_URL = 'https://zynbot.app/zyn-icon.png';
-const EXTENSION_DOWNLOAD_URL = 'https://zynbot.app/download/extension';
+const EXTENSION_DOWNLOAD_URL = 'https://updates.zynbot.app/download/extension';
 const EXTENSION_MAX_BYTES = 50 * 1024 * 1024;
 const EXTENSION_WEBHOOK_SECRET = 'ZYN_EXTENSION_RELEASE_DISCORD_WEBHOOK';
 const EXTENSION_METADATA_FIELDS = [
@@ -589,6 +589,22 @@ export default {
         status: 302,
         headers: {
           location: new URL(`/extension/${metadata.filename}`, url.origin).toString(),
+          'cache-control': 'no-store',
+        },
+      });
+    }
+
+    const versionedExtensionDownload = url.pathname.match(/^\/download\/extension\/([^/]+)$/);
+    if (versionedExtensionDownload) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
+      }
+      const version = versionedExtensionDownload[1];
+      if (!validExtensionVersion(version)) return new Response('Not found', { status: 404 });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: new URL(`/extension/${extensionFilename(version)}`, url.origin).toString(),
           'cache-control': 'no-store',
         },
       });

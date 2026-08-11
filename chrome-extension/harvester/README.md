@@ -5,7 +5,7 @@ Shape-signed login/ATC headers, and banks them into Zyn over the local compatibi
 
 ## Install
 
-Download the current ZIP from <https://zynbot.app/download/extension>, then:
+Download the current ZIP from <https://updates.zynbot.app/download/extension>, then:
 
 1. Create a permanent folder named `Zyn-Harvester` and extract the ZIP contents into it.
    `manifest.json` must be directly inside that folder.

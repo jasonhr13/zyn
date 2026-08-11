@@ -17,7 +17,7 @@ const {
 
 const projectRoot = path.resolve(__dirname, '..');
 const DEFAULT_UPDATE_ORIGIN = 'https://updates.zynbot.app';
-const DEFAULT_SITE_ORIGIN = 'https://zynbot.app';
+const DEFAULT_SITE_ORIGIN = DEFAULT_UPDATE_ORIGIN;
 const keychainAccount = process.env.ZYN_UPDATE_KEYCHAIN_ACCOUNT || 'zyn-updates';
 const keychainService = process.env.ZYN_UPDATE_KEYCHAIN_SERVICE || 'com.thwebco.zyn.r2-upload';
 
@@ -130,8 +130,12 @@ async function verifyLiveRelease(fetchImpl, metadata, {
   }
 
   const updatesStable = `${updates}/download/extension`;
-  await verifyRedirect(fetchImpl, urls.downloadUrl, updatesStable, 'Zyn extension download');
-  await verifyRedirect(fetchImpl, updatesStable, urls.artifactUrl, 'Zyn updates extension download');
+  if (urls.downloadUrl === updatesStable) {
+    await verifyRedirect(fetchImpl, updatesStable, urls.artifactUrl, 'Zyn extension download');
+  } else {
+    await verifyRedirect(fetchImpl, urls.downloadUrl, updatesStable, 'Zyn extension download');
+    await verifyRedirect(fetchImpl, updatesStable, urls.artifactUrl, 'Zyn updates extension download');
+  }
   await verifyRedirect(
     fetchImpl,
     urls.versionedDownloadUrl,
