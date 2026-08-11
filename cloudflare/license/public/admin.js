@@ -6,7 +6,9 @@ const usersBody = $('#users');
 const waitlistBody = $('#waitlist');
 let managedProxyLists = [];
 let taskTypes = [];
-let currentAdminTab = 'accounts';
+const ADMIN_PAGES = new Set(['accounts', 'waiting-list', 'managed-proxies', 'settings', 'analytics']);
+const requestedAdminPage = window.location.hash.replace(/^#/, '');
+let currentAdminTab = ADMIN_PAGES.has(requestedAdminPage) ? requestedAdminPage : 'accounts';
 let analyticsLoaded = false;
 const analyticsState = {
   range: 'all',
@@ -689,13 +691,17 @@ async function loadAnalyticsHistory() {
   }
 }
 
-function setAdminTab(name) {
-  currentAdminTab = name === 'analytics' ? 'analytics' : 'accounts';
+function setAdminTab(name, { updateHash = true } = {}) {
+  currentAdminTab = ADMIN_PAGES.has(name) ? name : 'accounts';
   document.querySelectorAll('[data-admin-tab]').forEach(element => {
     element.classList.toggle('active', element.dataset.adminTab === currentAdminTab);
   });
-  $('#admin-page-accounts').classList.toggle('hidden', currentAdminTab !== 'accounts');
-  $('#admin-page-analytics').classList.toggle('hidden', currentAdminTab !== 'analytics');
+  document.querySelectorAll('[data-admin-page]').forEach(element => {
+    element.classList.toggle('hidden', element.dataset.adminPage !== currentAdminTab);
+  });
+  if (updateHash && window.location.hash !== `#${currentAdminTab}`) {
+    window.history.replaceState(null, '', `#${currentAdminTab}`);
+  }
   if (currentAdminTab === 'analytics' && !analyticsLoaded) loadAnalytics();
 }
 
@@ -721,6 +727,11 @@ function showAdmin() {
 
 document.querySelectorAll('[data-admin-tab]').forEach(element => {
   element.addEventListener('click', () => setAdminTab(element.dataset.adminTab));
+});
+
+window.addEventListener('hashchange', () => {
+  const page = window.location.hash.replace(/^#/, '');
+  if (ADMIN_PAGES.has(page)) setAdminTab(page, { updateHash: false });
 });
 
 document.querySelectorAll('[data-analytics-range]').forEach(element => {
@@ -879,13 +890,9 @@ $('#copy-credential').addEventListener('click', async () => {
   } catch { toast('Could not copy automatically.', true); }
 });
 $('#close-modal').addEventListener('click', () => $('#credential-modal').classList.add('hidden'));
-$('#refresh').addEventListener('click', () => {
-  loadUsers();
-  loadWaitlist();
-  loadProxyLists();
-  loadHyperCredential();
-  loadPokemonQueueCredential();
-});
+$('#refresh').addEventListener('click', loadUsers);
+$('#refresh-waitlist').addEventListener('click', loadWaitlist);
+$('#refresh-proxies').addEventListener('click', loadProxyLists);
 logout.addEventListener('click', async () => {
   try { await request('/api/admin/logout', { method: 'POST' }); } catch {}
   showLogin();

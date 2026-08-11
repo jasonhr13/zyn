@@ -53,10 +53,15 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .warning { background: rgba(251, 191, 36, .14); color: #ffd86e; box-shadow: none; }
 
 .admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 14px; background: rgba(20, 21, 24, .82); }
-.admin-tab { flex: 0 0 auto; background: transparent; color: var(--muted); padding: 10px 15px; box-shadow: none; }
+.admin-tab { min-width: 0; flex: 1 1 0; background: transparent; color: var(--muted); padding: 10px 12px; font-size: 12px; box-shadow: none; }
 .admin-tab:hover { color: var(--text); background: rgba(255,255,255,.045); }
 .admin-tab.active { color: #fff8f4; background: linear-gradient(115deg, var(--crimson), var(--rose) 56%, var(--orange)); box-shadow: 0 8px 22px rgba(190,18,60,.13); }
 .admin-page { min-width: 0; }
+.admin-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 14px; padding: 22px; }
+.admin-page-heading h2 { margin-top: 5px; }
+.admin-page-count { min-width: 92px; display: flex; align-items: baseline; justify-content: flex-end; gap: 7px; }
+.admin-page-count strong { color: var(--text); font-size: 30px; line-height: 1; }
+.admin-page-count span { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .stats article { border: 1px solid var(--line); border-radius: 16px; background: rgba(27, 29, 33, .9); padding: 20px; }
@@ -154,7 +159,9 @@ tr:last-child td { border-bottom: 0; }
   .service-config-form .row { justify-content: flex-end; }
   .proxy-form-footer { align-items: stretch; flex-direction: column; }
   .admin-tabs { overflow-x: auto; }
-  .analytics-toolbar, .analytics-toolbar-actions, .analytics-table-heading { align-items: stretch; flex-direction: column; }
+  .admin-tab { min-width: max-content; flex: 0 0 auto; }
+  .admin-page-heading, .analytics-toolbar, .analytics-toolbar-actions, .analytics-table-heading { align-items: stretch; flex-direction: column; }
+  .admin-page-count { justify-content: flex-start; }
   .analytics-toolbar-actions { width: 100%; }
   .analytics-ranges { flex-wrap: wrap; }
   .analytics-search { width: 100%; }

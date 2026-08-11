@@ -52,6 +52,14 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(wrangler, /PokemonQueueRelay/);
   assert.match(html, /data-admin-tab="analytics"/);
   assert.match(html, /id="admin-page-analytics"/);
+  for (const page of ['accounts', 'waiting-list', 'managed-proxies', 'settings', 'analytics']) {
+    assert.match(html, new RegExp(`data-admin-tab="${page}"`));
+    assert.match(html, new RegExp(`data-admin-page="${page}"`));
+  }
+  assert.match(html, /Global module availability/);
+  assert.match(html, /id="admin-page-settings"/);
+  assert.match(html, /id="refresh-waitlist"/);
+  assert.match(html, /id="refresh-proxies"/);
   assert.match(html, /Active users/);
   assert.match(html, /Global checkout history/);
   assert.match(javascript, /\/api\/admin\/analytics\/dashboard/);
@@ -59,6 +67,9 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(javascript, /\/api\/admin\/analytics\/checkouts/);
   assert.match(javascript, /data-analytics-range/);
   assert.match(javascript, /renderAnalyticsChart/);
+  assert.match(javascript, /ADMIN_PAGES = new Set/);
+  assert.match(javascript, /window\.history\.replaceState/);
+  assert.match(javascript, /\[data-admin-page\]/);
   assert.match(css, /\.analytics-chart-line/);
   assert.match(analyticsIndexes, /analytics_events_type_time_idx/);
   assert.match(workerSource, /async function adminAnalyticsDashboard/);

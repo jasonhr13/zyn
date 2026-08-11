@@ -35,6 +35,10 @@ The admin page can:
 - disable or re-enable an account; and
 - permanently delete a user and their licenses.
 
+The admin interface is divided into hash-addressable Accounts, Waiting List, Managed Proxies,
+Settings, and Analytics pages. Settings owns global module availability and the encrypted Hyper and
+Pokémon Center queue credentials; account-specific module overrides remain with each account.
+
 Send temporary passwords through a private channel. The password is only returned by the create or
 reset response and is not recoverable from D1 afterward.
 
