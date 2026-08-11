@@ -29,7 +29,7 @@ const ANALYTICS_FUTURE_SKEW_MS = 5 * 60 * 1000;
 // columns and AES-GCM/base64 overhead; unusually incompressible pools get a useful split-list error.
 const MAX_STORED_PROXY_CHARS = 1800000;
 const COMPRESSED_PROXY_PREFIX = 'gz1:';
-const DOWNLOAD_SITE_ORIGIN = 'https://rcart.app';
+const DOWNLOAD_SITE_ORIGIN = 'https://zynbot.app';
 const HYPER_SERVICE_NAME = 'hyper';
 const POKEMON_QUEUE_SERVICE_NAME = 'pokemon-queue-events';
 const POKEMON_QUEUE_UPSTREAM = 'wss://polar-wss-production.up.railway.app';
@@ -1571,12 +1571,11 @@ async function audit(env, action, user = null, detail = '') {
 }
 
 export function downloadSiteOrigin(request, env = {}) {
+  const hostname = new URL(request.url).hostname.toLowerCase();
+  if (hostname === 'license.rcart.app' || hostname === 'license.zynbot.app') return DOWNLOAD_SITE_ORIGIN;
   const configured = String(env.DOWNLOAD_SITE_ORIGIN || '').trim();
   if (configured) return configured.replace(/\/+$/, '');
-  const hostname = new URL(request.url).hostname.toLowerCase();
-  return hostname === 'zynbot.app' || hostname.endsWith('.zynbot.app')
-    ? 'https://zynbot.app'
-    : DOWNLOAD_SITE_ORIGIN;
+  return DOWNLOAD_SITE_ORIGIN;
 }
 
 async function mintDownloadLink(request, env, user) {

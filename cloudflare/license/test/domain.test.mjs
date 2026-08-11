@@ -4,11 +4,11 @@ import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import worker, { __test, downloadSiteOrigin } from '../src/index.js';
 
-test('generates download links for the same domain family as the admin', () => {
-  assert.equal(downloadSiteOrigin(new Request('https://license.rcart.app/api/admin/users/1/download-link')), 'https://rcart.app');
+test('generates canonical Zyn download links from both production admin domains', () => {
+  assert.equal(downloadSiteOrigin(new Request('https://license.rcart.app/api/admin/users/1/download-link')), 'https://zynbot.app');
   assert.equal(downloadSiteOrigin(new Request('https://license.zynbot.app/api/admin/users/1/download-link')), 'https://zynbot.app');
   assert.equal(downloadSiteOrigin(
-    new Request('https://license.zynbot.app/api/admin/users/1/download-link'),
+    new Request('https://license.preview.example/api/admin/users/1/download-link'),
     { DOWNLOAD_SITE_ORIGIN: 'https://preview.example/' },
   ), 'https://preview.example');
 });

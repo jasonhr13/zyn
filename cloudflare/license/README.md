@@ -42,7 +42,8 @@ Download links contain a 256-bit random key. D1 stores only its SHA-256 hash, an
 unused link invalidates the older unused link for that account. The download page uses an explicit
 unlock step so email and chat link-preview scanners cannot consume the key with a GET request. A
 successful unlock replaces it with an HttpOnly, 24-hour browser session; disabling or deleting the
-account invalidates that session.
+account invalidates that session. Both production admin domains generate canonical
+`https://zynbot.app/download` links while the rcart admin remains available during migration.
 
 The public website accepts waiting-list email addresses at <https://rcart.app/join> and
 <https://zynbot.app/join>. Each site forwards to the matching license-service domain. Submissions are
