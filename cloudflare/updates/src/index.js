@@ -396,7 +396,7 @@ async function postDiscordRelease(webhook, metadata) {
           'user-agent': 'DiscordBot (https://zynbot.app, 1.0)',
         },
         body,
-        redirect: 'error',
+        redirect: 'manual',
       });
       if (response.ok) {
         const message = await response.json().catch(() => null);
