@@ -4,6 +4,11 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const {
+  appReleaseNotesPath,
+  publishAppReleaseNotification,
+  readAppReleaseNotes,
+} = require('./zyn-app-release-notification-lib.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
@@ -119,6 +124,7 @@ async function main() {
     || !metadata.includes(installerName)) {
     throw new Error(`latest.yml does not advertise Zyn ${version} and ${installerName}.`);
   }
+  const releaseNotes = readAppReleaseNotes(appReleaseNotesPath(projectRoot, version), version);
   let token;
   try {
     token = execFileSync('security', [
@@ -140,6 +146,19 @@ async function main() {
     throw new Error(`The live Windows feed does not advertise Zyn ${version}.`);
   }
   console.log(`\nZyn ${version} Windows x64 is live at ${updateOrigin}/${prefix}/latest.yml`);
+  const notification = await publishAppReleaseNotification({
+    token,
+    releaseNotes,
+    uploadOrigin,
+  });
+  if (notification.pending) {
+    console.log(`Zyn ${version} notification is pending until every app platform feed is live.`);
+  } else {
+    console.log(
+      `Zyn ${version} Discord message ${notification.messageId} was `
+      + `${notification.duplicate ? 'already present' : 'posted'}.`,
+    );
+  }
 }
 
 main().catch(error => {

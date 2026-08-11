@@ -90,7 +90,30 @@ The production switch requires both:
 
 A production release needs a valid `Developer ID Application: thwebco, LLC (GXWBXH5M77)` identity
 with its private key in the login keychain. The existing `flume-notary` notarytool profile is used
-for Apple notarization. After the identity is installed:
+for Apple notarization. After the identity is installed and the versioned source changes are
+committed, generate `release-notes/app/<version>.json` from a clean worktree:
+
+```bash
+node ./scripts/generate-zyn-app-release-notes.cjs
+```
+
+The generator asks Codex to inspect the committed changes since the previous app version and
+produce one short, structured changelog for all desktop platforms. Review its output before
+committing and publishing it. The file uses this exact shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "version": "1.6.93",
+  "notes": [
+    "A short user-facing change.",
+    "Another short user-facing change.",
+    "A third short user-facing change."
+  ]
+}
+```
+
+Then create and upload each platform release:
 
 ```bash
 node ./scripts/release-zyn-macos.cjs arm64
@@ -109,6 +132,15 @@ separate feeds:
 
 The app selects its feed from `process.arch`; the public download routes are
 `/download/mac/arm64` and `/download/mac/x64`.
+
+Each uploader asks the updates Worker to publish the Zyn-branded Discord announcement after its
+live feed passes verification. The announcement remains pending until the Windows, Apple silicon,
+and Intel feeds all advertise the same version, and the final uploader posts it once. If Discord is
+temporarily unavailable after the apps are live, retry only the notification without re-uploading:
+
+```bash
+node ./scripts/publish-zyn-app-release-notification.cjs
+```
 
 ## Verify
 

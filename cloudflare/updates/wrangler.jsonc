@@ -21,7 +21,8 @@
   ],
   "secrets": {
     "required": [
-      "ZYN_EXTENSION_RELEASE_DISCORD_WEBHOOK"
+      "ZYN_EXTENSION_RELEASE_DISCORD_WEBHOOK",
+      "ZYN_APP_RELEASE_DISCORD_WEBHOOK"
     ]
   }
 }

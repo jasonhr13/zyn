@@ -9,6 +9,16 @@ const EXTENSION_ICON_URL = 'https://zynbot.app/zyn-icon.png';
 const EXTENSION_DOWNLOAD_URL = 'https://updates.zynbot.app/download/extension';
 const EXTENSION_MAX_BYTES = 50 * 1024 * 1024;
 const EXTENSION_WEBHOOK_SECRET = 'ZYN_EXTENSION_RELEASE_DISCORD_WEBHOOK';
+const APP_WEBHOOK_SECRET = 'ZYN_APP_RELEASE_DISCORD_WEBHOOK';
+const APP_ICON_URL = 'https://zynbot.app/zyn-icon.png';
+const APP_DOWNLOAD_ORIGIN = 'https://updates.zynbot.app';
+const APP_NOTE_MINIMUM = 3;
+const APP_NOTE_MAXIMUM = 6;
+const APP_NOTE_MIN_LENGTH = 10;
+const APP_NOTE_MAX_LENGTH = 120;
+const APP_PUBLISH_FIELDS = ['notes', 'schemaVersion', 'version'];
+const SHA512_BASE64 = /^[A-Za-z0-9+/]{86}==$/;
+const APP_INTERNAL_PREFIX = '_internal/app-notifications';
 const EXTENSION_METADATA_FIELDS = [
   'filename',
   'name',
@@ -146,6 +156,195 @@ async function latestWindowsInstaller(env) {
   if (!metadata || !('body' in metadata)) return null;
   const match = (await metadata.text()).match(/^path:\s+([A-Za-z0-9][A-Za-z0-9._+-]*\.exe)\s*$/m);
   return match ? match[1] : null;
+}
+
+function canonicalAppPublishRequest(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = Object.keys(value).sort();
+  if (fields.length !== APP_PUBLISH_FIELDS.length
+      || fields.some((field, index) => field !== APP_PUBLISH_FIELDS[index])) {
+    return null;
+  }
+  if (value.schemaVersion !== 1 || !validAppVersion(value.version)) return null;
+  if (!Array.isArray(value.notes)
+      || value.notes.length < APP_NOTE_MINIMUM
+      || value.notes.length > APP_NOTE_MAXIMUM) {
+    return null;
+  }
+  if (!value.notes.every((note) => typeof note === 'string'
+      && note === note.trim()
+      && note.length >= APP_NOTE_MIN_LENGTH
+      && note.length <= APP_NOTE_MAX_LENGTH
+      && !/[\u0000-\u001f\u007f]/.test(note)
+      && !/[`@]/.test(note))) {
+    return null;
+  }
+  if (new Set(value.notes.map((note) => note.toLocaleLowerCase('en-US'))).size !== value.notes.length) return null;
+  return {
+    schemaVersion: 1,
+    version: value.version,
+    notes: [...value.notes],
+  };
+}
+
+function validAppVersion(value) {
+  if (typeof value !== 'string') return false;
+  const components = value.split('.');
+  if (components.length !== 3) return false;
+  if (!components.every((component) => /^(0|[1-9][0-9]*)$/.test(component)
+      && Number(component) <= 65535)) return false;
+  return components.some((component) => Number(component) !== 0);
+}
+
+async function readAppPublishRequest(request) {
+  const contentType = request.headers.get('content-type') || '';
+  if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(contentType)) return null;
+  const rawContentLength = request.headers.get('content-length');
+  if (rawContentLength && (!/^[0-9]+$/.test(rawContentLength)
+      || Number(rawContentLength) > 16 * 1024)) return null;
+  const body = await request.text();
+  if (body.length > 16 * 1024) return null;
+  try {
+    return canonicalAppPublishRequest(JSON.parse(body));
+  } catch {
+    return null;
+  }
+}
+
+function appConflict(message) {
+  return Response.json({ error: message }, { status: 409 });
+}
+
+function yamlReleaseVersion(text) {
+  const matches = [...text.matchAll(/^version:\s*([^\s]+)\s*$/gm)];
+  if (matches.length !== 1 || !validAppVersion(matches[0][1])) return null;
+  return matches[0][1];
+}
+
+function parseUpdateFeed(text, expected) {
+  const version = yamlReleaseVersion(text);
+  if (!version) return null;
+  const entries = [...text.matchAll(/^\s*-\s+url:\s+([A-Za-z0-9][A-Za-z0-9._+-]*)\s*\n\s+sha512:\s+([^\s]+)\s*\n\s+size:\s+([0-9]+)\s*$/gm)]
+    .map((match) => ({
+      filename: match[1],
+      sha512: match[2],
+      size: Number(match[3]),
+    }));
+  if (entries.length !== expected.filenames.length
+      || entries.some((entry) => !SAFE_FILENAME.test(entry.filename)
+        || !SHA512_BASE64.test(entry.sha512)
+        || !Number.isSafeInteger(entry.size)
+        || entry.size < 1)) {
+    return null;
+  }
+  const files = new Map(entries.map((entry) => [entry.filename, entry]));
+  if (files.size !== entries.length
+      || expected.filenames.some((filename) => !files.has(filename))) return null;
+
+  const pathMatches = [...text.matchAll(/^path:\s+([A-Za-z0-9][A-Za-z0-9._+-]*)\s*$/gm)];
+  const shaMatches = [...text.matchAll(/^sha512:\s+([^\s]+)\s*$/gm)];
+  const dateMatches = [...text.matchAll(/^releaseDate:\s+'([^']+)'\s*$/gm)];
+  if (pathMatches.length !== 1
+      || pathMatches[0][1] !== expected.primaryFilename
+      || shaMatches.length !== 1
+      || shaMatches[0][1] !== files.get(expected.primaryFilename).sha512
+      || dateMatches.length !== 1) return null;
+  const releaseDate = new Date(dateMatches[0][1]);
+  if (!Number.isFinite(releaseDate.getTime())
+      || releaseDate.toISOString() !== dateMatches[0][1]) return null;
+  return { version, entries, releaseDate: dateMatches[0][1] };
+}
+
+function appChannelDefinitions(version) {
+  return [
+    {
+      id: 'mac-arm64',
+      label: 'Apple Silicon',
+      feedKey: 'mac/arm64/latest-mac.yml',
+      prefix: 'mac/arm64',
+      filenames: [`Zyn-${version}-arm64.zip`, `Zyn-${version}-arm64.dmg`],
+      primaryFilename: `Zyn-${version}-arm64.zip`,
+      downloadFilename: `Zyn-${version}-arm64.dmg`,
+    },
+    {
+      id: 'mac-x64',
+      label: 'Intel',
+      feedKey: 'mac/x64/latest-mac.yml',
+      prefix: 'mac/x64',
+      filenames: [`Zyn-${version}-x64.zip`, `Zyn-${version}-x64.dmg`],
+      primaryFilename: `Zyn-${version}-x64.zip`,
+      downloadFilename: `Zyn-${version}-x64.dmg`,
+    },
+    {
+      id: 'windows-x64',
+      label: 'Windows',
+      feedKey: 'windows/latest.yml',
+      prefix: 'windows',
+      filenames: [`Zyn-Setup-${version}-x64.exe`],
+      primaryFilename: `Zyn-Setup-${version}-x64.exe`,
+      downloadFilename: `Zyn-Setup-${version}-x64.exe`,
+      additionalFilenames: [`Zyn-Setup-${version}-x64.exe.blockmap`],
+    },
+  ];
+}
+
+async function inspectAppChannel(env, definition, requestedVersion) {
+  const feedObject = await env.RELEASES.get(definition.feedKey);
+  if (!feedObject || !('body' in feedObject)) {
+    return { id: definition.id, state: 'pending', reason: 'feed-missing' };
+  }
+  const feedText = await feedObject.text();
+  const feedVersion = yamlReleaseVersion(feedText);
+  if (!feedVersion) {
+    return { id: definition.id, state: 'conflict', reason: 'feed-malformed' };
+  }
+  const comparison = compareExtensionVersions(feedVersion, requestedVersion);
+  if (comparison < 0) {
+    return { id: definition.id, state: 'pending', reason: 'feed-not-ready' };
+  }
+  if (comparison > 0) {
+    return { id: definition.id, state: 'conflict', reason: 'request-stale' };
+  }
+
+  const feed = parseUpdateFeed(feedText, definition);
+  if (!feed) return { id: definition.id, state: 'conflict', reason: 'feed-malformed' };
+  const artifacts = [];
+  for (const entry of feed.entries) {
+    const key = `${definition.prefix}/${entry.filename}`;
+    const object = await env.RELEASES.head(key);
+    if (!object) return { id: definition.id, state: 'pending', reason: 'artifact-missing' };
+    if (!Number.isSafeInteger(object.size) || object.size !== entry.size) {
+      return { id: definition.id, state: 'conflict', reason: 'artifact-size-mismatch' };
+    }
+    artifacts.push({
+      key,
+      size: object.size,
+      sha512: entry.sha512,
+      etag: object.httpEtag || '',
+    });
+  }
+  for (const filename of definition.additionalFilenames || []) {
+    const key = `${definition.prefix}/${filename}`;
+    const object = await env.RELEASES.head(key);
+    if (!object) return { id: definition.id, state: 'pending', reason: 'artifact-missing' };
+    if (!Number.isSafeInteger(object.size) || object.size < 1) {
+      return { id: definition.id, state: 'conflict', reason: 'artifact-size-mismatch' };
+    }
+    artifacts.push({ key, size: object.size, sha512: null, etag: object.httpEtag || '' });
+  }
+  const feedSha256 = await sha256Hex(new TextEncoder().encode(feedText));
+  const downloadKey = `${definition.prefix}/${definition.downloadFilename}`;
+  return {
+    id: definition.id,
+    label: definition.label,
+    state: 'ready',
+    feedKey: definition.feedKey,
+    feedSha256,
+    feedEtag: feedObject.httpEtag || '',
+    artifacts,
+    downloadKey,
+    downloadUrl: `${APP_DOWNLOAD_ORIGIN}/${downloadKey}`,
+  };
 }
 
 function canonicalExtensionMetadata(value) {
@@ -362,6 +561,32 @@ function validDiscordWebhook(rawUrl) {
   }
 }
 
+function appDiscordPayload(metadata, channels) {
+  const byId = new Map(channels.map((channel) => [channel.id, channel]));
+  const windows = byId.get('windows-x64');
+  const appleSilicon = byId.get('mac-arm64');
+  const intel = byId.get('mac-x64');
+  return {
+    username: 'Zyn Downloads',
+    avatar_url: APP_ICON_URL,
+    allowed_mentions: { parse: [] },
+    embeds: [{
+      title: `Zyn Update — v${metadata.version}`,
+      url: 'https://zynbot.app',
+      description: `**Change Log**\n\`\`\`\n${metadata.notes.map((note) => `- ${note}`).join('\n')}\n\`\`\``,
+      color: 14753096,
+      thumbnail: { url: APP_ICON_URL },
+      fields: [
+        { name: 'Windows', value: `[download](${windows.downloadUrl})`, inline: true },
+        { name: 'Apple Silicon', value: `[download](${appleSilicon.downloadUrl})`, inline: true },
+        { name: 'Intel', value: `[download](${intel.downloadUrl})`, inline: true },
+      ],
+      footer: { text: 'Zyn', icon_url: APP_ICON_URL },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}
+
 function discordPayload(metadata) {
   const downloadUrl = extensionVersionedDownloadUrl(metadata.version);
   return {
@@ -388,8 +613,8 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function postDiscordRelease(webhook, metadata) {
-  const body = JSON.stringify(discordPayload(metadata));
+async function postDiscordPayload(webhook, payload, options = {}) {
+  const body = JSON.stringify(payload);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetch(webhook.toString(), {
@@ -406,7 +631,10 @@ async function postDiscordRelease(webhook, metadata) {
         if (message && typeof message.id === 'string' && message.id) {
           return { messageId: message.id };
         }
-        return { error: `Discord returned HTTP ${response.status} without a message id.` };
+        return {
+          error: `Discord returned HTTP ${response.status} without a message id.`,
+          ambiguous: true,
+        };
       }
 
       if (attempt < 2 && response.status === 429) {
@@ -419,13 +647,22 @@ async function postDiscordRelease(webhook, metadata) {
         await delay(250 * (attempt + 1));
         continue;
       }
-      return { error: `Discord returned HTTP ${response.status}.` };
+      return { error: `Discord returned HTTP ${response.status}.`, ambiguous: false };
     } catch {
-      if (attempt === 2) return { error: 'Discord request failed before receiving a response.' };
+      if (options.stopOnNetworkError || attempt === 2) {
+        return {
+          error: 'Discord request failed before receiving a response.',
+          ambiguous: true,
+        };
+      }
       await delay(250 * (attempt + 1));
     }
   }
-  return { error: 'Discord notification failed.' };
+  return { error: 'Discord notification failed.', ambiguous: true };
+}
+
+async function postDiscordRelease(webhook, metadata) {
+  return postDiscordPayload(webhook, discordPayload(metadata));
 }
 
 function publishResponse(metadata, options = {}) {
@@ -534,6 +771,317 @@ async function publishExtension(request, env) {
   return publishResponse(publishedMetadata, { duplicate, messageId });
 }
 
+function appRecordOptions(onlyIf) {
+  return {
+    httpMetadata: {
+      contentType: 'application/json; charset=utf-8',
+      cacheControl: 'no-store',
+    },
+    ...(onlyIf ? { onlyIf } : {}),
+  };
+}
+
+async function readAppRecord(env, key) {
+  const object = await env.RELEASES.get(key);
+  if (!object || !('body' in object)) return { state: 'missing', value: null };
+  if (!Number.isSafeInteger(object.size) || object.size < 2 || object.size > 32 * 1024) {
+    return { state: 'invalid', value: null };
+  }
+  try {
+    const value = JSON.parse(await object.text());
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? { state: 'valid', value }
+      : { state: 'invalid', value: null };
+  } catch {
+    return { state: 'invalid', value: null };
+  }
+}
+
+async function putAppRecord(env, key, value, onlyIf) {
+  return env.RELEASES.put(
+    key,
+    `${JSON.stringify(value)}\n`,
+    appRecordOptions(onlyIf),
+  );
+}
+
+function appRecordKeys(version) {
+  return {
+    intent: `${APP_INTERNAL_PREFIX}/${version}/intent.json`,
+    claim: `${APP_INTERNAL_PREFIX}/${version}/claim.json`,
+    receipt: `${APP_INTERNAL_PREFIX}/${version}/receipt.json`,
+  };
+}
+
+function validIsoTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+function validAppIntent(value, metadata) {
+  return value.schemaVersion === 1
+    && value.version === metadata.version
+    && SHA256.test(value.digest || '')
+    && SHA256.test(value.fingerprint || '')
+    && Array.isArray(value.notes)
+    && validIsoTimestamp(value.createdAt);
+}
+
+function validAppClaim(value, metadata) {
+  return value.schemaVersion === 1
+    && value.version === metadata.version
+    && SHA256.test(value.digest || '')
+    && typeof value.claimId === 'string'
+    && value.claimId.length >= 16
+    && validIsoTimestamp(value.claimedAt)
+    && ['posting', 'delivered', 'outcome-unknown'].includes(value.state)
+    && (value.state !== 'delivered' || /^[0-9]+$/.test(value.messageId || ''));
+}
+
+function validAppReceipt(value, metadata) {
+  return value.schemaVersion === 1
+    && value.version === metadata.version
+    && SHA256.test(value.digest || '')
+    && SHA256.test(value.fingerprint || '')
+    && /^[0-9]+$/.test(value.messageId || '')
+    && validIsoTimestamp(value.notifiedAt);
+}
+
+function appDownloads(channels) {
+  const byId = new Map(channels.map((channel) => [channel.id, channel]));
+  return {
+    windows: byId.get('windows-x64').downloadUrl,
+    appleSilicon: byId.get('mac-arm64').downloadUrl,
+    intel: byId.get('mac-x64').downloadUrl,
+  };
+}
+
+function appSuccessResponse(metadata, channels, messageId, duplicate) {
+  return Response.json({
+    published: true,
+    ready: true,
+    pending: false,
+    notified: true,
+    duplicate: Boolean(duplicate),
+    version: metadata.version,
+    messageId,
+    downloads: appDownloads(channels),
+  });
+}
+
+function appPendingResponse(metadata, channelResults, claimed = false) {
+  return Response.json({
+    published: channelResults.every((channel) => channel.state === 'ready'),
+    ready: channelResults.every((channel) => channel.state === 'ready'),
+    pending: true,
+    notified: false,
+    version: metadata.version,
+    channels: Object.fromEntries(channelResults.map((channel) => [channel.id, channel.state])),
+    ...(claimed ? { claimed: true } : {}),
+  }, { status: 202 });
+}
+
+function appFailureResponse(metadata, error, ambiguous = false) {
+  return Response.json({
+    published: true,
+    ready: true,
+    pending: false,
+    notified: false,
+    version: metadata.version,
+    error,
+    ...(ambiguous ? { outcomeUnknown: true } : {}),
+  }, { status: 502 });
+}
+
+async function completeAppReceipt(env, keys, metadata, channels, fingerprint, digest, messageId, duplicate) {
+  const receipt = {
+    schemaVersion: 1,
+    version: metadata.version,
+    fingerprint,
+    digest,
+    messageId,
+    notifiedAt: new Date().toISOString(),
+  };
+  const created = await putAppRecord(env, keys.receipt, receipt, { etagDoesNotMatch: '*' });
+  if (created) return appSuccessResponse(metadata, channels, messageId, duplicate);
+  const existing = await readAppRecord(env, keys.receipt);
+  if (existing.state !== 'valid'
+      || !validAppReceipt(existing.value, metadata)
+      || existing.value.digest !== digest
+      || existing.value.fingerprint !== fingerprint
+      || existing.value.messageId !== messageId) {
+    return appConflict('This app release has a conflicting notification receipt.');
+  }
+  return appSuccessResponse(metadata, channels, messageId, true);
+}
+
+async function publishApp(request, env) {
+  if (!uploadAuthorized(request, env)) return new Response('Not found', { status: 404 });
+  if (request.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } });
+  }
+  const metadata = await readAppPublishRequest(request);
+  if (!metadata) return appConflict('The app release notification request is malformed.');
+
+  const channelResults = await Promise.all(
+    appChannelDefinitions(metadata.version)
+      .map((definition) => inspectAppChannel(env, definition, metadata.version)),
+  );
+  const conflicted = channelResults.find((channel) => channel.state === 'conflict');
+  if (conflicted) {
+    return appConflict(`The ${conflicted.id} release channel conflicts with this notification request.`);
+  }
+  if (channelResults.some((channel) => channel.state === 'pending')) {
+    return appPendingResponse(metadata, channelResults);
+  }
+
+  const fingerprint = await sha256Hex(new TextEncoder().encode(JSON.stringify(
+    channelResults.map((channel) => ({
+      id: channel.id,
+      feedKey: channel.feedKey,
+      feedSha256: channel.feedSha256,
+      feedEtag: channel.feedEtag,
+      artifacts: channel.artifacts,
+      downloadKey: channel.downloadKey,
+    })),
+  )));
+  const digest = await sha256Hex(new TextEncoder().encode(JSON.stringify({
+    schemaVersion: metadata.schemaVersion,
+    version: metadata.version,
+    notes: metadata.notes,
+    fingerprint,
+  })));
+  const keys = appRecordKeys(metadata.version);
+
+  const existingReceipt = await readAppRecord(env, keys.receipt);
+  if (existingReceipt.state === 'invalid') {
+    return appConflict('This app release has an invalid notification receipt.');
+  }
+  if (existingReceipt.state === 'valid') {
+    if (!validAppReceipt(existingReceipt.value, metadata)
+        || existingReceipt.value.digest !== digest
+        || existingReceipt.value.fingerprint !== fingerprint) {
+      return appConflict('This app release has already been notified with different contents.');
+    }
+    return appSuccessResponse(
+      metadata,
+      channelResults,
+      existingReceipt.value.messageId,
+      true,
+    );
+  }
+
+  let intentRecord = await readAppRecord(env, keys.intent);
+  if (intentRecord.state === 'missing') {
+    const intent = {
+      schemaVersion: 1,
+      version: metadata.version,
+      notes: metadata.notes,
+      fingerprint,
+      digest,
+      createdAt: new Date().toISOString(),
+    };
+    const created = await putAppRecord(env, keys.intent, intent, { etagDoesNotMatch: '*' });
+    intentRecord = created ? { state: 'valid', value: intent } : await readAppRecord(env, keys.intent);
+  }
+  if (intentRecord.state !== 'valid'
+      || !validAppIntent(intentRecord.value, metadata)
+      || intentRecord.value.digest !== digest
+      || intentRecord.value.fingerprint !== fingerprint
+      || JSON.stringify(intentRecord.value.notes) !== JSON.stringify(metadata.notes)) {
+    return appConflict('This app release has a conflicting notification intent.');
+  }
+
+  let claimRecord = await readAppRecord(env, keys.claim);
+  let ownsClaim = false;
+  if (claimRecord.state === 'missing') {
+    const claim = {
+      schemaVersion: 1,
+      version: metadata.version,
+      digest,
+      claimId: crypto.randomUUID(),
+      state: 'posting',
+      claimedAt: new Date().toISOString(),
+    };
+    const created = await putAppRecord(env, keys.claim, claim, { etagDoesNotMatch: '*' });
+    if (created) {
+      claimRecord = { state: 'valid', value: claim };
+      ownsClaim = true;
+    } else {
+      claimRecord = await readAppRecord(env, keys.claim);
+    }
+  }
+  if (claimRecord.state !== 'valid'
+      || !validAppClaim(claimRecord.value, metadata)
+      || claimRecord.value.digest !== digest) {
+    return appConflict('This app release has a conflicting notification claim.');
+  }
+  if (!ownsClaim) {
+    if (claimRecord.value.state === 'delivered') {
+      return completeAppReceipt(
+        env,
+        keys,
+        metadata,
+        channelResults,
+        fingerprint,
+        digest,
+        claimRecord.value.messageId,
+        true,
+      );
+    }
+    if (claimRecord.value.state === 'outcome-unknown') {
+      return appConflict('The Discord notification outcome is unknown and requires reconciliation.');
+    }
+    return appPendingResponse(metadata, channelResults, true);
+  }
+
+  const webhook = validDiscordWebhook(env[APP_WEBHOOK_SECRET]);
+  if (!webhook) {
+    await env.RELEASES.delete(keys.claim);
+    return appFailureResponse(metadata, 'Discord webhook configuration is invalid.');
+  }
+  const notification = await postDiscordPayload(
+    webhook,
+    appDiscordPayload(metadata, channelResults),
+    { stopOnNetworkError: true },
+  );
+  if (!/^[0-9]+$/.test(notification.messageId || '')) {
+    if (notification.ambiguous || notification.messageId) {
+      await putAppRecord(env, keys.claim, {
+        ...claimRecord.value,
+        state: 'outcome-unknown',
+        updatedAt: new Date().toISOString(),
+      });
+      return appFailureResponse(
+        metadata,
+        notification.error || 'Discord returned an invalid message id.',
+        true,
+      );
+    }
+    await env.RELEASES.delete(keys.claim);
+    return appFailureResponse(metadata, notification.error || 'Discord notification failed.');
+  }
+
+  const deliveredClaim = {
+    ...claimRecord.value,
+    state: 'delivered',
+    messageId: notification.messageId,
+    deliveredAt: new Date().toISOString(),
+  };
+  await putAppRecord(env, keys.claim, deliveredClaim);
+  return completeAppReceipt(
+    env,
+    keys,
+    metadata,
+    channelResults,
+    fingerprint,
+    digest,
+    notification.messageId,
+    false,
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -553,6 +1101,10 @@ export default {
 
     if (url.pathname === '/__publish/extension') {
       return publishExtension(request, env);
+    }
+
+    if (url.pathname === '/__publish/app') {
+      return publishApp(request, env);
     }
 
     const macDownload = url.pathname.match(/^\/download\/mac\/(arm64|x64)$/);

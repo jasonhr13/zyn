@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.93",
+  "notes": [
+    "Connect multiple Chrome, Brave, and browser-profile harvesters at the same time.",
+    "Track each browser harvester independently with live status and accepted-cookie counts in the shared bank.",
+    "Run browser-extension and in-app harvesters together without the bank incorrectly saying it needs a harvester.",
+    "Install the companion extension through Zyn’s versioned Cloudflare-hosted download channel."
+  ]
+}

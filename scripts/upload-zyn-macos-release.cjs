@@ -1,6 +1,11 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const {
+  appReleaseNotesPath,
+  publishAppReleaseNotification,
+  readAppReleaseNotes,
+} = require('./zyn-app-release-notification-lib.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
@@ -146,6 +151,7 @@ async function main() {
       fail(`latest-mac.yml does not reference ${asset.name}. Refusing to publish an incomplete feed.`);
     }
   }
+  const releaseNotes = readAppReleaseNotes(appReleaseNotesPath(projectRoot, version), version);
 
   let token;
   try {
@@ -171,6 +177,19 @@ async function main() {
     throw new Error(`The live feed does not advertise Zyn ${version} after upload.`);
   }
   console.log(`\nZyn ${version} (${arch}) is live at ${updateOrigin}/${prefix}/latest-mac.yml`);
+  const notification = await publishAppReleaseNotification({
+    token,
+    releaseNotes,
+    uploadOrigin,
+  });
+  if (notification.pending) {
+    console.log(`Zyn ${version} notification is pending until every app platform feed is live.`);
+  } else {
+    console.log(
+      `Zyn ${version} Discord message ${notification.messageId} was `
+      + `${notification.duplicate ? 'already present' : 'posted'}.`,
+    );
+  }
 }
 
 main().catch((error) => {

@@ -69,6 +69,10 @@ function releaseStore(entries = {}) {
     },
     async put(key, value, options = {}) {
       const bytes = await readBytes(value);
+      const current = records.get(key);
+      if (options.onlyIf?.etagDoesNotMatch === '*' && current) return null;
+      if (options.onlyIf?.etagMatches
+          && (!current || options.onlyIf.etagMatches !== current.etag)) return null;
       records.set(key, {
         bytes,
         httpMetadata: { ...(options.httpMetadata || {}) },
@@ -76,6 +80,9 @@ function releaseStore(entries = {}) {
         etag: `put-${revision += 1}`,
       });
       return objectFor(key, false);
+    },
+    async delete(key) {
+      records.delete(key);
     },
     async createMultipartUpload(key) {
       return { key, uploadId: 'test-upload' };
@@ -132,6 +139,90 @@ function publishRequest(metadata) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(metadata),
+  });
+}
+
+const APP_NOTES = [
+  'Connect several browser harvesters at the same time.',
+  'Track each active harvester independently in the shared bank.',
+  'Run extension and in-app harvesting together without false warnings.',
+  'Download the companion extension from the Zyn release channel.',
+];
+
+function sha512Fixture(byte) {
+  return Buffer.alloc(64, byte).toString('base64');
+}
+
+function macFeed(version, arch, zipSize, dmgSize) {
+  const zip = `Zyn-${version}-${arch}.zip`;
+  const dmg = `Zyn-${version}-${arch}.dmg`;
+  const zipSha = sha512Fixture(arch === 'arm64' ? 1 : 3);
+  const dmgSha = sha512Fixture(arch === 'arm64' ? 2 : 4);
+  return [
+    `version: ${version}`,
+    'files:',
+    `  - url: ${zip}`,
+    `    sha512: ${zipSha}`,
+    `    size: ${zipSize}`,
+    `  - url: ${dmg}`,
+    `    sha512: ${dmgSha}`,
+    `    size: ${dmgSize}`,
+    `path: ${zip}`,
+    `sha512: ${zipSha}`,
+    "releaseDate: '2026-08-11T20:50:22.030Z'",
+    '',
+  ].join('\n');
+}
+
+function windowsFeed(version, installerSize) {
+  const installer = `Zyn-Setup-${version}-x64.exe`;
+  const installerSha = sha512Fixture(5);
+  return [
+    `version: ${version}`,
+    'files:',
+    `  - url: ${installer}`,
+    `    sha512: ${installerSha}`,
+    `    size: ${installerSize}`,
+    `path: ${installer}`,
+    `sha512: ${installerSha}`,
+    "releaseDate: '2026-08-11T20:51:19.017Z'",
+    '',
+  ].join('\n');
+}
+
+function appReleaseEntries(version = '1.6.93') {
+  const armZip = encoder.encode('arm64 updater zip');
+  const armDmg = encoder.encode('arm64 installer dmg');
+  const intelZip = encoder.encode('intel updater zip');
+  const intelDmg = encoder.encode('intel installer dmg');
+  const windows = encoder.encode('windows installer exe');
+  const blockmap = encoder.encode('windows blockmap');
+  return {
+    'mac/arm64/latest-mac.yml': macFeed(version, 'arm64', armZip.byteLength, armDmg.byteLength),
+    [`mac/arm64/Zyn-${version}-arm64.zip`]: armZip,
+    [`mac/arm64/Zyn-${version}-arm64.dmg`]: armDmg,
+    'mac/x64/latest-mac.yml': macFeed(version, 'x64', intelZip.byteLength, intelDmg.byteLength),
+    [`mac/x64/Zyn-${version}-x64.zip`]: intelZip,
+    [`mac/x64/Zyn-${version}-x64.dmg`]: intelDmg,
+    'windows/latest.yml': windowsFeed(version, windows.byteLength),
+    [`windows/Zyn-Setup-${version}-x64.exe`]: windows,
+    [`windows/Zyn-Setup-${version}-x64.exe.blockmap`]: blockmap,
+  };
+}
+
+function readyAppEnv(version = '1.6.93') {
+  return {
+    RELEASES: releaseStore(appReleaseEntries(version)),
+    ZYN_UPLOAD_TOKEN: 'test-token',
+    ZYN_APP_RELEASE_DISCORD_WEBHOOK: 'https://discord.com/api/webhooks/456/app-secret',
+  };
+}
+
+function appPublishRequest(version = '1.6.93', notes = APP_NOTES, extra = {}) {
+  return authenticatedRequest('https://updates.zynbot.app/__publish/app', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ schemaVersion: 1, version, notes, ...extra }),
   });
 }
 
@@ -550,4 +641,305 @@ test('publish authentication is non-enumerable and invalid webhook errors stay s
     downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
     error: 'Discord webhook configuration is invalid.',
   });
+});
+
+test('app publish authentication and canonical release-note schema are strict', async () => {
+  const env = readyAppEnv();
+  const unauthorized = await worker.fetch(new Request('https://updates.zynbot.app/__publish/app', {
+    method: 'POST',
+    body: JSON.stringify({ schemaVersion: 1, version: '1.6.93', notes: APP_NOTES }),
+  }), env);
+  assert.equal(unauthorized.status, 404);
+
+  const wrongMethod = await worker.fetch(authenticatedRequest(
+    'https://updates.zynbot.app/__publish/app',
+    { method: 'GET' },
+  ), env);
+  assert.equal(wrongMethod.status, 405);
+  assert.equal(wrongMethod.headers.get('allow'), 'POST');
+
+  const invalidRequests = [
+    appPublishRequest('1.6', APP_NOTES),
+    appPublishRequest('1.6.93.1', APP_NOTES),
+    appPublishRequest('01.6.93', APP_NOTES),
+    appPublishRequest('1.6.93', APP_NOTES.slice(0, 2)),
+    appPublishRequest('1.6.93', [...APP_NOTES.slice(0, 3), APP_NOTES[0].toUpperCase()]),
+    appPublishRequest('1.6.93', [...APP_NOTES.slice(0, 3), 'Contact support at help@example.test.']),
+    appPublishRequest('1.6.93', [...APP_NOTES.slice(0, 3), 'Never include `code fences` in notes.']),
+    appPublishRequest('1.6.93', APP_NOTES, { generatedAt: '2026-08-11T20:00:00.000Z' }),
+    authenticatedRequest('https://updates.zynbot.app/__publish/app', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ schemaVersion: 1, version: '1.6.93', notes: APP_NOTES }),
+    }),
+  ];
+  for (const request of invalidRequests) {
+    const response = await worker.fetch(request, env);
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /malformed/i);
+  }
+});
+
+test('app publish stays pending until every live feed and artifact is ready', async () => {
+  const emptyEnv = {
+    RELEASES: releaseStore(),
+    ZYN_UPLOAD_TOKEN: 'test-token',
+  };
+  const empty = await worker.fetch(appPublishRequest(), emptyEnv);
+  assert.equal(empty.status, 202);
+  assert.deepEqual(await empty.json(), {
+    published: false,
+    ready: false,
+    pending: true,
+    notified: false,
+    version: '1.6.93',
+    channels: {
+      'mac-arm64': 'pending',
+      'mac-x64': 'pending',
+      'windows-x64': 'pending',
+    },
+  });
+
+  const incompleteEnv = readyAppEnv();
+  incompleteEnv.RELEASES.records.delete('windows/Zyn-Setup-1.6.93-x64.exe.blockmap');
+  const incomplete = await worker.fetch(appPublishRequest(), incompleteEnv);
+  assert.equal(incomplete.status, 202);
+  const incompleteBody = await incomplete.json();
+  assert.equal(incompleteBody.ready, false);
+  assert.equal(incompleteBody.channels['windows-x64'], 'pending');
+  assert.equal(incompleteEnv.RELEASES.records.has('_internal/app-notifications/1.6.93/intent.json'), false);
+
+  const olderEntries = appReleaseEntries('1.6.92');
+  const mixedEntries = {
+    ...appReleaseEntries('1.6.93'),
+    'mac/arm64/latest-mac.yml': olderEntries['mac/arm64/latest-mac.yml'],
+  };
+  const mixed = await worker.fetch(appPublishRequest(), {
+    RELEASES: releaseStore(mixedEntries),
+    ZYN_UPLOAD_TOKEN: 'test-token',
+  });
+  assert.equal(mixed.status, 202);
+  assert.equal((await mixed.json()).channels['mac-arm64'], 'pending');
+});
+
+test('app publish rejects stale, malformed, and size-conflicting live feeds', async () => {
+  const stale = await worker.fetch(appPublishRequest('1.6.93'), readyAppEnv('1.6.94'));
+  assert.equal(stale.status, 409);
+
+  const malformedEntries = {
+    ...appReleaseEntries(),
+    'mac/x64/latest-mac.yml': 'version: 1.6.93\nfiles: []\n',
+  };
+  const malformed = await worker.fetch(appPublishRequest(), {
+    RELEASES: releaseStore(malformedEntries),
+    ZYN_UPLOAD_TOKEN: 'test-token',
+  });
+  assert.equal(malformed.status, 409);
+
+  const mismatchedEnv = readyAppEnv();
+  await mismatchedEnv.RELEASES.put(
+    'mac/arm64/Zyn-1.6.93-arm64.dmg',
+    encoder.encode('wrong sized artifact'),
+  );
+  const mismatch = await worker.fetch(appPublishRequest(), mismatchedEnv);
+  assert.equal(mismatch.status, 409);
+  assert.equal(mismatchedEnv.RELEASES.records.has('_internal/app-notifications/1.6.93/intent.json'), false);
+});
+
+test('app publish sends one Zyn-branded Discord embed with immutable platform links', async () => {
+  const env = readyAppEnv();
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ id: '900000000000000001' });
+  };
+  try {
+    const response = await worker.fetch(appPublishRequest(), env);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      published: true,
+      ready: true,
+      pending: false,
+      notified: true,
+      duplicate: false,
+      version: '1.6.93',
+      messageId: '900000000000000001',
+      downloads: {
+        windows: 'https://updates.zynbot.app/windows/Zyn-Setup-1.6.93-x64.exe',
+        appleSilicon: 'https://updates.zynbot.app/mac/arm64/Zyn-1.6.93-arm64.dmg',
+        intel: 'https://updates.zynbot.app/mac/x64/Zyn-1.6.93-x64.dmg',
+      },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0].url,
+      'https://discord.com/api/v10/webhooks/456/app-secret?wait=true',
+    );
+    assert.equal(calls[0].options.redirect, 'manual');
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.username, 'Zyn Downloads');
+    assert.equal(payload.avatar_url, 'https://zynbot.app/zyn-icon.png');
+    assert.deepEqual(payload.allowed_mentions, { parse: [] });
+    assert.equal(payload.content, undefined);
+    assert.equal(payload.embeds.length, 1);
+    assert.equal(payload.embeds[0].title, 'Zyn Update — v1.6.93');
+    assert.equal(payload.embeds[0].thumbnail.url, 'https://zynbot.app/zyn-icon.png');
+    assert.equal(payload.embeds[0].footer.icon_url, 'https://zynbot.app/zyn-icon.png');
+    assert.equal(payload.embeds[0].color, 14753096);
+    for (const note of APP_NOTES) assert.match(payload.embeds[0].description, new RegExp(note.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.deepEqual(payload.embeds[0].fields, [
+      {
+        name: 'Windows',
+        value: '[download](https://updates.zynbot.app/windows/Zyn-Setup-1.6.93-x64.exe)',
+        inline: true,
+      },
+      {
+        name: 'Apple Silicon',
+        value: '[download](https://updates.zynbot.app/mac/arm64/Zyn-1.6.93-arm64.dmg)',
+        inline: true,
+      },
+      {
+        name: 'Intel',
+        value: '[download](https://updates.zynbot.app/mac/x64/Zyn-1.6.93-x64.dmg)',
+        inline: true,
+      },
+    ]);
+    for (const suffix of ['intent.json', 'claim.json', 'receipt.json']) {
+      assert.equal(env.RELEASES.records.has(`_internal/app-notifications/1.6.93/${suffix}`), true);
+    }
+
+    const duplicate = await worker.fetch(appPublishRequest(), env);
+    assert.equal(duplicate.status, 200);
+    const duplicateBody = await duplicate.json();
+    assert.equal(duplicateBody.duplicate, true);
+    assert.equal(duplicateBody.messageId, '900000000000000001');
+    assert.equal(calls.length, 1);
+
+    const changedNotes = [...APP_NOTES];
+    changedNotes[0] = 'Connect many browser harvesters together from one Zyn session.';
+    const conflict = await worker.fetch(appPublishRequest('1.6.93', changedNotes), env);
+    assert.equal(conflict.status, 409);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('concurrent app finalizers conditionally claim one Discord delivery', async () => {
+  const env = readyAppEnv();
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return Response.json({ id: '1536844832163496022' });
+  };
+  try {
+    const responses = await Promise.all([
+      worker.fetch(appPublishRequest(), env),
+      worker.fetch(appPublishRequest(), env),
+    ]);
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 202]);
+    assert.equal(calls, 1);
+    const pending = responses.find((response) => response.status === 202);
+    const pendingBody = await pending.json();
+    assert.equal(pendingBody.pending, true);
+    assert.equal(pendingBody.claimed, true);
+
+    const repeated = await worker.fetch(appPublishRequest(), env);
+    assert.equal(repeated.status, 200);
+    assert.equal((await repeated.json()).duplicate, true);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('app notifier retries definitive rate limits but preserves ambiguous network claims', async () => {
+  const retryEnv = readyAppEnv();
+  const originalFetch = globalThis.fetch;
+  let retryCalls = 0;
+  globalThis.fetch = async () => {
+    retryCalls += 1;
+    if (retryCalls === 1) return Response.json({ retry_after: 0 }, { status: 429 });
+    return Response.json({ id: '1536844832163496033' });
+  };
+  try {
+    const retried = await worker.fetch(appPublishRequest(), retryEnv);
+    assert.equal(retried.status, 200);
+    assert.equal(retryCalls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const ambiguousEnv = readyAppEnv();
+  let ambiguousCalls = 0;
+  globalThis.fetch = async () => {
+    ambiguousCalls += 1;
+    throw new Error('connection reset after write');
+  };
+  try {
+    const failed = await worker.fetch(appPublishRequest(), ambiguousEnv);
+    assert.equal(failed.status, 502);
+    const failedBody = await failed.json();
+    assert.equal(failedBody.outcomeUnknown, true);
+    assert.equal(ambiguousCalls, 1);
+    const claim = JSON.parse(new TextDecoder().decode(
+      ambiguousEnv.RELEASES.records.get('_internal/app-notifications/1.6.93/claim.json').bytes,
+    ));
+    assert.equal(claim.state, 'outcome-unknown');
+
+    const repeated = await worker.fetch(appPublishRequest(), ambiguousEnv);
+    assert.equal(repeated.status, 409);
+    assert.equal(ambiguousCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('app notifier can retry safe pre-delivery failures without changing frozen notes', async () => {
+  const env = readyAppEnv();
+  delete env.ZYN_APP_RELEASE_DISCORD_WEBHOOK;
+  const missingWebhook = await worker.fetch(appPublishRequest(), env);
+  assert.equal(missingWebhook.status, 502);
+  assert.equal(env.RELEASES.records.has('_internal/app-notifications/1.6.93/intent.json'), true);
+  assert.equal(env.RELEASES.records.has('_internal/app-notifications/1.6.93/claim.json'), false);
+
+  const changedNotes = [...APP_NOTES];
+  changedNotes[0] = 'Connect many browser harvesters together from one Zyn session.';
+  const frozenConflict = await worker.fetch(appPublishRequest('1.6.93', changedNotes), env);
+  assert.equal(frozenConflict.status, 409);
+
+  env.ZYN_APP_RELEASE_DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/456/app-secret';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ id: '1536844832163496044' });
+  try {
+    const retried = await worker.fetch(appPublishRequest(), env);
+    assert.equal(retried.status, 200);
+    assert.equal((await retried.json()).duplicate, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('app notification receipt binds the immutable artifact fingerprint', async () => {
+  const env = readyAppEnv();
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({ id: '1536844832163496055' });
+  };
+  try {
+    assert.equal((await worker.fetch(appPublishRequest(), env)).status, 200);
+    const key = 'mac/arm64/Zyn-1.6.93-arm64.dmg';
+    const size = env.RELEASES.records.get(key).bytes.byteLength;
+    await env.RELEASES.put(key, new Uint8Array(size).fill(9));
+    const conflict = await worker.fetch(appPublishRequest(), env);
+    assert.equal(conflict.status, 409);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

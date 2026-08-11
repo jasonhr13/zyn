@@ -34,7 +34,12 @@ the archive SHA-256 and Chromium PE header before marking it ready.
 
 ## Unsigned release
 
+Generate and review the strict `release-notes/app/<version>.json` file before uploading. The same
+AI-created, committed note list is used by all three platform uploaders for the Zyn-branded Discord
+update.
+
 ```bash
+node ./scripts/generate-zyn-app-release-notes.cjs
 node ./scripts/release-zyn-windows.cjs
 node ./scripts/upload-zyn-windows-release.cjs
 node ./scripts/verify-zyn-public-release.cjs
@@ -44,3 +49,11 @@ The output is an unsigned per-user NSIS installer plus its blockmap and `latest.
 `release/dist/windows-x64`. Windows SmartScreen may show “Windows protected your PC”; this is
 expected until a Windows code-signing identity is configured. The production download route is
 `https://updates.zynbot.app/download/windows`.
+
+The upload verifies the live Windows feed and then finalizes the Discord announcement once both Mac
+feeds also advertise the same app version. A pending result is safe. If the apps are already live
+but Discord failed, retry the announcement without rebuilding or uploading:
+
+```bash
+node ./scripts/publish-zyn-app-release-notification.cjs
+```
