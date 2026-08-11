@@ -6,6 +6,21 @@ const usersBody = $('#users');
 const waitlistBody = $('#waitlist');
 let managedProxyLists = [];
 let taskTypes = [];
+let currentAdminTab = 'accounts';
+let analyticsLoaded = false;
+const analyticsState = {
+  range: 'all',
+  metric: 'checkouts',
+  series: [],
+  usersPage: 1,
+  usersPageSize: 20,
+  usersTotal: 0,
+  userSearch: '',
+  historyPage: 1,
+  historyPageSize: 20,
+  historyTotal: 0,
+  checkoutSearch: '',
+};
 
 function toast(message, error = false) {
   const element = $('#toast');
@@ -37,6 +52,28 @@ async function request(path, options = {}) {
 function formatDate(value) {
   if (!value) return 'Never';
   return new Date(Number(value)).toLocaleString();
+}
+
+function formatCurrency(cents) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+    .format((Number(cents) || 0) / 100);
+}
+
+function analyticsWindow() {
+  const now = new Date();
+  let from = 0;
+  if (analyticsState.range === 'today') {
+    const localMidnight = new Date(now);
+    localMidnight.setHours(0, 0, 0, 0);
+    from = localMidnight.getTime();
+  } else if (analyticsState.range === '30d') from = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+  else if (analyticsState.range === '90d') from = now.getTime() - 90 * 24 * 60 * 60 * 1000;
+  return { range: analyticsState.range, from, to: now.getTime() + 1 };
+}
+
+function analyticsPath(path, extra = {}) {
+  const params = new URLSearchParams({ ...analyticsWindow(), ...extra });
+  return `${path}?${params}`;
 }
 
 function button(label, className, action) {
@@ -450,10 +487,223 @@ async function loadPokemonQueueCredential() {
   }
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgNode(name, attributes = {}, text = '') {
+  const element = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  if (text) element.textContent = text;
+  return element;
+}
+
+function renderAnalyticsChart() {
+  const host = $('#analytics-chart');
+  const rows = analyticsState.series || [];
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'analytics-chart-empty';
+    empty.textContent = 'Analytics will appear here after the first app event.';
+    host.replaceChildren(empty);
+    return;
+  }
+  const width = 900;
+  const height = 270;
+  const margin = { top: 12, right: 16, bottom: 30, left: 56 };
+  const chartWidth = width - margin.left - margin.right;
+  const chartHeight = height - margin.top - margin.bottom;
+  const values = rows.map(row => analyticsState.metric === 'spent'
+    ? (Number(row.totalSpentCents) || 0) / 100
+    : Number(row[analyticsState.metric]) || 0);
+  const maximum = Math.max(1, ...values);
+  const x = index => margin.left + (rows.length === 1 ? chartWidth / 2 : index * chartWidth / (rows.length - 1));
+  const y = value => margin.top + chartHeight - (value / maximum) * chartHeight;
+  const svg = svgNode('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': 'Global analytics chart' });
+
+  for (let step = 0; step <= 4; step += 1) {
+    const value = maximum * (4 - step) / 4;
+    const lineY = margin.top + step * chartHeight / 4;
+    svg.append(svgNode('line', { x1: margin.left, y1: lineY, x2: width - margin.right, y2: lineY, class: 'analytics-chart-grid' }));
+    const label = analyticsState.metric === 'spent'
+      ? `$${Math.round(value).toLocaleString()}`
+      : (Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1));
+    svg.append(svgNode('text', { x: margin.left - 9, y: lineY + 4, 'text-anchor': 'end', class: 'analytics-chart-axis' }, label));
+  }
+
+  const points = values.map((value, index) => `${x(index)},${y(value)}`);
+  const baseline = margin.top + chartHeight;
+  svg.append(svgNode('polygon', {
+    points: `${margin.left},${baseline} ${points.join(' ')} ${width - margin.right},${baseline}`,
+    class: 'analytics-chart-area',
+  }));
+  svg.append(svgNode('polyline', { points: points.join(' '), class: 'analytics-chart-line' }));
+
+  if (rows.length <= 90) {
+    rows.forEach((row, index) => {
+      const dot = svgNode('circle', { cx: x(index), cy: y(values[index]), r: 3.2, class: 'analytics-chart-dot' });
+      const display = analyticsState.metric === 'spent' ? formatCurrency(row.totalSpentCents) : values[index].toLocaleString();
+      dot.append(svgNode('title', {}, `${row.day}: ${display}`));
+      svg.append(dot);
+    });
+  }
+
+  const labelCount = Math.min(6, rows.length);
+  const indexes = new Set(Array.from({ length: labelCount }, (_, index) =>
+    Math.round(index * (rows.length - 1) / Math.max(1, labelCount - 1))));
+  for (const index of indexes) {
+    const day = String(rows[index].day || '');
+    const date = new Date(`${day}T00:00:00Z`);
+    const label = Number.isNaN(date.getTime()) ? day : date.toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric', year: rows.length > 365 ? '2-digit' : undefined, timeZone: 'UTC',
+    });
+    svg.append(svgNode('text', { x: x(index), y: height - 7, 'text-anchor': 'middle', class: 'analytics-chart-axis' }, label));
+  }
+  host.replaceChildren(svg);
+}
+
+function renderAnalyticsDashboard(result) {
+  const summary = result.summary || {};
+  $('#analytics-active-users').textContent = Number(summary.activeUsers || 0).toLocaleString();
+  $('#analytics-checkouts-count').textContent = Number(summary.checkouts || 0).toLocaleString();
+  $('#analytics-declines-count').textContent = Number(summary.declines || 0).toLocaleString();
+  $('#analytics-total-spent').textContent = formatCurrency(summary.totalSpentCents);
+  $('#analytics-stuck-count').textContent = Number(summary.stuckInCart || 0).toLocaleString();
+  $('#analytics-updated-at').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  analyticsState.series = result.series || [];
+  renderAnalyticsChart();
+}
+
+function analyticsUserRow(user) {
+  const row = document.createElement('tr');
+  const identity = document.createElement('div');
+  identity.className = 'analytics-user-cell';
+  const email = document.createElement('div');
+  email.className = 'email';
+  email.textContent = user.email;
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `${user.active ? 'Active' : 'Disabled'} · last activity ${formatDate(user.lastEventAt)}`;
+  identity.append(email, meta);
+  cell(row, identity);
+  cell(row, Number(user.checkouts || 0).toLocaleString()).className = 'analytics-value-good';
+  cell(row, Number(user.declines || 0).toLocaleString()).className = 'analytics-value-bad';
+  cell(row, formatCurrency(user.totalSpentCents));
+  cell(row, Number(user.stuckInCart || 0).toLocaleString());
+  cell(row, formatDate(user.lastCheckoutAt));
+  return row;
+}
+
+function renderAnalyticsUsers(result) {
+  const users = result.users || [];
+  analyticsState.usersTotal = Number(result.total) || 0;
+  $('#analytics-users').replaceChildren(...users.map(analyticsUserRow));
+  $('#analytics-users-empty').classList.toggle('hidden', users.length > 0);
+  $('#analytics-users-count').textContent = `${analyticsState.usersTotal.toLocaleString()} user${analyticsState.usersTotal === 1 ? '' : 's'} with activity`;
+  const pages = Math.max(1, Math.ceil(analyticsState.usersTotal / analyticsState.usersPageSize));
+  analyticsState.usersPage = Math.min(analyticsState.usersPage, pages);
+  $('#analytics-users-page').textContent = `${analyticsState.usersPage} / ${pages}`;
+  $('#analytics-users-prev').disabled = analyticsState.usersPage <= 1;
+  $('#analytics-users-next').disabled = analyticsState.usersPage >= pages;
+}
+
+function analyticsCheckoutRow(checkout) {
+  const row = document.createElement('tr');
+  const identity = document.createElement('div');
+  const email = document.createElement('div');
+  email.className = 'email';
+  email.textContent = checkout.email;
+  identity.append(email);
+  cell(row, identity);
+  const items = Array.isArray(checkout.items) ? checkout.items : [];
+  const first = items[0] || {};
+  const item = document.createElement('div');
+  item.className = 'analytics-item-name';
+  item.textContent = `${first.name || first.sku || 'Checkout'}${items.length > 1 ? ` +${items.length - 1} more` : ''}`;
+  item.title = items.map(value => value.name || value.sku).filter(Boolean).join(', ');
+  cell(row, item);
+  cell(row, checkout.site || '—');
+  cell(row, formatDate(checkout.occurredAt));
+  cell(row, checkout.orderNumber || '—');
+  cell(row, formatCurrency(checkout.totalCents)).className = 'analytics-value-good';
+  return row;
+}
+
+function renderAnalyticsHistory(result) {
+  const checkouts = result.checkouts || [];
+  analyticsState.historyTotal = Number(result.total) || 0;
+  $('#analytics-history').replaceChildren(...checkouts.map(analyticsCheckoutRow));
+  $('#analytics-history-empty').classList.toggle('hidden', checkouts.length > 0);
+  $('#analytics-history-count').textContent = `${analyticsState.historyTotal.toLocaleString()} checkout${analyticsState.historyTotal === 1 ? '' : 's'}`;
+  const pages = Math.max(1, Math.ceil(analyticsState.historyTotal / analyticsState.historyPageSize));
+  analyticsState.historyPage = Math.min(analyticsState.historyPage, pages);
+  $('#analytics-history-page').textContent = `${analyticsState.historyPage} / ${pages}`;
+  $('#analytics-history-prev').disabled = analyticsState.historyPage <= 1;
+  $('#analytics-history-next').disabled = analyticsState.historyPage >= pages;
+}
+
+async function loadAnalytics() {
+  const refresh = $('#analytics-refresh');
+  refresh.disabled = true;
+  refresh.textContent = 'Loading…';
+  try {
+    const [dashboard, users, history] = await Promise.all([
+      request(analyticsPath('/api/admin/analytics/dashboard')),
+      request(analyticsPath('/api/admin/analytics/users', {
+        page: analyticsState.usersPage, pageSize: analyticsState.usersPageSize, search: analyticsState.userSearch,
+      })),
+      request(analyticsPath('/api/admin/analytics/checkouts', {
+        page: analyticsState.historyPage, pageSize: analyticsState.historyPageSize, search: analyticsState.checkoutSearch,
+      })),
+    ]);
+    renderAnalyticsDashboard(dashboard);
+    renderAnalyticsUsers(users);
+    renderAnalyticsHistory(history);
+    analyticsLoaded = true;
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  } finally {
+    refresh.disabled = false;
+    refresh.textContent = 'Refresh';
+  }
+}
+
+async function loadAnalyticsUsers() {
+  try {
+    renderAnalyticsUsers(await request(analyticsPath('/api/admin/analytics/users', {
+      page: analyticsState.usersPage, pageSize: analyticsState.usersPageSize, search: analyticsState.userSearch,
+    })));
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
+}
+
+async function loadAnalyticsHistory() {
+  try {
+    renderAnalyticsHistory(await request(analyticsPath('/api/admin/analytics/checkouts', {
+      page: analyticsState.historyPage, pageSize: analyticsState.historyPageSize, search: analyticsState.checkoutSearch,
+    })));
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
+}
+
+function setAdminTab(name) {
+  currentAdminTab = name === 'analytics' ? 'analytics' : 'accounts';
+  document.querySelectorAll('[data-admin-tab]').forEach(element => {
+    element.classList.toggle('active', element.dataset.adminTab === currentAdminTab);
+  });
+  $('#admin-page-accounts').classList.toggle('hidden', currentAdminTab !== 'accounts');
+  $('#admin-page-analytics').classList.toggle('hidden', currentAdminTab !== 'analytics');
+  if (currentAdminTab === 'analytics' && !analyticsLoaded) loadAnalytics();
+}
+
 function showLogin() {
   loginCard.classList.remove('hidden');
   admin.classList.add('hidden');
   logout.classList.add('hidden');
+  analyticsLoaded = false;
   $('#admin-password').focus();
 }
 
@@ -466,7 +716,70 @@ function showAdmin() {
   loadProxyLists();
   loadHyperCredential();
   loadPokemonQueueCredential();
+  setAdminTab(currentAdminTab);
 }
+
+document.querySelectorAll('[data-admin-tab]').forEach(element => {
+  element.addEventListener('click', () => setAdminTab(element.dataset.adminTab));
+});
+
+document.querySelectorAll('[data-analytics-range]').forEach(element => {
+  element.addEventListener('click', () => {
+    analyticsState.range = element.dataset.analyticsRange;
+    analyticsState.usersPage = 1;
+    analyticsState.historyPage = 1;
+    document.querySelectorAll('[data-analytics-range]').forEach(candidate => {
+      candidate.classList.toggle('active', candidate === element);
+    });
+    loadAnalytics();
+  });
+});
+
+document.querySelectorAll('[data-analytics-metric]').forEach(element => {
+  element.addEventListener('click', () => {
+    analyticsState.metric = element.dataset.analyticsMetric;
+    document.querySelectorAll('[data-analytics-metric]').forEach(candidate => {
+      candidate.classList.toggle('active', candidate === element);
+    });
+    renderAnalyticsChart();
+  });
+});
+
+$('#analytics-refresh').addEventListener('click', loadAnalytics);
+$('#analytics-user-search').addEventListener('input', (event) => {
+  analyticsState.userSearch = event.target.value.trim();
+  analyticsState.usersPage = 1;
+  clearTimeout(loadAnalyticsUsers.timer);
+  loadAnalyticsUsers.timer = setTimeout(loadAnalyticsUsers, 250);
+});
+$('#analytics-checkout-search').addEventListener('input', (event) => {
+  analyticsState.checkoutSearch = event.target.value.trim();
+  analyticsState.historyPage = 1;
+  clearTimeout(loadAnalyticsHistory.timer);
+  loadAnalyticsHistory.timer = setTimeout(loadAnalyticsHistory, 250);
+});
+$('#analytics-users-prev').addEventListener('click', () => {
+  if (analyticsState.usersPage <= 1) return;
+  analyticsState.usersPage -= 1;
+  loadAnalyticsUsers();
+});
+$('#analytics-users-next').addEventListener('click', () => {
+  const pages = Math.max(1, Math.ceil(analyticsState.usersTotal / analyticsState.usersPageSize));
+  if (analyticsState.usersPage >= pages) return;
+  analyticsState.usersPage += 1;
+  loadAnalyticsUsers();
+});
+$('#analytics-history-prev').addEventListener('click', () => {
+  if (analyticsState.historyPage <= 1) return;
+  analyticsState.historyPage -= 1;
+  loadAnalyticsHistory();
+});
+$('#analytics-history-next').addEventListener('click', () => {
+  const pages = Math.max(1, Math.ceil(analyticsState.historyTotal / analyticsState.historyPageSize));
+  if (analyticsState.historyPage >= pages) return;
+  analyticsState.historyPage += 1;
+  loadAnalyticsHistory();
+});
 
 $('#login-form').addEventListener('submit', async (event) => {
   event.preventDefault();

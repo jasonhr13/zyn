@@ -1725,6 +1725,171 @@ async function adminUsers(env) {
   return json({ ok: true, taskTypes, users });
 }
 
+async function adminAnalyticsDashboard(env, url) {
+  const window = analyticsWindow(url);
+  const [summary, series] = await Promise.all([
+    env.DB.prepare(`
+      SELECT
+        COUNT(DISTINCT e.user_id) AS active_users,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+        SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+          SELECT 1 FROM analytics_events terminal
+          WHERE terminal.user_id = e.user_id
+            AND e.run_id != '' AND terminal.run_id = e.run_id
+            AND terminal.event_type IN ('checkout', 'decline')
+            AND terminal.occurred_at >= e.occurred_at
+        ) THEN 1 ELSE 0 END) AS stuck_in_cart
+      FROM analytics_events e
+      WHERE e.occurred_at >= ? AND e.occurred_at < ?
+    `).bind(window.from, window.to).first(),
+    env.DB.prepare(`
+      SELECT date(occurred_at / 1000, 'unixepoch') AS day,
+        COUNT(DISTINCT user_id) AS active_users,
+        SUM(CASE WHEN event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN event_type = 'checkout' THEN total_cents ELSE 0 END) AS total_spent_cents
+      FROM analytics_events
+      WHERE occurred_at >= ? AND occurred_at < ?
+      GROUP BY day ORDER BY day ASC LIMIT 4000
+    `).bind(window.from, window.to).all(),
+  ]);
+  return json({
+    ok: true,
+    window,
+    summary: {
+      activeUsers: Number(summary && summary.active_users) || 0,
+      checkouts: Number(summary && summary.checkouts) || 0,
+      declines: Number(summary && summary.declines) || 0,
+      totalSpentCents: Number(summary && summary.total_spent_cents) || 0,
+      stuckInCart: Number(summary && summary.stuck_in_cart) || 0,
+    },
+    series: (series.results || []).map(row => ({
+      day: String(row.day || ''),
+      activeUsers: Number(row.active_users) || 0,
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+    })),
+  });
+}
+
+async function adminAnalyticsUsers(env, url) {
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR u.email LIKE ? COLLATE NOCASE)`;
+  const bindings = [window.from, window.to, search, like];
+  const [totalRow, rows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(DISTINCT e.user_id) AS total
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+    `).bind(...bindings).first(),
+    env.DB.prepare(`
+      SELECT u.id AS user_id, u.email, u.active,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN 1 ELSE 0 END) AS checkouts,
+        SUM(CASE WHEN e.event_type = 'decline' THEN 1 ELSE 0 END) AS declines,
+        SUM(CASE WHEN e.event_type = 'checkout' THEN e.total_cents ELSE 0 END) AS total_spent_cents,
+        SUM(CASE WHEN e.event_type = 'carted' AND NOT EXISTS (
+          SELECT 1 FROM analytics_events terminal
+          WHERE terminal.user_id = e.user_id
+            AND e.run_id != '' AND terminal.run_id = e.run_id
+            AND terminal.event_type IN ('checkout', 'decline')
+            AND terminal.occurred_at >= e.occurred_at
+        ) THEN 1 ELSE 0 END) AS stuck_in_cart,
+        MAX(CASE WHEN e.event_type = 'checkout' THEN e.occurred_at ELSE NULL END) AS last_checkout_at,
+        MAX(e.occurred_at) AS last_event_at
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+      GROUP BY u.id, u.email, u.active
+      ORDER BY total_spent_cents DESC, checkouts DESC, last_event_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(...bindings, pageSize, (page - 1) * pageSize).all(),
+  ]);
+  return json({
+    ok: true,
+    window,
+    page,
+    pageSize,
+    total: Number(totalRow && totalRow.total) || 0,
+    users: (rows.results || []).map(row => ({
+      userId: row.user_id,
+      email: row.email,
+      active: Number(row.active) === 1,
+      checkouts: Number(row.checkouts) || 0,
+      declines: Number(row.declines) || 0,
+      totalSpentCents: Number(row.total_spent_cents) || 0,
+      stuckInCart: Number(row.stuck_in_cart) || 0,
+      lastCheckoutAt: Number(row.last_checkout_at) || 0,
+      lastEventAt: Number(row.last_event_at) || 0,
+    })),
+  });
+}
+
+async function adminAnalyticsCheckouts(env, url) {
+  const window = analyticsWindow(url);
+  const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
+  const pageSize = analyticsInteger(Number(url.searchParams.get('pageSize')), 1, 100, 20);
+  const search = analyticsText(url.searchParams.get('search'), 120);
+  const like = `%${search}%`;
+  const filter = `e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
+    AND (? = '' OR u.email LIKE ? COLLATE NOCASE OR e.site LIKE ? COLLATE NOCASE
+      OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+        SELECT 1 FROM analytics_items ai
+        WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
+          AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
+      ))`;
+  const bindings = [window.from, window.to, search, like, like, like, like, like];
+  const [totalRow, rows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM analytics_events e JOIN users u ON u.id = e.user_id
+      WHERE ${filter}
+    `).bind(...bindings).first(),
+    env.DB.prepare(`
+      SELECT e.user_id, u.email, e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+        i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
+      FROM (
+        SELECT e.* FROM analytics_events e JOIN users u ON u.id = e.user_id
+        WHERE ${filter}
+        ORDER BY e.occurred_at DESC LIMIT ? OFFSET ?
+      ) e
+      JOIN users u ON u.id = e.user_id
+      LEFT JOIN analytics_items i ON i.user_id = e.user_id AND i.event_id = e.event_id
+      ORDER BY e.occurred_at DESC, i.line_number ASC
+    `).bind(...bindings, pageSize, (page - 1) * pageSize).all(),
+  ]);
+  const checkouts = [];
+  const byId = new Map();
+  for (const row of (rows.results || [])) {
+    const key = `${row.user_id}\u0000${row.event_id}`;
+    let checkout = byId.get(key);
+    if (!checkout) {
+      checkout = {
+        userId: row.user_id, email: row.email, eventId: row.event_id, site: row.site,
+        orderNumber: row.order_number, totalCents: Number(row.total_cents) || 0,
+        occurredAt: Number(row.occurred_at) || 0, items: [],
+      };
+      byId.set(key, checkout);
+      checkouts.push(checkout);
+    }
+    if (row.line_number != null) checkout.items.push({
+      sku: row.sku, name: row.name, image: row.image, productUrl: row.product_url, size: row.size,
+      unitPriceCents: Number(row.unit_price_cents) || 0, quantity: Number(row.quantity) || 1,
+    });
+  }
+  return json({
+    ok: true, window, page, pageSize,
+    total: Number(totalRow && totalRow.total) || 0,
+    checkouts,
+  });
+}
+
 async function adminTaskTypes(env) {
   return json({ ok: true, taskTypes: await taskTypeDefinitions(env) });
 }
@@ -2162,6 +2327,10 @@ async function adminRoute(request, env, url) {
   }
   if (url.pathname === '/api/admin/users' && request.method === 'GET') return adminUsers(env);
   if (url.pathname === '/api/admin/users' && request.method === 'POST') return createUser(request, env);
+  if (url.pathname === '/api/admin/analytics/dashboard' && request.method === 'GET') return adminAnalyticsDashboard(env, url);
+  if (url.pathname === '/api/admin/analytics/users' && request.method === 'GET') return adminAnalyticsUsers(env, url);
+  if (url.pathname === '/api/admin/analytics/checkouts' && request.method === 'GET') return adminAnalyticsCheckouts(env, url);
+  if (url.pathname.startsWith('/api/admin/analytics')) return json({ ok: false, message: 'Method not allowed.' }, 405);
   if (url.pathname === '/api/admin/waitlist' && request.method === 'GET') return adminWaitlist(env);
   if (url.pathname === '/api/admin/task-types' && request.method === 'GET') return adminTaskTypes(env);
   if (url.pathname === '/api/admin/proxy-lists' && request.method === 'GET') return adminProxyLists(env);

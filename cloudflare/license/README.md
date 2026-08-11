@@ -28,6 +28,8 @@ The admin page can:
 - save, replace, or remove the server-side Pokémon Center queue-event license;
 - grant or remove a user's access to all managed proxy lists;
 - enable optional task types globally or override Pokémon Center/Round1 access per user;
+- review global checkout analytics across all users, including range totals, charting, per-user
+  performance, and searchable checkout history;
 - revoke all active licenses for a user;
 - generate a new temporary password (also revokes active licenses);
 - disable or re-enable an account; and
@@ -121,6 +123,12 @@ analytics fields. A local, permission-restricted outbox retries temporary failur
 one-way hash of the signed-in account so queued events cannot cross an account switch. Dashboard
 queries support Today, 30 Days, 90 Days, and All Time; checkout history is searchable, paginated,
 exportable from the desktop, and deletable by the signed-in user.
+
+The admin Analytics tab uses separate admin-session-protected endpoints to aggregate those same
+events across all users. It shows active users, checkouts, declines, total spent, stuck carts, a
+daily chart, per-user results, and global checkout history. The global indexes in migration 0009
+keep range queries from depending on a user-prefixed index. These endpoints remain inside the
+HttpOnly admin-cookie boundary and do not expose analytics through the public or desktop APIs.
 
 ## Operations
 

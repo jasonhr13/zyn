@@ -37,6 +37,12 @@
       </section>
 
       <section id="admin" class="hidden">
+        <nav class="admin-tabs" aria-label="Admin pages">
+          <button type="button" class="admin-tab active" data-admin-tab="accounts">Accounts &amp; services</button>
+          <button type="button" class="admin-tab" data-admin-tab="analytics">Analytics</button>
+        </nav>
+
+        <section id="admin-page-accounts" class="admin-page">
         <div class="stats">
           <article><span>Users</span><strong id="user-count">0</strong></article>
           <article><span>Active licenses</span><strong id="license-count">0</strong></article>
@@ -161,6 +167,87 @@
             </table>
           </div>
           <p id="empty" class="empty hidden">No users yet.</p>
+        </section>
+        </section>
+
+        <section id="admin-page-analytics" class="admin-page hidden">
+          <section class="card analytics-toolbar">
+            <div>
+              <p class="eyebrow">Global activity</p>
+              <h2>App analytics</h2>
+              <p>Aggregated checkout activity across every Zyn account.</p>
+            </div>
+            <div class="analytics-toolbar-actions">
+              <div class="analytics-ranges" aria-label="Analytics date range">
+                <button type="button" class="secondary" data-analytics-range="today">Today</button>
+                <button type="button" class="secondary" data-analytics-range="30d">Last 30 days</button>
+                <button type="button" class="secondary" data-analytics-range="90d">Last 90 days</button>
+                <button type="button" class="secondary active" data-analytics-range="all">All time</button>
+              </div>
+              <button id="analytics-refresh" type="button" class="secondary">Refresh</button>
+            </div>
+          </section>
+
+          <div class="stats analytics-stats">
+            <article><span>Active users</span><strong id="analytics-active-users">0</strong></article>
+            <article><span>Checkouts</span><strong id="analytics-checkouts-count">0</strong></article>
+            <article><span>Declines</span><strong id="analytics-declines-count">0</strong></article>
+            <article><span>Total spent</span><strong id="analytics-total-spent">$0.00</strong></article>
+            <article><span>Stuck in cart</span><strong id="analytics-stuck-count">0</strong></article>
+          </div>
+
+          <section class="card analytics-chart-card">
+            <div class="table-heading">
+              <div>
+                <h2>Global overview</h2>
+                <p id="analytics-updated-at">Not loaded</p>
+              </div>
+              <div class="analytics-metrics" aria-label="Chart metric">
+                <button type="button" class="secondary active" data-analytics-metric="checkouts">Checkouts</button>
+                <button type="button" class="secondary" data-analytics-metric="spent">Total spent</button>
+                <button type="button" class="secondary" data-analytics-metric="declines">Declines</button>
+              </div>
+            </div>
+            <div id="analytics-chart" class="analytics-chart" aria-live="polite"></div>
+          </section>
+
+          <section class="card analytics-table-card">
+            <div class="table-heading analytics-table-heading">
+              <div><h2>User analytics</h2><p id="analytics-users-count">0 users with activity</p></div>
+              <input id="analytics-user-search" class="analytics-search" type="search" placeholder="Search users" autocomplete="off">
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Checkouts</th><th>Declines</th><th>Total spent</th><th>Stuck</th><th>Last checkout</th></tr></thead>
+                <tbody id="analytics-users"></tbody>
+              </table>
+            </div>
+            <p id="analytics-users-empty" class="empty hidden">No user activity in this range.</p>
+            <div class="analytics-pagination">
+              <button id="analytics-users-prev" type="button" class="secondary">Previous</button>
+              <span id="analytics-users-page">1 / 1</span>
+              <button id="analytics-users-next" type="button" class="secondary">Next</button>
+            </div>
+          </section>
+
+          <section class="card analytics-table-card">
+            <div class="table-heading analytics-table-heading">
+              <div><h2>Global checkout history</h2><p id="analytics-history-count">0 checkouts</p></div>
+              <input id="analytics-checkout-search" class="analytics-search" type="search" placeholder="Search user, item, SKU or order" autocomplete="off">
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Item</th><th>Site</th><th>Date</th><th>Order</th><th>Total</th></tr></thead>
+                <tbody id="analytics-history"></tbody>
+              </table>
+            </div>
+            <p id="analytics-history-empty" class="empty hidden">No checkouts in this range.</p>
+            <div class="analytics-pagination">
+              <button id="analytics-history-prev" type="button" class="secondary">Previous</button>
+              <span id="analytics-history-page">1 / 1</span>
+              <button id="analytics-history-next" type="button" class="secondary">Next</button>
+            </div>
+          </section>
         </section>
       </section>
     </main>

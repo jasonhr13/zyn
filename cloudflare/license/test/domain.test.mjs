@@ -20,12 +20,14 @@ test('serves the license health endpoint on the Zyn domain', async () => {
 });
 
 test('ships the Zyn-branded admin assets and both custom domains', async () => {
-  const [html, css, javascript, wrangler, migration] = await Promise.all([
+  const [html, css, javascript, wrangler, migration, analyticsIndexes, workerSource] = await Promise.all([
     readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.css', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.js', import.meta.url), 'utf8'),
     readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0007_service_config.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../migrations/0009_global_analytics_indexes.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../src/index.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /Zyn License Admin/);
   assert.match(html, /\/zyn-icon\.png/);
@@ -48,10 +50,35 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(migration, /CREATE TABLE service_rate_windows/);
   assert.match(wrangler, /POKEMON_QUEUE_RELAY/);
   assert.match(wrangler, /PokemonQueueRelay/);
+  assert.match(html, /data-admin-tab="analytics"/);
+  assert.match(html, /id="admin-page-analytics"/);
+  assert.match(html, /Active users/);
+  assert.match(html, /Global checkout history/);
+  assert.match(javascript, /\/api\/admin\/analytics\/dashboard/);
+  assert.match(javascript, /\/api\/admin\/analytics\/users/);
+  assert.match(javascript, /\/api\/admin\/analytics\/checkouts/);
+  assert.match(javascript, /data-analytics-range/);
+  assert.match(javascript, /renderAnalyticsChart/);
+  assert.match(css, /\.analytics-chart-line/);
+  assert.match(analyticsIndexes, /analytics_events_type_time_idx/);
+  assert.match(workerSource, /async function adminAnalyticsDashboard/);
+  assert.match(workerSource, /COUNT\(DISTINCT e\.user_id\) AS active_users/);
   await access(new URL('../public/zyn-icon.png', import.meta.url));
   await access(new URL('../public/favicon.png', import.meta.url));
   await access(new URL('../public/apple-touch-icon.png', import.meta.url));
   await access(new URL('../public/manifest.webmanifest', import.meta.url));
+});
+
+test('keeps global analytics behind the admin session boundary', async () => {
+  for (const path of [
+    '/api/admin/analytics/dashboard',
+    '/api/admin/analytics/users',
+    '/api/admin/analytics/checkouts',
+  ]) {
+    const response = await worker.fetch(new Request(`https://license.zynbot.app${path}`), {});
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { ok: false, message: 'Admin authentication required.' });
+  }
 });
 
 test('normalizes analytics without accepting identity or payment fields', () => {

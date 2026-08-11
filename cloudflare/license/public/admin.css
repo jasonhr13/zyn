@@ -52,6 +52,12 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .danger { background: rgba(225, 29, 72, .14); color: #fb8ca3; box-shadow: none; }
 .warning { background: rgba(251, 191, 36, .14); color: #ffd86e; box-shadow: none; }
 
+.admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--line); border-radius: 14px; background: rgba(20, 21, 24, .82); }
+.admin-tab { flex: 0 0 auto; background: transparent; color: var(--muted); padding: 10px 15px; box-shadow: none; }
+.admin-tab:hover { color: var(--text); background: rgba(255,255,255,.045); }
+.admin-tab.active { color: #fff8f4; background: linear-gradient(115deg, var(--crimson), var(--rose) 56%, var(--orange)); box-shadow: 0 8px 22px rgba(190,18,60,.13); }
+.admin-page { min-width: 0; }
+
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .stats article { border: 1px solid var(--line); border-radius: 16px; background: rgba(27, 29, 33, .9); padding: 20px; }
 .stats span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -81,6 +87,31 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .managed-list-name { color: var(--text); font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
 .managed-list .actions { margin-top: 13px; justify-content: flex-start; }
 .table-card { overflow: hidden; }
+.analytics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px; margin-bottom: 14px; }
+.analytics-toolbar h2 { margin-top: 5px; }
+.analytics-toolbar-actions { display: flex; align-items: center; gap: 10px; }
+.analytics-ranges, .analytics-metrics { display: flex; align-items: center; gap: 6px; }
+.analytics-ranges button, .analytics-metrics button { padding: 8px 10px; font-size: 10px; }
+.analytics-ranges button.active, .analytics-metrics button.active { color: #fff; border: 1px solid rgba(249,115,22,.34); background: rgba(225,29,72,.18); }
+.analytics-stats article { position: relative; overflow: hidden; }
+.analytics-stats article::after { content: ''; position: absolute; right: -20px; bottom: -35px; width: 105px; height: 80px; border-radius: 50%; background: radial-gradient(circle, rgba(225,29,72,.2), transparent 68%); }
+.analytics-chart-card, .analytics-table-card { overflow: hidden; margin-bottom: 14px; }
+.analytics-chart { position: relative; min-height: 300px; padding: 18px 22px 16px; }
+.analytics-chart svg { display: block; width: 100%; height: 270px; overflow: visible; }
+.analytics-chart-grid { stroke: rgba(255,255,255,.085); stroke-width: 1; stroke-dasharray: 4 8; }
+.analytics-chart-axis { fill: var(--dim); font-size: 10px; }
+.analytics-chart-area { fill: rgba(225,29,72,.1); }
+.analytics-chart-line { fill: none; stroke: var(--rose); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(225,29,72,.34)); }
+.analytics-chart-dot { fill: var(--surface); stroke: var(--orange); stroke-width: 2; }
+.analytics-chart-empty { min-height: 270px; display: grid; place-items: center; color: var(--dim); font-size: 12px; }
+.analytics-table-heading { gap: 20px; }
+.analytics-search { width: min(320px, 42vw); padding: 9px 12px; font-size: 11px; }
+.analytics-user-cell { min-width: 180px; }
+.analytics-item-name { max-width: 260px; color: var(--text); font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.analytics-pagination button { padding: 8px 11px; font-size: 10px; }
+.analytics-value-good { color: #ffad70; font-weight: 750; }
+.analytics-value-bad { color: #fb8ca3; font-weight: 750; }
 .table-heading { display: flex; justify-content: space-between; align-items: center; padding: 22px; border-bottom: 1px solid var(--line); }
 .table-heading p { font-size: 11px; }
 .table-scroll { overflow-x: auto; }
@@ -122,4 +153,9 @@ tr:last-child td { border-bottom: 0; }
   .service-config-form { grid-template-columns: 1fr; align-items: stretch; }
   .service-config-form .row { justify-content: flex-end; }
   .proxy-form-footer { align-items: stretch; flex-direction: column; }
+  .admin-tabs { overflow-x: auto; }
+  .analytics-toolbar, .analytics-toolbar-actions, .analytics-table-heading { align-items: stretch; flex-direction: column; }
+  .analytics-toolbar-actions { width: 100%; }
+  .analytics-ranges { flex-wrap: wrap; }
+  .analytics-search { width: 100%; }
 }
