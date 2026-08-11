@@ -3,8 +3,8 @@ package walmart
 import (
 	"strings"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/profiles"
+	"zynbot.app/engine/bot-base/task"
 )
 
 func (t *WalmartTask) applyRuntimeEdit(p task.RuntimeEditPayload) {

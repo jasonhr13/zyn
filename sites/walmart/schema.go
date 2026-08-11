@@ -3,9 +3,9 @@ package walmart
 import (
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/walmart/pie"
+	"zynbot.app/engine/bot-base/imapcode"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/sites/walmart/pie"
 )
 
 type WalmartTask struct {

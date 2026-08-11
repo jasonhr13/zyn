@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/client"
 )
 
 func newRunID() string {

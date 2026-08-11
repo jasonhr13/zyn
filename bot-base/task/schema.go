@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
 	tls_client "github.com/bogdanfinn/tls-client"
+	"zynbot.app/engine/bot-base/accounts"
 )
 
 type BaseTask struct {

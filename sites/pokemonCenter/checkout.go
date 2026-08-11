@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/captcha"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
+	"zynbot.app/engine/bot-base/captcha"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/profiles"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/client"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 // handleTask handles the task requests

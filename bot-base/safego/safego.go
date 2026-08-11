@@ -4,7 +4,7 @@ import (
 	"log"
 	"runtime/debug"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/alert"
+	"zynbot.app/engine/bot-base/alert"
 )
 
 func Go(fn func()) {

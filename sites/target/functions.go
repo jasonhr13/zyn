@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/task"
 )
 
 func CreateVisitorId() string {

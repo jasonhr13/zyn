@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/analytics"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/frontend"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
 	"github.com/gorilla/websocket"
+	"zynbot.app/engine/analytics"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/frontend"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 const (

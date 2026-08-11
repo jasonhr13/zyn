@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
 )
 
 var (
@@ -35,7 +35,7 @@ func send(status, message string, attrs map[string]interface{}) {
 	payload := map[string]interface{}{
 		"message":  message,
 		"ddsource": "go",
-		"service":  "polar-backend",
+		"service":  serviceName,
 		"status":   status,
 		"userkey":  siteconfig.LicenseKey(),
 	}

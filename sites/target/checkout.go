@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/antibots/tmx"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
+	"zynbot.app/engine/antibots/tmx"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/imapcode"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 var FillerItem = "84704409"

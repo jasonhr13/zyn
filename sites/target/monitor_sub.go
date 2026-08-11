@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
+	"zynbot.app/engine/bot-base/task"
+	monitorhub "zynbot.app/engine/monitor-hub"
+	"zynbot.app/engine/sites"
 )
 
 func (t *TargetTask) matchKeys() []string {

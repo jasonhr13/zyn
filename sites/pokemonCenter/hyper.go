@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/hyperbroker"
 	http "github.com/bogdanfinn/fhttp"
+	"zynbot.app/engine/bot-base/hyperbroker"
 )
 
 var hyperOperationURLs = map[string]string{

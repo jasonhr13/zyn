@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/PolarAIO/Polar-AIO/backend/client"
+	"zynbot.app/engine/client"
 )
 
 func (t *TMXConfig) MakeTMXRequest(url string) (string, error) {

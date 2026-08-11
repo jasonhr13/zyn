@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/siteconfig"
 )
 
-const hopeShapeTimeout = 35 * time.Second
+const zynShapeTimeout = 35 * time.Second
 
-func hopeShapeBrokerURL() string {
-	port := strings.TrimSpace(os.Getenv("HOPE_SHAPE_PORT"))
+func zynShapeBrokerURL() string {
+	port := strings.TrimSpace(os.Getenv("ZYN_SHAPE_PORT"))
 	if port == "" {
 		return ""
 	}
@@ -29,11 +29,11 @@ func hopeShapeBrokerURL() string {
 	return "http://127.0.0.1:" + strconv.Itoa(value)
 }
 
-func fetchHopeShape(ctx context.Context, brokerURL, token, cookieType string, client *http.Client) (ShapeAPIResponse, error) {
+func fetchZynShape(ctx context.Context, brokerURL, token, cookieType string, client *http.Client) (ShapeAPIResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, hopeShapeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zynShapeTimeout)
 	defer cancel()
 
 	endpoint, err := url.Parse(strings.TrimRight(brokerURL, "/") + "/cookie")
@@ -55,10 +55,10 @@ func fetchHopeShape(ctx context.Context, brokerURL, token, cookieType string, cl
 		return ShapeAPIResponse{}, fmt.Errorf("create broker request: %w", err)
 	}
 	if token = strings.TrimSpace(token); token != "" {
-		req.Header.Set("x-hope-token", token)
+		req.Header.Set("x-zyn-token", token)
 	}
 	if client == nil {
-		client = &http.Client{Timeout: hopeShapeTimeout}
+		client = &http.Client{Timeout: zynShapeTimeout}
 	}
 	response, err := client.Do(req)
 	if err != nil {

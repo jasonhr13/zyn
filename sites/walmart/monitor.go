@@ -1,9 +1,9 @@
 package walmart
 
 import (
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 func (t *WalmartMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {

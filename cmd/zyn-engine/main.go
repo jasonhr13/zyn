@@ -1,3 +1,5 @@
+//go:build zyn && !polar
+
 package main
 
 import (
@@ -8,12 +10,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/alert"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/frontend"
+	"zynbot.app/engine/bot-base/alert"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/frontend"
 )
 
 var (
@@ -23,12 +25,12 @@ var (
 
 func main() {
 	flag.Parse()
-	if strings.TrimSpace(os.Getenv("HOPE_SHAPE_TOKEN")) == "" {
-		log.Fatal("missing HOPE_SHAPE_TOKEN")
+	if strings.TrimSpace(os.Getenv("ZYN_SHAPE_TOKEN")) == "" {
+		log.Fatal("missing ZYN_SHAPE_TOKEN")
 	}
 
 	// Zyn owns authentication, configuration, monitoring, and the local Shape
-	// broker. The native child runs no Polar cloud, telemetry, or security
+	// broker. The native child runs no external cloud, telemetry, or security
 	// services and does not embed credentials for them.
 	siteconfig.SetLicenseKey("")
 	siteconfig.SetUsername("")
@@ -38,7 +40,7 @@ func main() {
 
 	safego.Go(task.StartTaskServices)
 	safego.Go(waitForShutdown)
-	if os.Getenv("HOPE_PARENT_WATCH") == "1" {
+	if os.Getenv("ZYN_PARENT_WATCH") == "1" {
 		safego.Go(watchParentAlive)
 	}
 

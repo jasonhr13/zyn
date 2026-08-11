@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
 	jsoniter "github.com/json-iterator/go"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/client"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 const (
@@ -103,10 +103,10 @@ func statusPings(status CheckStatusResponse, at time.Time) []monitorhub.StockPin
 		pings = append(pings, monitorhub.StockPing{
 			Site:       "PokemonCenter",
 			ProductKey: "queue",
-			Name:       "Railway queue/site protection status",
+			Name:       "Zyn queue/site protection status",
 			InStock:    true,
 			At:         at,
-			From:       "Railway",
+			From:       "Zyn",
 		})
 	}
 	if status.Unlocked {
@@ -115,7 +115,7 @@ func statusPings(status CheckStatusResponse, at time.Time) []monitorhub.StockPin
 			ProductKey: unlockProductKey,
 			InStock:    true,
 			At:         at,
-			From:       "Railway",
+			From:       "Zyn",
 		})
 	}
 	return pings

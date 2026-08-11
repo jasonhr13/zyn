@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/hyperbroker"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/hyperbroker"
+	"zynbot.app/engine/bot-base/task"
 )
 
 func TestRequestHyperUsesCorrelatedFrontendBroker(t *testing.T) {

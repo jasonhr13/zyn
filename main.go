@@ -10,16 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/analytics"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/alert"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/frontend"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
-	"github.com/PolarAIO/Polar-AIO/backend/security"
-	serverclient "github.com/PolarAIO/Polar-AIO/backend/server-client"
+	"zynbot.app/engine/analytics"
+	"zynbot.app/engine/bot-base/alert"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/frontend"
+	monitorhub "zynbot.app/engine/monitor-hub"
+	"zynbot.app/engine/security"
+	serverclient "zynbot.app/engine/server-client"
 )
 
 var port = flag.String("port", envOrDefault("POLAR_FRONTEND_PORT", "8000"), "frontend WebSocket port")

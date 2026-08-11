@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PolarAIO/Polar-AIO/backend/antibots/tmx/dynamic"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"zynbot.app/engine/antibots/tmx/dynamic"
+	"zynbot.app/engine/bot-base/safego"
 )
 
 func SolveTMX(t *TMXConfig) (bool, error) {

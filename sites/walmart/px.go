@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	parallaxsdk "github.com/ParallaxAPIs/parallaxapis-sdk-go"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/pxsolve"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/pxsolve"
+	"zynbot.app/engine/bot-base/siteconfig"
 )
 
 func (t *WalmartTask) handlePX412(body string) bool {

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/sites"
 )
 
 const scheduleLayout = "2006-01-02T15:04"

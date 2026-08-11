@@ -15,7 +15,7 @@ func TestStatusPingsPublishesQueueProtection(t *testing.T) {
 	if ping.Site != "PokemonCenter" || ping.ProductKey != "queue" || !ping.InStock {
 		t.Fatalf("unexpected queue ping: %#v", ping)
 	}
-	if ping.From != "Railway" || !ping.At.Equal(at) {
+	if ping.Name != "Zyn queue/site protection status" || ping.From != "Zyn" || !ping.At.Equal(at) {
 		t.Fatalf("queue ping lost its source or timestamp: %#v", ping)
 	}
 }

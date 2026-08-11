@@ -6,9 +6,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
-	pokemoncenter "github.com/PolarAIO/Polar-AIO/backend/sites/pokemonCenter"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/target"
+	"zynbot.app/engine/sites"
+	pokemoncenter "zynbot.app/engine/sites/pokemonCenter"
+	"zynbot.app/engine/sites/target"
 )
 
 func dispatchStartTask(siteName string, input sites.TaskInput) {

@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/client"
 )
 
 func (t *TargetTask) GetSession() {
@@ -81,10 +81,10 @@ func (t *TargetTask) GetSession() {
 }
 
 func (t *TargetTask) GetShape(CookieType string) {
-	if brokerURL := hopeShapeBrokerURL(); brokerURL != "" {
-		responseBody, err := fetchHopeShape(t.TaskContext.CTX, brokerURL, os.Getenv("HOPE_SHAPE_TOKEN"), CookieType, nil)
+	if brokerURL := zynShapeBrokerURL(); brokerURL != "" {
+		responseBody, err := fetchZynShape(t.TaskContext.CTX, brokerURL, os.Getenv("ZYN_SHAPE_TOKEN"), CookieType, nil)
 		if err != nil {
-			log.Printf("[GetShape] Hope broker error: %v", err)
+			log.Printf("[GetShape] Zyn broker error: %v", err)
 			return
 		}
 		t.applyShapeResponse(responseBody)
@@ -92,7 +92,7 @@ func (t *TargetTask) GetShape(CookieType string) {
 	}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
-	shapeURL := strings.TrimSpace(os.Getenv("POLAR_TARGET_SHAPE_URL"))
+	shapeURL := strings.TrimSpace(os.Getenv(targetShapeURLEnv))
 	if shapeURL == "" {
 		shapeURL = "ws://127.0.0.1:4312/ws"
 	}

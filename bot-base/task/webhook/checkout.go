@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/alert"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/alert"
+	"zynbot.app/engine/bot-base/task"
 )
 
 var (

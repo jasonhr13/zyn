@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/walmart/pie"
 	http "github.com/bogdanfinn/fhttp"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	monitorhub "zynbot.app/engine/monitor-hub"
+	"zynbot.app/engine/sites/walmart/pie"
 )
 
 func walmartProductPageURL(usItemID string) string {

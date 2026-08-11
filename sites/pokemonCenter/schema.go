@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/sites"
 )
 
 type PokemonCenterTask struct {

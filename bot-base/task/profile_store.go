@@ -1,6 +1,6 @@
 package task
 
-import "github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
+import "zynbot.app/engine/bot-base/profiles"
 
 func ProfileFromStore(p profiles.Profile) ProfileStruct {
 	BillingShippingEqual := false

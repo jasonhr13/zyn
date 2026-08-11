@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/client"
 	"github.com/golang-jwt/jwt/v5"
+	"zynbot.app/engine/client"
 )
 
 type cyberSourceCard struct {
@@ -27,10 +27,10 @@ type cyberSourceCard struct {
 }
 
 type captureContext struct {
-	raw     string
+	raw      string
 	tokenURL string
-	jwk     jwk
-	exp     int64
+	jwk      jwk
+	exp      int64
 }
 
 type jwk struct {

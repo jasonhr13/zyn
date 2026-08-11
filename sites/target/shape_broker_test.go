@@ -7,10 +7,17 @@ import (
 	"testing"
 )
 
-func TestFetchHopeShape(t *testing.T) {
+func TestZynShapeBrokerURLUsesZynPort(t *testing.T) {
+	t.Setenv("ZYN_SHAPE_PORT", "4312")
+	if got := zynShapeBrokerURL(); got != "http://127.0.0.1:4312" {
+		t.Fatalf("broker URL = %q", got)
+	}
+}
+
+func TestFetchZynShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-hope-token") != "secret" {
-			t.Errorf("token header = %q", r.Header.Get("x-hope-token"))
+		if r.Header.Get("x-zyn-token") != "secret" {
+			t.Errorf("token header = %q", r.Header.Get("x-zyn-token"))
 		}
 		if r.URL.Query().Get("type") != "atc" || r.URL.Query().Get("wait") != "1" || r.URL.Query().Get("timeout") != "30000" {
 			t.Errorf("query = %q", r.URL.RawQuery)
@@ -20,7 +27,7 @@ func TestFetchHopeShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	payload, err := fetchHopeShape(context.Background(), server.URL, "secret", "atc", server.Client())
+	payload, err := fetchZynShape(context.Background(), server.URL, "secret", "atc", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,13 +36,13 @@ func TestFetchHopeShape(t *testing.T) {
 	}
 }
 
-func TestFetchHopeShapeRejectsUnavailableCookie(t *testing.T) {
+func TestFetchZynShapeRejectsUnavailableCookie(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":false,"cookie":{"headers":{},"proxy":""}}`))
 	}))
 	defer server.Close()
 
-	if _, err := fetchHopeShape(context.Background(), server.URL, "", "login", server.Client()); err == nil {
+	if _, err := fetchZynShape(context.Background(), server.URL, "", "login", server.Client()); err == nil {
 		t.Fatal("unavailable cookie did not return an error")
 	}
 }

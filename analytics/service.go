@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"zynbot.app/engine/bot-base/safego"
 )
 
 const presenceInterval = 15 * time.Second

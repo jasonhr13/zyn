@@ -4,9 +4,9 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 func startMonitorMessageToInput(msg StartMonitorMessage) monitorhub.StartInput {

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
+	"zynbot.app/engine/bot-base/task"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 func (t *WalmartTask) matchKeys() []string {

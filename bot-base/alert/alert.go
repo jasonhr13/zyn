@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/siteconfig"
 )
 
 var webhookURL string

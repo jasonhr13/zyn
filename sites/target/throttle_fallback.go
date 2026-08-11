@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task/constants"
 )
 
 const localThrottleFallbackLeaseDuration = 2 * time.Minute

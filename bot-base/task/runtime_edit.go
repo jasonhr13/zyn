@@ -1,6 +1,6 @@
 package task
 
-import "github.com/PolarAIO/Polar-AIO/backend/sites"
+import "zynbot.app/engine/sites"
 
 type RuntimeEditPayload struct {
 	Input        sites.TaskInput

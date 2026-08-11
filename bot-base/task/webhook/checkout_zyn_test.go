@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/task"
 )
 
 func TestZynProductWebhookBrand(t *testing.T) {

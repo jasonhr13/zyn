@@ -3,8 +3,8 @@ package monitorhub
 import (
 	"context"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
 )
 
 func InitMonitorTask(t *task.BaseTask, taskType string) bool {

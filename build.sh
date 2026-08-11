@@ -7,7 +7,7 @@ MAIN_PKG="${MAIN_PKG:-.}"
 USE_GARBLE="${USE_GARBLE:-1}"
 
 # Obfuscate only this module; dependencies are left readable for compatibility.
-export GOGARBLE="${GOGARBLE:-github.com/PolarAIO/Polar-AIO/backend}"
+export GOGARBLE="${GOGARBLE:-zynbot.app/engine}"
 
 mkdir -p "$OUT_DIR"
 

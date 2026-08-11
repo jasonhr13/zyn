@@ -1,6 +1,6 @@
 package task
 
-import "github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+import "zynbot.app/engine/bot-base/safego"
 
 var onTaskChange func(*BaseTask)
 

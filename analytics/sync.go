@@ -1,6 +1,6 @@
 package analytics
 
-import "github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+import "zynbot.app/engine/bot-base/task"
 
 func SyncTask(t *task.BaseTask) {
 	_ = t

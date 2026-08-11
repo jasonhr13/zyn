@@ -5,10 +5,10 @@ package frontend
 import (
 	"log"
 
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
-	pokemoncenter "github.com/PolarAIO/Polar-AIO/backend/sites/pokemonCenter"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/target"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/walmart"
+	"zynbot.app/engine/sites"
+	pokemoncenter "zynbot.app/engine/sites/pokemonCenter"
+	"zynbot.app/engine/sites/target"
+	"zynbot.app/engine/sites/walmart"
 )
 
 func dispatchStartTask(siteName string, input sites.TaskInput) {

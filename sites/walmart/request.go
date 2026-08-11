@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/walmart/pie"
 	jsoniter "github.com/json-iterator/go"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/client"
+	"zynbot.app/engine/sites/walmart/pie"
 )
 
 func (t *WalmartTask) GetHomePage() {

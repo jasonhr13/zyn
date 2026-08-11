@@ -3,7 +3,7 @@ package security
 import (
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"zynbot.app/engine/bot-base/safego"
 )
 
 func SafeEnv() bool {

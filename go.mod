@@ -1,4 +1,4 @@
-module github.com/PolarAIO/Polar-AIO/backend
+module zynbot.app/engine
 
 go 1.25.1
 

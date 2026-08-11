@@ -13,18 +13,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/captcha"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/hyperbroker"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/webhook"
-	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
 	"github.com/gorilla/websocket"
+	"zynbot.app/engine/bot-base/accounts"
+	"zynbot.app/engine/bot-base/captcha"
+	"zynbot.app/engine/bot-base/hyperbroker"
+	"zynbot.app/engine/bot-base/imapcode"
+	"zynbot.app/engine/bot-base/profiles"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/webhook"
+	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 var (
@@ -190,8 +190,8 @@ func deliverWatcherReady(requestID string) {
 func connectAndLog(port string) {
 	url := "ws://127.0.0.1:" + port + "/"
 	headers := http.Header{}
-	if token := strings.TrimSpace(os.Getenv("HOPE_SHAPE_TOKEN")); token != "" {
-		headers.Set("x-hope-token", token)
+	if token := strings.TrimSpace(os.Getenv("ZYN_SHAPE_TOKEN")); token != "" {
+		headers.Set("x-zyn-token", token)
 	}
 	c, _, err := websocket.DefaultDialer.Dial(url, headers)
 	if err != nil {

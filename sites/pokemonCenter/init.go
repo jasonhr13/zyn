@@ -4,9 +4,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
+	"zynbot.app/engine/bot-base/profiles"
+	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/sites"
 )
 
 func StartTask(t sites.TaskInput) {

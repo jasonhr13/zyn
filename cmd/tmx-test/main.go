@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
-	"github.com/PolarAIO/Polar-AIO/backend/antibots/tmx"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
+	"zynbot.app/engine/antibots/tmx"
+	"zynbot.app/engine/client"
 )
 
 func main() {

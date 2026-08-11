@@ -12,14 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
-	"github.com/PolarAIO/Polar-AIO/backend/client"
 	http "github.com/bogdanfinn/fhttp"
+	"zynbot.app/engine/bot-base/accounts"
+	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/profiles"
+	"zynbot.app/engine/bot-base/proxy"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/task/constants"
+	"zynbot.app/engine/client"
 )
 
 var safeTaskStatuses = safeStatuses{
@@ -385,7 +385,7 @@ func (t *BaseTask) UpdatePassword(password string, accountID string) {
 	})
 }
 
-const logCipherKey = "PolarAIO-Task-Log-v1"
+const logCipherKey = "Zyn-Task-Log-v1"
 
 func encodeLog(msg string) string {
 	key := []byte(logCipherKey)

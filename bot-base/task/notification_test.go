@@ -2,7 +2,7 @@ package task
 
 import "testing"
 
-func TestCheckoutNotificationIncludesHopeDetails(t *testing.T) {
+func TestCheckoutNotificationIncludesZynDetails(t *testing.T) {
 	var sent statusMessage
 	SetMessageSender(func(value any) error {
 		sent = value.(statusMessage)

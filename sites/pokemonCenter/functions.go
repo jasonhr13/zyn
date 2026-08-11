@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/task"
 )
 
 var (

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PolarAIO/Polar-AIO/backend/client"
-	"github.com/PolarAIO/Polar-AIO/backend/sites"
 	jsoniter "github.com/json-iterator/go"
+	"zynbot.app/engine/client"
+	"zynbot.app/engine/sites"
 )
 
 var jsonStd = jsoniter.ConfigCompatibleWithStandardLibrary

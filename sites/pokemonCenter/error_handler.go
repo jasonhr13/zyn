@@ -4,8 +4,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/alert"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
+	"zynbot.app/engine/bot-base/alert"
+	"zynbot.app/engine/bot-base/task/constants"
 )
 
 func containsAnyText(text string, fragments ...string) bool {
