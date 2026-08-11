@@ -1,12 +1,20 @@
 package target
 
 import (
+	"strings"
+
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
 	"github.com/PolarAIO/Polar-AIO/backend/sites"
 )
 
 func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
+	if p.ProxyGroup != nil {
+		t.applyRuntimeProxy(*p.ProxyGroup)
+		return
+	}
 	in := p.Input
 
 	newInputs := make([]sites.Input, 0, len(in.Items))
@@ -67,4 +75,30 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	}
 
 	t.IgnoreLowStock = in.IgnoreLowStock
+}
+
+func (t *TargetTask) applyRuntimeProxy(group string) {
+	group = strings.TrimSpace(group)
+	if group == "" || strings.EqualFold(group, "Local") {
+		group = "Local"
+	}
+	if group == t.ProxyGroup {
+		return
+	}
+
+	oldGroup := t.ProxyGroup
+	proxy.ReleaseProxy(oldGroup, t.ID)
+	t.ProxyGroup = group
+
+	var err error
+	if group == "Local" {
+		err = t.SetProxy("")
+	} else {
+		err = t.SwapProxy("Target")
+	}
+	if err != nil {
+		t.UpdateStatus("Proxy Switch Failed", constants.Colors.RED)
+		return
+	}
+	t.UpdateStatus("Proxy Updated", constants.Colors.BLUE)
 }

@@ -66,6 +66,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 	case containsAnyText(errText, "dco_rate_limited"):
 		t.UpdateStatus("DCO Rate Limited", constants.Colors.YELLOW)
 		datadog.Info("DCO_Rate_Limited", map[string]interface{}{"event": "dco_rate_limited", "site": "Target", "step": step, "task_id": t.ID, "name": t.Profile.ProfileName})
+		t.tryThrottleFallback()
 		randomMs := rand.IntN(1501)
 		t.SleepTask(randomMs)
 	case containsAnyText(errText, "shape-block-ccart", "precart"):

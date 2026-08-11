@@ -10,11 +10,9 @@ import (
 )
 
 func SolveTMX(t *TMXConfig) (bool, error) {
-	device, err := t.GetDevice()
-	if err != nil {
-		return false, err
+	if t.Device.Data.UserAgent == "" {
+		t.Device = GenerateLocalFingerprint(t.userAgent())
 	}
-	t.Device.Data = *device
 	t.UA = ParseUA(t.UserAgent)
 	t.ApplyTimezoneFields()
 	if t.IPv4 == "" {

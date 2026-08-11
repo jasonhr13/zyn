@@ -40,33 +40,6 @@ func (t *TMXConfig) MakeTMXRequest(url string) (string, error) {
 	}
 }
 
-func (t *TMXConfig) GetDevice() (*FingerprintData, error) {
-	Request := client.RequestStruct{
-		Req: client.ReqStruct{
-			Method: "GET",
-			URL:    "https://device-api-production-fbca.up.railway.app/getdevice",
-		},
-		Headers: map[string][]string{
-			"user-agent": {t.UserAgent},
-		},
-	}
-	requestType := "tmx"
-	response, body, err := client.MakeRequest(Request, t.Client, &requestType)
-	if err != nil {
-		log.Printf("[TMX] ERROR: %s", err)
-		return nil, err
-	} else {
-		log.Printf("[ID:'%s' | Request Status: %s]", "TMX", response.Status)
-		var device FingerprintData
-		err := json.Unmarshal([]byte(body), &device)
-		if err != nil {
-			log.Printf("[TMX] ERROR: %s", err)
-			return nil, err
-		}
-		return &device, nil
-	}
-}
-
 type ipResponse struct {
 	Ip string `json:"ip"`
 }

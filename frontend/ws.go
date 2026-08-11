@@ -1,22 +1,29 @@
 package frontend
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
+	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/accounts"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/captcha"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/hyperbroker"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/imapcode"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
+	"github.com/PolarAIO/Polar-AIO/backend/bot-base/siteconfig"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/webhook"
+	monitorhub "github.com/PolarAIO/Polar-AIO/backend/monitor-hub"
 	"github.com/gorilla/websocket"
 )
 
@@ -28,16 +35,108 @@ var (
 	watcherReadyMu          sync.Mutex
 	watcherReady            = map[string]chan struct{}{}
 	watcherSequence         atomic.Uint64
+	hyperPendingMu          sync.Mutex
+	hyperPending            = map[string]hyperWaiter{}
+	hyperSequence           atomic.Uint64
 )
+
+type hyperWaiter struct {
+	taskID string
+	ch     chan HyperResponseMessage
+}
 
 func ConnectFrontend(port string) {
 	task.SetMessageSender(SendMessage)
 	captcha.SetMessageSender(SendMessage)
+	hyperbroker.SetRequester(RequestHyper)
 	task.SetProductWebhookSender(webhook.SendProductCheckout)
 	imapcode.SetCodeRequester(RequestCode)
 	for {
 		connectAndLog(port)
 		time.Sleep(time.Second)
+	}
+}
+
+func RequestHyper(ctx context.Context, taskID, operation string, payload any) (hyperbroker.Result, error) {
+	switch operation {
+	case "reese84", "datadome-tags", "datadome-interstitial", "datadome-slider", "incapsula-utmvc":
+	default:
+		return hyperbroker.Result{}, errors.New("hyperbroker: unsupported operation")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+
+	requestID := "hyper-" + strconv.FormatUint(hyperSequence.Add(1), 10)
+	waiter := hyperWaiter{taskID: strings.TrimSpace(taskID), ch: make(chan HyperResponseMessage, 1)}
+	if waiter.taskID == "" {
+		return hyperbroker.Result{}, errors.New("hyperbroker: task ID is required")
+	}
+	hyperPendingMu.Lock()
+	hyperPending[requestID] = waiter
+	hyperPendingMu.Unlock()
+	defer func() {
+		hyperPendingMu.Lock()
+		if current, ok := hyperPending[requestID]; ok && current.ch == waiter.ch {
+			delete(hyperPending, requestID)
+		}
+		hyperPendingMu.Unlock()
+	}()
+
+	err := SendMessage(SentMessage{Type: "hyper-request", Messages: []any{map[string]any{
+		"requestId": requestID,
+		"taskId":    waiter.taskID,
+		"site":      "Pokemon Center US",
+		"operation": operation,
+		"payload":   payload,
+	}}})
+	if err != nil {
+		return hyperbroker.Result{}, err
+	}
+
+	select {
+	case response := <-waiter.ch:
+		result := hyperbroker.Result{Status: response.Status, Body: []byte(response.Body)}
+		if response.Status <= 0 {
+			if strings.TrimSpace(response.Error) == "" {
+				response.Error = "Hyper service request failed"
+			}
+			return result, errors.New(response.Error)
+		}
+		return result, nil
+	case <-ctx.Done():
+		return hyperbroker.Result{}, ctx.Err()
+	}
+}
+
+func deliverHyperResponse(response HyperResponseMessage) {
+	if !strings.EqualFold(strings.TrimSpace(response.Site), "Pokemon Center US") {
+		return
+	}
+	hyperPendingMu.Lock()
+	waiter, ok := hyperPending[strings.TrimSpace(response.RequestID)]
+	hyperPendingMu.Unlock()
+	if !ok || strings.TrimSpace(response.TaskID) != waiter.taskID {
+		return
+	}
+	select {
+	case waiter.ch <- response:
+	default:
+	}
+}
+
+func failPendingHyper(reason string) {
+	hyperPendingMu.Lock()
+	waiters := hyperPending
+	hyperPending = map[string]hyperWaiter{}
+	hyperPendingMu.Unlock()
+	for requestID, waiter := range waiters {
+		select {
+		case waiter.ch <- HyperResponseMessage{RequestID: requestID, TaskID: waiter.taskID, Error: reason}:
+		default:
+		}
 	}
 }
 
@@ -90,7 +189,11 @@ func deliverWatcherReady(requestID string) {
 
 func connectAndLog(port string) {
 	url := "ws://127.0.0.1:" + port + "/"
-	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	headers := http.Header{}
+	if token := strings.TrimSpace(os.Getenv("HOPE_SHAPE_TOKEN")); token != "" {
+		headers.Set("x-hope-token", token)
+	}
+	c, _, err := websocket.DefaultDialer.Dial(url, headers)
 	if err != nil {
 		log.Printf("ConnectFrontend: dial %s: %v", url, err)
 		return
@@ -103,6 +206,7 @@ func connectAndLog(port string) {
 		frontendConnMu.Lock()
 		if frontendConn == c {
 			frontendConn = nil
+			failPendingHyper("frontend connection closed")
 		}
 		frontendConnMu.Unlock()
 	}()
@@ -137,6 +241,8 @@ func readMessage(c *websocket.Conn) error {
 		_ = json.Unmarshal([]byte(configMessage.Settings), &s)
 		Webhooks = s.Webhooks
 		webhook.SetURLs(s.Webhooks.Checkout, s.Webhooks.Decline)
+		siteconfig.SetShapeMethod(s.ShapeMethod)
+		siteconfig.SetThrottleFallbackGroup(s.ThrottleFallbackGroup)
 
 		profiles.SetProfilesFromJSON([]byte(configMessage.ProfileList))
 		proxy.SetProxiesFromJSON([]byte(configMessage.ProxyListRaw))
@@ -180,6 +286,33 @@ func readMessage(c *websocket.Conn) error {
 			}
 			safego.Go(func() { EditTask(taskMessage) })
 		}
+	case "stock-ping":
+		for i, raw := range msg.Messages {
+			var incoming StockPingMessage
+			if err := json.Unmarshal(raw, &incoming); err != nil {
+				log.Printf("ConnectFrontend: stock-ping [%d] decode: %v", i, err)
+				continue
+			}
+			ping, ok := normalizeStockPing(incoming)
+			if ok {
+				monitorhub.Default.Publish(ping)
+			}
+		}
+	case "set-task-proxy":
+		for i, raw := range msg.Messages {
+			var incoming SetTaskProxyMessage
+			if err := json.Unmarshal(raw, &incoming); err != nil {
+				log.Printf("ConnectFrontend: set-task-proxy [%d] decode: %v", i, err)
+				continue
+			}
+			group := strings.TrimSpace(incoming.ProxyGroup)
+			if group == "" || strings.EqualFold(group, "Local") {
+				group = "Local"
+			}
+			if !task.EnqueueRuntimeEdit(strings.TrimSpace(incoming.ID), task.RuntimeEditPayload{ProxyGroup: &group}) {
+				log.Printf("ConnectFrontend: set-task-proxy [%d] task unavailable", i)
+			}
+		}
 
 	//captcha sovles
 	case "received-token":
@@ -209,10 +342,41 @@ func readMessage(c *websocket.Conn) error {
 			return nil
 		}
 		deliverWatcherReady(readyMessage.RequestID)
+	case "hyper-response":
+		for i, raw := range msg.Messages {
+			var response HyperResponseMessage
+			if err := json.Unmarshal(raw, &response); err != nil {
+				log.Printf("ConnectFrontend: hyper-response [%d] decode: %v", i, err)
+				continue
+			}
+			deliverHyperResponse(response)
+		}
 	default:
 		log.Printf("ConnectFrontend: unknown type %q", msg.Type)
 	}
 	return nil
+}
+
+func normalizeStockPing(in StockPingMessage) (monitorhub.StockPing, bool) {
+	productKey := strings.TrimSpace(in.ProductKey)
+	if productKey == "" {
+		return monitorhub.StockPing{}, false
+	}
+	site := strings.TrimSpace(in.Site)
+	if site == "" || strings.EqualFold(site, "Target") {
+		site = "Target"
+	}
+	return monitorhub.StockPing{
+		Site:       site,
+		ProductKey: productKey,
+		Name:       in.Name,
+		Image:      in.Image,
+		Price:      in.Price,
+		StockLevel: in.StockLevel,
+		InStock:    in.InStock,
+		From:       in.From,
+		At:         time.Now(),
+	}, true
 }
 
 func SendMessage(v any) error {

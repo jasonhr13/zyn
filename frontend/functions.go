@@ -10,9 +10,6 @@ import (
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
 	"github.com/PolarAIO/Polar-AIO/backend/sites"
-	pokemoncenter "github.com/PolarAIO/Polar-AIO/backend/sites/pokemonCenter"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/target"
-	"github.com/PolarAIO/Polar-AIO/backend/sites/walmart"
 )
 
 const scheduleLayout = "2006-01-02T15:04"
@@ -187,16 +184,7 @@ func StartTask(TaskInfo StartTaskMessage) {
 
 	scheduleStop(TaskInfo)
 
-	switch siteName {
-	case "Pokemon Center", "Pokemon Center US", "Pokemon Center CA", "Pokemon Center DE", "Pokemon Center UK":
-		pokemoncenter.StartTask(siteInput)
-	case "Target":
-		target.StartTask(siteInput)
-	case "Walmart":
-		walmart.StartTask(siteInput)
-	default:
-		log.Printf("unsupported site: %q", siteName)
-	}
+	dispatchStartTask(siteName, siteInput)
 }
 
 func EditTask(TaskInfo StartTaskMessage) {

@@ -93,12 +93,40 @@ type WebhooksStruct struct {
 }
 
 type SettingsPayload struct {
-	Webhooks WebhooksStruct `json:"webhooks"`
+	Webhooks              WebhooksStruct `json:"webhooks"`
+	ShapeMethod           string         `json:"shapeMethod"`
+	ThrottleFallbackGroup string         `json:"throttleFallbackGroup"`
+}
+
+type StockPingMessage struct {
+	Site       string  `json:"site"`
+	ProductKey string  `json:"productKey"`
+	Name       string  `json:"name"`
+	Image      string  `json:"image"`
+	Price      float64 `json:"price"`
+	StockLevel int     `json:"stockLevel"`
+	InStock    bool    `json:"inStock"`
+	From       string  `json:"from"`
+}
+
+type SetTaskProxyMessage struct {
+	ID         string `json:"id"`
+	ProxyGroup string `json:"proxyGroup"`
 }
 
 type CaptchaSolvePayload struct {
 	TaskId string `json:"taskId"`
 	Token  string `json:"token"`
+}
+
+type HyperResponseMessage struct {
+	RequestID string `json:"requestId"`
+	TaskID    string `json:"taskId"`
+	Site      string `json:"site"`
+	OK        bool   `json:"ok"`
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	Error     string `json:"error"`
 }
 
 type ImapCodeResponse struct {

@@ -436,7 +436,6 @@ func (t *TargetTask) HandleTask() {
 					break
 				}
 				t.TaskState = constants.StatusSteps.Carted
-				safego.Go(func() { task.SendCartedEvent(t.RunID) })
 
 				productName := t.CartData.Attributes.Description
 				if productName == "" {
@@ -468,6 +467,16 @@ func (t *TargetTask) HandleTask() {
 					ProductSize:  "Default",
 					Quantity:     productQty,
 				}}
+				task.SendCartedAnalytics(task.ProductWebhookData{
+					CheckoutProducts: t.BuildProductWebhookItems(),
+					Site:             "Target",
+					ProfileName:      t.Profile.ProfileName,
+					ProxyGroup:       t.ProxyGroup,
+					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
+					GrandTotal:       t.CartToalPrice,
+				})
 				t.AddLog(fmt.Sprintf("Carted %dx %s - $%.2f w shape: %s", productQty, productName, t.CartToalPrice, t.ShapeMethod))
 				datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "Target", "task_id": t.RunID, "shapeMethod": t.ShapeMethod})
 				t.PassedCartErrors = 0
@@ -486,24 +495,28 @@ func (t *TargetTask) HandleTask() {
 				t.UpdateStatus("Submitting Payment", constants.Colors.BLUE)
 				t.UpdateStatus("Submitting CVV", constants.Colors.BLUE)
 
-				tmxConfig := &tmx.TMXConfig{
-					SessionID:  t.PrepCheckoutData.ReferanceID,
-					SiteID:     "9p00aymw",
-					Domain:     "img9.target.com",
-					Client:     t.Requests.Client,
-					CurrentUrl: "https://www.target.com/checkout",
-					PrevUrl:    "https://www.target.com/cart",
-					UserAgent:  t.Requests.UserAgent.Useragent,
-					IPv4:       t.Requests.IPv4,
-					SendM1M2:   true,
-					SendKClear: true,
-					SendJF:     true,
+				if !t.tmxStartedForCheckout {
+					t.tmxStartedForCheckout = true
+					tmxConfig := &tmx.TMXConfig{
+						SessionID:  t.PrepCheckoutData.ReferanceID,
+						SiteID:     "9p00aymw",
+						Domain:     "img9.target.com",
+						Client:     t.Requests.Client,
+						CurrentUrl: "https://www.target.com/checkout",
+						PrevUrl:    "https://www.target.com/cart",
+						UserAgent:  t.Requests.UserAgent.Useragent,
+						IPv4:       t.Requests.IPv4,
+						SendM1M2:   true,
+						SendKClear: true,
+						SendJF:     true,
+					}
+					safego.Go(func() { tmx.SolveTMX(tmxConfig) })
 				}
-				safego.Go(func() { tmx.SolveTMX(tmxConfig) })
 				if t.UsedAlternateCartFlow {
 					go t.PrepareCheckout()
 				}
 				t.SubmitPayment(false)
+				t.recoverExistingPaymentInstruction()
 				if t.UseFillerItem && t.Error != nil && strings.Contains(t.Error.Error(), "400") && t.PaymentInstId != "" {
 					t.Error = nil
 					t.SubmitPayment(true)
@@ -597,7 +610,7 @@ func (t *TargetTask) HandleTask() {
 				t.TaskState = constants.StatusSteps.CheckedOut
 				t.UpdateStatus("Successful", constants.Colors.GREEN)
 				if len(t.Products) > 0 {
-					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, true)
+					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, true, t.notificationDetails())
 				}
 				extraFields := map[string]string{
 					"Fraud Status": t.FraudStatus,
@@ -617,6 +630,8 @@ func (t *TargetTask) HandleTask() {
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					GrandTotal:       t.CartToalPrice,
 					ExtraFeilds:      extraFields,
 				})
@@ -634,7 +649,7 @@ func (t *TargetTask) HandleTask() {
 				t.TaskState = constants.StatusSteps.Declined
 				t.UpdateStatus("Payment Declined", constants.Colors.RED)
 				if len(t.Products) > 0 {
-					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, false)
+					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, false, t.notificationDetails())
 				}
 				webhookData := task.ProductWebhookData{
 					Success:          false,
@@ -645,6 +660,8 @@ func (t *TargetTask) HandleTask() {
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					DeclineReason:    t.DeclineReason,
 				}
 				declineExtraFields := map[string]string{

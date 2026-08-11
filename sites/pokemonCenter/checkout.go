@@ -10,7 +10,6 @@ import (
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/datadog"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/profiles"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/proxy"
-	"github.com/PolarAIO/Polar-AIO/backend/bot-base/safego"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task"
 	"github.com/PolarAIO/Polar-AIO/backend/bot-base/task/constants"
 	"github.com/PolarAIO/Polar-AIO/backend/client"
@@ -365,7 +364,11 @@ func (t *PokemonCenterTask) HandleTask() {
 
 				if atleastOneCarted && !t.AllInstock {
 					t.TaskState = constants.StatusSteps.Carted
-					safego.Go(func() { task.SendCartedEvent(t.RunID) })
+					task.SendCartedAnalytics(task.ProductWebhookData{
+						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
+						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
+					})
 					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
 					t.NextStep = "submit-email"
 					break
@@ -373,7 +376,11 @@ func (t *PokemonCenterTask) HandleTask() {
 
 				if t.AllInstock && allCarted {
 					t.TaskState = constants.StatusSteps.Carted
-					safego.Go(func() { task.SendCartedEvent(t.RunID) })
+					task.SendCartedAnalytics(task.ProductWebhookData{
+						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
+						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
+					})
 					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
 					t.NextStep = "submit-email"
 					break
@@ -453,6 +460,8 @@ func (t *PokemonCenterTask) HandleTask() {
 					OrderNumber:      t.OrderNumber,
 					OrderLink:        fmt.Sprintf("https://www.pokemoncenter.com/orders/%s?postalCode=%s", t.OrderNumber, t.Profile.ShippingZip),
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 				})
 				if t.LoopCheckout {
 					profiles.MarkProfileUsed(t.Site, t.Profile.ProfileGroup, t.ProfileId)
@@ -486,6 +495,8 @@ func (t *PokemonCenterTask) HandleTask() {
 					Proxy:            proxy.AssignedProxyURL(t.ProxyGroup, t.ID),
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
+					ClientTaskID:     t.ID,
+					RunID:            t.RunID,
 					DeclineReason:    t.DeclineReason,
 				})
 				if t.LoopCheckout {
@@ -718,12 +729,45 @@ func (t *PokemonCenterTask) HandleTask() {
 
 func (t *PokemonCenterTask) awaitQueue() bool {
 	t.UpdateStatus("Waiting For Queue", constants.Colors.YELLOW)
+	ensureStatusWatcher()
+	lastHealthState := ""
+	lastHealthLog := time.Time{}
+	logWatcherHealth := func(force bool) {
+		health := getStatusWatcherHealth()
+		state := "connecting"
+		message := "[queue-monitor] HTTPS polling active (every 3s); waiting for the first response"
+		if health.Failed {
+			state = "failed"
+			message = fmt.Sprintf("[queue-monitor] HTTPS status poll failed at %s; retrying every 3s", health.LastAttempt.Format("15:04:05"))
+		} else if !health.LastSuccess.IsZero() {
+			state = "healthy"
+			message = fmt.Sprintf("[queue-monitor] HTTPS poll healthy at %s (queue=%t, unlocked=%t)",
+				health.LastSuccess.Format("15:04:05"), health.QueueUp, health.Unlocked)
+		}
+		if !force && state == lastHealthState && time.Since(lastHealthLog) < 30*time.Second {
+			return
+		}
+		t.AddLog(message)
+		lastHealthState = state
+		lastHealthLog = time.Now()
+	}
+	logWatcherHealth(true)
 	queueKeys := []string{"queue"}
 	since := time.Now()
 	matches := func(ping monitorhub.StockPing) bool {
 		return strings.EqualFold(ping.Site, "PokemonCenter") &&
 			ping.ProductKey == "queue" &&
 			ping.At.After(since)
+	}
+	enterQueue := func() {
+		t.AddLog("[queue-monitor] queue or site protection detected; entering the queue flow")
+		t.FoundQueue = true
+		t.NextStep = "get-homepage"
+		if t.QueueEntryDelay != 0 {
+			status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
+			t.UpdateStatus(status, constants.Colors.BLUE)
+			t.SleepTask(t.QueueEntryDelay)
+		}
 	}
 	sub := monitorhub.Default.Subscribe()
 	defer sub.Close()
@@ -738,28 +782,18 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 			return false
 		}
 		if ping, ok := monitorhub.Default.Match("PokemonCenter", queueKeys, since); ok && matches(ping) {
-			t.FoundQueue = true
-			t.NextStep = "get-homepage"
-			if t.QueueEntryDelay != 0 {
-				status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
-				t.UpdateStatus(status, constants.Colors.BLUE)
-				t.SleepTask(t.QueueEntryDelay)
-			}
+			enterQueue()
 			return false
 		}
 		select {
 		case ping := <-sub.C:
 			if matches(ping) {
-				t.FoundQueue = true
-				t.NextStep = "get-homepage"
-				if t.QueueEntryDelay != 0 {
-					status := fmt.Sprintf("Waiting (%d ms) to Enter Queue", t.QueueEntryDelay)
-					t.UpdateStatus(status, constants.Colors.BLUE)
-					t.SleepTask(t.QueueEntryDelay)
-				}
+				enterQueue()
 				return false
 			}
 		case <-poll.C:
+			// Wake periodically so runtime edits (including disabling Wait For Queue) are applied.
+			logWatcherHealth(false)
 		case <-t.TaskContext.CTX.Done():
 			return true
 		}
@@ -767,7 +801,7 @@ func (t *PokemonCenterTask) awaitQueue() bool {
 	return false
 }
 func (t *PokemonCenterTask) awaitUnlock() bool {
-	ensureLockWatcher()
+	ensureStatusWatcher()
 	unlockKeys := []string{unlockProductKey}
 	since := time.Now()
 	matches := func(ping monitorhub.StockPing) bool {
