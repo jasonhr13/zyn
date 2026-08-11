@@ -372,6 +372,10 @@ test('publishes verified metadata and sends one branded Discord notification', a
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'https://discord.com/api/webhooks/123/test-token?wait=true');
     assert.equal(calls[0].options.redirect, 'error');
+    assert.equal(
+      calls[0].options.headers['user-agent'],
+      'Zyn Release Publisher/1.0 (+https://zynbot.app)',
+    );
     const payload = JSON.parse(calls[0].options.body);
     assert.equal(payload.username, 'Zyn');
     assert.equal(payload.avatar_url, 'https://zynbot.app/zyn-icon.png');

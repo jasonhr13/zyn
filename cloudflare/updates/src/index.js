@@ -391,7 +391,10 @@ async function postDiscordRelease(webhook, metadata) {
     try {
       const response = await fetch(webhook.toString(), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'user-agent': 'Zyn Release Publisher/1.0 (+https://zynbot.app)',
+        },
         body,
         redirect: 'error',
       });
