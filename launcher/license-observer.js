@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createClient, DEFAULT_API_BASE } = require('./license-client');
+const { invalidSessionReason } = require('./license-session-reason');
 
 const SESSION_FILE = 'license-observer-session.json';
 const IPC = Object.freeze({
@@ -30,8 +31,9 @@ function cleanTaskTypes(value) {
 }
 
 function responseReason(result, fallback) {
-  if (result && result.code === 'account_disabled') return 'This account has been disabled.';
-  if (result && result.code === 'license_invalid') return 'This license has been revoked or is no longer valid.';
+  if (result && (result.status === 401 || result.status === 403)) {
+    return invalidSessionReason(result, fallback);
+  }
   return String((result && result.message) || fallback || 'License request failed.').slice(0, 240);
 }
 

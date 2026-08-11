@@ -125,7 +125,7 @@ class LicenseGate extends Component {
             <button type="button" className="btn btn-secondary btn-sm" onClick={this.backToLogin} disabled={busy}>Back to sign in</button>
           )}
           <div className="license-gate-footnote">
-            Zyn validates every five minutes. A revoked or disabled session stops running tasks and returns here.
+            Zyn allows one active sign-in at a time. Signing in elsewhere signs out this device; Zyn will say separately if access was revoked or disabled.
           </div>
         </form>
       </div>

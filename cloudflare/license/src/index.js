@@ -903,6 +903,46 @@ function bearer(request) {
   return match ? match[1] : '';
 }
 
+function licenseFailure(row, deviceId, now) {
+  if (!row) {
+    return { code: 'session_invalid', message: 'Your Zyn session is no longer valid. Sign in again to continue.' };
+  }
+  if (!row.active) {
+    return { code: 'account_disabled', message: 'This account has been disabled. Contact support if you think this is a mistake.' };
+  }
+  if (row.revoked_at) {
+    if (row.revoked_reason === 'new_login') {
+      return {
+        code: 'session_replaced',
+        message: 'You were signed out because this account was signed in somewhere else. Sign in again to use Zyn here.',
+      };
+    }
+    if (row.revoked_reason === 'password_reset' || row.revoked_reason === 'admin_password_reset') {
+      return {
+        code: 'password_changed',
+        message: 'Your password was changed, so this device was signed out. Sign in again with your current password.',
+      };
+    }
+    if (row.revoked_reason === 'logout') {
+      return { code: 'signed_out', message: 'You are signed out. Sign in again to continue.' };
+    }
+    return {
+      code: 'session_revoked',
+      message: 'This Zyn session was revoked by an administrator. Sign in again or contact support if this was unexpected.',
+    };
+  }
+  if (row.device_id !== deviceId) {
+    return {
+      code: 'session_device_mismatch',
+      message: 'This saved session belongs to a different device. Sign in again to continue.',
+    };
+  }
+  if (Number(row.expires_at) <= now) {
+    return { code: 'session_expired', message: 'Your Zyn session expired. Sign in again to continue.' };
+  }
+  return null;
+}
+
 async function validateLicense(request, env) {
   const token = bearer(request);
   const body = await bodyJson(request);
@@ -914,14 +954,13 @@ async function validateLicense(request, env) {
   const tokenHash = await sha256(token);
   const now = Date.now();
   const row = await env.DB.prepare(`
-    SELECT l.id AS license_id, l.device_id, l.expires_at,
+    SELECT l.id AS license_id, l.device_id, l.expires_at, l.revoked_at, l.revoked_reason,
       u.id AS user_id, u.email, u.active, u.proxy_access
     FROM licenses l JOIN users u ON u.id = l.user_id
-    WHERE l.token_hash = ? AND l.revoked_at IS NULL
+    WHERE l.token_hash = ?
   `).bind(tokenHash).first();
-  if (!row || !row.active || row.device_id !== deviceId || row.expires_at <= now) {
-    return json({ ok: false, code: row && !row.active ? 'account_disabled' : 'license_invalid' }, 401);
-  }
+  const failure = licenseFailure(row, deviceId, now);
+  if (failure) return json({ ok: false, ...failure }, 401);
 
   const expiresAt = now + LICENSE_TTL_MS;
   await env.DB.prepare('UPDATE licenses SET last_validated_at = ?, expires_at = ? WHERE id = ?')
@@ -2428,6 +2467,7 @@ export const __test = Object.freeze({
   encryptServiceCredential,
   hyperCredentialInput,
   normalizePokemonQueueEvent,
+  licenseFailure,
   pokemonQueueCredentialInput,
   pokemonQueueUpstreamUrl,
   serviceCredentialJson,

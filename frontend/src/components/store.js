@@ -4,6 +4,7 @@ import {
   isTargetProxyRotationStatus,
   isTargetProxyStatusForGroup,
 } from './target-proxy-status';
+import { timestampLogLine, timestampLogLines } from './log-timestamp';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
 // task must never re-enter the pool — even when a Discord reconnect ('ready') or a refreshQueuePasses
@@ -221,7 +222,7 @@ export function reducer(state = defaultState, action) {
 
     case 'pbandaiLog': {
       const pb = state.pbandai;
-      const line = (pb.multi && action.tag ? `[${action.tag}] ` : '') + action.line;
+      const line = timestampLogLine((pb.multi && action.tag ? `[${action.tag}] ` : '') + action.line, action.at);
       return { ...state, pbandai: { ...pb, logs: [...pb.logs.slice(-800), line] } };
     }
 
@@ -271,11 +272,12 @@ export function reducer(state = defaultState, action) {
     case 'pokemonLog': {
       const incoming = Array.isArray(action.lines) ? action.lines : (action.line != null ? [action.line] : []);
       if (!incoming.length) return state;
+      const timestamped = timestampLogLines(incoming, action.at);
       if (!action.taskId) return { ...state, pokemon: { ...state.pokemon,
-        logs: [...state.pokemon.logs, ...incoming].slice(-800) } };
+        logs: [...state.pokemon.logs, ...timestamped].slice(-800) } };
       const previous = state.pokemon.taskLogs[action.taskId] || [];
       return { ...state, pokemon: { ...state.pokemon, taskLogs: { ...state.pokemon.taskLogs,
-        [action.taskId]: [...previous, ...incoming].slice(-400) } } };
+        [action.taskId]: [...previous, ...timestamped].slice(-400) } } };
     }
 
     case 'pokemonStatus': {
@@ -341,12 +343,13 @@ export function reducer(state = defaultState, action) {
     case 'targetLog': {
       const incoming = Array.isArray(action.lines) ? action.lines : (action.line != null ? [action.line] : []);
       if (!incoming.length) return state;
+      const timestamped = timestampLogLines(incoming, action.at);
       if (!action.taskId) {
-        return { ...state, target: { ...state.target, logs: [...state.target.logs, ...incoming].slice(-800) } };
+        return { ...state, target: { ...state.target, logs: [...state.target.logs, ...timestamped].slice(-800) } };
       }
       const prev = state.target.taskLogs[action.taskId] || [];
       return { ...state, target: { ...state.target,
-        taskLogs: { ...state.target.taskLogs, [action.taskId]: [...prev, ...incoming].slice(-400) } } };
+        taskLogs: { ...state.target.taskLogs, [action.taskId]: [...prev, ...timestamped].slice(-400) } } };
     }
 
     case 'targetStatus': {
@@ -421,7 +424,8 @@ export function reducer(state = defaultState, action) {
       return { ...state, walmart: { ...state.walmart, instance: { state: 'Starting', label: 'Starting', color: '#868686', detail: '' } } };
 
     case 'walmartLog':
-      return { ...state, walmart: { ...state.walmart, logs: [...state.walmart.logs.slice(-800), action.line] } };
+      return { ...state, walmart: { ...state.walmart,
+        logs: [...state.walmart.logs.slice(-800), timestampLogLine(action.line, action.at)] } };
 
     case 'walmartStatus':
       return { ...state, walmart: { ...state.walmart, instance: {
@@ -447,7 +451,7 @@ export function reducer(state = defaultState, action) {
 
     case 'riotgamesLog': {
       const rg = state.riotgames;
-      const line = (rg.multi && action.tag ? `[${action.tag}] ` : '') + action.line;
+      const line = timestampLogLine((rg.multi && action.tag ? `[${action.tag}] ` : '') + action.line, action.at);
       return { ...state, riotgames: { ...rg, logs: [...rg.logs.slice(-800), line] } };
     }
 
@@ -508,7 +512,7 @@ export function reducer(state = defaultState, action) {
     case 'taskLog': {
       const taskLogs = { ...state.taskLogs };
       const existing = taskLogs[action.taskId] || [];
-      const updated = [...existing, { threadId: action.threadId, line: action.line }];
+      const updated = [...existing, { threadId: action.threadId, line: timestampLogLine(action.line, action.at) }];
       taskLogs[action.taskId] = updated.slice(-500);
 
       // Also update lastLog on the thread

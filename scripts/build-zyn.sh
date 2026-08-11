@@ -11,8 +11,8 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.14}"
-APP_VERSION="${ZYN_VERSION:-1.6.88}"
+APP_RELEASE="${ZYN_RELEASE:-R8.15}"
+APP_VERSION="${ZYN_VERSION:-1.6.89}"
 NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
@@ -135,7 +135,7 @@ cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
 cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"
 
 for launcher_file in \
-  bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
+  bootstrap.js feature-flags.js license-client.js license-session-reason.js license-authority.js license-observer.js \
   checkout-reporting.js analytics-recorder.js \
   pokemon-queue-events.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js \

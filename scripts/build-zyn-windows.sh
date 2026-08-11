@@ -123,7 +123,7 @@ fi
 
 mkdir -p "$RESOURCES/app"
 for launcher_file in \
-  bootstrap.js feature-flags.js license-client.js license-authority.js license-observer.js \
+  bootstrap.js feature-flags.js license-client.js license-session-reason.js license-authority.js license-observer.js \
   checkout-reporting.js analytics-recorder.js \
   pokemon-queue-events.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js \

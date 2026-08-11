@@ -62,10 +62,12 @@ their current password. Removing a waiting-list entry does not delete its Zyn ac
 1. The admin creates the user's email and shares the generated temporary password.
 2. The user signs into Zyn.
 3. The first login requires a new password of at least 10 characters.
-4. The API mints one active license for that user and device, revoking any earlier active license.
-5. Zyn validates the license every five minutes. A definite revoke or disable immediately returns
-   the app to its sign-in gate and stops running tasks. Transient network failures have a bounded
-   15-minute grace period.
+4. The API mints one active license for that user and device, ending any earlier active session.
+5. Zyn validates the license every five minutes. A sign-in on another device asks the user to sign
+   in again and says why; expiration, password changes, administrator revocation, and account
+   disablement have distinct messages. Any definite session end immediately returns the app to its
+   sign-in gate and stops running tasks. Transient network failures have a bounded 15-minute grace
+   period.
 
 When `proxy_access` is enabled for a user, login returns the current managed proxy lists. Every
 five-minute validation sends the revision already in memory; an unchanged revision returns only a

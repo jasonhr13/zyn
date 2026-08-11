@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.14",
+  "appRelease": "R8.15",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -15,7 +15,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.88",
+    "version": "1.6.89",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -46,6 +46,7 @@
     "Contents/Resources/app/package.json",
     "Contents/Resources/app/feature-flags.js",
     "Contents/Resources/app/license-client.js",
+    "Contents/Resources/app/license-session-reason.js",
     "Contents/Resources/app/license-authority.js",
     "Contents/Resources/app/license-observer.js",
     "Contents/Resources/app/analytics-recorder.js",

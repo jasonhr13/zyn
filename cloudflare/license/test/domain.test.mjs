@@ -19,6 +19,27 @@ test('serves the license health endpoint on the Zyn domain', async () => {
   assert.deepEqual(await response.json(), { service: 'zyn-license-api', status: 'ok' });
 });
 
+test('distinguishes a replacement sign-in from revoked and expired sessions', () => {
+  const active = {
+    active: 1,
+    device_id: 'device-a',
+    expires_at: 2000,
+    revoked_at: null,
+    revoked_reason: null,
+  };
+  assert.deepEqual(__test.licenseFailure({
+    ...active, revoked_at: 900, revoked_reason: 'new_login',
+  }, 'device-a', 1000), {
+    code: 'session_replaced',
+    message: 'You were signed out because this account was signed in somewhere else. Sign in again to use Zyn here.',
+  });
+  assert.equal(__test.licenseFailure({
+    ...active, revoked_at: 900, revoked_reason: 'admin_revoked',
+  }, 'device-a', 1000).code, 'session_revoked');
+  assert.equal(__test.licenseFailure({ ...active, expires_at: 999 }, 'device-a', 1000).code, 'session_expired');
+  assert.equal(__test.licenseFailure(active, 'device-a', 1000), null);
+});
+
 test('ships the Zyn-branded admin assets and both custom domains', async () => {
   const [html, css, javascript, wrangler, migration, analyticsIndexes, workerSource] = await Promise.all([
     readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8'),

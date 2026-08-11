@@ -10,6 +10,7 @@ const {
   LICENSE_CHECK_MS,
   LICENSE_OFFLINE_GRACE_MS,
 } = require('../launcher/license-authority');
+const { invalidSessionReason } = require('../launcher/license-session-reason');
 
 const roots = [];
 const temporary = () => {
@@ -159,7 +160,7 @@ const silentLogger = { warn() {} };
     const invalidApi = {
       async login() { return { ok: true, licenseToken: 'revoked-bearer', email: 'revoked@example.com' }; },
       async validate() { return invalidMode
-        ? { ok: false, status: 401, code: 'license_invalid' }
+        ? { ok: false, status: 401, code: 'session_replaced' }
         : { ok: true, email: 'revoked@example.com' }; },
     };
     const invalidAuthority = createLicenseAuthority({
@@ -170,9 +171,13 @@ const silentLogger = { warn() {} };
     invalidMode = true;
     const invalid = await invalidAuthority.validate();
     assert.equal(invalid.ok, false);
-    assert.match(invalid.reason, /revoked/i);
+    assert.match(invalid.reason, /somewhere else/i);
+    assert.doesNotMatch(invalid.reason, /revoked/i);
     assert.equal(invalidLocks, 1);
     assert.deepEqual(JSON.parse(fs.readFileSync(invalidAuthority.sessionPath, 'utf8')), {});
+    assert.match(invalidSessionReason({ code: 'session_revoked' }), /revoked by an administrator/i);
+    assert.match(invalidSessionReason({ code: 'license_invalid' }), /sign in again/i);
+    assert.doesNotMatch(invalidSessionReason({ code: 'license_invalid' }), /revoked/i);
 
     const graceRoot = temporary();
     let graceLocks = 0;

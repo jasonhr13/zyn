@@ -21,6 +21,7 @@ const required = [
   'resources/zyn-build.json',
   'resources/app-original.asar',
   'resources/app/bootstrap.js',
+  'resources/app/license-session-reason.js',
   'resources/app/runtime-manager.js',
   'resources/app/package.json',
   'resources/app/node_modules/imapflow/package.json',

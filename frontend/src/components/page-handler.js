@@ -61,7 +61,7 @@ class PageHandler extends Component {
     // every update arrived as module-level and each task card sat on "Idle" forever while its real
     // status scrolled past in the engine log.
     ipcRenderer.on('targetLog', (e, { line, lines, taskId }) => {
-      this.props.dispatch({ type: 'targetLog', line, lines, taskId });
+      this.props.dispatch({ type: 'targetLog', line, lines, taskId, at: Date.now() });
     });
     ipcRenderer.on('targetStatus', (e, { state, label, color, detail, taskId, taskState, running }) => {
       const receivedAt = Date.now();
@@ -84,7 +84,7 @@ class PageHandler extends Component {
     });
 
     ipcRenderer.on('pokemonLog', (e, { line, lines, taskId } = {}) => {
-      this.props.dispatch({ type: 'pokemonLog', line, lines, taskId });
+      this.props.dispatch({ type: 'pokemonLog', line, lines, taskId, at: Date.now() });
     });
     ipcRenderer.on('pokemonStatus', (e, payload = {}) => {
       this.props.dispatch({ type: 'pokemonStatus', ...payload });

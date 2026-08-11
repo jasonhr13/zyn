@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyCount, proxyLabel, proxyRef } from '../proxy-options';
+import { timestampLogLine } from '../log-timestamp';
 
 const { ipcRenderer, clipboard, shell } = window.require('electron');
 
@@ -262,7 +263,7 @@ class Generate extends Component {
 
   addLog = (msg) => {
     this.setState(prev => ({
-      logs: [...prev.logs, `[${new Date().toLocaleTimeString()}] ${msg}`],
+      logs: [...prev.logs, timestampLogLine(msg)],
     }));
   };
 

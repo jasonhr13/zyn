@@ -1,5 +1,6 @@
 import React, { Component, createRef } from 'react';
 import { proxyLabel, proxyRef } from '../proxy-options';
+import { timestampLogLine } from '../log-timestamp';
 const { ipcRenderer } = window.require('electron');
 
 // Round1 / ShortStack registration — N signups racing one form.
@@ -50,7 +51,9 @@ export default class Round1 extends Component {
 
   componentDidMount() {
     this.load();
-    this._onLog = (_e, p) => this.setState((s) => ({ logs: [...s.logs, `[${p.tag}] ${p.line}`].slice(-500) }));
+    this._onLog = (_e, p) => this.setState((s) => ({
+      logs: [...s.logs, timestampLogLine(`[${p.tag}] ${p.line}`)].slice(-500),
+    }));
     // MERGE, do not replace. Cloudflare state arrives on its own channel and lands on the same
     // object; rebuilding it here dropped `cf` on every status line, so the chip appeared during
     // "solving" and then vanished the moment the task moved on — including on success, which is

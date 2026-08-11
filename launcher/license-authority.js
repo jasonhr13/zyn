@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createClient, DEFAULT_API_BASE } = require('./license-client');
+const { invalidSessionReason } = require('./license-session-reason');
 const { normalizeTaskTypeAccess, removedTaskTypes } = require('./task-type-access');
 
 const SESSION_FILE = 'license-session.json';
@@ -220,7 +221,7 @@ function createLicenseAuthority({
     const hadActiveSession = licenseState.ok || Boolean(licenseToken);
     licenseState = {
       ok: false,
-      reason: String(reason || 'Your license is no longer valid.').slice(0, 240),
+      reason: String(reason || 'Your Zyn session ended. Sign in again to continue.').slice(0, 240),
       email: clear ? '' : cleanEmail(licenseState.email),
       taskTypes: normalizeTaskTypes(),
       proxyAccess: false,
@@ -244,10 +245,6 @@ function createLicenseAuthority({
     return status;
   };
 
-  const definiteReason = (result) => result && result.code === 'account_disabled'
-    ? 'This account has been disabled.'
-    : 'This license has been revoked or is no longer valid.';
-
   const validate = async () => {
     if (validationInFlight) return validationInFlight;
     validationInFlight = (async () => {
@@ -257,7 +254,7 @@ function createLicenseAuthority({
         const result = await licenseApi.validate(licenseToken, managedProxyRevision);
         if (result.ok) return acceptLicense(result, licenseToken);
         if (result.status === 401 || result.status === 403) {
-          return lock(definiteReason(result), { clear: true });
+          return lock(invalidSessionReason(result), { clear: true });
         }
         throw new Error(result.message || `license server returned ${result.status || 0}`);
       } catch (error) {
@@ -279,6 +276,10 @@ function createLicenseAuthority({
       }
     })();
     try { return await validationInFlight; } finally { validationInFlight = null; }
+  };
+
+  const revalidateUnauthorized = async (result) => {
+    if (Number(result && result.status) === 401) await validate();
   };
 
   return Object.freeze({
@@ -341,7 +342,7 @@ function createLicenseAuthority({
       }
       try {
         const result = await licenseApi.hyper(licenseToken, operation, payload);
-        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        await revalidateUnauthorized(result);
         return {
           ok: result.ok === true,
           status: Number(result.status) || 0,
@@ -360,7 +361,7 @@ function createLicenseAuthority({
       }
       try {
         const result = await licenseApi.analyticsEvents(licenseToken, events);
-        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        await revalidateUnauthorized(result);
         return result;
       } catch (error) {
         logger.warn?.(`[license] analytics upload unavailable: ${error.message}`);
@@ -374,7 +375,7 @@ function createLicenseAuthority({
       }
       try {
         const result = await licenseApi.analyticsDashboard(licenseToken, query);
-        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        await revalidateUnauthorized(result);
         return result;
       } catch (error) {
         logger.warn?.(`[license] analytics dashboard unavailable: ${error.message}`);
@@ -388,7 +389,7 @@ function createLicenseAuthority({
       }
       try {
         const result = await licenseApi.analyticsCheckouts(licenseToken, query);
-        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        await revalidateUnauthorized(result);
         return result;
       } catch (error) {
         logger.warn?.(`[license] analytics checkouts unavailable: ${error.message}`);
@@ -402,7 +403,7 @@ function createLicenseAuthority({
       }
       try {
         const result = await licenseApi.deleteAnalytics(licenseToken);
-        if (Number(result.status) === 401) lock('This license has been revoked or is no longer valid.', { clear: true });
+        await revalidateUnauthorized(result);
         return result;
       } catch (error) {
         logger.warn?.(`[license] analytics deletion unavailable: ${error.message}`);
@@ -423,7 +424,7 @@ function createLicenseAuthority({
       try { if (token) await licenseApi.logout(token); } catch (error) { logger.warn?.(`[license] logout: ${error.message}`); }
       return lock('Signed out.', { clear: true });
     },
-    invalidate: reason => lock(reason || 'License revoked.', { clear: true }),
+    invalidate: reason => lock(reason || 'Your Zyn session was revoked.', { clear: true }),
     start() {
       if (!timer) timer = scheduleInterval(() => validate(), LICENSE_CHECK_MS);
       return timer;
