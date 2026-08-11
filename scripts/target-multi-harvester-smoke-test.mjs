@@ -4,16 +4,22 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHarvestCoordinator } from '../native-farmer/shape-harvest-coordinator.mjs';
 
+const require = createRequire(import.meta.url);
+const WebSocket = require('../launcher/node_modules/ws');
+const { createHarvesterExtensionBridge } = require('../launcher/harvester-extension-bridge');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-multi-harvester-'));
 const botDirectory = path.join(temporary, 'bot');
 const token = 'multi-harvester-smoke-token';
+const extensionId = 'a'.repeat(32);
+const extensionOrigin = `chrome-extension://${extensionId}`;
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -48,6 +54,32 @@ const request = (port, method, requestPath, payload, authenticated = false) => n
   req.end();
 });
 
+const extensionRequest = (url, payload) => new Promise((resolve, reject) => {
+  const socket = new WebSocket(url, { origin: extensionOrigin, handshakeTimeout: 2000 });
+  let settled = false;
+  const finish = (error, value) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    try { socket.close(); } catch {}
+    if (error) reject(error);
+    else resolve(value);
+  };
+  const timer = setTimeout(() => {
+    try { socket.terminate(); } catch {}
+    finish(new Error('extension request timed out'));
+  }, 3000);
+  socket.once('open', () => socket.send(JSON.stringify(payload)));
+  socket.once('message', raw => {
+    try { finish(null, JSON.parse(String(raw))); }
+    catch (error) { finish(error); }
+  });
+  socket.once('error', error => finish(error));
+  socket.once('close', code => {
+    if (!settled) finish(new Error(`extension socket closed before reply (${code})`));
+  });
+});
+
 const waitForBroker = async (port, output) => {
   for (let attempt = 0; attempt < 50; attempt++) {
     try { return await request(port, 'GET', '/status'); } catch {}
@@ -64,6 +96,7 @@ const shapeHeaders = Object.fromEntries([
 
 let child = null;
 let producer = null;
+let extensionBridge = null;
 try {
   fs.cpSync(path.join(root, 'native-farmer'), botDirectory, { recursive: true });
   const dependencies = path.join(root, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'node_modules');
@@ -138,18 +171,49 @@ try {
   assert.equal(aggregated.harvesters.find(item => item.id === 'proxy').bandwidth.proxyBytes, 4200000,
     'broker must preserve per-harvester bandwidth telemetry');
 
-  const save = await request(port, 'POST', '/saveCookies', {
+  extensionBridge = createHarvesterExtensionBridge({
+    port: 0,
+    brokerPort: port,
+    enabled: () => true,
+    allowedExtensionId: () => extensionId,
+    ensureBroker: () => {},
+    saveCookie: cookie => request(port, 'POST', '/saveCookies', cookie, true),
+    logger: { warn() {} },
+  });
+  const extensionAddress = await extensionBridge.start();
+
+  const managedSave = await request(port, 'POST', '/saveCookies', {
     type: 'atc', headers: shapeHeaders, proxy: '127.0.0.1:9000:user:pass',
-    expiresAt: Date.now() + 5000, harvesterId: 'proxy', source: 'inBotV2',
+    expiresAt: Date.now() + 30000, harvesterId: 'proxy', source: 'inBotV2',
   }, true);
-  assert.equal(save.saved, 1);
-  const cookie = await request(port, 'GET', '/cookie?type=atc', null, true);
-  assert.equal(cookie.ok, true);
-  assert.equal(cookie.cookie.proxy, '127.0.0.1:9000:user:pass');
-  assert.equal(cookie.cookie.type, 'atc');
-  assert.equal(cookie.cookie.source, 'inBotV2');
-  assert.equal(cookie.cookie.harvesterId, 'proxy');
-  assert.ok(cookie.cookie.expiresAt > Date.now());
+  assert.equal(managedSave.saved, 1);
+  const extensionSave = await extensionRequest(
+    `ws://127.0.0.1:${extensionAddress.port}/ws`,
+    {
+      action: 'save', type: 'atc', headers: shapeHeaders,
+      proxy: '127.0.0.1:9001:extension:user', expiry: Date.now() + 30000,
+    },
+  );
+  assert.deepEqual(extensionSave, { ok: true, saved: 1 });
+
+  const tandemStatus = await request(port, 'GET', '/status');
+  assert.equal(tandemStatus.pools.atc, 2,
+    'managed and extension captures must add to the same cookie bank');
+  assert.equal(tandemStatus.harvesters.some(item => item.id === 'actual'), true,
+    'accepting an extension capture must not stop the managed producer');
+
+  const tandemCookies = [];
+  for (let index = 0; index < 2; index++) {
+    const result = await request(port, 'GET', '/cookie?type=atc', null, true);
+    assert.equal(result.ok, true);
+    tandemCookies.push(result.cookie);
+  }
+  const cookiesBySource = Object.fromEntries(tandemCookies.map(cookie => [cookie.source, cookie]));
+  assert.equal(cookiesBySource.inBotV2.proxy, '127.0.0.1:9000:user:pass');
+  assert.equal(cookiesBySource.inBotV2.harvesterId, 'proxy');
+  assert.equal(cookiesBySource.extension.proxy, '127.0.0.1:9001:extension:user');
+  assert.equal(cookiesBySource.extension.harvesterId, 'chrome-extension');
+  assert.ok(tandemCookies.every(cookie => cookie.type === 'atc' && cookie.expiresAt > Date.now()));
 
   await request(port, 'POST', '/saveCookies', {
     type: 'login', headers: shapeHeaders, proxy: '', expiresAt: Date.now() + 50, harvesterId: 'home',
@@ -169,8 +233,9 @@ try {
   assert.equal(loginCoordinator.reserve({ pools: { login: [{}], atc: [] } }).type, 'login',
     'dedicated login harvesters replenish beyond the automatic one-shot login cookie');
 
-  console.log('Target multi-harvester broker, telemetry, expiration, and typed login lane passed');
+  console.log('Target multi-harvester broker, extension tandem, telemetry, expiration, and typed login lane passed');
 } finally {
+  if (extensionBridge) await extensionBridge.stop();
   if (producer && producer.exitCode == null) producer.kill('SIGTERM');
   if (child && child.exitCode == null) child.kill('SIGTERM');
   fs.rmSync(temporary, { recursive: true, force: true });

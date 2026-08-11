@@ -113,8 +113,9 @@ class Settings extends Component {
   save = () => {
     // Preserve every legacy setting in storage while this Target-only screen manages only the
     // settings it exposes. That keeps old backups reversible without leaking retired modules here.
+    const previousSettings = this.props.settings || {};
     const settings = {
-      ...(this.props.settings || {}),
+      ...previousSettings,
       discordWebhook: this.state.discordWebhook,
       aycdApiKey: this.state.aycdApiKey.trim(),
       // Normalise the TCIN list to bare comma-separated numbers: the farmer accepts full product URLs
@@ -134,6 +135,12 @@ class Settings extends Component {
       targetHarvesterExtensionId: this.state.targetHarvesterExtensionId.trim().toLowerCase(),
     };
     ipcRenderer.sendSync('saveSettings', settings);
+    const previousExtensionMode = /^harvester$/i.test(String(previousSettings.shapeMethod || '').trim());
+    const previousExtensionId = String(previousSettings.targetHarvesterExtensionId || '').trim().toLowerCase();
+    if (previousExtensionMode !== (settings.shapeMethod === 'Harvester')
+      || previousExtensionId !== settings.targetHarvesterExtensionId) {
+      try { ipcRenderer.send('resetHarvesterExtensionActivity'); } catch {}
+    }
     try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     try { ipcRenderer.invoke('targetCookieBank').catch(() => {}); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings } });
@@ -308,8 +315,47 @@ class Settings extends Component {
             </div>
           </div>
 
-          {/* Operator-only Target harvest settings. Hidden by default because wrong TCINs can starve
-              the cookie bank and surface much later as unexplained checkout failures. */}
+          <div className="settings-section">
+            <div className="settings-section-title">Target — Chrome Extension Harvester</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
+              Optional companion for harvesting in Chrome. When enabled, the extension and Zyn&apos;s
+              in-app harvesters can run at the same time and feed the same Target cookie bank.
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Chrome extension harvesting</label>
+                <select
+                  className="form-input"
+                  value={shapeMethod}
+                  onChange={e => this.set('shapeMethod', e.target.value)}
+                >
+                  <option value="In Bot">Off</option>
+                  <option value="Harvester">On</option>
+                </select>
+              </div>
+              {shapeMethod === 'Harvester' && (
+                <div className="form-group" style={{ flex: 2 }}>
+                  <FieldLabel help="Copy the 32-character ID shown for this unpacked extension on chrome://extensions. Zyn rejects every other Chrome extension origin.">
+                    Chrome extension ID
+                  </FieldLabel>
+                  <input
+                    className="form-input monospace"
+                    type="text"
+                    maxLength={32}
+                    pattern="[a-p]{32}"
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder="32 characters from chrome://extensions"
+                    value={targetHarvesterExtensionId}
+                    onChange={e => this.set('targetHarvesterExtensionId', e.target.value.toLowerCase())}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Operator-only advanced Target harvest settings. Hidden by default because wrong TCINs
+              can starve the cookie bank and surface much later as unexplained checkout failures. */}
           {operatorMode && (<>
           {/* These settings are applied on the next farmer spawn. Throughput and bandwidth controls
               use the existing persisted keys so backups remain compatible. */}
@@ -364,36 +410,7 @@ class Settings extends Component {
                   onChange={e => this.set('targetCookieTtlSec', e.target.value)}
                 />
               </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">Shape method</label>
-                <select
-                  className="form-input"
-                  value={shapeMethod}
-                  onChange={e => this.set('shapeMethod', e.target.value)}
-                >
-                  <option value="In Bot">In Bot</option>
-                  <option value="Harvester">Harvester (+ extension)</option>
-                </select>
-              </div>
             </div>
-            {shapeMethod === 'Harvester' && (
-              <div className="form-group">
-                <FieldLabel help="Copy the 32-character ID shown for this unpacked extension on chrome://extensions. Zyn rejects every other Chrome extension origin.">
-                  Chrome extension ID
-                </FieldLabel>
-                <input
-                  className="form-input monospace"
-                  type="text"
-                  maxLength={32}
-                  pattern="[a-p]{32}"
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder="32 characters from chrome://extensions"
-                  value={targetHarvesterExtensionId}
-                  onChange={e => this.set('targetHarvesterExtensionId', e.target.value.toLowerCase())}
-                />
-              </div>
-            )}
             <div style={{ display: 'flex', gap: 10 }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <FieldLabel help="The maximum number of distinct signatures banked from one page before the farmer moves on. Default 1 because Target commonly emits one usable signature per page.">

@@ -1,0 +1,52 @@
+{
+  "name": "Zyn Harvester",
+  "description": "Cookie harvester companion for Zyn",
+  "version": "1.1.1",
+  "manifest_version": 3,
+
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    },
+    "default_title": "Zyn Harvester"
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestAuthProvider",
+    "webNavigation",
+    "browsingData",
+    "cookies",
+    "notifications",
+    "proxy",
+    "tabs",
+    "storage",
+    "debugger",
+    "scripting",
+    "declarativeNetRequest"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "blocking",
+        "enabled": true,
+        "path": "rules/blocking.json"
+      }
+    ]
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  }
+}

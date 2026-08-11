@@ -195,23 +195,72 @@ function createHarvesterExtensionBridge({
   logger = console,
   brokerAttempts = 12,
   brokerRetryMs = 150,
+  clock = Date.now,
 } = {}) {
   let server = null;
   let webSockets = null;
   let listeningAddress = null;
   let pendingStart = null;
+  let lastSeenAt = 0;
+  let lastStatusAt = 0;
+  let lastSavedAt = 0;
+  let lastSavedType = '';
+  let savedCount = 0;
+  let activityExtensionId = '';
+
+  const timestamp = () => {
+    try { return Math.max(0, Number(clock()) || 0); }
+    catch { return Date.now(); }
+  };
 
   const available = () => {
     try { return enabled() === true; }
     catch { return false; }
   };
 
+  const configuredId = () => {
+    try { return normalizeChromeExtensionId(allowedExtensionId()); }
+    catch { return ''; }
+  };
+
+  const selectActivityId = id => {
+    if (id === activityExtensionId) return;
+    activityExtensionId = id;
+    lastSeenAt = 0;
+    lastStatusAt = 0;
+    lastSavedAt = 0;
+    lastSavedType = '';
+    savedCount = 0;
+  };
+
+  const resetActivity = () => selectActivityId('');
+
   const originAllowed = value => {
     const origin = String(value || '').toLowerCase();
     if (!isChromeExtensionOrigin(origin)) return false;
-    let id = '';
-    try { id = normalizeChromeExtensionId(allowedExtensionId()); } catch {}
+    const id = configuredId();
     return !!id && origin === `chrome-extension://${id}`;
+  };
+
+  // The legacy client opens a one-request WebSocket rather than holding a connection open. Expose
+  // only successful request/save timestamps; callers decide how recent is recent enough for their
+  // presentation and never have to mistake the listening socket for a running harvester.
+  const activity = () => {
+    const id = configuredId();
+    const isEnabled = available();
+    // Treat turning the feature off as the end of this activity session. Re-enabling the same
+    // extension ID must wait for fresh evidence instead of reviving a recent pre-disable save.
+    selectActivityId(isEnabled ? id : '');
+    return {
+      enabled: isEnabled,
+      configured: !!id,
+      listening: !!listeningAddress,
+      lastSeenAt,
+      lastStatusAt,
+      lastSavedAt,
+      lastSavedType,
+      savedCount,
+    };
   };
 
   const broker = async (requestPath, method = 'GET', body = null) => {
@@ -256,8 +305,15 @@ function createHarvesterExtensionBridge({
     }
 
     try {
+      if (!available() || !socket.zynExtensionId
+        || socket.zynExtensionId !== configuredId()) {
+        throw new Error('extension is no longer authorized');
+      }
       if (message.action === 'status') {
-        send(socket, extensionStatus(await broker('/status')));
+        const status = await broker('/status');
+        selectActivityId(socket.zynExtensionId || '');
+        lastSeenAt = lastStatusAt = timestamp();
+        send(socket, extensionStatus(status));
         return;
       }
       if (message.action === 'save') {
@@ -266,13 +322,18 @@ function createHarvesterExtensionBridge({
         if (typeof saveCookie !== 'function') {
           throw new Error('authenticated cookie-bank save capability is unavailable');
         }
-        const response = await saveCookie(extensionCookie(message, {
+        const cookie = extensionCookie(message, {
           maxTtlMs: configuredTtl,
-        }));
+        });
+        const response = await saveCookie(cookie);
         const saved = Number(response && response.saved) || 0;
         if (!response || response.ok === false || saved < 1) {
           throw new Error('capture was not accepted by the Zyn cookie bank');
         }
+        selectActivityId(socket.zynExtensionId || '');
+        lastSeenAt = lastSavedAt = timestamp();
+        lastSavedType = cookie.type;
+        savedCount += saved;
         send(socket, { ok: true, saved });
         return;
       }
@@ -346,7 +407,10 @@ function createHarvesterExtensionBridge({
         nextWebSockets.emit('connection', client, request);
       });
     });
-    nextWebSockets.on('connection', socket => {
+    nextWebSockets.on('connection', (socket, request) => {
+      socket.zynExtensionId = normalizeChromeExtensionId(
+        String(request && request.headers && request.headers.origin || '').replace(/^chrome-extension:\/\//, ''),
+      );
       let handled = false;
       socket.on('message', raw => {
         if (handled) return;
@@ -433,6 +497,8 @@ function createHarvesterExtensionBridge({
     start,
     stop,
     address: () => listeningAddress,
+    activity,
+    resetActivity,
   });
 }
 

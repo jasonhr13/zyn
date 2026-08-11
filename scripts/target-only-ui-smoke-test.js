@@ -42,4 +42,19 @@ assert.match(routes, /<Redirect to="\/modules" \/>/);
 assert.match(settings, /Target workspace/);
 assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);
 
+const extensionSettings = settings.indexOf('Target — Chrome Extension Harvester');
+const operatorSettings = settings.indexOf('{operatorMode && (<>');
+assert.ok(extensionSettings >= 0 && extensionSettings < operatorSettings,
+  'Chrome extension harvester settings must be visible without operator mode');
+const publicHarvesterSettings = settings.slice(extensionSettings, operatorSettings);
+assert.match(publicHarvesterSettings, /Chrome extension harvesting/);
+assert.match(publicHarvesterSettings, /value=\{targetHarvesterExtensionId\}/);
+assert.match(publicHarvesterSettings, /in-app harvesters can run at the same time and feed the same Target cookie bank/,
+  'Settings must explain that extension and in-app harvesting are additive');
+assert.match(settings, /ipcRenderer\.send\('resetHarvesterExtensionActivity'\)/,
+  'changing extension settings must reset stale bridge activity');
+const advancedHarvesterSettings = settings.slice(operatorSettings, settings.indexOf('Email / OTP', operatorSettings));
+assert.doesNotMatch(advancedHarvesterSettings, /value=\{shapeMethod\}|value=\{targetHarvesterExtensionId\}/,
+  'Chrome extension controls must not remain operator-only');
+
 console.log('Target and Pokemon Center UI smoke test passed');

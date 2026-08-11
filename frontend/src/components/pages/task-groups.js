@@ -415,6 +415,12 @@ class TaskGroups extends Component {
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
   harvesterProxyAvailable = harvester => !harvester.proxyListName
     || this.proxyLists().some(list => proxyRef(list) === harvester.proxyListName);
+
+  extensionHarvesterConfigured = () => {
+    const settings = this.props.settings || {};
+    return /^harvester$/i.test(String(settings.shapeMethod || '').trim())
+      && /^[a-p]{32}$/.test(String(settings.targetHarvesterExtensionId || '').trim().toLowerCase());
+  };
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
@@ -966,6 +972,7 @@ class TaskGroups extends Component {
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
       atcPerTask: this.state.atcCookiesPerTask,
+      externalAtcHarvesterEnabled: this.extensionHarvesterConfigured(),
     });
 
     return (
@@ -1091,6 +1098,7 @@ class TaskGroups extends Component {
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
       atcPerTask: this.state.atcCookiesPerTask,
+      externalAtcHarvesterEnabled: this.extensionHarvesterConfigured(),
     });
     const total = this.state.harvesters.length;
     const open = this.state.harvesterDrawerOpen;

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Zyn Harvester</title>
+    <link rel="stylesheet" href="index.css">
+    <script src="index.js" defer></script>
+</head>
+
+<body>
+    <div class="main">
+        <aside class="nav" aria-label="Harvester controls">
+            <div class="branding">
+                <span class="logoShell">
+                    <img class="logo" src="assets/icon-logo.png" alt="Zyn">
+                </span>
+                <span class="brandingCopy">
+                    <span class="brandingHeader">Zyn</span>
+                    <span class="brandingSubheader">Harvester</span>
+                </span>
+                <span class="companionBadge">Target</span>
+            </div>
+
+            <div class="navDivider"></div>
+            <span class="sectionEyebrow">Harvester controls</span>
+
+            <div class="navFooter">
+                <div class="inputs">
+                    <div class="routeMode">
+                        <div class="routeModeHeading">
+                            <img class="actionImage" src="assets/cloud.svg" alt="" aria-hidden="true">
+                            <span>
+                                <strong>Network route</strong>
+                                <small>Choose how Chrome connects</small>
+                            </span>
+                        </div>
+                        <label class="routeModeSwitch">
+                            <input id="enableProxyToggle" type="checkbox" role="switch" aria-label="Use proxy list instead of local IP">
+                            <span class="routeModeTrack" aria-hidden="true">
+                                <span class="routeModeOption routeModeOption--local">Local IP</span>
+                                <span class="routeModeOption routeModeOption--proxy">Proxy list</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="inputBox">
+                        <img class="actionImage" src="assets/checklist.svg" alt="" aria-hidden="true">
+                        <span class="actionText">Cookies/Task</span>
+                        <div class="counterInput" data-counter-key="cookiesPerTask">
+                            <button class="minus-plus" type="button" data-counter-action="decrement" aria-label="Decrease cookies per task">
+                                <img src="assets/minus.svg" alt="">
+                            </button>
+                            <span class="countValue" id="cookiesPerTaskValue">3</span>
+                            <button class="minus-plus" type="button" data-counter-action="increment" aria-label="Increase cookies per task">
+                                <img src="assets/plus.svg" alt="">
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="inputBox">
+                        <img class="actionImage" src="assets/cookie.svg" alt="" aria-hidden="true">
+                        <span class="actionText">Cookie Expiry</span>
+                        <div class="counterInput" data-counter-key="cookieExpiry">
+                            <button class="minus-plus" type="button" data-counter-action="decrement" aria-label="Decrease cookie expiry">
+                                <img src="assets/minus.svg" alt="">
+                            </button>
+                            <span class="countValue" id="cookieExpiryValue">5</span>
+                            <button class="minus-plus" type="button" data-counter-action="increment" aria-label="Increase cookie expiry">
+                                <img src="assets/plus.svg" alt="">
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="scheduleGroup" id="scheduleStartGroup">
+                        <div class="inputBox">
+                            <span class="scheduleMarker" aria-hidden="true"></span>
+                            <span class="actionText">Start Time</span>
+                            <span class="scheduleValue" id="scheduleStartLabel">Now</span>
+                            <label class="toggle">
+                                <input id="scheduleStartToggle" type="checkbox" aria-label="Schedule a harvesting start time">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="scheduleTimeRow" id="scheduleStartPicker">
+                            <div class="scheduleTimeRowInner">
+                                <select class="scheduleTimeSelect" id="scheduleStartHour" aria-label="Start hour"></select>
+                                <span class="scheduleTimeSep">:</span>
+                                <select class="scheduleTimeSelect" id="scheduleStartMinute" aria-label="Start minute"></select>
+                                <select class="scheduleTimeSelect scheduleTimeSelect--ampm" id="scheduleStartAmPm" aria-label="Start AM or PM">
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="scheduleGroup" id="scheduleEndGroup">
+                        <div class="inputBox">
+                            <span class="scheduleMarker" aria-hidden="true"></span>
+                            <span class="actionText">End Time</span>
+                            <span class="scheduleValue" id="scheduleEndLabel">Never</span>
+                            <label class="toggle">
+                                <input id="scheduleEndToggle" type="checkbox" aria-label="Schedule a harvesting end time">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="scheduleTimeRow" id="scheduleEndPicker">
+                            <div class="scheduleTimeRowInner">
+                                <select class="scheduleTimeSelect" id="scheduleEndHour" aria-label="End hour"></select>
+                                <span class="scheduleTimeSep">:</span>
+                                <select class="scheduleTimeSelect" id="scheduleEndMinute" aria-label="End minute"></select>
+                                <select class="scheduleTimeSelect scheduleTimeSelect--ampm" id="scheduleEndAmPm" aria-label="End AM or PM">
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="harvestToggleBtn" class="actionButton" type="button">
+                    <img class="actionIcon" src="assets/startBtn.svg" alt="">
+                    <span class="actionButtonText">Start Harvesting</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="content">
+            <header class="contentHeader">
+                <span class="contentHeading">
+                    <small>Shared Cookie Bank</small>
+                    <strong>Target harvest workspace</strong>
+                    <span>Chrome companion for Zyn</span>
+                </span>
+                <span class="chromeBadge">Chrome companion</span>
+            </header>
+
+            <div class="statRow" aria-label="Target cookie bank status">
+                <div class="statBox statBox--login">
+                    <span class="boxHeader">Login Cookies</span>
+                    <span class="boxValue">
+                        <span id="loginCookieCount">0</span> <span class="subValueText">cookies</span>
+                    </span>
+                    <span class="boxSubHeader">Target Login</span>
+                </div>
+
+                <div class="statBox statBox--atc">
+                    <span class="boxHeader">ATC Cookies</span>
+                    <span class="boxValue">
+                        <span id="atcCookieCount">0</span> <span class="subValueText">cookies</span>
+                    </span>
+                    <span class="boxSubHeader">Target ATC</span>
+                </div>
+
+                <div class="statBox statBox--connection">
+                    <span class="boxHeader">Connection</span>
+                    <div class="status" id="botConnectionBadge">
+                        <span class="statusDot" id="botStatusDot"></span>
+                        <span class="statusText" id="botStatusLabel">Live</span>
+                    </div>
+                    <span class="boxValue" id="botConnectionState">Active</span>
+                    <span class="boxSubHeader">Zyn Bridge</span>
+                </div>
+            </div>
+
+            <section class="proxyWorkspace" aria-label="Proxy workspace">
+                <div class="routeNotice" role="status" aria-live="polite">
+                    <span class="routeNoticeDot" aria-hidden="true"></span>
+                    <span class="routeNoticeCopy routeNoticeCopy--local">
+                        <strong>Local IP selected</strong>
+                        <small>Harvesting uses Chrome&apos;s direct connection. Proxy lists stay saved for later.</small>
+                    </span>
+                    <span class="routeNoticeCopy routeNoticeCopy--proxy">
+                        <strong>Proxy list selected</strong>
+                        <small>Valid proxies are rotated; empty or invalid lists fall back to Local IP.</small>
+                    </span>
+                </div>
+                <div class="pageActionRow">
+                    <label class="proxyListControl" for="proxyListDrop">
+                        <span class="controlLabel">Proxy list</span>
+                        <select id="proxyListDrop" class="proxyListDrop">
+                            <option value="default" selected>Default Proxies</option>
+                        </select>
+                    </label>
+
+                    <div class="proxyActions">
+                        <span class="controlLabel">List actions</span>
+                        <div class="btnRow">
+                            <button id="addListBtn" class="addBtn" type="button">
+                                <img class="actionBtnImg" src="assets/whitePlus.svg" alt="">Create List
+                            </button>
+                            <button id="deleteListBtn" class="deleteBtn" type="button">
+                                <img class="actionBtnImg" src="assets/trash.svg" alt="">Delete List
+                            </button>
+                            <button id="importProxiesBtn" class="importBtn" type="button">
+                                <img class="actionBtnImg" src="assets/whiteCloud.svg" alt="">Import
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="proxyEditorHeader">
+                    <span>Proxy entries</span>
+                    <small>One per line · host:port or host:port:user:pass</small>
+                </div>
+                <textarea id="proxyInput" class="proxyInput" spellcheck="false" placeholder="Enter user-owned proxies here, one per line"></textarea>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

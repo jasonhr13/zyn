@@ -7,12 +7,18 @@ extension into Electron and does not package or redistribute the downloaded exte
 
 1. Use a dedicated Chrome profile and load the downloaded directory as an unpacked extension.
 2. On `chrome://extensions`, copy the 32-character ID shown beneath the extension.
-3. In Zyn Settings, click the **Settings** heading five times to reveal operator settings.
-4. Under **Target — Shape Cookie Harvest**, set **Shape method** to **Harvester (+ extension)**,
-   paste that **Chrome extension ID**, and save.
-5. Open a Target product page in the dedicated profile and click the extension toolbar button.
+3. In Zyn Settings, open **Target — Chrome Extension Harvester**, turn **Chrome extension
+   harvesting** on, paste that **Chrome extension ID**, and save.
+4. Open a Target product page in the dedicated profile and click the extension toolbar button.
 
-When this mode is selected and the Zyn account is active, Zyn accepts the extension's loopback
+Turning on the extension is additive: Zyn's in-app harvesters remain available, and both sources can
+run at the same time and feed the shared Target cookie bank.
+
+With an ATC deficit, the bank banner shows whether Zyn is waiting to hear from Chrome, recently
+reached the extension, or recently accepted an extension ATC cookie. Extension activity stays
+separate from the in-app harvester and worker totals.
+
+When extension harvesting is enabled and the Zyn account is active, Zyn accepts the extension's loopback
 protocol at `127.0.0.1:4312`. The compatibility bridge forwards accepted captures into the shared
 Target cookie bank at `127.0.0.1:4727`.
 

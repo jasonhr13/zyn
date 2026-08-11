@@ -30,6 +30,9 @@ release-tools/
 /release/runtime-artifacts/
 /release/runtime-staging/
 
+# Chrome creates this cache when an unpacked extension is loaded locally.
+/chrome-extension/harvester/_metadata/
+
 # Recovered installer/application working trees contain bundled binaries,
 # third-party dependencies, and embedded production credentials. R0 will
 # import the required main-process sources into a clean, sanitized source tree.

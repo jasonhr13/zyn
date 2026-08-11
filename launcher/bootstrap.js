@@ -320,6 +320,22 @@ function installHarvesterExtensionCompatibility(authority) {
       cookieTtlMs: configuredCookieTtl,
       logger: console,
     });
+    // Settings uses this no-payload signal only when the selected mode or pinned extension changes.
+    // Reset immediately so an Off -> On cycle cannot revive a recent save from the prior session.
+    ipcMain.on('resetHarvesterExtensionActivity', () => bridge.resetActivity());
+    // The broker reports managed producer telemetry, but the external extension terminates at this
+    // main-process bridge. Add its safe activity snapshot at the existing cookie-bank boundary so
+    // the renderer can distinguish a configured/recently-saving extension without receiving the
+    // extension ID, broker token, captured headers, or proxy credentials.
+    if (typeof targetEngine.getCookieBank === 'function') {
+      const getCookieBank = targetEngine.getCookieBank.bind(targetEngine);
+      targetEngine.getCookieBank = async (...args) => {
+        const bank = await getCookieBank(...args);
+        return bank && typeof bank === 'object'
+          ? { ...bank, extensionHarvester: bridge.activity() }
+          : bank;
+      };
+    }
     app.whenReady().then(() => bridge.start()).then(address => {
       console.info(`[harvester-extension] compatibility bridge listening on ${address.address}:${address.port}`);
     }).catch(error => {

@@ -12,6 +12,7 @@ const root = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-pokemon-native-'));
 const staged = path.join(temporary, 'app');
 fs.cpSync(path.join(root, 'extracted', 'asar', 'public'), path.join(staged, 'public'), { recursive: true });
+fs.copyFileSync(path.join(root, 'extracted', 'asar', 'package.json'), path.join(staged, 'package.json'));
 
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), path.join(staged, 'public', 'helpers')], { stdio: 'inherit' });
 execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-runtime-brand.js'), staged], { stdio: 'inherit' });
@@ -112,6 +113,7 @@ const editSandbox = {
   URL,
   LOG_LINE_MAX: 1000,
   redactProxies: value => value,
+  zynBrandText: value => String(value == null ? '' : value),
   toRenderer: () => {},
   engineContract: {
     SITES: { POKEMON_CENTER_US: 'Pokemon Center US' },

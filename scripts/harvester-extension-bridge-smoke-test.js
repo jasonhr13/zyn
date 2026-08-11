@@ -67,6 +67,41 @@ function wsRequest(url, payload, origin = EXTENSION_ORIGIN) {
   });
 }
 
+function openWebSocket(url, origin) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url, { origin, handshakeTimeout: 2000 });
+    socket.once('open', () => resolve(socket));
+    socket.once('error', reject);
+  });
+}
+
+function sendOnWebSocket(socket, payload) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      try { socket.terminate(); } catch {}
+      settled = true;
+      reject(new Error('WebSocket request timed out'));
+    }, 3000);
+    socket.once('message', raw => {
+      clearTimeout(timer);
+      settled = true;
+      try { resolve(JSON.parse(String(raw))); }
+      catch (error) { reject(error); }
+      try { socket.close(); } catch {}
+    });
+    socket.once('error', error => {
+      clearTimeout(timer);
+      if (!settled) { settled = true; reject(error); }
+    });
+    socket.once('close', code => {
+      clearTimeout(timer);
+      if (!settled) { settled = true; reject(new Error(`WebSocket closed before reply (${code})`)); }
+    });
+    socket.send(JSON.stringify(payload));
+  });
+}
+
 function httpGet(port, path, origin) {
   return new Promise((resolve, reject) => {
     const request = http.get({
@@ -131,11 +166,14 @@ function httpGet(port, path, origin) {
 
   let ensureCalls = 0;
   let saveCapabilityCalls = 0;
+  let bridgeEnabled = true;
+  let configuredExtensionId = 'a'.repeat(32);
+  let activityNow = 1700000000000;
   const bridge = createHarvesterExtensionBridge({
     port: 0,
     brokerPort: brokerAddress.port,
-    enabled: () => true,
-    allowedExtensionId: () => 'a'.repeat(32),
+    enabled: () => bridgeEnabled,
+    allowedExtensionId: () => configuredExtensionId,
     saveCookie: cookie => {
       saveCapabilityCalls += 1;
       return jsonRequest({
@@ -156,12 +194,23 @@ function httpGet(port, path, origin) {
       ],
     }),
     cookieTtlMs: () => 120000,
+    clock: () => activityNow,
     logger: { warn() {} },
   });
 
   try {
     const address = await bridge.start();
     const wsUrl = `ws://127.0.0.1:${address.port}/ws`;
+    assert.deepEqual(bridge.activity(), {
+      enabled: true,
+      configured: true,
+      listening: true,
+      lastSeenAt: 0,
+      lastStatusAt: 0,
+      lastSavedAt: 0,
+      lastSavedType: '',
+      savedCount: 0,
+    });
 
     assert.equal(isChromeExtensionOrigin(EXTENSION_ORIGIN), true);
     assert.equal(isChromeExtensionOrigin('https://target.com'), false);
@@ -223,8 +272,14 @@ function httpGet(port, path, origin) {
       runningTasks: 0,
       waiting: { login: 0, atc: 3 },
     });
+    assert.equal(bridge.activity().lastSeenAt, activityNow,
+      'a successful extension status request must publish reachability');
+    assert.equal(bridge.activity().lastStatusAt, activityNow);
+    assert.equal(bridge.activity().lastSavedAt, 0,
+      'a status request must not be presented as a harvested cookie');
     assert.equal(statusTokenSeen, false, 'the broker token leaked to the unauthenticated status route');
 
+    activityNow += 1000;
     const beforeSave = Date.now();
     const save = await wsRequest(wsUrl, {
       action: 'save',
@@ -255,8 +310,19 @@ function httpGet(port, path, origin) {
     assert.ok(ensureCalls >= 1, 'status must ensure the Zyn broker');
     assert.equal(saveCapabilityCalls, 1,
       'the accepted capture did not use exactly one authenticated save capability call');
+    assert.deepEqual(bridge.activity(), {
+      enabled: true,
+      configured: true,
+      listening: true,
+      lastSeenAt: activityNow,
+      lastStatusAt: activityNow - 1000,
+      lastSavedAt: activityNow,
+      lastSavedType: 'atc',
+      savedCount: 1,
+    }, 'an accepted extension capture must publish source-specific bank activity');
 
     const savesBeforeIncomplete = saveRequests;
+    const activityBeforeRejectedSaves = bridge.activity();
     await assert.rejects(wsRequest(wsUrl, {
       action: 'save', type: 'atc', headers: { 'x-gyjwza5z-a': 'partial' }, proxy: '',
     }), /closed before reply/);
@@ -276,6 +342,8 @@ function httpGet(port, path, origin) {
     }), /closed before reply/);
     assert.equal(saveRequests, savesBeforeAmbiguousResponse + 1,
       'a non-idempotent save was retried after an ambiguous response failure');
+    assert.deepEqual(bridge.activity(), activityBeforeRejectedSaves,
+      'rejected, invalid, or ambiguous saves must not claim successful extension activity');
 
     const proxies = await httpGet(address.port, '/proxies', EXTENSION_ORIGIN);
     assert.equal(proxies.status, 200);
@@ -294,6 +362,59 @@ function httpGet(port, path, origin) {
       wsRequest(wsUrl, { action: 'status' }, OTHER_EXTENSION_ORIGIN),
       /Unexpected server response: 403|socket hang up/,
     );
+    assert.deepEqual(bridge.activity(), activityBeforeRejectedSaves,
+      'a rejected extension origin must not update activity');
+
+    configuredExtensionId = 'b'.repeat(32);
+    assert.deepEqual(bridge.activity(), {
+      enabled: true,
+      configured: true,
+      listening: true,
+      lastSeenAt: 0,
+      lastStatusAt: 0,
+      lastSavedAt: 0,
+      lastSavedType: '',
+      savedCount: 0,
+    }, 'changing the configured extension ID must clear the previous extension activity');
+    activityNow += 1000;
+    await wsRequest(wsUrl, { action: 'status' }, OTHER_EXTENSION_ORIGIN);
+    assert.equal(bridge.activity().lastStatusAt, activityNow);
+    assert.equal(bridge.activity().lastSavedAt, 0,
+      'the new extension ID must not inherit the previous extension save');
+
+    bridge.resetActivity();
+    assert.equal(bridge.activity().lastStatusAt, 0,
+      'an explicit settings reset must clear extension activity immediately');
+    await wsRequest(wsUrl, { action: 'status' }, OTHER_EXTENSION_ORIGIN);
+
+    const socketOpenedBeforeDisable = await openWebSocket(wsUrl, OTHER_EXTENSION_ORIGIN);
+    const savesBeforeDisable = saveCapabilityCalls;
+    bridgeEnabled = false;
+    await assert.rejects(sendOnWebSocket(socketOpenedBeforeDisable, {
+      action: 'save', type: 'atc', headers: SHAPE_HEADERS, proxy: '',
+    }), /closed before reply/);
+    assert.equal(saveCapabilityCalls, savesBeforeDisable,
+      'a socket opened before extension harvesting was disabled remained authorized');
+    assert.deepEqual(bridge.activity(), {
+      enabled: false,
+      configured: true,
+      listening: true,
+      lastSeenAt: 0,
+      lastStatusAt: 0,
+      lastSavedAt: 0,
+      lastSavedType: '',
+      savedCount: 0,
+    }, 'turning extension harvesting off must end its activity session');
+    bridgeEnabled = true;
+    assert.equal(bridge.activity().lastStatusAt, 0,
+      're-enabling the same extension ID must require fresh extension activity');
+
+    const socketOpenedBeforeIdChange = await openWebSocket(wsUrl, OTHER_EXTENSION_ORIGIN);
+    configuredExtensionId = 'a'.repeat(32);
+    await assert.rejects(sendOnWebSocket(socketOpenedBeforeIdChange, { action: 'status' }),
+      /closed before reply/);
+    assert.equal(bridge.activity().lastSeenAt, 0,
+      'a socket opened under the previous extension ID remained authorized');
 
     const bootstrap = fs.readFileSync(path.join(project, 'launcher', 'bootstrap.js'), 'utf8');
     const macBuild = fs.readFileSync(path.join(project, 'scripts', 'build-zyn.sh'), 'utf8');
@@ -310,6 +431,10 @@ function httpGet(port, path, origin) {
       'Zyn bootstrap does not use the Target engine authenticated-save capability');
     assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,
       'Zyn bootstrap bypasses the Target engine authenticated-save capability');
+    assert.match(bootstrap, /extensionHarvester: bridge\.activity\(\)/,
+      'the Target cookie-bank IPC does not include safe extension activity');
+    assert.match(bootstrap, /resetHarvesterExtensionActivity[^\n]+bridge\.resetActivity\(\)/,
+      'extension settings changes do not reset prior bridge activity');
     assert.match(macBuild, /harvester-extension-bridge\.js/,
       'macOS packaging omits the extension bridge');
     assert.match(windowsBuild, /harvester-extension-bridge\.js/,

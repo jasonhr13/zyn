@@ -160,6 +160,92 @@ assert.equal(noAtcHarvester.state, 'deficit');
 assert.equal(noAtcHarvester.activeAtcHarvesters, 0);
 assert.match(noAtcHarvester.description, /no active ATC-capable harvester/);
 
+const now = 1800000000000;
+const extensionConfigured = targetBankPresentation(dynamicDemand, [], {
+  now, externalAtcHarvesterEnabled: true,
+});
+assert.equal(extensionConfigured.state, 'working');
+assert.equal(extensionConfigured.label, 'Waiting for Chrome extension');
+assert.equal(extensionConfigured.activeHarvesters, 0,
+  'an external extension must not corrupt managed-harvester totals');
+assert.equal(extensionConfigured.activeAtcHarvesters, 0,
+  'an external extension must not be presented as a managed ATC harvester');
+
+const reachableExtensionBank = {
+  ...dynamicDemand,
+  extensionHarvester: {
+    enabled: true, configured: true, listening: true,
+    lastSeenAt: now - 5000, lastStatusAt: now - 5000,
+  },
+};
+const extensionReachable = targetBankPresentation(reachableExtensionBank, [], { now });
+assert.equal(extensionReachable.state, 'working');
+assert.equal(extensionReachable.label, 'Waiting for extension cookies');
+assert.equal(extensionReachable.extensionHarvesterReachable, true);
+
+const extensionRecentlySaved = targetBankPresentation({
+  ...reachableExtensionBank,
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 2,
+  },
+}, [], { now });
+assert.equal(extensionRecentlySaved.state, 'filling');
+assert.equal(extensionRecentlySaved.label, 'Filling ATC bank');
+assert.equal(extensionRecentlySaved.extensionAtcRecentlySaved, true);
+assert.match(extensionRecentlySaved.description, /Chrome extension recently saved an ATC cookie/);
+
+const staleExtensionSave = targetBankPresentation({
+  ...reachableExtensionBank,
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    lastSeenAt: now - 31000, lastStatusAt: now - 31000,
+    lastSavedAt: now - 31000, lastSavedType: 'atc', savedCount: 2,
+  },
+}, [], { now });
+assert.equal(staleExtensionSave.state, 'working');
+assert.equal(staleExtensionSave.label, 'Waiting for Chrome extension');
+assert.equal(staleExtensionSave.extensionAtcRecentlySaved, false);
+
+const recentLoginSave = targetBankPresentation({
+  ...reachableExtensionBank,
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    lastSavedAt: now - 5000, lastSavedType: 'login', savedCount: 1,
+  },
+}, [], { now });
+assert.equal(recentLoginSave.state, 'working', 'a login save must not claim the ATC bank is filling');
+
+const extensionReady = targetBankPresentation({
+  ...reachableExtensionBank,
+  atc: 12,
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 2,
+  },
+}, [], { now });
+assert.equal(extensionReady.state, 'ready');
+assert.equal(extensionReady.label, 'ATC target ready', 'bank readiness must outrank extension recency');
+
+const extensionBrokerStarting = targetBankPresentation(null, [], {
+  now, externalAtcHarvesterEnabled: true,
+});
+assert.equal(extensionBrokerStarting.state, 'offline');
+assert.equal(extensionBrokerStarting.label, 'Broker offline',
+  'configuration alone must not claim that a broker startup is in progress');
+
+const tandemExtensionSave = targetBankPresentation({
+  ...reachableExtensionBank,
+  harvesters: [{ id: 'managed-atc', activeWorkers: 0 }],
+  extensionHarvester: {
+    ...reachableExtensionBank.extensionHarvester,
+    lastSavedAt: now - 5000, lastSavedType: 'atc', savedCount: 1,
+  },
+}, [{ id: 'managed-atc', enabled: true, type: 'atc' }], { now });
+assert.equal(tandemExtensionSave.label, 'Filling ATC bank');
+assert.match(tandemExtensionSave.description, /Chrome extension also recently saved/,
+  'tandem presentation must preserve visible extension attribution');
+
 const pausedDynamic = targetBankPresentation({
   ...dynamicDemand,
   demand: {
@@ -218,6 +304,9 @@ assert.match(taskGroups, /presentation\.atcTarget/);
 assert.match(taskGroups, /presentation\.demandLabel/);
 assert.doesNotMatch(taskGroups, /Per-type limit/);
 assert.match(taskGroups, /targetBankPresentation\(bank, availableHarvesters/);
+assert.match(taskGroups, /extensionHarvesterConfigured = \(\) =>/);
+assert.equal((taskGroups.match(/externalAtcHarvesterEnabled: this\.extensionHarvesterConfigured\(\)/g) || []).length, 2,
+  'both bank presentations must receive the configured extension source');
 assert.match(taskGroups, /renderHarvesterDrawer\(\)/);
 assert.match(taskGroups, /className=\{`target-harvester-rail/);
 assert.match(taskGroups, /id="target-harvester-drawer"/);

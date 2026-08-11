@@ -1,4 +1,6 @@
 const count = (value) => Math.max(0, Number(value) || 0);
+const EXTENSION_REACHABLE_MS = 30 * 1000;
+const EXTENSION_ATC_SAVE_ACTIVE_MS = 30 * 1000;
 
 export function formatBandwidth(bytes) {
   let value = count(bytes);
@@ -130,6 +132,8 @@ export function targetBankMetrics(bank) {
   const scheduling = scaling.scheduling || {};
   const browsers = Array.isArray(health.browsers) ? health.browsers : [];
   const demand = (bank && bank.demand) || {};
+  const extension = bank && bank.extensionHarvester && typeof bank.extensionHarvester === 'object'
+    ? bank.extensionHarvester : {};
   const demandTargets = demand.targets || {};
   const fallbackTargets = (bank && bank.targets) || {};
   const demandMode = String(demand.mode || '');
@@ -211,6 +215,16 @@ export function targetBankMetrics(bank) {
     atcTarget,
     atcDeficit: Math.max(0, atcTarget - atcCount),
     atcSurplus: Math.max(0, atcCount - atcTarget),
+    extensionHarvester: {
+      enabled: extension.enabled === true,
+      configured: extension.configured === true,
+      listening: extension.listening === true,
+      lastSeenAt: count(extension.lastSeenAt),
+      lastStatusAt: count(extension.lastStatusAt),
+      lastSavedAt: count(extension.lastSavedAt),
+      lastSavedType: String(extension.lastSavedType || '').toLowerCase(),
+      savedCount: count(extension.savedCount),
+    },
   };
 }
 
@@ -231,6 +245,14 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
   const now = Number(options.now) || Date.now();
   const configured = Array.isArray(harvesters) ? harvesters : [];
   const runtimes = bank && Array.isArray(bank.harvesters) ? bank.harvesters : [];
+  const extensionEnabled = options.externalAtcHarvesterEnabled === true
+    || (metrics.extensionHarvester.enabled && metrics.extensionHarvester.configured);
+  const extensionReachable = extensionEnabled && metrics.extensionHarvester.lastSeenAt > 0
+    && now - metrics.extensionHarvester.lastSeenAt <= EXTENSION_REACHABLE_MS;
+  const extensionAtcRecentlySaved = extensionEnabled
+    && metrics.extensionHarvester.lastSavedType === 'atc'
+    && metrics.extensionHarvester.lastSavedAt > 0
+    && now - metrics.extensionHarvester.lastSavedAt <= EXTENSION_ATC_SAVE_ACTIVE_MS;
   let activeHarvesters = 0;
   let activeWorkers = 0;
   let activeAtcHarvesters = 0;
@@ -282,8 +304,20 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
       : 'No Target tasks need ATC cookies right now. Harvesters will resume automatically when task demand returns.';
   } else if (metrics.demandReported && metrics.atcDeficit > 0 && activeAtcHarvesters > 0) {
     state = 'filling';
-    label = activeAtcWorkers > 0 ? 'Filling ATC bank' : 'Starting ATC harvesters';
-    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; ${metrics.atcDeficit} more needed for ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'} task${metrics.effectiveTasks === 1 ? '' : 's'}.`;
+    label = activeAtcWorkers > 0 || extensionAtcRecentlySaved
+      ? 'Filling ATC bank' : 'Starting ATC harvesters';
+    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; ${metrics.atcDeficit} more needed for ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'} task${metrics.effectiveTasks === 1 ? '' : 's'}.`
+      + (extensionAtcRecentlySaved ? ' The Chrome extension also recently saved an ATC cookie.' : '');
+  } else if (metrics.demandReported && metrics.atcDeficit > 0 && extensionAtcRecentlySaved) {
+    state = 'filling';
+    label = 'Filling ATC bank';
+    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; the Chrome extension recently saved an ATC cookie, with ${metrics.atcDeficit} more needed.`;
+  } else if (metrics.demandReported && metrics.atcDeficit > 0 && extensionEnabled) {
+    state = 'working';
+    label = extensionReachable ? 'Waiting for extension cookies' : 'Waiting for Chrome extension';
+    description = extensionReachable
+      ? `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; the Chrome extension is reachable and the bank is waiting for its next accepted ATC cookie.`
+      : `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; Chrome extension harvesting is enabled. Start it in Chrome to fill the ${metrics.atcDeficit}-cookie gap.`;
   } else if (metrics.demandReported && metrics.atcDeficit > 0) {
     state = 'deficit';
     label = 'ATC bank needs a harvester';
@@ -333,6 +367,9 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
     activeAtcWorkers,
     scheduledHarvesters,
     scheduledAtcHarvesters,
+    extensionHarvesterEnabled: extensionEnabled,
+    extensionHarvesterReachable: extensionReachable,
+    extensionAtcRecentlySaved,
     bankedCookies,
     demandLabel: metrics.demandReported
       ? metrics.demandBasis === 'paused'
