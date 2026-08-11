@@ -82,7 +82,9 @@ function validatePublishResult(value, metadata, responseOk, {
   } else {
     const keys = ['downloadUrl', 'duplicate', 'error', 'notified', 'published', 'version'];
     if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(keys)
-      || value.notified !== false || value.error !== 'Discord notification failed.') {
+      || value.notified !== false
+      || typeof value.error !== 'string'
+      || !/^Discord [A-Za-z0-9 .()-]{1,100}$/.test(value.error)) {
       throw new Error('Extension publish failure result has an unexpected shape.');
     }
   }
@@ -229,7 +231,7 @@ async function uploadAndPublish({
   await verifyLiveRelease(fetchImpl, metadata, { updateOrigin, siteOrigin });
   if (!publishResponse.ok || publishResult.notified !== true) {
     throw new Error(
-      `Zyn Harvester ${metadata.version} is live, but its Discord notification failed. Rerun this upload command to retry notification without bumping the version.`,
+      `Zyn Harvester ${metadata.version} is live, but its Discord notification failed: ${publishResult.error} Rerun this upload command to retry notification without bumping the version.`,
     );
   }
   return publishResult;

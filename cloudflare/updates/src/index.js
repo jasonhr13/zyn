@@ -400,8 +400,10 @@ async function postDiscordRelease(webhook, metadata) {
       });
       if (response.ok) {
         const message = await response.json().catch(() => null);
-        if (message && typeof message.id === 'string' && message.id) return message.id;
-        return null;
+        if (message && typeof message.id === 'string' && message.id) {
+          return { messageId: message.id };
+        }
+        return { error: `Discord returned HTTP ${response.status} without a message id.` };
       }
 
       if (attempt < 2 && response.status === 429) {
@@ -414,13 +416,13 @@ async function postDiscordRelease(webhook, metadata) {
         await delay(250 * (attempt + 1));
         continue;
       }
-      return null;
+      return { error: `Discord returned HTTP ${response.status}.` };
     } catch {
-      if (attempt === 2) return null;
+      if (attempt === 2) return { error: 'Discord request failed before receiving a response.' };
       await delay(250 * (attempt + 1));
     }
   }
-  return null;
+  return { error: 'Discord notification failed.' };
 }
 
 function publishResponse(metadata, options = {}) {
@@ -504,13 +506,16 @@ async function publishExtension(request, env) {
   }
 
   const webhook = validDiscordWebhook(env[EXTENSION_WEBHOOK_SECRET]);
-  const messageId = webhook ? await postDiscordRelease(webhook, publishedMetadata) : null;
-  if (!messageId) {
+  const notification = webhook
+    ? await postDiscordRelease(webhook, publishedMetadata)
+    : { error: 'Discord webhook configuration is invalid.' };
+  if (!notification.messageId) {
     return publishResponse(publishedMetadata, {
       duplicate,
-      error: 'Discord notification failed.',
+      error: notification.error,
     });
   }
+  const { messageId } = notification;
 
   await env.RELEASES.put(receiptKey, `${JSON.stringify({
     version: publishedMetadata.version,

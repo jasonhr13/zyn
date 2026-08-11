@@ -493,7 +493,7 @@ test('keeps a verified feed live and safely retries a failed Discord notificatio
     duplicate: false,
     version: '1.1.2',
     downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
-    error: 'Discord notification failed.',
+    error: 'Discord webhook configuration is invalid.',
   });
   assert.equal(env.RELEASES.records.has('extension/latest.json'), true);
 
@@ -548,6 +548,6 @@ test('publish authentication is non-enumerable and invalid webhook errors stay s
     duplicate: false,
     version: '1.1.2',
     downloadUrl: 'https://updates.zynbot.app/download/extension/1.1.2',
-    error: 'Discord notification failed.',
+    error: 'Discord webhook configuration is invalid.',
   });
 });
