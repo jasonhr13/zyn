@@ -13,6 +13,7 @@ const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-si
 const { createTaskGroupStore } = require('./task-group-store');
 const { createTaskGroupScheduler } = require('./task-group-scheduler');
 const { createTargetProductHistoryStore } = require('./target-product-history');
+const { targetGroupStandbyTaskCount } = require('./target-cookie-standby');
 const { installLicenseObservation } = require('./license-observer');
 const { installLicenseAuthority } = require('./license-authority');
 const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
@@ -23,6 +24,7 @@ const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
 const { createAnalyticsService } = require('./analytics-recorder');
 const { createPokemonQueueEvents } = require('./pokemon-queue-events');
+const { createHarvesterExtensionBridge } = require('./harvester-extension-bridge');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
@@ -196,8 +198,8 @@ function configureUpdater() {
     ));
     const updateArch = process.arch === 'x64' ? 'x64' : 'arm64';
     const updateUrl = process.platform === 'win32'
-      ? 'https://updates.rcart.app/windows'
-      : `https://updates.rcart.app/mac/${updateArch}`;
+      ? 'https://updates.zynbot.app/windows'
+      : `https://updates.zynbot.app/mac/${updateArch}`;
     autoUpdater.setFeedURL({ provider: 'generic', url: updateUrl });
     console.info(`Zyn auto-update feed: ${updateUrl}`);
   } catch (error) {
@@ -278,11 +280,86 @@ let taskGroupScheduler = null;
 let targetProductHistoryStore = null;
 let pokemonQueueEvents = null;
 let analyticsService = null;
+let harvesterExtensionBridge = null;
+
+function installHarvesterExtensionCompatibility(authority) {
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const selected = () => {
+      if (authority && authority.cached().ok !== true) return false;
+      let settings = {};
+      try { settings = dataManager.getSettings?.() || {}; } catch {}
+      return /^harvester$/i.test(String(settings.shapeMethod || '').trim());
+    };
+    const configuredCookieTtl = () => {
+      let settings = {};
+      try { settings = dataManager.getSettings?.() || {}; } catch {}
+      const seconds = Number.parseInt(String(settings.targetCookieTtlSec || ''), 10);
+      return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 600)) * 1000;
+    };
+    const configuredExtensionId = () => {
+      let settings = {};
+      try { settings = dataManager.getSettings?.() || {}; } catch {}
+      const id = String(settings.targetHarvesterExtensionId || '').trim().toLowerCase();
+      return /^[a-p]{32}$/.test(id) ? id : '';
+    };
+    const bridge = createHarvesterExtensionBridge({
+      enabled: selected,
+      ensureBroker: () => targetEngine.ensureHarvesterBroker?.(),
+      allowedExtensionId: configuredExtensionId,
+      saveCookie: cookie => {
+        if (typeof targetEngine.saveHarvesterCookie !== 'function') {
+          throw new Error('Target engine does not expose authenticated extension saves');
+        }
+        return targetEngine.saveHarvesterCookie(cookie);
+      },
+      // The downloaded protocol has no pairing token. Keep Zyn's local and managed proxy
+      // credentials on the main-process side; operators can paste a user-owned list into Chrome.
+      allowProxyImport: () => false,
+      cookieTtlMs: configuredCookieTtl,
+      logger: console,
+    });
+    app.whenReady().then(() => bridge.start()).then(address => {
+      console.info(`[harvester-extension] compatibility bridge listening on ${address.address}:${address.port}`);
+    }).catch(error => {
+      console.warn(`[harvester-extension] compatibility bridge unavailable: ${error.message}`);
+    });
+    return bridge;
+  } catch (error) {
+    console.warn(`[harvester-extension] compatibility bridge could not start: ${error.message}`);
+    return null;
+  }
+}
+
+function syncTargetGroupCookieStandby(groups) {
+  try {
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    targetEngine.setTargetCookieStandbyTasks?.('task-groups', targetGroupStandbyTaskCount(groups));
+  } catch (error) {
+    console.error(`Could not update Target cookie-bank standby demand: ${error.message}`);
+  }
+}
+
+function setTargetHarvestAuthorization(authorized) {
+  try {
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    targetEngine.setTargetHarvestAuthorized?.(authorized === true);
+    if (authorized === true && taskGroupStore) {
+      targetEngine.setTargetCookieStandbyTasks?.(
+        'task-groups', targetGroupStandbyTaskCount(taskGroupStore.load()),
+      );
+    }
+  } catch (error) {
+    console.error(`Could not ${authorized ? 'resume' : 'pause'} Target cookie harvesting: ${error.message}`);
+  }
+}
 
 function installTaskGroups() {
   if (!FEATURES.taskGroups) return;
   const { ipcMain } = require('electron');
   taskGroupStore = createTaskGroupStore(app.getPath('userData'));
+  try { syncTargetGroupCookieStandby(taskGroupStore.load()); } catch {}
 
   ipcMain.on('getTaskGroups', (event) => {
     try {
@@ -294,9 +371,10 @@ function installTaskGroups() {
   });
   ipcMain.on('saveTaskGroups', (event, groups) => {
     try {
-      taskGroupStore.save(groups);
+      const saved = taskGroupStore.save(groups);
+      syncTargetGroupCookieStandby(saved);
       taskGroupScheduler?.sync();
-      event.returnValue = taskGroupStore.load();
+      event.returnValue = saved;
     } catch (error) {
       console.error(`Could not save Zyn task groups: ${error.message}`);
       try { event.returnValue = taskGroupStore.load(); } catch { event.returnValue = []; }
@@ -734,6 +812,7 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     ipcMain,
     safeStorage,
     onStatus: status => {
+      setTargetHarvestAuthorization(status && status.ok === true);
       pushLicenseStatus(status);
       try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
@@ -742,7 +821,10 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
         try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
       }
     },
-    onLock: stopAllRunningForLicense,
+    onLock: () => {
+      setTargetHarvestAuthorization(false);
+      stopAllRunningForLicense();
+    },
     onEntitlementsChanged: stopRemovedTaskTypes,
     onManagedProxies: result => {
       if (!managedProxyControl) return null;
@@ -915,6 +997,7 @@ function runNativeEngineSelfTest() {
 // Wine keeps one server per prefix. Stop that private server after Zyn's own
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
+  try { harvesterExtensionBridge?.stop(); } catch {}
   try { taskGroupScheduler?.dispose(); } catch {}
   try { pokemonQueueEvents?.dispose(); } catch {}
   if (process.platform === 'win32') return;
@@ -945,6 +1028,8 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const profileImapControl = installProfileImap();
   const managedProxyControl = installManagedProxies();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
+  if (!licenseAuthority) setTargetHarvestAuthorization(true);
+  harvesterExtensionBridge = installHarvesterExtensionCompatibility(licenseAuthority);
   analyticsService = installAnalytics(licenseAuthority);
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);

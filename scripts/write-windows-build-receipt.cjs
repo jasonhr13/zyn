@@ -51,7 +51,7 @@ const receipt = {
   features: FEATURES,
   runtime: {
     delivery: 'remote',
-    manifest: 'https://updates.rcart.app/runtimes/zyn-manifest-v1.json',
+    manifest: 'https://updates.zynbot.app/runtimes/zyn-manifest-v1.json',
     backendSha256: sha256(path.join(appPath, 'resources', 'engine', 'backend.exe')),
   },
 };

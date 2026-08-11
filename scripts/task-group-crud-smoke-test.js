@@ -197,7 +197,24 @@ async function main() {
         detail: 'Watching Target stock',
         running: true,
       });
+      const runStartedAt = Date.now() - 100;
+      ipc.emit('targetRunStarted', {}, { taskIds: [runningTaskId], startedAt: runStartedAt });
+      ipc.emit('targetOutcome', {}, {
+        taskId: runningTaskId,
+        eventId: 'r2-checkout-event-0001',
+        eventType: 'checkout',
+        occurredAt: Date.now(),
+      });
+      ipc.emit('targetStatus', {}, {
+        taskId: runningTaskId, state: 'Successful', label: 'Successful',
+        color: '#34ca6e', taskState: 3, running: true,
+      });
+      ipc.emit('targetStatus', {}, {
+        taskId: runningTaskId, state: 'Waiting For Restock', label: 'Waiting For Restock',
+        color: '#6DACFF', taskState: 1, running: true,
+      });
       await wait(100);
+      const watchingToneBeforeDone = Boolean(document.querySelector('.group-task-row:not(.group-task-table-head) .target-task-status-watching'));
       let liveEditPayload = null;
       const originalSendSync = ipc.sendSync;
       ipc.sendSync = (channel, ...args) => {
@@ -235,6 +252,11 @@ async function main() {
         pageTitle: document.querySelector('.page-title')?.textContent.trim(),
         taskRow: Boolean(row),
         taskRowText: row ? row.textContent.replace(/\\s+/g, ' ').trim() : '',
+        checkoutHeader: [...document.querySelectorAll('.group-task-table-head > span')].some(node => node.textContent.trim() === 'Checkouts'),
+        checkoutCount: row && row.querySelector('.task-checkout-count')?.textContent.trim(),
+        checkoutCountPositive: Boolean(row && row.querySelector('.task-checkout-count.has-checkouts')),
+        watchingTone: watchingToneBeforeDone,
+        rowHasObscuringTitle: Boolean(row && row.hasAttribute('title')),
         enginePanel: document.querySelector('.engine-log-panel')?.textContent.replace(/\\s+/g, ' ').trim() || '',
         engineLines: document.querySelectorAll('.engine-log-view > div:not(.task-log-empty)').length,
         monitorChip: document.querySelector('.engine-monitor-chip')?.textContent.replace(/\\s+/g, ' ').trim() || '',
@@ -286,6 +308,11 @@ async function main() {
     || report.taskAccountId !== cleanup.accountId
     || !report.taskRow
     || !report.taskRowText.includes('Ready')
+    || !report.checkoutHeader
+    || report.checkoutCount !== '1'
+    || !report.checkoutCountPositive
+    || !report.watchingTone
+    || report.rowHasObscuringTitle
     || !report.enginePanel.includes('Engine & Monitor Log')
     || !report.enginePanel.includes('ENGINE: shape farmer ready')
     || !report.enginePanel.includes('MONITOR: watching 2 products')

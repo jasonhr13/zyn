@@ -77,6 +77,12 @@ class PageHandler extends Component {
     ipcRenderer.on('targetDone', (e, { taskId } = {}) => {
       this.props.dispatch({ type: 'targetDone', taskId });
     });
+    ipcRenderer.on('targetRunStarted', (e, { taskIds, startedAt } = {}) => {
+      this.props.dispatch({ type: 'targetRunStarted', taskIds: taskIds || [], startedAt });
+    });
+    ipcRenderer.on('targetOutcome', (e, payload = {}) => {
+      this.props.dispatch({ type: 'targetOutcome', ...payload });
+    });
     // Logins the engine is blocked on. Sent as the WHOLE list every time it changes, so the
     // reducer can just replace it and never has to reconcile adds against removes.
     ipcRenderer.on('targetOtp', (e, { pending } = {}) => {
@@ -115,6 +121,8 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('targetLog');
     ipcRenderer.removeAllListeners('targetStatus');
     ipcRenderer.removeAllListeners('targetDone');
+    ipcRenderer.removeAllListeners('targetRunStarted');
+    ipcRenderer.removeAllListeners('targetOutcome');
     ipcRenderer.removeAllListeners('targetOtp');
     ipcRenderer.removeAllListeners('pokemonLog');
     ipcRenderer.removeAllListeners('pokemonStatus');

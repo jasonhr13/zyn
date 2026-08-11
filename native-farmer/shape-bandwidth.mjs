@@ -1,7 +1,7 @@
 // Proxy bandwidth helpers for the Shape farmer. Keep Shape's JS/fingerprint surface intact:
 // only drop bulk binary assets that Shape does not need to mint headers.
 
-// Hope's existing control promises images, video, and fonts. Keep the upstream image/media policy
+// Zyn's existing control promises images, video, and fonts. Keep the upstream image/media policy
 // and retain the recovered farmer's font block so moving to native does not regress proxy savings.
 export const HEAVY_RESOURCE_TYPES = Object.freeze(['image', 'media', 'font']);
 

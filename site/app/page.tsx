@@ -120,7 +120,7 @@ export default function Home() {
       <footer className="home-footer">
         <a className="brand" href="#top"><Image src="/zyn-icon.png" alt="" width={38} height={38} unoptimized /><span>Zyn</span></a>
         <p>Target + Pokémon Center US automation.</p>
-        <div><a href="mailto:hello@rcart.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
+        <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>
   );

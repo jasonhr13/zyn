@@ -12,10 +12,18 @@ renamed.
 
 - Electron hosts one WebSocket server on `127.0.0.1`; one Go process connects as its client.
 - Electron passes the selected loopback port to the Go process.
-- The engine authenticates with the per-launch `x-hope-token` header.
+- The engine authenticates with the per-launch `x-zyn-token` header.
 - Target and Pokemon Center US share this process, connection, profile map, and proxy map.
 - Electron owns task-to-site routing and all user-facing windows.
 - The Go process never receives the Zyn license bearer token or the Hyper API key.
+
+Target also has a separate HTTP cookie broker on `127.0.0.1:4727`. When Zyn launches it with
+`ZYN_SHAPE_TOKEN`, `/cookie`, `/saveCookies`, `/demand`, `/session-ready`, and producer-status writes
+require that per-launch value in `x-zyn-token`; only aggregate `/status` remains readable without it.
+The external Chrome compatibility listener on port 4312 filters a capture, then asks the Target
+engine to perform the authenticated save after verifying that Zyn's tracked child still owns 4727.
+The raw token is not exported to Chrome or the launcher. A standalone broker launched without
+`ZYN_SHAPE_TOKEN` intentionally retains its local testing behavior.
 
 Every message uses the existing envelope:
 

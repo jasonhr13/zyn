@@ -91,7 +91,7 @@ const config = {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: path.join(projectRoot, 'assets', 'brand', 'Zyn.ico'),
     signAndEditExecutable: false,
-    publish: [{ provider: 'generic', url: 'https://updates.rcart.app/windows' }],
+    publish: [{ provider: 'generic', url: 'https://updates.zynbot.app/windows' }],
   },
   nsis: {
     oneClick: true,

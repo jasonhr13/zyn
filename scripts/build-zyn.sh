@@ -74,12 +74,17 @@ node "$PROJECT_DIR/scripts/patch-zyn-runtime-brand.js" "$TEMP_DIR/app"
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
 
+# The runtime base carries an obsolete embedded engine. Zyn always loads the architecture-correct,
+# contract-pinned binary from Resources/engine; keeping the duplicate in ASAR leaks stale metadata.
+rm -rf "$TEMP_DIR/app/backend"
+
 node -e '
   const fs = require("fs");
   const file = process.argv[1];
   const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
   pkg.name = "zyn";
   pkg.productName = "Zyn";
+  pkg.description = "Zyn Checkout Automation";
   pkg.version = process.argv[2];
   pkg.dependencies.react = "18.3.1";
   pkg.dependencies["react-dom"] = "18.3.1";
@@ -140,9 +145,9 @@ for launcher_file in \
   checkout-reporting.js analytics-recorder.js \
   pokemon-queue-events.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js target-product-history.js \
-  task-group-scheduler.js target-group-launch.js window-size-state.js \
+  task-group-scheduler.js target-group-launch.js target-cookie-standby.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
-  managed-proxy-ipc-guard.js; do
+  managed-proxy-ipc-guard.js harvester-extension-bridge.js; do
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"
 done
 cp "$PROJECT_DIR/launcher/runtime-manager.js" "$RESOURCES/app/runtime-manager.js"

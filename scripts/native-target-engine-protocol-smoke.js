@@ -10,7 +10,9 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const WebSocket = require(path.join(root, 'extracted', 'asar', 'node_modules', 'ws'));
 const arch = process.arch === 'x64' ? 'x64' : 'arm64';
-const backend = path.join(root, 'native-backend', `darwin-${arch}`, 'backend');
+const backend = process.env.ZYN_NATIVE_BACKEND
+  ? path.resolve(process.env.ZYN_NATIVE_BACKEND)
+  : path.join(root, 'native-backend', `darwin-${arch}`, 'backend');
 assert.equal(fs.existsSync(backend), true, `native backend is missing: ${backend}`);
 
 const token = crypto.randomBytes(24).toString('hex');
@@ -33,7 +35,7 @@ async function main() {
   const connected = new Promise((resolve, reject) => {
     server.once('connection', (socket, request) => {
       try {
-        assert.equal(request.headers['x-hope-token'], token, 'engine omitted its per-launch bridge token');
+        assert.equal(request.headers['x-zyn-token'], token, 'engine omitted its per-launch bridge token');
         socket.send(JSON.stringify({
           type: 'send-configs',
           messages: [{
@@ -59,9 +61,9 @@ async function main() {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      HOPE_SHAPE_PORT: '4727',
-      HOPE_SHAPE_TOKEN: token,
-      HOPE_PARENT_WATCH: '1',
+      ZYN_SHAPE_PORT: '4727',
+      ZYN_SHAPE_TOKEN: token,
+      ZYN_PARENT_WATCH: '1',
     },
   });
   let stderr = '';

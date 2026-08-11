@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { verifyMacReleasePayload } = require('./verify-zyn-release-payload.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
@@ -29,6 +30,7 @@ function run(command, args) {
 for (const file of [workApp, path.join(outputRoot, zipName), path.join(outputRoot, dmgName), metadataPath]) {
   if (!fs.existsSync(file)) throw new Error(`Missing release file: ${file}`);
 }
+run(process.execPath, [path.join(__dirname, 'zyn-packaged-brand-smoke-test.js'), workApp]);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', workApp]);
 run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', workApp]);
 run('/usr/bin/xcrun', ['stapler', 'validate', workApp]);
@@ -54,4 +56,16 @@ for (const name of [zipName, dmgName]) {
   }
 }
 if (!metadata.includes(`version: ${version}`)) throw new Error(`latest-mac.yml does not advertise ${version}`);
+const payload = verifyMacReleasePayload({
+  expectedApp: workApp,
+  zip: path.join(outputRoot, zipName),
+  dmg: path.join(outputRoot, dmgName),
+  verifyExtractedApp(extractedApp) {
+    run(process.execPath, [path.join(__dirname, 'zyn-packaged-brand-smoke-test.js'), extractedApp]);
+  },
+});
+if (payload.zip.sha256 !== payload.dmg.sha256) {
+  throw new Error('macOS ZIP and DMG payload digests do not match');
+}
+console.log(`Verified ZIP and DMG embedded app payload (${payload.zip.entries} entries, sha256 ${payload.zip.sha256}).`);
 console.log(`Zyn ${version} ${arch} release verification passed.`);

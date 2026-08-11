@@ -18,6 +18,7 @@ import {
   scheduleDetailLine,
   scheduleSummary,
 } from '../task-group-schedule.mjs';
+import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -62,7 +63,12 @@ const initialHarvesterDrawerOpen = () => {
 
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const siteOf = account => String((account && account.site) || '').toLowerCase();
-const normalizeCookieBankSize = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 4);
+const DEFAULT_ATC_COOKIES_PER_TASK = 3;
+const normalizeAtcCookiesPerTaskInput = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 2);
+const normalizeAtcCookiesPerTask = value => {
+  const parsed = Number.parseInt(normalizeAtcCookiesPerTaskInput(value), 10);
+  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+};
 const clampInteger = (value, minimum, maximum, fallback) => {
   const parsed = Number.parseInt(String(value == null ? '' : value), 10);
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
@@ -104,29 +110,26 @@ const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
   return ((marker >= 0 ? value.slice(marker + 2) : value).match(/^\d+/) || [])[0] || '';
 }).filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
 
-function statusKind(status) {
-  if (!status) return 'idle';
-  const text = `${status.state || ''} ${status.label || ''}`.toLowerCase();
-  const color = String(status.color || '').toLowerCase();
-  if (/error|fail|declin|cancel|blocked/.test(text) || color === '#fb5454' || color === '#ff5a5a') return 'error';
-  if (/success|complete|ordered|checked out/.test(text)) return 'success';
-  if (status.running === false || /idle|stopped/.test(text)) return 'idle';
-  return 'running';
-}
-
 const STATUS_LABELS = {
   idle: 'Idle',
-  running: 'Running',
+  watching: 'Watching',
+  carting: 'Carting',
+  checkout: 'Checking out',
   success: 'Success',
   error: 'Attention',
 };
 
 function StatusBadge({ status }) {
-  const kind = statusKind(status);
+  const tone = targetStatusTone(status);
+  const label = (status && (status.label || status.state)) || STATUS_LABELS[tone];
   return (
-    <span className={`group-status group-status-${kind}`}>
-      <span className="group-status-dot" />
-      {(status && (status.label || status.state)) || STATUS_LABELS[kind]}
+    <span
+      className={`group-status target-task-status target-task-status-${tone}`}
+      title={String(label)}
+      aria-label={`Task status: ${label}`}
+    >
+      <span className="group-status-dot" aria-hidden="true" />
+      {label}
     </span>
   );
 }
@@ -160,7 +163,7 @@ class TaskGroups extends Component {
     bank: null,
     bankCheckedAt: 0,
     brokerStartRequestedAt: 0,
-    cookieBankSize: '',
+    atcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK),
     harvesters: [],
     harvesterDrawerOpen: initialHarvesterDrawerOpen(),
     showHarvesterModal: false,
@@ -218,14 +221,14 @@ class TaskGroups extends Component {
 
   loadGroups = () => {
     let groups = [];
-    let cookieBankSize = '';
+    let atcCookiesPerTask = String(DEFAULT_ATC_COOKIES_PER_TASK);
     let harvesters = [];
     let throttleFallbackGroup = 'Local';
     let migratedSettings = null;
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
     try {
       const settings = ipcRenderer.sendSync('getSettings') || {};
-      cookieBankSize = normalizeCookieBankSize(settings.targetCookieBank);
+      atcCookiesPerTask = normalizeAtcCookiesPerTask(settings.targetAtcCookiesPerTask);
       if (Array.isArray(settings.targetHarvesters)) {
         harvesters = settings.targetHarvesters.map(normalizeHarvester);
       } else {
@@ -248,7 +251,7 @@ class TaskGroups extends Component {
     this.setState(({ selectedGroupId, selectedTaskId }) => ({
       groups,
       loaded: true,
-      cookieBankSize,
+      atcCookiesPerTask,
       harvesters,
       throttleFallbackGroup,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
@@ -270,15 +273,24 @@ class TaskGroups extends Component {
       .catch(() => this.setState({ bank: null, bankCheckedAt: Date.now() }));
   };
 
-  saveCookieBankSize = () => {
-    const targetCookieBank = normalizeCookieBankSize(this.state.cookieBankSize);
+  saveAtcCookiesPerTask = () => {
+    const targetAtcCookiesPerTask = normalizeAtcCookiesPerTask(this.state.atcCookiesPerTask);
     let settings = this.props.settings || {};
     try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
-    if (String(settings.targetCookieBank == null ? '' : settings.targetCookieBank) === targetCookieBank) return;
-    const next = { ...settings, targetCookieBank };
+    if (normalizeAtcCookiesPerTask(settings.targetAtcCookiesPerTask) === targetAtcCookiesPerTask) {
+      this.setState({ atcCookiesPerTask: targetAtcCookiesPerTask }, () => {
+        try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+        this.pollBank();
+      });
+      return;
+    }
+    const next = { ...settings, targetAtcCookiesPerTask };
     try { ipcRenderer.sendSync('saveSettings', next); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings: next } });
-    this.setState({ cookieBankSize: targetCookieBank });
+    this.setState({ atcCookiesPerTask: targetAtcCookiesPerTask }, () => {
+      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+      this.pollBank();
+    });
   };
 
   saveTargetSetting = (key, value) => {
@@ -406,6 +418,8 @@ class TaskGroups extends Component {
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
+  outcomeFor = task => ((this.props.target.taskOutcomes || {})[task.id]) || {};
+  checkoutCountFor = task => Math.max(0, Number(this.outcomeFor(task).checkouts) || 0);
   proxyStatusFor = task => {
     const status = (this.props.target.proxyStatus || {})[task.id];
     return status && !status.hidden ? status : null;
@@ -426,10 +440,11 @@ class TaskGroups extends Component {
   };
 
   groupStats = (group) => {
-    const stats = { total: (group.tasks || []).length, running: 0, success: 0, error: 0 };
+    const stats = { total: (group.tasks || []).length, running: 0, error: 0 };
     for (const task of (group.tasks || [])) {
-      const kind = statusKind(this.statusFor(task));
-      if (kind !== 'idle') stats[kind] += 1;
+      const status = this.statusFor(task);
+      if (targetTaskIsRunning(status)) stats.running += 1;
+      if (targetStatusTone(status) === 'error') stats.error += 1;
     }
     return stats;
   };
@@ -544,7 +559,7 @@ class TaskGroups extends Component {
     const nextSkus = parseSkus(draft.skus);
     const previousSkus = parseSkus(previousGroup && previousGroup.skus);
     const liveTasks = previousGroup
-      ? (previousGroup.tasks || []).filter(task => statusKind(this.statusFor(task)) === 'running')
+      ? (previousGroup.tasks || []).filter(task => targetTaskIsRunning(this.statusFor(task)))
       : [];
     const liveWatchChanged = !!previousGroup && (
       previousSkus.join(',') !== nextSkus.join(',')
@@ -620,6 +635,7 @@ class TaskGroups extends Component {
     if (!window.confirm(`Delete “${group.name}” and its ${(group.tasks || []).length} task(s)?\n\nThe legacy Target workspace is not affected.`)) return;
     for (const task of (group.tasks || [])) {
       try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
+      this.props.dispatch({ type: 'targetTaskDelete', id: task.id });
     }
     this.persist(this.state.groups.filter(item => item.id !== group.id), () => {
       if (this.state.selectedGroupId === group.id) this.setState({ selectedGroupId: '', selectedTaskId: '' });
@@ -698,6 +714,7 @@ class TaskGroups extends Component {
   deleteTask = (group, task) => {
     if (!window.confirm(`Delete the task for “${this.accountLabel(task)}” from “${group.name}”?`)) return;
     try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
+    this.props.dispatch({ type: 'targetTaskDelete', id: task.id });
     const groups = this.state.groups.map(item => item.id === group.id ? {
       ...item,
       tasks: item.tasks.filter(candidate => candidate.id !== task.id),
@@ -742,7 +759,7 @@ class TaskGroups extends Component {
   };
 
   activeOtherGroup = group => this.state.groups.find(item => item.id !== group.id
-    && (item.tasks || []).some(task => statusKind(this.statusFor(task)) === 'running'));
+    && (item.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task))));
 
   startTasks = (group, tasks) => {
     const other = this.activeOtherGroup(group);
@@ -759,7 +776,7 @@ class TaskGroups extends Component {
 
   stopTasks = (tasks) => {
     const runningBefore = this.allStats().running;
-    const stopping = tasks.filter(task => statusKind(this.statusFor(task)) === 'running').length;
+    const stopping = tasks.filter(task => targetTaskIsRunning(this.statusFor(task))).length;
     for (const task of tasks) {
       try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
     }
@@ -942,10 +959,13 @@ class TaskGroups extends Component {
 
   renderCookieBank() {
     const bank = this.state.bank;
-    const presentation = targetBankPresentation(bank, this.state.harvesters, {
+    const availableHarvesters = this.state.harvesters.map(harvester =>
+      this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
+    const presentation = targetBankPresentation(bank, availableHarvesters, {
       now: this.state.bankCheckedAt || Date.now(),
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
+      atcPerTask: this.state.atcCookiesPerTask,
     });
 
     return (
@@ -958,24 +978,29 @@ class TaskGroups extends Component {
         </span>
         <span className="cookie-bank-counts">
           <span><strong>{presentation.login}</strong><small>Login</small></span>
-          <span><strong>{presentation.atc}</strong><small>ATC</small></span>
+          <span title={presentation.demandLabel}>
+            <strong>{presentation.atc}/{presentation.demandReported ? presentation.atcTarget : '—'}</strong>
+            <small>ATC</small>
+          </span>
         </span>
         <label
           className="cookie-bank-limit"
-          title="Maximum cookies of each type to keep in the shared bank. Blank or 0 means no limit. Changes apply on the next start."
+          title="Ready ATC cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically."
         >
-          <span>Per-type limit</span>
+          <span>ATC per task</span>
           <input
-            type="text"
+            type="number"
             inputMode="numeric"
-            value={this.state.cookieBankSize}
-            placeholder="Unlimited"
-            aria-label="Target cookie bank maximum size"
-            onChange={event => this.setState({ cookieBankSize: normalizeCookieBankSize(event.target.value) })}
-            onBlur={this.saveCookieBankSize}
+            min="1"
+            max="20"
+            value={this.state.atcCookiesPerTask}
+            aria-label="Target ATC cookies per task"
+            aria-describedby="target-atc-demand-formula"
+            onChange={event => this.setState({ atcCookiesPerTask: normalizeAtcCookiesPerTaskInput(event.target.value) })}
+            onBlur={this.saveAtcCookiesPerTask}
             onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
           />
-          <small>Next start</small>
+          <small id="target-atc-demand-formula">{presentation.demandLabel}</small>
         </label>
         <span className="cookie-bank-broker"><i />{presentation.brokerLabel}</span>
       </section>
@@ -1065,6 +1090,7 @@ class TaskGroups extends Component {
       now: this.state.bankCheckedAt || Date.now(),
       brokerStartRequestedAt: this.state.brokerStartRequestedAt,
       checkoutRunning: this.allStats().running > 0,
+      atcPerTask: this.state.atcCookiesPerTask,
     });
     const total = this.state.harvesters.length;
     const open = this.state.harvesterDrawerOpen;
@@ -1075,6 +1101,10 @@ class TaskGroups extends Component {
     const railStatusLabel = {
       ready: 'Ready',
       working: 'Active',
+      filling: 'Filling',
+      deficit: 'Needs ATC',
+      paused: 'Paused',
+      'over-target': 'Above target',
       scheduled: 'Queued',
       starting: 'Starting',
       error: 'Error',
@@ -1343,14 +1373,15 @@ class TaskGroups extends Component {
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
     const displayStatus = this.proxyStatusFor(task) || status;
-    const running = statusKind(status) === 'running';
+    const running = targetTaskIsRunning(status);
+    const checkouts = this.checkoutCountFor(task);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
       <div
         className="group-task-row group-task-row-clickable"
         key={task.id}
         tabIndex="0"
-        title="Open this task and its logs"
+        aria-label={`Open task for ${this.accountLabel(task)}`}
         onClick={() => this.setState({ selectedTaskId: task.id, copiedTask: false })}
         onKeyDown={event => {
           if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -1379,6 +1410,13 @@ class TaskGroups extends Component {
           />
           {task.loopCheckout ? 'On' : 'Off'}
         </label>
+        <span
+          className={`task-checkout-count${checkouts > 0 ? ' has-checkouts' : ''}`}
+          title={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+          aria-label={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+        >
+          {checkouts}
+        </span>
         <StatusBadge status={displayStatus} />
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
         <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
@@ -1398,15 +1436,16 @@ class TaskGroups extends Component {
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
     const displayStatus = this.proxyStatusFor(task) || status;
-    const kind = statusKind(status);
-    const running = kind === 'running';
+    const tone = targetStatusTone(displayStatus);
+    const running = targetTaskIsRunning(status);
+    const checkouts = this.checkoutCountFor(task);
     const logs = ((((this.props.target || {}).taskLogs) || {})[task.id]) || [];
     const accountName = this.accountLabel(task);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     const profileName = profile
       ? profile.name || profile.email || profile.id
       : 'Missing matching profile';
-    const statusLabel = (displayStatus && (displayStatus.label || displayStatus.state)) || STATUS_LABELS[kind];
+    const statusLabel = (displayStatus && (displayStatus.label || displayStatus.state)) || STATUS_LABELS[tone];
     const statusDetail = (displayStatus && displayStatus.detail) || (running
       ? 'This task is running through the existing Target checkout engine.'
       : 'Start this task to see its checkout steps and diagnostic output here.');
@@ -1435,7 +1474,7 @@ class TaskGroups extends Component {
         </div>
         <div className="page-content task-detail-content">
           {this.renderTargetProxyControls()}
-          <section className={`task-status-hero task-status-hero-${kind}`}>
+          <section className={`task-status-hero task-status-hero-${tone}`}>
             <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
             <StatusBadge status={displayStatus} />
@@ -1452,6 +1491,7 @@ class TaskGroups extends Component {
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
                 <div><dt>Watch list</dt><dd>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
                 <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
+                <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
                 <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
                 <div><dt>Task ID</dt><dd>{task.id}</dd></div>
               </dl>
@@ -1531,7 +1571,7 @@ class TaskGroups extends Component {
               <div className="group-tasks-empty"><span><Icon name="user" size={19} /></span><h3>No account tasks yet</h3><p>Add Target accounts to this group. Their checkout profiles are matched automatically by email.</p><button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}>Add Tasks</button></div>
             ) : (
               <div>
-                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Status</span><span>Created</span><span>Actions</span></div>
+                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Checkouts</span><span>Status</span><span>Created</span><span>Actions</span></div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
               </div>

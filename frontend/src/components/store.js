@@ -119,6 +119,7 @@ const defaultState = {
     skus: '',                 // newline-separated TCINs or full Target URLs; shared by all tasks
     tasks: [],                // [{ id, accountId, proxyListName, cardId, qty }]
     taskStatus: {},           // taskId -> { state, label, color, detail }
+    taskOutcomes: {},         // taskId -> per-run checkout/decline counts + seen analytics event ids
     proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
@@ -319,15 +320,65 @@ export function reducer(state = defaultState, action) {
 
     case 'targetTaskDelete': {
       const status = { ...state.target.taskStatus }; delete status[action.id];
+      const outcomes = { ...(state.target.taskOutcomes || {}) }; delete outcomes[action.id];
       const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.id];
       const logs = { ...state.target.taskLogs }; delete logs[action.id];
       return { ...state, target: { ...state.target,
         tasks: state.target.tasks.filter(t => t.id !== action.id),
-        taskStatus: status, proxyStatus, taskLogs: logs } };
+        taskStatus: status, taskOutcomes: outcomes, proxyStatus, taskLogs: logs } };
     }
 
     case 'targetTasksClear':
-      return { ...state, target: { ...state.target, tasks: [], taskStatus: {}, proxyStatus: {}, taskLogs: {} } };
+      return { ...state, target: {
+        ...state.target, tasks: [], taskStatus: {}, taskOutcomes: {}, proxyStatus: {}, taskLogs: {},
+      } };
+
+    // Emitted by the main-process bridge only after the native engine accepted these tasks. This
+    // keeps a refused order-cap start from erasing the result of the previous run, and resets only
+    // additive tasks rather than every task already running in another group.
+    case 'targetRunStarted': {
+      const taskOutcomes = { ...(state.target.taskOutcomes || {}) };
+      const startedAt = Number.isFinite(Number(action.startedAt)) ? Number(action.startedAt) : Date.now();
+      for (const taskId of (Array.isArray(action.taskIds) ? action.taskIds : [])) {
+        if (!taskId) continue;
+        taskOutcomes[taskId] = {
+          checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt, seenEventIds: [],
+        };
+      }
+      return { ...state, target: { ...state.target, taskOutcomes } };
+    }
+
+    // The engine's analytics outcome has a unique event id. Count that authoritative event instead
+    // of the transient Successful status, which can be repainted by the next loop step before the
+    // renderer draws and is also repeated by the status heartbeat.
+    case 'targetOutcome': {
+      const taskId = String(action.taskId || '').trim();
+      const eventId = String(action.eventId || '').trim();
+      const eventType = String(action.eventType || '').trim().toLowerCase();
+      if (!taskId || !eventId || !['checkout', 'decline'].includes(eventType)) return state;
+      const previous = (state.target.taskOutcomes || {})[taskId] || {
+        checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt: 0, seenEventIds: [],
+      };
+      const seenEventIds = Array.isArray(previous.seenEventIds) ? previous.seenEventIds : [];
+      if (seenEventIds.includes(eventId)) return state;
+      const occurredAt = Number.isFinite(Number(action.occurredAt)) ? Number(action.occurredAt) : Date.now();
+      if (previous.startedAt && occurredAt < previous.startedAt) return state;
+      const next = {
+        ...previous,
+        checkouts: Number(previous.checkouts) || 0,
+        declines: Number(previous.declines) || 0,
+        seenEventIds: [...seenEventIds.slice(-99), eventId],
+      };
+      if (eventType === 'checkout') {
+        next.checkouts += 1;
+        next.lastCheckoutAt = occurredAt;
+      } else {
+        next.declines += 1;
+      }
+      return { ...state, target: { ...state.target,
+        taskOutcomes: { ...(state.target.taskOutcomes || {}), [taskId]: next },
+      } };
+    }
 
     // Marks a live proxy command as outstanding. It starts hidden: the selector already confirms
     // delivery, and the status column should only change when the engine reports the real outcome.

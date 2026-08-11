@@ -8,7 +8,7 @@ const { verifyManifest, MANIFEST_PATH } = require('../launcher/runtime-manager')
 
 const projectRoot = path.join(__dirname, '..');
 const artifactsRoot = path.join(projectRoot, 'release', 'runtime-artifacts');
-const updateOrigin = (process.env.ZYN_UPDATE_ORIGIN || 'https://updates.rcart.app').replace(/\/+$/, '');
+const updateOrigin = (process.env.ZYN_UPDATE_ORIGIN || 'https://updates.zynbot.app').replace(/\/+$/, '');
 const uploadOrigin = (process.env.ZYN_UPLOAD_ORIGIN || updateOrigin).replace(/\/+$/, '');
 const prefix = 'runtimes';
 const keychainAccount = process.env.ZYN_UPDATE_KEYCHAIN_ACCOUNT || 'zyn-updates';

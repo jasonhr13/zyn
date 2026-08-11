@@ -129,6 +129,20 @@ export function targetBankMetrics(bank) {
   const lastUpscale = recovery.lastUpscale || {};
   const scheduling = scaling.scheduling || {};
   const browsers = Array.isArray(health.browsers) ? health.browsers : [];
+  const demand = (bank && bank.demand) || {};
+  const demandTargets = demand.targets || {};
+  const fallbackTargets = (bank && bank.targets) || {};
+  const demandMode = String(demand.mode || '');
+  const demandReported = demandMode === 'per-task';
+  const demandBasis = ['active', 'standby', 'paused'].includes(String(demand.basis))
+    ? String(demand.basis) : '';
+  const activeTasks = count(demand.activeTasks);
+  const standbyTasks = count(demand.standbyTasks);
+  const effectiveTasks = count(demand.effectiveTasks);
+  const atcPerTask = count(demand.atcPerTask);
+  const loginTarget = count(demandTargets.login != null ? demandTargets.login : fallbackTargets.login);
+  const atcTarget = count(demandTargets.atc != null ? demandTargets.atc : fallbackTargets.atc);
+  const atcCount = count(bank && bank.atc);
   const activeBrowsers = browsers.filter(browser => count(browser && browser.activeWorkers) > 0);
   const recentErrorRate = Number.isFinite(Number(scaling.recentErrorRate))
     ? Math.max(0, Math.min(1, Number(scaling.recentErrorRate)))
@@ -137,7 +151,7 @@ export function targetBankMetrics(bank) {
   return {
     online,
     login: count(bank && bank.login),
-    atc: count(bank && bank.atc),
+    atc: atcCount,
     proxies: count(bank && bank.proxies),
     farmedAtc: count(activity.produced && activity.produced.atc != null
       ? activity.produced.atc
@@ -186,6 +200,17 @@ export function targetBankMetrics(bank) {
     browserMode: String((health.browser && health.browser.mode) || ''),
     startedAt: count(activity.startedAt),
     lastBankedAt: count(bank && bank.lastBankedAt),
+    demandReported,
+    demandMode,
+    demandBasis,
+    activeTasks,
+    standbyTasks,
+    effectiveTasks,
+    atcPerTask,
+    loginTarget,
+    atcTarget,
+    atcDeficit: Math.max(0, atcTarget - atcCount),
+    atcSurplus: Math.max(0, atcCount - atcTarget),
   };
 }
 
@@ -208,18 +233,28 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
   const runtimes = bank && Array.isArray(bank.harvesters) ? bank.harvesters : [];
   let activeHarvesters = 0;
   let activeWorkers = 0;
+  let activeAtcHarvesters = 0;
+  let activeAtcWorkers = 0;
   let scheduledHarvesters = 0;
+  let scheduledAtcHarvesters = 0;
 
   for (const harvester of configured) {
     const state = scheduleState(harvester, now);
     if (state === 'scheduled') {
       scheduledHarvesters += 1;
+      if (!harvester.type || harvester.type === 'atc' || harvester.type === 'auto') {
+        scheduledAtcHarvesters += 1;
+      }
       continue;
     }
     if (state !== 'running') continue;
     activeHarvesters += 1;
     const runtime = runtimes.find(item => String(item && item.id) === String(harvester.id));
     activeWorkers += count(runtime && runtime.activeWorkers);
+    if (!harvester.type || harvester.type === 'atc' || harvester.type === 'auto') {
+      activeAtcHarvesters += 1;
+      activeAtcWorkers += count(runtime && runtime.activeWorkers);
+    }
   }
 
   const bankedCookies = metrics.login + metrics.atc;
@@ -239,6 +274,28 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
       : waitingForBroker
         ? 'Opening the shared cookie bank for Target tasks and harvesters.'
         : 'Start a Target task or harvester to open the shared cookie bank.';
+  } else if (metrics.demandReported && (metrics.demandBasis === 'paused' || metrics.atcTarget === 0)) {
+    state = 'paused';
+    label = 'Bank paused';
+    description = metrics.atc > 0
+      ? `No Target tasks need ATC cookies right now. ${metrics.atc} banked ATC cookie${metrics.atc === 1 ? '' : 's'} remain available until used or expired.`
+      : 'No Target tasks need ATC cookies right now. Harvesters will resume automatically when task demand returns.';
+  } else if (metrics.demandReported && metrics.atcDeficit > 0 && activeAtcHarvesters > 0) {
+    state = 'filling';
+    label = activeAtcWorkers > 0 ? 'Filling ATC bank' : 'Starting ATC harvesters';
+    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready; ${metrics.atcDeficit} more needed for ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'} task${metrics.effectiveTasks === 1 ? '' : 's'}.`;
+  } else if (metrics.demandReported && metrics.atcDeficit > 0) {
+    state = 'deficit';
+    label = 'ATC bank needs a harvester';
+    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready, but no active ATC-capable harvester can fill the ${metrics.atcDeficit}-cookie gap.`;
+  } else if (metrics.demandReported && metrics.atcSurplus > 0) {
+    state = 'over-target';
+    label = 'Above ATC target';
+    description = `${metrics.atc} ATC cookies are ready for a target of ${metrics.atcTarget}. Extra valid cookies are retained while harvesting stays paused.`;
+  } else if (metrics.demandReported) {
+    state = 'ready';
+    label = 'ATC target ready';
+    description = `${metrics.atc} of ${metrics.atcTarget} ATC cookies ready for ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'} task${metrics.effectiveTasks === 1 ? '' : 's'}.`;
   } else if (bankedCookies > 0) {
     state = 'ready';
     label = 'Cookies ready';
@@ -272,8 +329,16 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
     brokerLabel: metrics.online ? 'Broker online' : state === 'starting' ? 'Broker starting' : 'Broker offline',
     activeHarvesters,
     activeWorkers,
+    activeAtcHarvesters,
+    activeAtcWorkers,
     scheduledHarvesters,
+    scheduledAtcHarvesters,
     bankedCookies,
+    demandLabel: metrics.demandReported
+      ? metrics.demandBasis === 'paused'
+        ? `${metrics.atcPerTask} per task · paused`
+        : `${metrics.atcPerTask} per task · ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'}`
+      : `${count(options.atcPerTask) || 3} per task · waiting for broker`,
   };
 }
 

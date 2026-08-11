@@ -103,6 +103,77 @@ const scheduled = targetBankPresentation(staleRuntimeBank, [{
 assert.equal(scheduled.state, 'scheduled');
 assert.equal(scheduled.label, 'Waiting for schedule');
 
+const dynamicDemand = {
+  login: 2,
+  atc: 7,
+  targets: { login: 99, atc: 99 },
+  demand: {
+    mode: 'per-task',
+    basis: 'active',
+    activeTasks: 4,
+    standbyTasks: 0,
+    effectiveTasks: 4,
+    atcPerTask: 3,
+    targets: { login: 4, atc: 12 },
+  },
+  harvesters: [{ id: 'atc-main', activeWorkers: 2 }],
+};
+const dynamicMetrics = targetBankMetrics(dynamicDemand);
+assert.deepEqual({
+  demandReported: dynamicMetrics.demandReported,
+  basis: dynamicMetrics.demandBasis,
+  activeTasks: dynamicMetrics.activeTasks,
+  effectiveTasks: dynamicMetrics.effectiveTasks,
+  perTask: dynamicMetrics.atcPerTask,
+  target: dynamicMetrics.atcTarget,
+  deficit: dynamicMetrics.atcDeficit,
+}, {
+  demandReported: true,
+  basis: 'active',
+  activeTasks: 4,
+  effectiveTasks: 4,
+  perTask: 3,
+  target: 12,
+  deficit: 5,
+}, 'canonical demand.targets must drive the renderer instead of the compatibility top-level target');
+
+const atcHarvester = [{ id: 'atc-main', type: 'atc', enabled: true }];
+const filling = targetBankPresentation(dynamicDemand, atcHarvester, { now: 1800000000000 });
+assert.equal(filling.state, 'filling');
+assert.equal(filling.label, 'Filling ATC bank');
+assert.equal(filling.demandLabel, '3 per task · 4 active');
+assert.match(filling.description, /7 of 12 ATC cookies ready/);
+
+const readyDynamic = targetBankPresentation({ ...dynamicDemand, atc: 12 }, atcHarvester, { now: 1800000000000 });
+assert.equal(readyDynamic.state, 'ready');
+assert.equal(readyDynamic.label, 'ATC target ready');
+
+const overTarget = targetBankPresentation({ ...dynamicDemand, atc: 14 }, atcHarvester, { now: 1800000000000 });
+assert.equal(overTarget.state, 'over-target');
+assert.equal(overTarget.atcSurplus, 2);
+assert.match(overTarget.description, /Extra valid cookies are retained/);
+
+const noAtcHarvester = targetBankPresentation(dynamicDemand, [{
+  id: 'login-main', type: 'login', enabled: true,
+}], { now: 1800000000000 });
+assert.equal(noAtcHarvester.state, 'deficit');
+assert.equal(noAtcHarvester.activeAtcHarvesters, 0);
+assert.match(noAtcHarvester.description, /no active ATC-capable harvester/);
+
+const pausedDynamic = targetBankPresentation({
+  ...dynamicDemand,
+  demand: {
+    ...dynamicDemand.demand,
+    basis: 'paused',
+    activeTasks: 0,
+    effectiveTasks: 0,
+    targets: { login: 0, atc: 0 },
+  },
+}, atcHarvester, { now: 1800000000000 });
+assert.equal(pausedDynamic.state, 'paused');
+assert.equal(pausedDynamic.demandLabel, '3 per task · paused');
+assert.match(pausedDynamic.description, /remain available until used or expired/);
+
 // The recovered broker's compact payload remains supported while the renderer also accepts the
 // richer upstream health payload above.
 const compact = targetBankMetrics({ login: 5, atc: 8, proxies: 9 });
@@ -124,20 +195,29 @@ assert.deepEqual({
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/pages/task-groups.js'), 'utf8');
+const targetPage = fs.readFileSync(path.join(root, 'frontend/src/components/pages/target.js'), 'utf8');
+const settingsPage = fs.readFileSync(path.join(root, 'frontend/src/components/pages/settings.js'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'frontend/src/App.css'), 'utf8');
 assert.match(taskGroups, /ipcRenderer\.invoke\('targetCookieBank'\)/);
 assert.match(taskGroups, /<small>Login<\/small>/);
 assert.match(taskGroups, /<small>ATC<\/small>/);
 assert.match(taskGroups, /<small>Shared Cookie Bank<\/small>/);
 assert.match(taskGroups, /presentation\.brokerLabel/);
-assert.match(taskGroups, /<span>Per-type limit<\/span>/);
+assert.match(taskGroups, /<span>ATC per task<\/span>/);
 assert.doesNotMatch(taskGroups, /workerDescription/);
 assert.doesNotMatch(taskGroups, /<small>Run output<\/small>/);
 assert.doesNotMatch(taskGroups, /<small>Cooling routes<\/small>/);
 assert.doesNotMatch(taskGroups, /<small>Top failure<\/small>/);
 assert.doesNotMatch(taskGroups, /target-global-harvester-summary/);
-assert.match(taskGroups, /aria-label="Target cookie bank maximum size"/);
-assert.match(taskGroups, /targetBankPresentation\(bank, this\.state\.harvesters/);
+assert.match(taskGroups, /aria-label="Target ATC cookies per task"/);
+assert.match(taskGroups, /targetAtcCookiesPerTask/);
+assert.match(taskGroups, /const availableHarvesters = this\.state\.harvesters\.map\(harvester =>[\s\S]{0,180}enabled: false/,
+  'main bank summary must not count harvesters whose proxy group is unavailable');
+assert.match(taskGroups, /syncTargetHarvesters/);
+assert.match(taskGroups, /presentation\.atcTarget/);
+assert.match(taskGroups, /presentation\.demandLabel/);
+assert.doesNotMatch(taskGroups, /Per-type limit/);
+assert.match(taskGroups, /targetBankPresentation\(bank, availableHarvesters/);
 assert.match(taskGroups, /renderHarvesterDrawer\(\)/);
 assert.match(taskGroups, /className=\{`target-harvester-rail/);
 assert.match(taskGroups, /id="target-harvester-drawer"/);
@@ -155,6 +235,10 @@ assert.match(styles, /\.cookie-bank-prominent \{ display: grid; grid-template-co
 assert.match(styles, /\.cookie-bank-prominent \.cookie-bank-copy em \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
   'long bank status must truncate instead of wrapping the controls');
 assert.match(styles, /\.cookie-bank-stopped/);
+assert.match(styles, /\.cookie-bank-paused/);
+assert.match(styles, /\.cookie-bank-filling/);
+assert.match(styles, /\.cookie-bank-deficit/);
+assert.match(styles, /\.cookie-bank-over-target/);
 assert.match(styles, /\.cookie-bank-broker/);
 assert.doesNotMatch(styles, /\.cookie-bank-health/);
 assert.match(styles, /\.target-harvester-rail \{/);
@@ -162,5 +246,11 @@ assert.match(styles, /\.target-harvester-drawer \{/);
 assert.match(styles, /\.target-harvester-drawer-content \{[^}]*overflow-y: auto;/);
 assert.match(styles, /\.target-harvester-bandwidth-summary \{/);
 assert.match(styles, /\.target-harvester-bandwidth \{ grid-area: bandwidth; \}/);
+assert.match(targetPage, />ATC TASK<\/span>/);
+assert.match(targetPage, /targetAtcCookiesPerTask/);
+assert.doesNotMatch(targetPage, />BANK SIZE<\/span>/);
+assert.match(settingsPage, /ATC cookies per task/);
+assert.match(settingsPage, /targetAtcCookiesPerTask/);
+assert.doesNotMatch(settingsPage, />Cookie bank size<\/label>/);
 
 console.log('Target cookie-bank metrics smoke test passed');

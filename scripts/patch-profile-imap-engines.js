@@ -110,10 +110,10 @@ const analyticsRecorder = require('./analytics-recorder');`, 'shared native-engi
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
     HOPE_PARENT_WATCH: '1', HOPE_OWNER_PID: String(process.pid) };
-  if (isPackaged()) env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'vendor', 'ms-playwright');`, `  const env = nodeEnvironment({ FORCE_COLOR: '0', HOPE_SHAPE_PORT: String(SHAPE_PORT), HOPE_SHAPE_TOKEN: SHAPE_TOKEN,
+  if (isPackaged()) env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'vendor', 'ms-playwright');`, `  const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    HOPE_PARENT_WATCH: '1', HOPE_OWNER_PID: String(process.pid) });`, 2, 'Target native farmer environment');
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid) });`, 2, 'Target native farmer environment');
 
   source = replaceOnce(source, `  let workers = 0;
   // How long a banked Shape cookie stays usable.`, `  let workers = 0;
@@ -178,6 +178,7 @@ function getCookieBank() {`, 'Target last bank success timestamp');
             inFlight: j.inFlight || { login: 0, atc: 0 },
             activity: j.activity || null,
             health: j.health || null,
+            demand: j.demand || targetCookieDemand(),
             lastBankedAt: latestBankedAt(),
           });`, 'Target broker health passthrough');
 
@@ -186,7 +187,7 @@ function getCookieBank() {`, 'Target last bank success timestamp');
 function signalFarmerSessionReady() {
   const req = http.request({
     host: '127.0.0.1', port: SHAPE_PORT, path: '/session-ready', method: 'POST', timeout: 1200,
-    headers: { 'x-hope-token': SHAPE_TOKEN },
+    headers: { 'x-zyn-token': SHAPE_TOKEN },
   }, (res) => res.resume());
   req.on('error', (e) => vlog('[target] shape farmer session-ready signal failed: ' + e.message));
   req.on('timeout', () => req.destroy());
@@ -260,6 +261,11 @@ const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/pr
   const items = msg.messages;`, 'native-engine inbound envelope validation');
 
   source = replaceOnce(source, `function handleEngineMessage(data) {`, `function handleEngineMessage(data, connection) {`, 'native-engine connection-scoped message handler');
+
+  source = replaceOnce(source,
+    `  const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState;`,
+    `  const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState + '|' + running;`,
+    'Target status liveness dedupe');
 
   source = replaceOnce(source, `    default:
       // stuckInCart / account-cookie / update-input / update-status variants: ignore for the UI`, `    case 'solve-captcha':
@@ -522,6 +528,12 @@ function sendStart(config) {
 
   source = replaceOnce(source, `const id = m.taskID === MONITOR_ID ? '' : (m.taskID || '');`, `const id = String(m.taskID || '').startsWith(MONITOR_ID) ? '' : (m.taskID || '');`, 'Target live-edit monitor status routing');
 
+  source = replaceOnce(source,
+    `  sendToEngine({ type: 'start-tasks', messages });`,
+    `  if (!sendToEngine({ type: 'start-tasks', messages })) return 0;
+  toRenderer('targetRunStarted', { taskIds: tasks.map(task => task.id), startedAt: Date.now() });`,
+    'Target per-run outcome reset');
+
   source = replaceOnce(source, `      taskActive = false;
       // The engine dying takes every task with it, so clear them all rather than a single id.`, `      taskActive = false;
       stopLiveEditMonitor();
@@ -573,6 +585,10 @@ function sendStart(config) {
       taskProfileById.delete(t.id);
       taskCheckoutConfigById.delete(t.id);
       status('Limit Reached'`, 'Target capped task cleanup');
+  source = replaceOnce(source,
+    `      status('Limit Reached', '#f59e0b', \`\${dm.ORDER_LIMIT_MAX} orders in the last 4h\`, t.id);`,
+    `      status('Limit Reached', '#f59e0b', \`\${dm.ORDER_LIMIT_MAX} orders in the last 4h\`, t.id, undefined, false);`,
+    'Target capped task terminal status');
   source = replaceOnce(source, `      runningTaskIds.clear();
       toRenderer('targetDone'`, `      runningTaskIds.clear();
       engineTaskSites.clear();
@@ -635,12 +651,110 @@ let harvesterSyncTimer = null;`, 'Target managed harvester process state');
 
 ${harvesterConfig}`, 'Target managed harvester config');
 
+  const cookieDemand = fs.readFileSync(path.join(__dirname, 'target-cookie-demand.fragment.js'), 'utf8').trimEnd();
+  source = replaceOnce(source, `function ensureHarvesterBroker() {`,
+    `${cookieDemand}
+
+function saveHarvesterCookie(cookie) {
+  ensureHarvesterBroker();
+  if (!farmerProc || farmerProc.killed || farmerProc.exitCode != null
+      || Number(listenerPid(SHAPE_PORT)) !== Number(farmerProc.pid)) {
+    return Promise.reject(new Error('Zyn does not own the Target cookie broker'));
+  }
+  const body = JSON.stringify(cookie || {});
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1', port: SHAPE_PORT, path: '/saveCookies', method: 'POST', timeout: 1200,
+      headers: {
+        'x-zyn-token': SHAPE_TOKEN,
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      },
+    }, res => {
+      let response = '';
+      res.on('data', chunk => {
+        response += chunk;
+        if (response.length > 65536) req.destroy(new Error('cookie broker response is too large'));
+      });
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = JSON.parse(response || '{}'); }
+        catch { reject(new Error('cookie broker returned invalid JSON')); return; }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(\`cookie broker returned \${res.statusCode}\`));
+          return;
+        }
+        resolve(parsed);
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('cookie broker request timed out')));
+    req.end(body);
+  });
+}
+
+function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
+
+  source = replaceOnce(source,
+    `// Where Target's Shape cookies come from: 'In Bot' (bundled Playwright farmer) or 'Harvester' (the
+// browser extension posting to the broker). Drives both how the farmer is launched and what the
+// checkout webhook reports, so a failure can be attributed to the right source.`,
+    `// Where Target's Shape cookies come from: 'In Bot' (bundled Playwright farmer) or 'Harvester'
+// (external Chrome through Zyn's filtered, authenticated compatibility bridge). Drives both how the
+// farmer is launched and what the checkout webhook reports, so failures retain their source.`,
+    'Target external harvester source comment');
+  source = replaceOnce(source,
+    `// Standalone broker for Harvester mode. The broker lives inside the farmer process, so previously
+// it only existed while a checkout task was running — which made pre-farming impossible: the whole
+// point is to bank cookies for HOURS before a drop, with no task running. The extension would
+// intercept correctly and then have nowhere to POST, silently banking nothing.
+//
+// This starts the same process with no farming workers, so :4727 is up and accepting /saveCookies
+// as soon as the app is. A task starting later reuses it rather than spawning a second one.`,
+    `// Standalone broker for Harvester mode. The broker lives inside the farmer process, so it must be
+// present before an external Chrome capture reaches Zyn's port-4312 compatibility bridge.
+//
+// This starts the same process with no farming workers. The main process filters the capture, then
+// asks this module to authenticate one /saveCookies write to the tracked broker on :4727.`,
+    'Target authenticated standalone broker comment');
+  source = replaceOnce(source,
+    '  log(`[target] harvester broker listening on 127.0.0.1:${SHAPE_PORT} — extension can bank cookies now`);',
+    '  log(`[target] harvester broker listening on 127.0.0.1:${SHAPE_PORT} — authenticated extension bridge is ready`);',
+    'Target authenticated broker log');
+  source = replaceOnce(source,
+    `// The broker port is the one port that cannot move: the browser extension hardcodes
+// 127.0.0.1:4727 (harvester-extension/background.js), so a dynamic port would silently zero out
+// extension harvesting. Instead of fleeing a squatted port we take it back — but ONLY from our own
+// orphan, identified by a live protocol handshake, never by process name.`,
+    `// The broker port is fixed by the native engine contract and the main-process compatibility
+// bridge. Instead of fleeing a squatted port we take it back — but ONLY from our own orphan,
+// identified by a live protocol handshake, never by process name.`,
+    'Target broker ownership comment');
+  source = replaceOnce(source,
+    `  // Shape Method = Harvester ADDS the browser extension as a cookie source; it does not replace
+  // in-bot farming. The broker's POST /saveCookies stays open whether or not the farmer is running,
+  // so both feed the same pool and the engine takes whichever cookie is available first.`,
+    `  // Shape Method = Harvester adds external Chrome as a cookie source; it does not replace in-bot
+  // farming. Chrome talks only to the filtered port-4312 bridge, which authenticates accepted saves
+  // to this process, so both sources feed the same bank without exposing the broker token.`,
+    'Target authenticated external harvester comment');
+  source = replaceOnce(source,
+    '  if (harvesterMode) vlog(`[target] Shape Method: Harvester — in-bot farming ON, extension may also bank cookies to 127.0.0.1:${SHAPE_PORT}`);',
+    '  if (harvesterMode) vlog(`[target] Shape Method: Harvester — in-bot farming ON, external Chrome bridge on 127.0.0.1:4312`);',
+    'Target external harvester mode log');
+
+  source = replaceOnce(source,
+    `  if (next && !quitting && !farmerProc) startFarmer(next);`,
+    `  if (next && targetHarvestAuthorized && !quitting && !farmerProc) startFarmer(next);`,
+    'Target queued farmer authorization');
+
   source = replaceOnce(source, `function ensureHarvesterBroker() {
   if (quitting) return;                         // never resurrect the broker while shutting down
   if (farmerProc) return;                       // a task's farmer already provides the broker
   if (farmerPending) return;                    // a real farmer is mid-spawn — it wins, it can farm
   if (shapeMethodSetting() !== 'Harvester') return;`, `function ensureHarvesterBroker() {
   if (quitting) return;                         // never resurrect the broker while shutting down
+  if (!targetHarvestAuthorized) return;         // license authority has not opened the reversible harvest latch
   const managed = managedHarvesterConfigs();
   if (managed) {
     armHarvesterScheduleSync();
@@ -658,10 +772,22 @@ ${harvesterConfig}`, 'Target managed harvester config');
   if (farmerPending) return;                    // a real farmer is mid-spawn — it wins, it can farm
   if (!managed && shapeMethodSetting() !== 'Harvester') return;`, 'Target managed broker reconciliation');
 
+  source = replaceOnce(source, `  reclaimBrokerPort((mine) => {
+    if (quitting || !mine) { brokerPending = false; return; }
+    whenPortFree(SHAPE_PORT, (free) => {
+      brokerPending = false;
+      if (quitting) return;   // armed before the quit, resolving after it — the entry guard cannot catch this`, `  reclaimBrokerPort((mine) => {
+    if (quitting || !targetHarvestAuthorized || !mine) { brokerPending = false; return; }
+    whenPortFree(SHAPE_PORT, (free) => {
+      brokerPending = false;
+      if (quitting || !targetHarvestAuthorized) return; // authorization may close while the port probe is pending`,
+  'Target pending broker authorization');
+
   source = replaceOnce(source, `function spawnHarvesterBroker(script, botDir, env) {
   let proc;
   try {
     proc = spawn(findNodeExe(), [script, '--noFarm=true', \`--bankFile=\${bankFile()}\`], { cwd: botDir, stdio: ['pipe', 'pipe', 'pipe'], env, ...plat.spawnOpts() });`, `function spawnHarvesterBroker(script, botDir, env) {
+  if (!targetHarvestAuthorized) return;
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}
   const poolSize = parseInt(settings.targetCookieBank, 10) > 0 ? parseInt(settings.targetCookieBank, 10) : 0;
@@ -673,8 +799,29 @@ ${harvesterConfig}`, 'Target managed harvester config');
       \`--poolSize=\${poolSize}\`, \`--cookieTtlMs=\${cookieTtlSec * 1000}\`,
       \`--maxDrainPerMin=\${maxDrainPerMin}\`], { cwd: botDir, stdio: ['pipe', 'pipe', 'pipe'], env, ...plat.spawnOpts() });`, 'Target managed broker controls');
 
+  source = replaceOnce(source, `function startFarmer(config) {`, `function startFarmer(config) {
+  if (!targetHarvestAuthorized) return;`, 'Target farmer authorization entry');
+  source = replaceCount(source,
+    `if (quitting || seq !== startSeq) { farmerChainDone(); return; }`,
+    `if (quitting || !targetHarvestAuthorized || seq !== startSeq) { farmerChainDone(); return; }`,
+    2,
+    'Target pending farmer authorization');
+  source = replaceOnce(source, `function spawnFarmer(config) {`, `function spawnFarmer(config) {
+  if (!targetHarvestAuthorized) return;`, 'Target farmer authorization boundary');
+
+  source = replaceOnce(source, `    farmerProc = proc;
+    brokerOnly = true;`, `    farmerProc = proc;
+    brokerOnly = true;
+    // A replacement broker starts with only its legacy CLI cap. Republish the live/standby demand
+    // once it begins listening; the retry loop covers the short spawn-to-listen gap.
+    proc.once('spawn', () => {
+      lastTargetCookieDemandKey = '';
+      setTimeout(syncTargetCookieBankDemand, 150);
+    });`,
+  'Target broker demand restoration');
+
   source = replaceOnce(source, `  proc.on('exit', () => { if (farmerProc === proc) { farmerProc = null; brokerOnly = false; } });`, `  proc.on('exit', () => {
-    if (farmerProc === proc) { farmerProc = null; brokerOnly = false; }
+    if (farmerProc === proc) { farmerProc = null; brokerOnly = false; lastTargetCookieDemandKey = ''; }
     if (!quitting && managedHarvesterMode()) setTimeout(ensureHarvesterBroker, 1000);
   });`, 'Target managed broker restart');
 
@@ -753,7 +900,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
   brokerOnly = false;
   try { if (wss) wss.close(); } catch {}`, 'Target managed harvester shutdown');
 
-  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
+  source = replaceOnce(source, `module.exports = { startTarget, stopTarget, shutdown, ensureHarvesterBroker, getCookieBank, submitOtpManually, sendStockPing, runningCount, setTaskProxy, getSkuTitles };`, `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`, 'Target managed harvester export');
 
   // Pokemon Center uses the same authenticated WebSocket and Go process as Target. Keep its adapter
   // in a standalone fragment so the reviewed recovered engine remains hash-gated and the added code
@@ -799,6 +946,19 @@ ${harvesterConfig}`, 'Target managed harvester config');
           continue;
         }
         status(st, m.color, '', id, m.state, m.running);
+        // The Go engine does not acknowledge start-tasks. Its first task status is the earliest
+        // authoritative proof that this id was accepted (duplicates and invalid profiles can be
+        // dropped silently), so only then should it consume dynamic cookie-bank capacity.
+        if (id && m.running === true && runningTaskIds.has(id)) acceptTargetCookieTasks([{ id }]);
+        if (m.running === false && id) {
+          runningTaskIds.delete(id);
+          engineTaskSites.remove(id);
+          taskProfileById.delete(id);
+          taskCheckoutConfigById.delete(id);
+          taskAccountById.delete(id);
+          releaseTargetCookieTask(id);
+          taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+        }
         // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
         // state is already shown live next to "Engine Log", so logging it as well just buries the
         // checkout task's own lines. Failures still come through (KEEP_IN_QUIET).
@@ -832,6 +992,14 @@ ${harvesterConfig}`, 'Target managed harvester config');
   source = replaceOnce(source, `    case 'task-notification':`, `    case 'analytics-event':
       for (const m of items) {
         if (!analyticsRecorder.record(m)) log('[analytics] event was not recorded');
+        const outcomeType = String((m && m.eventType) || '').toLowerCase();
+        if (m && ['checkout', 'decline'].includes(outcomeType)
+          && engineTaskSites.resolve(m) === engineContract.SITES.TARGET) {
+          toRenderer('targetOutcome', {
+            eventId: m.eventId || '', eventType: outcomeType, taskId: m.taskId || '',
+            occurredAt: m.occurredAt,
+          });
+        }
       }
       break;
     case 'task-notification':`, 'native analytics event routing');
@@ -898,6 +1066,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
       for (const id of runningTaskIds) toRenderer('targetDone', { taskId: id });
       for (const id of pokemonTaskIds) pokemonDone(id);
       runningTaskIds.clear();
+      clearTargetCookieTasks();
       pokemonTaskIds.clear();
       pokemonTaskConfigs.clear();
       pendingPokemonStarts.length = 0;
@@ -912,8 +1081,15 @@ ${harvesterConfig}`, 'Target managed harvester config');
   const sharedStopTarget = `function stopTarget(taskId) {
   const requestedId = String(taskId || '');
   if (requestedId) {
+    // A start can be queued while the native WebSocket is still connecting. Remove a stopped task
+    // from that envelope before the early return below, or flushStart() can resurrect it later.
+    if (pendingStart && Array.isArray(pendingStart.tasks)) {
+      const remaining = pendingStart.tasks.filter(task => String(task && task.id || '') !== requestedId);
+      pendingStart = remaining.length ? { ...pendingStart, tasks: remaining } : null;
+    }
     if (engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: requestedId }] });
     runningTaskIds.delete(requestedId);
+    releaseTargetCookieTask(requestedId);
     engineTaskSites.remove(requestedId);
     taskProfileById.delete(requestedId);
     taskCheckoutConfigById.delete(requestedId);
@@ -926,6 +1102,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
   }
 
   startSeq += 1;
+  farmerWanted = null;
   pendingStart = null;
   if (engineConn) {
     const ids = [...runningTaskIds].map(id => ({ id }));
@@ -944,6 +1121,7 @@ ${harvesterConfig}`, 'Target managed harvester config');
     toRenderer('targetDone', { taskId: id });
   }
   runningTaskIds.clear();
+  clearTargetCookieTasks();
   taskCheckoutConfigById.clear();
   toRenderer('targetDone', { taskId: '' });
 
@@ -974,11 +1152,13 @@ ${harvesterConfig}`, 'Target managed harvester config');
   source = replaceOnce(source, `  try { stopTarget(); } catch {}
   if (harvesterSyncTimer)`, `  try { stopTarget(); } catch {}
   try { stopPokemonCenter(); } catch {}
+  if (targetCookieDemandRetryTimer) clearTimeout(targetCookieDemandRetryTimer);
+  targetCookieDemandRetryTimer = null;
   if (harvesterSyncTimer)`, 'shared native shutdown');
 
   source = replaceOnce(source,
-    `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
-    `module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, setPokemonQueueStreamHealth, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, syncTargetHarvesters, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
+    `module.exports = { startTarget, stopTarget, editTargetTasks, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
+    `module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, setPokemonQueueStreamHealth, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };`,
     'Pokemon Center native exports');
 
   opened.source = source;

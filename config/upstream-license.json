@@ -3,7 +3,7 @@
   "files": {
     "launcher/imap-password.js": "7cc0e6c8f1f682cfe816776c788166c6ad182f9bf57dbc64488df889753fbf48",
     "launcher/imap-connection.js": "0484052bafd1e3b53ed30abd57a05439a647e25cb57f9b31d754b1fd7c0e76b3",
-    "launcher/license-client.js": "17749bac133a8d533419f7a18a2fb8fba46d08928ae04ff87fefe0dbc588b2d2",
+    "launcher/license-client.js": "09a86829b808c997e4b4911f2921ea082d254861f125f45c182922e6a382bf90",
     "launcher/task-type-access.js": "d99a3a24f8e88a419194c909fd97f72bd834718e972aa0da34bfde1306975529",
     "frontend/src/components/proxy-options.js": "808b1a4ed598dc86a3913358ac52190453b1de2c0aba3ab89610b9b7c784d585",
     "cloudflare/license/README.md": "213779a9e1f8ddc3a165e77b63e1d92f4e0c83162b2380fd05ac207b35816297",

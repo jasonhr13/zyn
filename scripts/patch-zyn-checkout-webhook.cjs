@@ -7,6 +7,7 @@ const path = require('path');
 
 const keychainAccount = process.env.ZYN_CHECKOUT_WEBHOOK_KEYCHAIN_ACCOUNT || 'zyn-reporter';
 const keychainService = process.env.ZYN_CHECKOUT_WEBHOOK_KEYCHAIN_SERVICE || 'com.thwebco.zyn.checkout-webhook';
+const zynAvatar = 'https://zynbot.app/zyn-icon.png';
 
 function validWebhook(value) {
   try {
@@ -40,7 +41,20 @@ function replaceReporter(source, webhook) {
   const assignment = /const GLOBAL_WEBHOOK\s*=\s*['"]https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+['"];/g;
   const matches = source.match(assignment) || [];
   if (matches.length !== 1) throw new Error(`Expected one checkout-reporter webhook assignment, found ${matches.length}`);
-  return source.replace(assignment, `const GLOBAL_WEBHOOK =\n  ${JSON.stringify(webhook)};`);
+  source = source.replace(assignment, `const GLOBAL_WEBHOOK =\n  ${JSON.stringify(webhook)};`);
+  const payloadAnchor = `  await postJson(GLOBAL_WEBHOOK, {
+    embeds: [`;
+  if ((source.split(payloadAnchor).length - 1) !== 1) throw new Error('Expected one central collector payload');
+  source = source.replace(payloadAnchor, `  await postJson(GLOBAL_WEBHOOK, {
+    username: 'Zyn',
+    avatar_url: '${zynAvatar}',
+    embeds: [`);
+  const timestampAnchor = `        fields,
+        timestamp: new Date().toISOString(),`;
+  if ((source.split(timestampAnchor).length - 1) !== 1) throw new Error('Expected one central collector embed');
+  return source.replace(timestampAnchor, `        fields,
+        footer: { text: 'Zyn', icon_url: '${zynAvatar}' },
+        timestamp: new Date().toISOString(),`);
 }
 
 function replacePbandai(source, webhook) {

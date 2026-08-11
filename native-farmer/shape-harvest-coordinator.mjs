@@ -9,11 +9,15 @@ const countOf = (source, type) => {
 // this reservation synchronously, so five workers observing an empty bank cannot all choose login
 // before the first one has had a chance to publish its cookie.
 //
-// targetPool <= 0 means uncapped: workers keep pre-warming until the TTL prunes entries. A positive
-// value is a soft ceiling that only stops prewarm once the bank is deep enough.
+// The legacy targetPool <= 0 contract means uncapped: workers keep pre-warming until the TTL
+// prunes entries. Mutable per-type targets use a different, explicit representation:
+//   null = uncapped, 0 = pause prewarm, positive integer = desired bank depth.
+// Live waiter demand always bypasses the prewarm target so a dynamically paused bank can still
+// satisfy a checkout that is already waiting for a cookie.
 export function createHarvestCoordinator({
   allowedTypes = TYPES,
   targetPool = 0,
+  targetPools = null,
   sessionReady = false,
   loginConcurrency = 1,
   continuousLogin = false,
@@ -22,8 +26,20 @@ export function createHarvestCoordinator({
 } = {}) {
   const allowed = new Set(allowedTypes.filter(type => TYPES.includes(type)));
   const parsedPool = Number(targetPool);
-  const uncapped = !(parsedPool > 0);
-  const limit = uncapped ? Number.POSITIVE_INFINITY : Math.max(1, Math.floor(parsedPool));
+  const legacyTarget = parsedPool > 0 ? Math.max(1, Math.floor(parsedPool)) : null;
+  const targets = { login: legacyTarget, atc: legacyTarget };
+  const normalizeTarget = (value, fallback) => {
+    if (value === null) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : fallback;
+  };
+  if (targetPools && typeof targetPools === 'object') {
+    for (const type of TYPES) {
+      if (Object.prototype.hasOwnProperty.call(targetPools, type)) {
+        targets[type] = normalizeTarget(targetPools[type], targets[type]);
+      }
+    }
+  }
   const loginLimit = Math.max(1, Number(loginConcurrency) || 1);
   const stagger = Math.max(0, Number(workerStaggerMs) || 0);
   const inFlight = { login: 0, atc: 0 };
@@ -40,12 +56,18 @@ export function createHarvestCoordinator({
   };
 
   const underBankCap = (type, pools) =>
-    uncapped || (countOf(pools, type) + inFlight[type] < limit);
+    targets[type] === null || (countOf(pools, type) + inFlight[type] < targets[type]);
 
   const canReserve = (type, pools, waiters, unavailable) => {
     if (unavailable.has(type)) return false;
-    const demand = countOf(waiters, type) > 0;
+    // Match live waiters one-for-one. Without subtracting in-flight work, every ATC worker would
+    // launch for the same single long-poll waiter while a dynamic target is paused.
+    const demand = countOf(waiters, type) > inFlight[type];
+    // A live checkout waiter is stronger than the producer's prewarm specialization. For example,
+    // an ATC-only lane may need to recover an expired Target session before checkout can continue.
+    if (!allowed.has(type) && !demand) return false;
     if (type === 'login' && inFlight.login >= loginLimit) return false;
+    if (demand) return true;
 
     // ATC harvests stub cart_items on in-stock product pages — they do not need an account
     // session. Pre-warm ATC whenever the type is allowed so the bank climbs immediately even
@@ -70,7 +92,7 @@ export function createHarvestCoordinator({
     ) {
       prewarm = true;
     }
-    if (!demand && !prewarm) return false;
+    if (!prewarm) return false;
     return underBankCap(type, pools);
   };
 
@@ -78,11 +100,21 @@ export function createHarvestCoordinator({
     const candidates = TYPES.filter(type => canReserve(type, pools, waiters, unavailable));
     if (!candidates.length) return null;
 
-    const demanded = candidates.filter(type => countOf(waiters, type) > 0);
+    const demanded = candidates.filter(type => countOf(waiters, type) > inFlight[type]);
     const choices = demanded.length ? demanded : candidates;
     return choices.sort((a, b) =>
       (countOf(pools, a) + inFlight[a]) - (countOf(pools, b) + inFlight[b]))[0];
   };
+
+  const snapshotState = () => ({
+    sessionReady: ready,
+    readyAt,
+    loginHarvested,
+    uncapped: TYPES.every(type => targets[type] === null),
+    targets: { ...targets },
+    applyStagger,
+    inFlight: { ...inFlight },
+  });
 
   return {
     reserve({ pools = {}, waiters = {}, workerId = 0, unavailableTypes = [] } = {}) {
@@ -115,15 +147,16 @@ export function createHarvestCoordinator({
       if (!ready) loginHarvested = true;
     },
 
-    state() {
-      return {
-        sessionReady: ready,
-        readyAt,
-        loginHarvested,
-        uncapped,
-        applyStagger,
-        inFlight: { ...inFlight },
-      };
+    setTargets(nextTargets = {}) {
+      if (!nextTargets || typeof nextTargets !== 'object') return snapshotState();
+      for (const type of TYPES) {
+        if (Object.prototype.hasOwnProperty.call(nextTargets, type)) {
+          targets[type] = normalizeTarget(nextTargets[type], targets[type]);
+        }
+      }
+      return snapshotState();
     },
+
+    state: snapshotState,
   };
 }

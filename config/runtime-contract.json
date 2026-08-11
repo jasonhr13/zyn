@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "d525770428c0c787cf479e871304f23f4d83356a6017f6050c944c8bf62e7458"
+      "sha256": "f83b3c2ba2529d2043f44cb1abc510330283678b9d01dbbff3d25eada88c85ab"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "b54e66f4a8298e075769ec2597c1635c3838f0b0a0884be1bb5d34acd51b8d38"
+      "sha256": "3a5fc309738cc883461a76b2c0c03e8d388ae56e27f8c87ab278a8ad5bfe6ce4"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "86ab6f066efd33b4549b63bbeef5d7fd725c83e63fd75d6564d183a5a51add8a"
+      "sha256": "a3720f0d1bd15c257bce47928a1f5e58dded54df83587559ee855c1100277750"
     }
   },
   "requiredResources": [
@@ -58,17 +58,20 @@
     "Contents/Resources/app/target-product-history.js",
     "Contents/Resources/app/task-group-scheduler.js",
     "Contents/Resources/app/target-group-launch.js",
+    "Contents/Resources/app/target-cookie-standby.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/app/imap-password.js",
     "Contents/Resources/app/imap-connection.js",
     "Contents/Resources/app/profile-imap-control.js",
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
+    "Contents/Resources/app/harvester-extension-bridge.js",
     "Contents/Resources/app/runtime-manager.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
     "Contents/Resources/app/node_modules/ws/package.json",
     "Contents/Resources/engine/backend",
     "Contents/Resources/bot/shape-farmer.mjs",
+    "Contents/Resources/bot/shape-bank-demand.mjs",
     "Contents/Resources/bot/shape-browser-pool.mjs",
     "Contents/Resources/bot/shape-harvest-health.mjs",
     "Contents/Resources/bot/shape-worker-scaler.mjs",
@@ -82,7 +85,7 @@
     "Contents/Resources/vendor/node.exe"
   ],
   "remoteRuntime": {
-    "manifest": "https://updates.rcart.app/runtimes/zyn-manifest-v1.json",
+    "manifest": "https://updates.zynbot.app/runtimes/zyn-manifest-v1.json",
     "excludedResourceRoots": [
       "Contents/Resources/wine",
       "Contents/Resources/vendor/ms-playwright",

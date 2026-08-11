@@ -25,4 +25,8 @@ for (const file of [reporter, pbandai]) {
   const matches = source.match(/https:\/\/discord\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g) || [];
   assert.deepEqual(matches, [example]);
 }
+const reporterSource = fs.readFileSync(reporter, 'utf8');
+assert.match(reporterSource, /username: 'Zyn'/);
+assert.match(reporterSource, /avatar_url: 'https:\/\/zynbot\.app\/zyn-icon\.png'/);
+assert.match(reporterSource, /footer: \{ text: 'Zyn', icon_url: 'https:\/\/zynbot\.app\/zyn-icon\.png' \}/);
 console.log('Global checkout webhook is injected into the central and P-Bandai reporters without entering source control.');

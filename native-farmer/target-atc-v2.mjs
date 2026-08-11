@@ -25,7 +25,7 @@ async function continueRoute(route) {
   try { await route.continue(); } catch {}
 }
 
-// Playwright's route is the equivalent of Polar's CDP setPdpHijack hook: the address bar and
+// Playwright routing mirrors the recovered CDP setPdpHijack behavior: the address bar and
 // origin remain the configured Target product URL, while only the top-level PDP response is
 // replaced by the recovered synthetic document. Target's ssx.mod.js is still fetched normally.
 export async function setTargetAtcV2PdpHijack(page, productLink) {

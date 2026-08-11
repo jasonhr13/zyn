@@ -9,7 +9,7 @@ const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json
 const version = contract.product.version;
 const escapedVersion = version.replaceAll('.', '\\.');
 
-const updateOrigin = 'https://updates.rcart.app';
+const updateOrigin = 'https://updates.zynbot.app';
 
 async function checked(url, options = {}) {
   const response = await fetch(url, options);
@@ -54,8 +54,8 @@ async function main() {
     verifyArch('arm64'),
     verifyArch('x64'),
     verifyWindows(),
-    checked('https://rcart.app/download').then(response => response.text()),
-    checked('https://license.rcart.app/health').then(response => response.json()),
+    checked('https://zynbot.app/download').then(response => response.text()),
+    checked('https://license.zynbot.app/health').then(response => response.json()),
     checked(`${updateOrigin}/health`).then(response => response.json()),
   ]);
   assert.match(site, /Download Zyn/);

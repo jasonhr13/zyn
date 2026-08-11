@@ -43,4 +43,4 @@ node ./scripts/verify-zyn-public-release.cjs
 The output is an unsigned per-user NSIS installer plus its blockmap and `latest.yml` under
 `release/dist/windows-x64`. Windows SmartScreen may show “Windows protected your PC”; this is
 expected until a Windows code-signing identity is configured. The production download route is
-`https://updates.rcart.app/download/windows`.
+`https://updates.zynbot.app/download/windows`.

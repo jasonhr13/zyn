@@ -2,6 +2,8 @@ import React, { Component, createRef } from 'react';
 import ReactDOM from 'react-dom';
 import { connect } from 'react-redux';
 import { proxyLabel, proxyRef } from '../proxy-options';
+import { targetBankMetrics } from '../target-bank-metrics.mjs';
+import { targetStatusTone } from '../target-task-status';
 const { ipcRenderer } = window.require('electron');
 
 // Target runs ONE shared monitor over a list of SKUs plus many checkout tasks. Every task watches
@@ -26,6 +28,11 @@ const uid = () => 't_' + Math.random().toString(36).slice(2, 10);
 // "Local" is stored as the empty string everywhere else, which cannot be told apart from a select's
 // "nothing chosen" value. Only the bulk dropdown needs the distinction.
 const LOCAL_SENTINEL = '__local__';
+const DEFAULT_ATC_COOKIES_PER_TASK = 3;
+const normalizeAtcCookiesPerTask = value => {
+  const parsed = Number.parseInt(String(value == null ? '' : value).replace(/\D/g, '').slice(0, 2), 10);
+  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+};
 
 // Only explicitly tagged Target accounts can be assigned to a Target task.
 const siteOf = (a) => String((a && a.site) || '').toLowerCase();
@@ -51,7 +58,7 @@ const LIST_TEXT = {
   padding: LIST_PAD_TOP + 'px 8px', boxSizing: 'border-box',
 };
 
-// The header chips (BANK SIZE, MONITOR, COOKIE BANK). One object, because they sit stacked and any
+// The header chips (ATC TASK, MONITOR, COOKIE BANK). One object, because they sit stacked and any
 // difference reads as a mistake — and they DID differ: the chip holding an <input> was ~5px taller,
 // since the input brought its own padding and border. A fixed height with border-box is what makes
 // a box containing a control the same size as a box containing text.
@@ -138,13 +145,14 @@ function monitorLabel(st) {
 
 function StatusPill({ st }) {
   const label = (st && st.label) || 'Idle';
-  const color = (st && st.color) || '#6b7280';
+  const tone = targetStatusTone(st);
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
-      color, whiteSpace: 'nowrap',
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+    <span
+      className={`group-status target-task-status target-task-status-${tone}`}
+      title={String(label)}
+      aria-label={`Task status: ${label}`}
+    >
+      <span className="group-status-dot" aria-hidden="true" />
       {label}
     </span>
   );
@@ -180,9 +188,8 @@ class Target extends Component {
     // tcin -> product name, read from the on-disk cache at mount so the list is already annotated
     // on launch rather than blank until a lookup finishes.
     skuTitles: {},
-    // Cookie bank cap, mirrored from settings. Lives here as well as in Settings → Target because
-    // this is where you watch the bank fill, and the control that stops it filling belongs beside it.
-    cookieBank: '',
+    // Dynamic ATC reserve, mirrored from settings. The broker multiplies this by live task demand.
+    atcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK),
     // Cap on how fast a BANKED reserve may be drained, mirrored from settings. Blank = unlimited,
     // which is what shipped before it existed.
     cookieDrain: '',
@@ -218,7 +225,7 @@ class Target extends Component {
     try {
       const st = ipcRenderer.sendSync('getSettings') || {};
       this.setState({
-        cookieBank: st.targetCookieBank == null ? '' : String(st.targetCookieBank),
+        atcCookiesPerTask: normalizeAtcCookiesPerTask(st.targetAtcCookiesPerTask),
         cookieDrain: st.targetCookieDrainPerMin == null ? '' : String(st.targetCookieDrainPerMin),
       });
     } catch {}
@@ -374,16 +381,15 @@ class Target extends Component {
     this.setState({ draft: { ...draft, accountIds: [] } });
   };
 
-  // Blank stays blank: the engine treats an empty value as "no cap", and writing 0 would be a
-  // different thing entirely. Read by the farmer when it spawns, so a change lands on the next
-  // Start rather than needing an app restart.
-  setCookieBank = (v) => {
-    const clean = String(v).replace(/[^0-9]/g, '').slice(0, 4);
-    this.setState({ cookieBank: clean });
+  setAtcCookiesPerTask = (value) => {
+    const targetAtcCookiesPerTask = normalizeAtcCookiesPerTask(value);
+    this.setState({ atcCookiesPerTask: targetAtcCookiesPerTask });
     try {
       const s = ipcRenderer.sendSync('getSettings') || {};
-      ipcRenderer.sendSync('saveSettings', { ...s, targetCookieBank: clean });
+      ipcRenderer.sendSync('saveSettings', { ...s, targetAtcCookiesPerTask });
+      ipcRenderer.sendSync('syncTargetHarvesters');
     } catch {}
+    this.pollBank();
   };
 
   setCookieDrain = (v) => {
@@ -715,11 +721,17 @@ class Target extends Component {
   render() {
     const { target = {}, accounts = [], proxies = {} } = this.props;
     const { tasks = [], taskStatus = {}, proxyStatus = {}, taskLogs = {}, logs = [], monitorStatus } = target;
-    const { draft, expanded, filter, harvesterProxyList, throttleFallbackGroup, selected, skuTitles, skuHover, hoverSku, cookieBank, cookieDrain, menu } = this.state;
+    const { draft, expanded, filter, harvesterProxyList, throttleFallbackGroup, selected, skuTitles, skuHover, hoverSku, atcCookiesPerTask, cookieDrain, menu } = this.state;
 
     const proxyLists = (proxies && proxies.lists) || [];
     const skus = parseSkuBox(target.skus);
     const { bank } = this.state;
+    const bankMetrics = targetBankMetrics(bank);
+    const demandFormula = bankMetrics.demandReported
+      ? bankMetrics.demandBasis === 'paused'
+        ? `${bankMetrics.atcPerTask} per task · paused`
+        : `${bankMetrics.atcPerTask} per task · ${bankMetrics.effectiveTasks} ${bankMetrics.demandBasis || 'active'}`
+      : `${atcCookiesPerTask} per task · waiting for broker`;
 
     const q = filter.trim().toLowerCase();
     // Matches the account OR the live status line, because during a drop the question is almost
@@ -802,29 +814,30 @@ class Target extends Component {
                 as the buttons anyway, so the space above them was already being paid for and sat
                 empty — this uses it and shortens the row. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {/* BANK cap beside the monitor state. It was only in Settings, behind the five-tap
-                  operator gate, with a placeholder that claimed a default of 30 while the real
-                  default was uncapped — so the box everyone left blank never limited anything. The
-                  control that stops the bank filling belongs next to where you watch it fill. */}
+              {/* Dynamic demand belongs beside the live bank: this number is multiplied by active
+                  or standby tasks, so the operator never has to recalculate a fixed pool cap. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div
                   style={CHIP}
-                  title={'Stop farming once this many cookies of each type are banked. At the cap the harvest browsers CLOSE rather than idle, so a full bank costs no proxy data at all; farming restarts when cookies are used or expire. Blank = no limit. Applies on the next Start.'}
+                  title={'Ready add-to-cart cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically.'}
                 >
-                  <span style={{ color: 'var(--muted)', fontWeight: 600, letterSpacing: .3 }}>BANK SIZE</span>
+                  <span style={{ color: 'var(--muted)', fontWeight: 600, letterSpacing: .3 }}>ATC TASK</span>
                   <input
                     className="form-input"
-                    value={cookieBank}
-                    onChange={e => this.setCookieBank(e.target.value)}
-                    placeholder="∞"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={atcCookiesPerTask}
+                    aria-label="Target ATC cookies per task"
+                    onChange={e => this.setAtcCookiesPerTask(e.target.value)}
                     style={{
                       width: 46, height: 20, boxSizing: 'border-box',
                       fontSize: 11, padding: '0 6px', textAlign: 'center',
-                      color: cookieBank ? 'var(--text)' : 'var(--muted)',
+                      color: 'var(--text)',
                     }}
                   />
                 </div>
-                {/* Sits beside BANK SIZE because the two are the same conversation: one caps how
+                {/* Sits beside ATC TASK because the two are the same conversation: one sizes how
                     much you hold, this caps how fast it can leave. */}
                 <div
                   style={CHIP}
@@ -863,9 +876,12 @@ class Target extends Component {
                       <span style={{ color: 'var(--muted)' }}> login</span>
                     </span>
                     <span title="add-to-cart cookies pooled">
-                      <b style={{ color: bank.atc > 0 ? 'var(--ok)' : 'var(--run)' }}>{bank.atc}</b>
+                      <b style={{ color: bank.atc > 0 ? 'var(--ok)' : 'var(--run)' }}>
+                        {bank.atc}/{bankMetrics.demandReported ? bankMetrics.atcTarget : '—'}
+                      </b>
                       <span style={{ color: 'var(--muted)' }}> atc</span>
                     </span>
+                    <span title="Dynamic ATC demand" style={{ color: 'var(--dim)', fontSize: 9 }}>{demandFormula}</span>
                   </>
                 ) : (
                   <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>offline</span>

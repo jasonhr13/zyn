@@ -5,7 +5,7 @@
     "runtime-paths.js": "fc0535fe8243b6acdfa5497134bf481580399332663466fdd3cc628574eaf223",
     "shape-bandwidth.mjs": {
       "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
-      "sha256": "6b7ba30428163122e58e0d8094a4b5c366a2632c63fee1b46ddf7d7c7e1adfec",
+      "sha256": "e0bc22ee98e4f4c1224ac88a90b614e82eff5330c2fe9128630f3ff5e1d06167",
       "adaptation": "Retain the existing image/media/font bandwidth toggle and add Chromium wire-transfer accounting that excludes cache and locally fulfilled requests."
     },
     "shape-browser-pool.mjs": {
@@ -20,23 +20,27 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "0ae51b6c44476316e77f1f2804976bed05c09f8c3747c89b54f81813dbf6028e",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, adaptive performance-based browser selection, configurable worker pacing, and the selectable Target ATC V2 synthetic-PDP flow."
+      "sha256": "976bdd9cef6072d18b29b63681dfc3a07c66db00db18a947210ae44be584e721",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, and Zyn-branded local broker credentials."
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
-      "sha256": "4b06f421113670dd4c340025772820a24016f9e0cb971699595b214636a7f291",
-      "adaptation": "Dedicated Target Login harvesters continuously replenish their login pool while preserving the single in-flight login lane."
+      "sha256": "86068d7450a3be28837e21d9f9cadd4bdcca08c940b6b9886a87bab3a7da7cd6",
+      "adaptation": "Dedicated Target Login harvesters continuously replenish their login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
+    },
+    "shape-bank-demand.mjs": {
+      "sha256": "80dc0fd6f526aec27d2dd026c45a4bcd19b81eecdde817cfe92ff5d2237a8314",
+      "adaptation": "Authenticated, bounded active/standby Target task demand translated into separate Login and ATC bank targets without discarding valid over-target cookies."
     },
     "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
     "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
     "shape-worker-scaler.mjs": "00cd453c4289e99efae40e636d9f97746fb0e6dc6d5d5651fbdee1d986e19b9f",
     "target-atc-v2.html": {
-      "sha256": "935aec9c1ca4139ee674f543422dc05018421e9fe17023c3d09e0824c6290339",
-      "adaptation": "Verbatim synthetic Target PDP recovered from Polar AIO 0.0.45 Target ATC V2 bytecode."
+      "sha256": "5ade2df3499cf21aed936e450c0dc873d83cdbcfd365c117a885f224efdd6ad0",
+      "adaptation": "Synthetic Target PDP reconstructed from the upstream Target ATC V2 behavior, with a Zyn-branded operator-facing harvest cover."
     },
     "target-atc-v2.mjs": {
-      "sha256": "e6172335e5e82a409efedaeb0e9b36644ec3d514cebc161cf381dbc6ddc498b9",
+      "sha256": "fdf853cc16c8bf998ec8718987a2d1b1dddd6573fcc809b3fd7b76ff95e9d8dd",
       "adaptation": "Readable Playwright routing and interaction state machine reconstructed from the recovered Target ATC V2 behavior."
     },
     "target-consent-overlay.mjs": "1d03320ff0c35dae0406a82778cba52a3f3b16ca98618c01af67eab468135827"

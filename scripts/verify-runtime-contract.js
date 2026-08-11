@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { verifyNativeWebhookBrand } = require('./verify-zyn-native-webhook-brand.cjs');
+const { verifyZynPackagedBrand } = require('./verify-zyn-packaged-brand-boundary.cjs');
 
 const projectDir = path.resolve(__dirname, '..');
 const appPath = process.argv[2] && path.resolve(process.argv[2]);
@@ -63,6 +64,14 @@ for (const relative of contract.requiredResources) {
   check(relative, () => assert.equal(fs.existsSync(path.join(appPath, relative)), true, 'is missing'));
 }
 
+check('reviewed Zyn application icon', () => {
+  assert.equal(
+    sha256(path.join(appPath, 'Contents', 'Resources', 'Zyn.icns')),
+    sha256(path.join(projectDir, 'assets', 'brand', 'Zyn.icns')),
+    'packaged Zyn.icns does not match the reviewed Zyn application icon',
+  );
+});
+
 for (const link of remoteRuntime ? [] : contract.symlinks) {
   check(link.path, () => {
     const file = path.join(appPath, link.path);
@@ -107,6 +116,16 @@ check('native Target backend', () => {
   assert.equal(sha256(file), nativeEngine.sha256, 'SHA-256 does not match the architecture contract');
   assert.match(fileDescription(file), appArch === 'x64' ? /Mach-O.*x86_64/ : /Mach-O.*arm64/);
   verifyNativeWebhookBrand(file);
+});
+
+check('complete Zyn brand boundary', () => {
+  assert.ok(nativeEngine, `no native backend contract for ${appArch}`);
+  const resources = path.join(appPath, 'Contents', 'Resources');
+  verifyZynPackagedBrand({
+    resources,
+    engineFile: path.join(appPath, nativeEngine.path),
+    label: appPath,
+  });
 });
 
 check('feature flags', () => {
@@ -175,6 +194,36 @@ check('Zyn runtime branding', () => {
     'packaged native engine bridge does not route local analytics events');
   assert.match(targetEngine, /analyticsRecorder\.record\(m\)/,
     'packaged native engine bridge bypasses the account-bound analytics outbox');
+  assert.match(targetEngine, /toRenderer\('targetOutcome'/,
+    'packaged Target bridge omits per-task checkout outcomes');
+  assert.match(targetEngine, /toRenderer\('targetRunStarted'/,
+    'packaged Target bridge omits per-run checkout reset events');
+  assert.match(targetEngine, /function targetCookieDemand\(\)/,
+    'packaged Target bridge omits dynamic cookie-bank demand');
+  assert.match(targetEngine, /function saveHarvesterCookie\(cookie\)/,
+    'packaged Target bridge omits authenticated extension saves');
+  assert.match(targetEngine, /Number\(listenerPid\(SHAPE_PORT\)\) !== Number\(farmerProc\.pid\)/,
+    'packaged Target bridge does not verify cookie-broker ownership before extension saves');
+  assert.match(targetEngine, /module\.exports = \{[^}]*saveHarvesterCookie/,
+    'packaged Target bridge does not export its narrow extension-save capability');
+  assert.doesNotMatch(targetEngine, /harvesterBrokerToken/,
+    'packaged Target bridge exports its raw broker token');
+  assert.match(targetEngine, /path: '\/demand'/,
+    'packaged Target bridge does not publish cookie-bank demand to the broker');
+  assert.match(targetEngine, /runningTaskIds\.has\(id\)\) acceptTargetCookieTasks\(\[\{ id \}\]\)/,
+    'packaged Target bridge does not scale cookie demand after native-confirmed task starts');
+  assert.match(targetEngine, /releaseTargetCookieTask\(id\)/,
+    'packaged Target bridge does not scale cookie demand after task completion');
+  assert.match(targetEngine, /setTargetCookieStandbyTasks/,
+    'packaged Target bridge omits pre-drop standby demand');
+  assert.match(targetEngine, /let targetHarvestAuthorized = false/,
+    'packaged Target harvest gate does not default closed');
+  assert.match(targetEngine, /if \(!targetHarvestAuthorized\) return;/,
+    'packaged Target broker startup is not license-gated');
+  assert.match(targetEngine, /taskState \+ '\|' \+ running/,
+    'packaged Target bridge can suppress terminal task liveness updates');
+  assert.match(targetEngine, /status\('Limit Reached',[\s\S]{0,120}undefined, false\)/,
+    'packaged Target bridge leaves order-cap refusals looking active');
   assert.match(targetEngine, /function validatePokemonProducts\(/,
     'packaged Pokémon Center bridge omits per-product quantities');
   assert.match(targetEngine, /quantity: product\.quantity/,
@@ -274,7 +323,16 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(farmer, /argOf\('blockHeavyResources', 'true'\)/, 'farmer lacks heavy-resource blocking');
   assert.match(farmer, /activeWorkers: scale\.activeWorkers/, 'farmer omits resolved worker count');
   assert.match(farmer, /configuredWorkers: startedWorkerCount/, 'farmer omits configured worker count');
+  assert.match(farmer, /u\.pathname === '\/demand'/,
+    'farmer broker omits authenticated dynamic bank demand');
+  assert.match(farmer,
+    /u\.pathname === '\/saveCookies'[\s\S]{0,100}if \(!tokenOk\(req\)\)/,
+    'farmer broker accepts unauthenticated extension writes');
+  assert.match(farmer, /demand: \{ \.\.\.runtimeDemand, targets: \{ \.\.\.runtimeTargets \} \}/,
+    'farmer broker does not expose canonical bank demand');
   assert.match(targetEngine, /health: j\.health \|\| null/, 'Zyn drops broker worker health');
+  assert.match(targetEngine, /demand: j\.demand \|\| targetCookieDemand\(\)/,
+    'Zyn drops broker cookie-bank demand');
   assert.match(targetEngine, /lastBankedAt: latestBankedAt\(\)/, 'Zyn drops latest bank success time');
   assert.match(targetEngine, /function editTargetTasks\(config = \{\}\)/,
     'Target bridge omits live task watch-list editing');
@@ -312,6 +370,11 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Search SKU or name/, 'packaged Target product history is not searchable');
   assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
+  assert.match(rendererBundle, /ATC per task/, 'packaged task groups omit the dynamic ATC-per-task control');
+  assert.match(rendererBundle, /per task (?:·|\\xb7)/,
+    'packaged task groups omit the dynamic bank demand formula');
+  assert.match(rendererBundle, /ATC bank needs a harvester/,
+    'packaged task groups omit the dynamic bank deficit warning');
   assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');
   assert.match(rendererBundle, /Broker online/, 'packaged task groups do not distinguish broker reachability');
   assert.match(rendererBundle, /Open Cookie Harvesters/, 'packaged task groups omit the collapsed harvester rail');
@@ -372,7 +435,11 @@ check('architecture-specific auto-update feed', () => {
   const resources = path.join(appPath, 'Contents', 'Resources');
   const updateConfig = fs.readFileSync(path.join(resources, 'app-update.yml'), 'utf8');
   const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
-  assert.match(updateConfig, new RegExp(`url: https://updates\\.rcart\\.app/mac/${appArch}`));
+  assert.match(bootstrap, /setTargetHarvestAuthorized\?\.\(authorized === true\)/,
+    'launcher does not connect Target harvesting to license state');
+  assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,
+    'launcher bypasses the Target engine authenticated extension-save capability');
+  assert.match(updateConfig, new RegExp(`url: https://updates\\.zynbot\\.app/mac/${appArch}`));
   assert.match(updateConfig, new RegExp(`updaterCacheDirName: zyn-updater-${appArch}`));
   assert.match(bootstrap, /process\.arch === 'x64' \? 'x64' : 'arm64'/);
   assert.match(bootstrap, /autoUpdater\.setFeedURL\(\{ provider: 'generic', url: updateUrl \}\)/);

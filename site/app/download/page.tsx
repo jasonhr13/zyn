@@ -44,7 +44,7 @@ function DownloadHeader() {
         <Image src="/zyn-icon.png" alt="" width="44" height="44" unoptimized />
         <span>Zyn</span>
       </Link>
-      <nav aria-label="Download navigation"><a href="mailto:hello@rcart.app?subject=Zyn%20install%20help">Install help</a></nav>
+      <nav aria-label="Download navigation"><a href="mailto:hello@zynbot.app?subject=Zyn%20install%20help">Install help</a></nav>
     </header>
   );
 }
@@ -54,7 +54,7 @@ function DownloadFooter() {
     <footer className="download-footer">
       <Link className="brand" href="/download"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
       <p>Private desktop distribution.</p>
-      <div><a href="mailto:hello@rcart.app?subject=Zyn%20support">Need help?</a><span>© {new Date().getFullYear()} Zyn</span></div>
+      <div><a href="mailto:hello@zynbot.app?subject=Zyn%20support">Need help?</a><span>© {new Date().getFullYear()} Zyn</span></div>
     </footer>
   );
 }
@@ -93,7 +93,7 @@ function LockedDownload({ accessKey, error }: { accessKey?: string; error?: stri
             </button>
           </form>
         ) : (
-          <a className="button button-secondary" href="mailto:hello@rcart.app?subject=Zyn%20download%20access">
+          <a className="button button-secondary" href="mailto:hello@zynbot.app?subject=Zyn%20download%20access">
             Request a new link
           </a>
         )}
@@ -175,7 +175,7 @@ function DownloadChooser({ updateOrigin }: { updateOrigin: string }) {
 
       <div className="download-support">
         <span>Not sure which Mac you have? Open Apple menu → About This Mac.</span>
-        <a href="mailto:hello@rcart.app?subject=Zyn%20install%20help">Installation help →</a>
+        <a href="mailto:hello@zynbot.app?subject=Zyn%20install%20help">Installation help →</a>
       </div>
     </section>
   );

@@ -9,7 +9,7 @@ const { execFileSync } = require('child_process');
 const { URL } = require('url');
 const WebSocket = require('ws');
 
-const DEFAULT_API_BASE = 'https://license.rcart.app';
+const DEFAULT_API_BASE = 'https://license.zynbot.app';
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_QUEUE_EVENT_BYTES = 64 * 1024;
 // Preserve the established device namespace so existing license/device bindings survive rebranding.

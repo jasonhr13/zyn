@@ -79,7 +79,7 @@ native checkout engines are pinned separately in `config/runtime-contract.json` 
 reuse the Cloudflare R2 multipart channel and publish the signed manifest last.
 When Cloudflare restricts authenticated POSTs on the custom download domain, set
 `ZYN_UPLOAD_ORIGIN` to the Worker's direct `workers.dev` URL; public verification still uses
-`ZYN_UPDATE_ORIGIN` and defaults to `https://updates.rcart.app`.
+`ZYN_UPDATE_ORIGIN` and defaults to `https://updates.zynbot.app`.
 
 The production switch requires both:
 
@@ -104,8 +104,8 @@ notarizes and staples the app and DMG, verifies Gatekeeper, and creates the ZIP 
 `latest-mac.yml`. The uploader reuses the existing multipart R2 flow and publishes to
 separate feeds:
 
-- Apple silicon: `https://updates.rcart.app/mac/arm64/latest-mac.yml`
-- Intel: `https://updates.rcart.app/mac/x64/latest-mac.yml`
+- Apple silicon: `https://updates.zynbot.app/mac/arm64/latest-mac.yml`
+- Intel: `https://updates.zynbot.app/mac/x64/latest-mac.yml`
 
 The app selects its feed from `process.arch`; the public download routes are
 `/download/mac/arm64` and `/download/mac/x64`.

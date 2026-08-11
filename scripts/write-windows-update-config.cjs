@@ -12,7 +12,7 @@ if (!appPath || !fs.existsSync(appPath)) {
 const output = path.join(appPath, 'resources', 'app-update.yml');
 fs.writeFileSync(output, [
   'provider: generic',
-  'url: https://updates.rcart.app/windows',
+  'url: https://updates.zynbot.app/windows',
   'updaterCacheDirName: zyn-updater-x64',
   '',
 ].join('\n'), { mode: 0o644 });

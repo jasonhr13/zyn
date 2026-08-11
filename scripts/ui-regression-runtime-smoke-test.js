@@ -67,11 +67,23 @@ async function main() {
       const originalInvoke = ipc.invoke.bind(ipc);
       const originalSendSync = ipc.sendSync.bind(ipc);
       let savedSettings = null;
-      ipc.invoke = (channel, ...args) => channel === 'targetCookieBank'
-        ? Promise.resolve({
+      let harvesterSyncs = 0;
+      ipc.invoke = (channel, ...args) => {
+        if (channel !== 'targetCookieBank') return originalInvoke(channel, ...args);
+        const atcPerTask = Number(savedSettings?.targetAtcCookiesPerTask) || 3;
+        return Promise.resolve({
           login: 0,
           atc: 0,
           proxies: 1200,
+          demand: {
+            mode: 'per-task',
+            basis: 'standby',
+            activeTasks: 0,
+            standbyTasks: 1,
+            effectiveTasks: 1,
+            atcPerTask,
+            targets: { login: 1, atc: atcPerTask },
+          },
           harvesters: [{
             id: 'ui-stopped-harvester', activeWorkers: 5, configuredWorkers: 5,
             route: 'ISP Proxies', browser: 'chrome', startedAt: Date.now() - 3600000,
@@ -90,13 +102,14 @@ async function main() {
               },
             },
           }],
-        })
-        : originalInvoke(channel, ...args);
+        });
+      };
       ipc.sendSync = (channel, ...args) => {
         if (channel === 'getSettings') {
           return {
             ...(originalSendSync(channel, ...args) || {}),
-            targetCookieBank: '64',
+            targetCookieBank: '64', // legacy compatibility value must not drive the visible control
+            targetAtcCookiesPerTask: '3',
             targetHarvestWorkers: '5',
             targetHarvesters: [{
               id: 'ui-stopped-harvester',
@@ -118,6 +131,10 @@ async function main() {
         if (channel === 'saveSettings') {
           savedSettings = args[0];
           return args[0];
+        }
+        if (channel === 'syncTargetHarvesters') {
+          harvesterSyncs += 1;
+          return true;
         }
         return originalSendSync(channel, ...args);
       };
@@ -159,16 +176,16 @@ async function main() {
         .find(element => element.textContent.includes('Target Log Verification'));
       groupRow?.click();
       await wait(250);
-      const bankMaximum = document.querySelector('[aria-label="Target cookie bank maximum size"]');
-      if (!bankMaximum) throw new Error('Cookie bank maximum control was not found');
+      const atcPerTaskInput = document.querySelector('[aria-label="Target ATC cookies per task"]');
+      if (!atcPerTaskInput) throw new Error('ATC cookies-per-task control was not found');
       const nativeInputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      bankMaximum.focus();
-      nativeInputSetter.call(bankMaximum, '80');
-      bankMaximum.dispatchEvent(new Event('input', { bubbles: true }));
-      bankMaximum.dispatchEvent(new Event('change', { bubbles: true }));
+      atcPerTaskInput.focus();
+      nativeInputSetter.call(atcPerTaskInput, '4');
+      atcPerTaskInput.dispatchEvent(new Event('input', { bubbles: true }));
+      atcPerTaskInput.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(60);
-      bankMaximum.blur();
-      bankMaximum.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      atcPerTaskInput.blur();
+      atcPerTaskInput.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
       await wait(100);
       ipc.emit('targetLog', {}, { lines: [
         '[shape] started 3 farmer worker(s): chrome, msedge, chromium',
@@ -208,8 +225,10 @@ async function main() {
         harvesterDrawerText: harvesterDrawer?.textContent.replace(/\\s+/g, ' ').trim() || '',
         harvesterText: harvesterCard?.textContent.replace(/\\s+/g, ' ').trim() || '',
         harvesterDrawerOpen: Boolean(harvesterDrawer && !document.querySelector('.target-harvester-rail')),
-        cookieBankMaximum: bankMaximum.value,
-        savedCookieBankMaximum: savedSettings && savedSettings.targetCookieBank,
+        atcCookiesPerTask: atcPerTaskInput.value,
+        savedAtcCookiesPerTask: savedSettings && savedSettings.targetAtcCookiesPerTask,
+        atcDemandFormula: document.querySelector('#target-atc-demand-formula')?.textContent.trim() || '',
+        harvesterSyncs,
         cookieBankAboveTasks: Boolean(cookieBank && document.querySelector('.group-task-panel')
           && (cookieBank.compareDocumentPosition(document.querySelector('.group-task-panel')) & Node.DOCUMENT_POSITION_FOLLOWING)),
       };
@@ -252,14 +271,17 @@ async function main() {
   assert.match(report.monitorChip, /Monitoring products/);
   assert.equal(report.panelBelowTasks, true);
   assert.match(report.cookieBankText, /Cookie Bank/);
-  assert.match(report.cookieBankText, /Harvesters stopped/);
+  assert.match(report.cookieBankText, /ATC bank needs a harvester/);
   assert.match(report.cookieBankText, /0\s*Login/);
-  assert.match(report.cookieBankText, /0\s*ATC/);
-  assert.match(report.cookieBankText, /Per-type limit/);
+  assert.match(report.cookieBankText, /0\/4\s*ATC/);
+  assert.match(report.cookieBankText, /ATC per task/);
+  assert.match(report.cookieBankText, /4 per task\s*·\s*1 standby/);
+  assert.doesNotMatch(report.cookieBankText, /Per-type limit/);
   assert.match(report.cookieBankText, /Broker online/);
   assert.doesNotMatch(report.cookieBankText, /Workers|Run output|Cooling routes|Top failure/);
   assert.equal(report.harvesterDrawerOpen, true);
   assert.match(report.harvesterRailText, /0\/1/);
+  assert.match(report.harvesterRailText, /Needs ATC/);
   assert.match(report.harvesterRailText, /0\s*Login/);
   assert.match(report.harvesterRailText, /0\s*ATC/);
   assert.match(report.harvesterDrawerText, /Cookie Harvesters/);
@@ -271,8 +293,10 @@ async function main() {
   assert.match(report.harvesterText, /5 configured/);
   assert.match(report.harvesterText, /92 heavy assets blocked/);
   assert.doesNotMatch(report.harvesterText, /5\/5/);
-  assert.equal(report.cookieBankMaximum, '80');
-  assert.equal(report.savedCookieBankMaximum, '80');
+  assert.equal(report.atcCookiesPerTask, '4');
+  assert.equal(report.savedAtcCookiesPerTask, '4');
+  assert.equal(report.atcDemandFormula, '4 per task · 1 standby');
+  assert.ok(report.harvesterSyncs >= 1, 'saving ATC cookies per task must sync the harvesters');
   assert.equal(report.cookieBankAboveTasks, true);
   assert.equal(rendererExceptions, 0);
   assert.equal(rendererErrors, 0);

@@ -32,6 +32,66 @@ assert.match(target, /require\('\.\/manual-captcha-manager'\)/);
 assert.match(target, /require\('\.\/analytics-recorder'\)/);
 assert.match(target, /case 'analytics-event':/);
 assert.match(target, /analyticsRecorder\.record\(m\)/);
+assert.match(target, /toRenderer\('targetOutcome'/,
+  'Target analytics outcomes are not forwarded to the renderer checkout counter');
+assert.match(target, /toRenderer\('targetRunStarted'/,
+  'accepted Target starts do not reset their per-run checkout counter');
+assert.match(target, /m\.running === true && runningTaskIds\.has\(id\)\) acceptTargetCookieTasks\(\[\{ id \}\]\)/,
+  'only an explicitly running native Target status may increase dynamic cookie demand');
+assert.doesNotMatch(target, /m\.running !== false && runningTaskIds\.has\(id\)/,
+  'a Target rejection with an omitted running flag must not increase dynamic cookie demand');
+assert.match(target, /releaseTargetCookieTask\(id\)/,
+  'terminal Target statuses do not reduce dynamic cookie demand');
+assert.match(target, /clearTargetCookieTasks\(\)/,
+  'full Target shutdown does not clear dynamic cookie demand');
+assert.match(target, /pendingStart\.tasks\.filter\(task => String\(task && task\.id \|\| ''\) !== requestedId\)/,
+  'stopping a queued task does not remove it from the pending native start envelope');
+assert.match(target, /path: '\/demand'/,
+  'Target bridge does not publish dynamic demand to the broker');
+assert.match(target, /setTargetCookieStandbyTasks/,
+  'Target bridge does not expose standby prefill demand');
+assert.match(target, /setTargetHarvestAuthorized/,
+  'Target bridge does not expose the reversible license gate');
+assert.match(target, /if \(!targetHarvestAuthorized\) return;/,
+  'Target broker startup is not gated on license authorization');
+assert.match(target,
+  /if \(quitting \|\| !targetHarvestAuthorized \|\| !mine\) \{ brokerPending = false; return; \}/,
+  'a broker port reclaim already in flight can outlive license authorization');
+assert.match(target,
+  /brokerPending = false;\s+if \(quitting \|\| !targetHarvestAuthorized\) return;/,
+  'a broker port-free callback can spawn after license authorization is revoked');
+assert.match(target,
+  /function spawnHarvesterBroker\(script, botDir, env\) \{\s+if \(!targetHarvestAuthorized\) return;/,
+  'the final broker spawn boundary is not fail-closed');
+assert.match(target,
+  /if \(next && targetHarvestAuthorized && !quitting && !farmerProc\) startFarmer\(next\)/,
+  'a queued real farmer can be handed off after license revocation');
+assert.equal((target.match(/quitting \|\| !targetHarvestAuthorized \|\| seq !== startSeq/g) || []).length, 2,
+  'both asynchronous real-farmer port callbacks must recheck license authorization');
+assert.match(target,
+  /function startFarmer\(config\) \{\s+if \(!targetHarvestAuthorized\) return;/,
+  'the real-farmer entry point is not fail-closed');
+assert.match(target,
+  /function spawnFarmer\(config\) \{\s+if \(!targetHarvestAuthorized\) return;/,
+  'the final real-farmer spawn boundary is not fail-closed');
+assert.match(target, /startSeq \+= 1;\s+farmerWanted = null;\s+pendingStart = null;/,
+  'full Target stop does not discard queued real-farmer work');
+assert.match(target, /demand: j\.demand \|\| targetCookieDemand\(\)/,
+  'Target bank UI does not receive broker demand');
+assert.match(target, /function saveHarvesterCookie\(cookie\)/,
+  'Target bridge does not expose a narrow authenticated extension-save capability');
+assert.match(target, /Number\(listenerPid\(SHAPE_PORT\)\) !== Number\(farmerProc\.pid\)/,
+  'extension saves do not verify that Zyn still owns the cookie-broker listener');
+assert.match(target, /'x-zyn-token': SHAPE_TOKEN/,
+  'authenticated extension saves omit the per-launch cookie-broker token');
+assert.match(target, /module\.exports = \{[^}]*saveHarvesterCookie/,
+  'authenticated extension saves are not exported to the launcher');
+assert.doesNotMatch(target, /harvesterBrokerToken/,
+  'Target bridge exports the raw cookie-broker secret instead of a narrow save capability');
+assert.match(target, /taskState \+ '\|' \+ running/,
+  'Target status dedupe omits liveness changes');
+assert.match(target, /status\('Limit Reached',[\s\S]{0,120}undefined, false\)/,
+  'order-cap refusal does not publish a terminal task status');
 assert.match(target, /new engineContract\.TaskSiteRegistry\(\)/);
 assert.match(target, /engineContract\.parseEnvelope\(obj\)/);
 assert.match(target, /engineContract\.parseEnvelope\(data\)/);
@@ -78,6 +138,101 @@ assert.match(target, /qty: Number\(\(taskCheckoutConfigById\.get\(tid\)/,
 const loopStart = target.indexOf('function enforceTargetLoopCheckout(');
 const loopEnd = target.indexOf('\nfunction sendStart(config)', loopStart);
 assert.ok(loopStart >= 0 && loopEnd > loopStart, 'could not isolate Target loop enforcement for behavior testing');
+
+const statusStart = target.indexOf('let lastStatusKeys = {};');
+const statusEnd = target.indexOf('\n// ── engine binary path', statusStart);
+assert.ok(statusStart >= 0 && statusEnd > statusStart, 'could not isolate Target status dedupe for behavior testing');
+const statusEvents = [];
+const statusContext = { toRenderer: (...args) => statusEvents.push(args) };
+vm.runInNewContext(`${target.slice(statusStart, statusEnd)}\nglobalThis.emitTargetStatus = status;`, statusContext);
+statusContext.emitTargetStatus('Successful', '#34ca6e', '', 'task-1', 3, true);
+statusContext.emitTargetStatus('Successful', '#34ca6e', '', 'task-1', 3, false);
+statusContext.emitTargetStatus('Successful', '#34ca6e', '', 'task-1', 3, false);
+assert.equal(statusEvents.length, 2,
+  'an identical terminal status must pass once when running changes true to false, then dedupe');
+
+const ensureBrokerStart = target.indexOf('function ensureHarvesterBroker()');
+const ensureBrokerEnd = target.indexOf('\nfunction spawnHarvesterBroker(', ensureBrokerStart);
+assert.ok(ensureBrokerStart >= 0 && ensureBrokerEnd > ensureBrokerStart,
+  'could not isolate Target broker startup for authorization race testing');
+let reclaimCallback = null;
+let portFreeCallback = null;
+let brokerSpawns = 0;
+const brokerContext = {
+  quitting: false,
+  targetHarvestAuthorized: true,
+  managedHarvesterConfigs: () => [],
+  armHarvesterScheduleSync() {},
+  syncHarvesterProducers() {},
+  farmerProc: null,
+  brokerOnly: false,
+  farmerPending: false,
+  shapeMethodSetting: () => '',
+  botDirPath: () => '/tmp',
+  path: { join: (...parts) => parts.join('/') },
+  fs: { existsSync: () => true },
+  nodeEnvironment: value => value,
+  SHAPE_PORT: 4727,
+  SHAPE_TOKEN: 'test-token',
+  process: { pid: 1 },
+  brokerPending: false,
+  reclaimBrokerPort: callback => { reclaimCallback = callback; },
+  whenPortFree: (_port, callback) => { portFreeCallback = callback; },
+  spawnHarvesterBroker: () => { brokerSpawns += 1; },
+  killTree() {},
+  sweepOrphanHarvesters() {},
+  log() {},
+};
+vm.runInNewContext(
+  `${target.slice(ensureBrokerStart, ensureBrokerEnd)}\nglobalThis.runEnsureHarvesterBroker = ensureHarvesterBroker;`,
+  brokerContext,
+);
+
+brokerContext.runEnsureHarvesterBroker();
+assert.equal(typeof reclaimCallback, 'function');
+brokerContext.targetHarvestAuthorized = false;
+reclaimCallback(true);
+assert.equal(brokerSpawns, 0, 'revocation during broker reclaim spawned a new broker');
+assert.equal(brokerContext.brokerPending, false, 'revocation left broker startup permanently pending');
+
+brokerContext.targetHarvestAuthorized = true;
+brokerContext.runEnsureHarvesterBroker();
+reclaimCallback(true);
+assert.equal(typeof portFreeCallback, 'function');
+brokerContext.targetHarvestAuthorized = false;
+portFreeCallback(true);
+assert.equal(brokerSpawns, 0, 'revocation during broker port probing spawned a new broker');
+assert.equal(brokerContext.brokerPending, false, 'revocation left the port probe permanently pending');
+
+const farmerChainStart = target.indexOf('function farmerChainDone()');
+const farmerChainClose = target.indexOf('\n}\n', farmerChainStart);
+const farmerChainEnd = farmerChainClose < 0 ? -1 : farmerChainClose + 2;
+assert.ok(farmerChainStart >= 0 && farmerChainEnd > farmerChainStart,
+  'could not isolate queued real-farmer handoff for authorization testing');
+let queuedFarmerStarts = 0;
+const farmerChainContext = {
+  farmerPending: true,
+  farmerWanted: { id: 'queued-before-revoke' },
+  targetHarvestAuthorized: false,
+  quitting: false,
+  farmerProc: null,
+  startFarmer: () => { queuedFarmerStarts += 1; },
+};
+vm.runInNewContext(
+  `${target.slice(farmerChainStart, farmerChainEnd)}\nglobalThis.finishFarmerChain = farmerChainDone;`,
+  farmerChainContext,
+);
+farmerChainContext.finishFarmerChain();
+assert.equal(queuedFarmerStarts, 0, 'revocation resurrected a queued real farmer');
+assert.equal(farmerChainContext.farmerWanted, null, 'revocation did not discard queued real-farmer work');
+assert.equal(farmerChainContext.farmerPending, false, 'revocation left real-farmer startup pending');
+
+farmerChainContext.targetHarvestAuthorized = true;
+farmerChainContext.farmerPending = true;
+farmerChainContext.farmerWanted = { id: 'queued-after-reauthorize' };
+farmerChainContext.finishFarmerChain();
+assert.equal(queuedFarmerStarts, 1, 'reauthorization did not restore queued real-farmer handoff');
+
 const loopEvents = { logs: [], sent: [], stopped: [], statuses: [] };
 const loopOrders = { '11111111': 1, '22222222': 0 };
 const loopContext = {

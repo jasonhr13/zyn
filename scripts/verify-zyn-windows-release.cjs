@@ -6,6 +6,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const PELibrary = require('../release-tools/node_modules/pe-library');
+const ResEdit = require('../release-tools/node_modules/resedit');
+const { assertNoLegacyBrand } = require('./verify-zyn-packaged-brand-boundary.cjs');
+const { verifyWindowsReleasePayload } = require('./verify-zyn-release-payload.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const contract = require(path.join(projectRoot, 'config', 'runtime-contract.json'));
@@ -44,6 +48,40 @@ assert.equal(peCertificateSize(installer), 0,
   'Windows installer unexpectedly contains an Authenticode certificate; this channel is intentionally unsigned');
 assert.ok(fs.statSync(installer).size > 1024 * 1024, 'Windows installer is unexpectedly small');
 assert.ok(fs.statSync(blockmap).size > 0, 'Windows blockmap is empty');
+const installerExecutable = PELibrary.NtExecutable.from(fs.readFileSync(installer), { ignoreCert: true });
+const installerResources = PELibrary.NtExecutableResource.from(installerExecutable);
+function iconFingerprints(items) {
+  return items.map((item) => {
+    const icon = item.data || item;
+    return crypto.createHash('sha256').update(Buffer.from(icon.bin)).digest('hex');
+  }).sort();
+}
+const reviewedIconFingerprints = iconFingerprints(
+  ResEdit.Data.IconFile.from(fs.readFileSync(path.join(projectRoot, 'assets', 'brand', 'Zyn.ico'))).icons,
+);
+const installerIconGroups = ResEdit.Resource.IconGroupEntry.fromEntries(installerResources.entries);
+assert.ok(installerIconGroups.length > 0, 'Windows installer has no icon resources');
+for (const group of installerIconGroups) {
+  assert.deepEqual(
+    iconFingerprints(group.getIconItemsFromEntries(installerResources.entries)),
+    reviewedIconFingerprints,
+    'Windows installer icon resources do not match the reviewed Zyn application icon',
+  );
+}
+const installerVersions = ResEdit.Resource.VersionInfo.fromEntries(installerResources.entries);
+assert.ok(installerVersions.length > 0, 'Windows installer has no version information');
+const installerVersionStrings = installerVersions.flatMap((entry) => entry
+  .getAllLanguagesForStringValues()
+  .map((language) => entry.getStringValues(language)));
+assert.ok(installerVersionStrings.length > 0, 'Windows installer has no localized version strings');
+for (const values of installerVersionStrings) {
+  assert.equal(values.ProductName, 'Zyn', 'Windows installer ProductName must be Zyn');
+  assert.equal(values.FileDescription, 'Zyn desktop application',
+    'Windows installer FileDescription must identify Zyn');
+  assert.equal(values.FileVersion, version, 'Windows installer FileVersion is incorrect');
+  assert.equal(values.ProductVersion, version, 'Windows installer ProductVersion is incorrect');
+  assertNoLegacyBrand(JSON.stringify(values), 'Windows installer version information');
+}
 const metadata = fs.readFileSync(metadataPath, 'utf8');
 assert.match(metadata, new RegExp(`^version:\\s*${version.replaceAll('.', '\\.')}\\s*$`, 'm'));
 assert.match(metadata, new RegExp(`^path:\\s*${installerName.replaceAll('.', '\\.')}\\s*$`, 'm'));
@@ -57,4 +95,15 @@ if (!allowDirty) {
   assert.equal(receipt.source.dirty, false, 'Windows release build was created from a dirty worktree');
   assert.equal(receipt.source.commit, head, 'Windows release build does not match HEAD');
 }
+const payload = verifyWindowsReleasePayload({
+  expectedApp: appPath,
+  installer,
+  verifyExtractedApp(extractedApp) {
+    execFileSync(process.execPath, [path.join(__dirname, 'verify-zyn-windows-build.cjs'), extractedApp], {
+      cwd: projectRoot,
+      stdio: 'inherit',
+    });
+  },
+});
+console.log(`Verified NSIS embedded app payload (${payload.entries} entries, sha256 ${payload.sha256}).`);
 console.log(`Zyn ${version} Windows x64 unsigned release verification passed.`);

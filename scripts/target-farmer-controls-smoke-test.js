@@ -31,6 +31,8 @@ for (const key of ['targetCapturesPerLoad', 'targetLoadsPerBrowser', 'targetBloc
 assert.match(settings, /Cookies per page load/);
 assert.match(settings, /Page loads per browser/);
 assert.match(settings, /Block images, video &amp; fonts while farming/);
+assert.match(settings, /targetAtcCookiesPerTask/,
+  'Settings must persist the dynamic ATC reserve per task');
 assert.match(settings, /Math\.max\(1, Math\.min\(maximum, parsed\)\)/, 'UI values are not bounded');
 assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredCaptures\)\)/);
 assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredLoads\)\)/);
@@ -41,6 +43,12 @@ assert.match(engine, /`--browsers=auto`/);
 assert.match(engine, /`--sessionReady=\$\{hasSession\}`/);
 assert.match(engine, /health: j\.health \|\| null/, 'broker worker health is not forwarded to the UI');
 assert.match(engine, /lastBankedAt: latestBankedAt\(\)/, 'latest bank success is not forwarded to the UI');
+assert.match(engine, /function targetCookieDemand\(\)/,
+  'Target bridge is missing dynamic per-task cookie demand');
+assert.match(engine, /path: '\/demand'/,
+  'Target bridge does not publish dynamic demand to the broker');
+assert.match(engine, /demand: j\.demand \|\| targetCookieDemand\(\)/,
+  'canonical broker demand is not forwarded to the UI');
 assert.equal((engine.match(/const env = nodeEnvironment\(/g) || []).length, 3,
   'broker, legacy farmer, and managed producer must all use the packaged native runtime environment');
 assert.match(engine, /'--producer=true'/, 'packaged bridge is missing managed producer launch mode');
@@ -60,11 +68,15 @@ assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,
 const stagedApp = path.join(directory, 'staged-app');
 fs.mkdirSync(path.join(stagedApp, 'public', 'helpers'), { recursive: true });
 for (const relative of [
+  'package.json',
   'public/electron.js',
   'public/index.html',
   'public/helpers/platform.js',
   'public/helpers/monitor-parse.js',
   'public/helpers/discord-monitor.js',
+  'public/helpers/license-client.js',
+  'public/helpers/walmart-engine.js',
+  'public/helpers/target-engine.js',
 ]) {
   const destination = path.join(stagedApp, relative);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -91,6 +103,10 @@ assert.match(farmer, /browserPerformance: browserOptimizer \? browserOptimizer\.
   'per-harvester status omits adaptive browser performance telemetry');
 assert.match(farmer, /failureCategory: category/,
   'browser optimizer cannot distinguish route failures from browser failures');
+assert.match(farmer, /u\.pathname === '\/demand'/,
+  'broker is missing the live dynamic-demand endpoint');
+assert.match(farmer, /bankDemand\.accepts\(type, pool\[type\]\.length/,
+  'broker is not enforcing its authoritative per-type target');
 
 console.log(JSON.stringify({
   ok: true,

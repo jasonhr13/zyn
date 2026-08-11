@@ -64,3 +64,28 @@ rewrite('shared.mjs', source => {
     'account webhook embeds',
   );
 });
+
+rewrite('secret-lair-browserless.mjs', source => {
+  source = replaceExactly(
+    source,
+    'body   : JSON.stringify({\n        embeds: [{',
+    `body   : JSON.stringify({\n        username: 'Zyn',\n        avatar_url: '${avatar}',\n        embeds: [{`,
+    1,
+    'browserless webhook payloads',
+  );
+  return replaceExactly(
+    source,
+    "footer: { text: 'Secret Lair Bot' },",
+    `footer: { text: 'Zyn', icon_url: '${avatar}' },`,
+    1,
+    'browserless webhook footers',
+  );
+});
+
+rewrite('round1-register.mjs', source => replaceExactly(
+  source,
+  'so Hope can run many of these at once:',
+  'so Zyn can run many of these at once:',
+  1,
+  'Round1 product references',
+));

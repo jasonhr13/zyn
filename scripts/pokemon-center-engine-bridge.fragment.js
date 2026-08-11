@@ -8,6 +8,8 @@ let pokemonQueueStreamHealth = { configured: false, connected: false, connecting
 let pokemonQueueStreamLogKey = '';
 
 function pokemonStatus(state, color, detail, taskId, taskState, running) {
+  state = zynBrandText(state);
+  detail = zynBrandText(detail);
   toRenderer('pokemonStatus', {
     taskId: String(taskId || ''), state: String(state || ''), label: String(state || ''),
     color: String(color || ''), detail: String(detail || ''),
@@ -17,7 +19,7 @@ function pokemonStatus(state, color, detail, taskId, taskState, running) {
 }
 
 function pokemonLog(line, taskId = '') {
-  let value = redactProxies(String(line || '')).replace(/[\r\n]+/g, ' ').trim();
+  let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
   if (!value) return;
   if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
   toRenderer('pokemonLog', { taskId: String(taskId || ''), line: value });
@@ -353,7 +355,7 @@ function runningPokemonCenterCount() { return pokemonTaskIds.size; }
 function decodeNativeTaskLog(value) {
   try {
     const input = Buffer.from(String(value || ''), 'base64');
-    const key = Buffer.from('PolarAIO-Task-Log-v1');
+    const key = Buffer.from('Zyn-Task-Log-v1');
     const output = Buffer.alloc(input.length);
     for (let i = 0; i < input.length; i += 1) output[i] = input[i] ^ key[i % key.length];
     return output.toString('utf8');

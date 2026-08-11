@@ -29,7 +29,7 @@ const request = (port, method, requestPath, payload, authenticated = false) => n
   const req = http.request({
     host: '127.0.0.1', port, path: requestPath, method, timeout: 2500,
     headers: {
-      ...(authenticated ? { 'x-hope-token': token } : {}),
+      ...(authenticated ? { 'x-zyn-token': token } : {}),
       ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
     },
   }, (res) => {
@@ -81,7 +81,7 @@ try {
     `--bankFile=${path.join(temporary, 'bank.json')}`,
   ], {
     cwd: botDirectory,
-    env: { ...process.env, HOPE_SHAPE_PORT: String(port), HOPE_SHAPE_TOKEN: token },
+    env: { ...process.env, ZYN_SHAPE_PORT: String(port), ZYN_SHAPE_TOKEN: token },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.on('data', chunk => output.push(String(chunk)));
@@ -99,9 +99,9 @@ try {
     cwd: botDirectory,
     env: {
       ...process.env,
-      HOPE_SHAPE_PORT: String(port),
-      HOPE_SHAPE_TOKEN: token,
-      HOPE_PARENT_WATCH: '1',
+      ZYN_SHAPE_PORT: String(port),
+      ZYN_SHAPE_TOKEN: token,
+      ZYN_PARENT_WATCH: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -141,7 +141,7 @@ try {
   const save = await request(port, 'POST', '/saveCookies', {
     type: 'atc', headers: shapeHeaders, proxy: '127.0.0.1:9000:user:pass',
     expiresAt: Date.now() + 5000, harvesterId: 'proxy', source: 'inBotV2',
-  });
+  }, true);
   assert.equal(save.saved, 1);
   const cookie = await request(port, 'GET', '/cookie?type=atc', null, true);
   assert.equal(cookie.ok, true);
@@ -153,7 +153,7 @@ try {
 
   await request(port, 'POST', '/saveCookies', {
     type: 'login', headers: shapeHeaders, proxy: '', expiresAt: Date.now() + 50, harvesterId: 'home',
-  });
+  }, true);
   await new Promise(resolve => setTimeout(resolve, 100));
   const pruned = await request(port, 'GET', '/status');
   assert.equal(pruned.pools.login, 0, 'per-cookie expiration must be honored by the shared bank');

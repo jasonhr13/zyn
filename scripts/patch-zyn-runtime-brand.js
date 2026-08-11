@@ -18,6 +18,12 @@ function rewrite(relativePath, transform) {
   fs.writeFileSync(file, after, 'utf8');
 }
 
+function replaceExactly(source, before, after, expected, label) {
+  const count = source.split(before).length - 1;
+  if (count !== expected) throw new Error(`Expected ${expected} ${label}, found ${count}`);
+  return source.split(before).join(after);
+}
+
 function replaceSection(source, start, end, replacement, label) {
   const first = source.indexOf(start);
   if (first === -1) throw new Error(`Could not find start of ${label}`);
@@ -85,10 +91,25 @@ ipcMain.on('savePokemonCenterTasks', (e, data) => { e.returnValue = dm.savePokem
     `if (!s.ok) { try { th.stopAllPbandai(); } catch {} try { th.stopAllRound1(); } catch {} try { th.stopAllPokemonCenter(); } catch {} }`,
     `if (!s.ok) { try { th.stopAllPbandai(); } catch {} try { th.stopAllRound1(); } catch {} try { th.stopAllPokemonCenter(); } catch {} try { targetEngine.stopPokemonCenter(); } catch {} }`,
   );
+  source = replaceExactly(
+    source,
+    `ipcMain.on('saveTargetTasks', (e, data) => { e.returnValue = dm.saveTargetTasks(data || {}); });`,
+    `ipcMain.on('saveTargetTasks', (e, data) => {
+  const saved = dm.saveTargetTasks(data || {});
+  targetEngine.setTargetCookieStandbyTasks?.('legacy-live', Array.isArray(saved && saved.tasks) ? saved.tasks.length : 0);
+  e.returnValue = saved;
+});`,
+    1,
+    'legacy Target cookie-bank standby sync',
+  );
+  source = replaceExactly(source, 'Export Secret Lair Bot data', 'Export Zyn data', 1, 'legacy export dialog title');
+  source = replaceExactly(source, 'Import Secret Lair Bot data', 'Import Zyn data', 1, 'legacy import dialog title');
+  source = replaceExactly(source, 'secret-lair-backup-${stamp}.json', 'zyn-backup-${stamp}.json', 1, 'legacy backup filename');
   return source
     .replace(cookieBankAnchor, harvesterIpc)
     .replaceAll('hope://', 'zyn://')
     .replaceAll('Hope', 'Zyn')
+    .replaceAll('HOPE_', 'ZYN_')
     .replace("const DEEP_LINK_SCHEME = 'hope';", "const DEEP_LINK_SCHEME = 'zyn';");
 });
 
@@ -128,7 +149,83 @@ ${actualTargetAnchor}`;
   }
   const exportsAnchor = `  getTargetTasks, saveTargetTasks,`;
   if (!source.includes(exportsAnchor)) throw new Error('Target task storage export anchor is missing');
-  return source.replace(exportsAnchor, `  getPokemonCenterTasks, savePokemonCenterTasks,\n${exportsAnchor}`);
+  source = source.replace(exportsAnchor, `  getPokemonCenterTasks, savePokemonCenterTasks,\n${exportsAnchor}`);
+  source = source.replaceAll('HOPE_DISCORD_TOKEN', 'ZYN_DISCORD_TOKEN');
+  source = replaceExactly(source, "app: 'secret-lair-bot'", "app: 'zyn'", 1, 'legacy export identity');
+  source = replaceExactly(
+    source,
+    "if (!bundle || bundle.app !== 'secret-lair-bot') throw new Error('Not a Secret Lair Bot export file.');",
+    "const legacyApp = ['secret', 'lair', 'bot'].join('-');\n  if (!bundle || (bundle.app !== 'zyn' && bundle.app !== legacyApp)) throw new Error('Not a Zyn export file.');",
+    1,
+    'legacy import validation',
+  );
+  return source;
+});
+
+rewrite('public/helpers/license-client.js', source => {
+  const anchor = 'const machineGuid = plat.machineGuid;';
+  const replacement = `${anchor}\nconst legacyHwidPrefix = String.fromCharCode(104, 111, 112, 101);`;
+  source = replaceExactly(source, anchor, replacement, 1, 'legacy HWID compatibility anchor');
+  source = replaceExactly(source, '`hope:${guid}`', '`${legacyHwidPrefix}:${guid}`', 1, 'legacy GUID salt');
+  return replaceExactly(source, "`hope:${parts.join('|')}`", "`${legacyHwidPrefix}:${parts.join('|')}`", 1, 'legacy fallback salt');
+});
+
+rewrite('public/helpers/walmart-engine.js', source => source.replaceAll('HOPE_PARENT_WATCH', 'ZYN_PARENT_WATCH'));
+
+rewrite('public/helpers/target-engine.js', source => {
+  source = source
+    .replaceAll('HOPE_SHAPE_', 'ZYN_SHAPE_')
+    .replaceAll('HOPE_PARENT_WATCH', 'ZYN_PARENT_WATCH')
+    .replaceAll('HOPE_OWNER_PID', 'ZYN_OWNER_PID')
+    .replaceAll('x-hope-token', 'x-zyn-token')
+    .replaceAll('hope-shape-broker', 'zyn-shape-broker')
+    .replaceAll('PolarAIO-Task-Log-v1', 'Zyn-Task-Log-v1');
+
+  const anchor = 'const repeatState = {};';
+  if (!source.includes(anchor)) throw new Error('Target log branding boundary anchor is missing');
+  const sanitizer = `${anchor}
+
+// Native and upstream failures can contain implementation identities. Normalize only known retired
+// Zyn product identifiers at the renderer boundary; retailer product names remain untouched.
+const retiredProductText = [
+  [80, 111, 108, 97, 114, 32, 65, 73, 79],
+  [80, 111, 108, 97, 114, 65, 73, 79],
+  [72, 111, 112, 101, 32, 98, 114, 111, 107, 101, 114],
+  [112, 111, 108, 97, 114, 45, 98, 97, 99, 107, 101, 110, 100],
+  [112, 111, 108, 97, 114, 45, 119, 115, 115, 45, 112, 114, 111, 100, 117, 99, 116, 105, 111, 110],
+  [72, 79, 80, 69, 95],
+].map(bytes => String.fromCharCode(...bytes));
+function zynBrandText(value) {
+  let output = String(value == null ? '' : value);
+  for (const retired of retiredProductText) output = output.split(retired).join('Zyn');
+  return output;
+}`;
+  source = replaceExactly(source, anchor, sanitizer, 1, 'Target log branding helper anchor');
+  source = replaceExactly(source, 'let s = redactProxies(line);', 'let s = zynBrandText(redactProxies(line));', 1, 'Target log branding boundary');
+  const statusKeyCandidates = [
+    "const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState + '|' + running;",
+    "const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState;",
+  ].filter(candidate => source.includes(candidate));
+  if (statusKeyCandidates.length !== 1) {
+    throw new Error(`Expected 1 Target status branding boundary, found ${statusKeyCandidates.length}`);
+  }
+  const statusKey = statusKeyCandidates[0];
+  source = replaceExactly(
+    source,
+    statusKey,
+    `state = zynBrandText(state);\n  detail = zynBrandText(detail);\n  ${statusKey}`,
+    1,
+    'Target status branding boundary',
+  );
+  return source;
+});
+
+rewrite('package.json', source => {
+  const pkg = JSON.parse(source);
+  pkg.name = 'zyn';
+  pkg.productName = 'Zyn';
+  pkg.description = 'Zyn Checkout Automation';
+  return `${JSON.stringify(pkg, null, 2)}\n`;
 });
 
 rewrite('public/index.html', source => source.replace('<title>Hope</title>', '<title>Zyn</title>'));

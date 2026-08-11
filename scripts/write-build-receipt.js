@@ -68,7 +68,7 @@ const receipt = {
   features: FEATURES,
   runtime: {
     delivery: runtimeMode,
-    manifest: runtimeMode === 'remote' ? 'https://updates.rcart.app/runtimes/zyn-manifest-v1.json' : '',
+    manifest: runtimeMode === 'remote' ? 'https://updates.zynbot.app/runtimes/zyn-manifest-v1.json' : '',
     backendSha256: runtimeHash('engine/backend'),
   },
 };

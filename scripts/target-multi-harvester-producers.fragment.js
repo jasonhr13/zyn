@@ -53,10 +53,10 @@ function spawnHarvesterProducer(config) {
     if (config.proxyListName) return;
   }
 
-  const env = nodeEnvironment({ FORCE_COLOR: '0', HOPE_SHAPE_PORT: String(SHAPE_PORT), HOPE_SHAPE_TOKEN: SHAPE_TOKEN,
+  const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    HOPE_PARENT_WATCH: '1', HOPE_OWNER_PID: String(process.pid) });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid) });
 
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}
@@ -154,5 +154,6 @@ function armHarvesterScheduleSync() {
 function syncTargetHarvesters(mainWindow) {
   if (mainWindow) attachWindow(mainWindow);
   ensureHarvesterBroker();
+  syncTargetCookieBankDemand();
   return true;
 }

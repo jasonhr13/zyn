@@ -16,7 +16,7 @@ if (!appPath || !fs.existsSync(appPath) || !['arm64', 'x64'].includes(arch)) {
 const output = path.join(appPath, 'Contents', 'Resources', 'app-update.yml');
 const body = [
   'provider: generic',
-  `url: https://updates.rcart.app/mac/${arch}`,
+  `url: https://updates.zynbot.app/mac/${arch}`,
   `updaterCacheDirName: zyn-updater-${arch}`,
   '',
 ].join('\n');

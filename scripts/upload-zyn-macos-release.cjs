@@ -12,7 +12,7 @@ if (!['arm64', 'x64'].includes(arch)) {
 const version = contract.product.version;
 const dist = path.join(projectRoot, 'release', 'dist', arch);
 const updateOrigin = (process.env.ZYN_UPDATE_ORIGIN
-  || 'https://updates.rcart.app').replace(/\/+$/, '');
+  || 'https://updates.zynbot.app').replace(/\/+$/, '');
 const uploadOrigin = (process.env.ZYN_UPLOAD_ORIGIN || updateOrigin).replace(/\/+$/, '');
 const prefix = process.env.ZYN_R2_PREFIX || `mac/${arch}`;
 const keychainAccount = process.env.ZYN_UPDATE_KEYCHAIN_ACCOUNT || 'zyn-updates';

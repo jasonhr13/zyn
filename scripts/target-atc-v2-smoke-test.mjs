@@ -20,8 +20,11 @@ const htmlFile = path.join(root, 'native-farmer', 'target-atc-v2.html');
 const template = fs.readFileSync(htmlFile, 'utf8');
 const sha256 = crypto.createHash('sha256').update(template).digest('hex');
 
-assert.equal(sha256, '935aec9c1ca4139ee674f543422dc05018421e9fe17023c3d09e0824c6290339',
-  'the recovered synthetic PDP must remain byte-for-byte intact');
+assert.equal(sha256, '5ade2df3499cf21aed936e450c0dc873d83cdbcfd365c117a885f224efdd6ad0',
+  'the Zyn synthetic PDP must remain byte-for-byte intact');
+assert.match(template, /<title>Zyn<\/title>/);
+assert.match(template, /class="zyn-mark">Zyn<\/div>/);
+assert.doesNotMatch(template, /Polar(?:\s*AIO)?|__polar/i);
 assert.equal(extractTargetAtcV2Tcin('https://www.target.com/p/example/-/A-12345678'), '12345678');
 assert.equal(extractTargetAtcV2Tcin('invalid'), '90188801');
 

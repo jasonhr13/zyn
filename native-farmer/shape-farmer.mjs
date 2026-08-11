@@ -10,7 +10,9 @@
 // TWO PARTS IN ONE PROCESS:
 //   1. Broker  — HTTP server on 127.0.0.1:4727 that the engine polls. Endpoints mirror the reference implementation's:
 //        GET  /cookie?type=login|atc&wait=1&timeout=ms   -> { ok, cookie: { headers, proxy } }
-//        POST /saveCookies  { type, headers, proxy }      -> inject a cookie (manual harvest / testing)
+//        POST /saveCookies  { type, headers, proxy }      -> inject a cookie (authenticated in-app)
+//        POST /demand       { activeTasks, standbyTasks, atcPerTask, basis }
+//                                                          -> update live per-task bank targets
 //        POST /session-ready                              -> unlock staggered ATC farming after login
 //        GET  /status                                     -> pool sizes
 //        (GET /proxies is gone — it returned the pool, credentials and all, to any local caller)
@@ -21,7 +23,7 @@
 // specifically built to resist header reuse, so the trigger/capture almost certainly needs live
 // tuning against Target's current Shape build (run headful, watch which request carries the
 // x-gyjwza5z-* headers, adjust). The broker means you can validate the whole chain immediately by
-// POSTing one manually-harvested cookie to /saveCookies.
+// POSTing one manually-harvested cookie to /saveCookies with x-zyn-token when the app supplied one.
 
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -31,6 +33,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { makePersona, personaInitScript, makeContextOptions, createHuman } from './harvest-persona.mjs';
 import { createHarvestCoordinator } from './shape-harvest-coordinator.mjs';
+import { createBankDemand } from './shape-bank-demand.mjs';
 import {
   classifyHarvestPageEvidence, classifyHarvestFailure, createHarvestHealth,
 } from './shape-harvest-health.mjs';
@@ -49,19 +52,19 @@ import {
   installHeavyResourceBlock,
 } from './shape-bandwidth.mjs';
 
-// Broker port. Read from the env the app sets (HOPE_SHAPE_PORT) so the app, this farmer, and the
+// Broker port. Read from the env the app sets (ZYN_SHAPE_PORT) so the app, this farmer, and the
 // Go engine cannot drift apart — three hardcoded copies is how the engine ended up dialling a port
 // nobody was listening on. The literal is only the standalone-run default.
-const PORT = Number(process.env.HOPE_SHAPE_PORT) || 4727;
+const PORT = Number(process.env.ZYN_SHAPE_PORT) || 4727;
 const HOST = '127.0.0.1';
 const MAX_FARMER_WORKERS = 100;
 // Per-launch secret from the app, shared with the engine through its environment. Empty when the
 // farmer is run standalone (no app), in which case /cookie stays open exactly as before rather than
 // becoming unusable — a bare farmer has no engine to authenticate anyway.
-const TOKEN = process.env.HOPE_SHAPE_TOKEN || '';
+const TOKEN = process.env.ZYN_SHAPE_TOKEN || '';
 function tokenOk(req) {
   if (!TOKEN) return true;
-  const sent = Buffer.from(String(req.headers['x-hope-token'] || ''), 'utf8');
+  const sent = Buffer.from(String(req.headers['x-zyn-token'] || ''), 'utf8');
   const want = Buffer.from(TOKEN, 'utf8');
   return sent.length === want.length && crypto.timingSafeEqual(sent, want);
 }
@@ -194,6 +197,7 @@ function bandwidthStatusPayload() {
 // demand/cap coordinator can avoid farming past a shared ceiling while every producer feeds the
 // same broker on :4727.
 const producerBank = { login: 0, atc: 0 };
+const producerWaiters = { login: 0, atc: 0 };
 const producerStatusById = new Map();
 let producerLastSuccessAt = 0;
 // Soft bank target per type. Workers harvest until the bank reaches this depth, then close their
@@ -201,8 +205,15 @@ let producerLastSuccessAt = 0;
 // idle browser/proxy sessions open or farming continuously without a cap.
 // 0 = uncapped (TTL-only prune; max bandwidth). Default 50 is deep enough for drops while not
 // burning proxies topping up past 70 forever on a 10-minute TTL.
-const TARGET_POOL = parseInt(argOf('poolSize', '50'), 10);
-const UNCAPPED = !(TARGET_POOL > 0);
+const LEGACY_TARGET_POOL = parseInt(argOf('poolSize', '50'), 10);
+const bankDemand = createBankDemand({ legacyPool: LEGACY_TARGET_POOL });
+const initialDemand = bankDemand.snapshot();
+// A producer does not own the bank and must not speculate from a stale CLI cap while the broker is
+// still starting. Park both lanes until its first /status response supplies the authoritative target.
+let runtimeTargets = PRODUCER_MODE ? { login: 0, atc: 0 } : initialDemand.targets;
+let runtimeDemand = PRODUCER_MODE
+  ? { ...initialDemand.demand, targets: { ...runtimeTargets } }
+  : initialDemand.demand;
 // Abort image/media only (never scripts) so Shape still runs but PDPs cost far less proxy GB.
 const BLOCK_HEAVY_RESOURCES = blockHeavyResourcesEnabled(argOf('blockHeavyResources', 'true'));
 const ALLOWED = argOf('types', 'login,atc').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
@@ -211,12 +222,18 @@ const WORKER_STAGGER_MS = parseInt(argOf('workerStaggerMs', '2000'), 10);
 const INTERVAL_DELAY_MS = Math.max(0, parseInt(argOf('intervalDelayMs', '0'), 10) || 0);
 const harvestCoordinator = createHarvestCoordinator({
   allowedTypes: ALLOWED,
-  targetPool: TARGET_POOL,
+  targetPool: LEGACY_TARGET_POOL,
+  targetPools: runtimeTargets,
   sessionReady: SESSION_READY_AT_START,
   loginConcurrency: 1,
   continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login',
   workerStaggerMs: WORKER_STAGGER_MS,
 });
+function setRuntimeTargets(nextTargets) {
+  const coordination = harvestCoordinator.setTargets(nextTargets);
+  runtimeTargets = coordination.targets;
+  return runtimeTargets;
+}
 const harvestHealth = createHarvestHealth();
 let startedWorkerCount = 0;
 let farmerBrowser = { key: 'chromium', channel: 'chromium', mode: 'not-started' };
@@ -391,7 +408,7 @@ function brokerRequest(method, requestPath, payload, callback, attempt = 0) {
     method,
     timeout: 2500,
     headers: {
-      ...(TOKEN ? { 'x-hope-token': TOKEN } : {}),
+      ...(TOKEN ? { 'x-zyn-token': TOKEN } : {}),
       ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
     },
   }, (res) => {
@@ -440,9 +457,32 @@ function submitCookieToBroker(type, cookie) {
 function refreshProducerBank() {
   if (!PRODUCER_MODE) return;
   brokerRequest('GET', '/status', null, (error, status) => {
-    if (error || !status || !status.pools) return;
+    const pauseUntilAuthoritativeDemand = () => {
+      producerWaiters.login = 0;
+      producerWaiters.atc = 0;
+      setRuntimeTargets({ login: 0, atc: 0 });
+      runtimeDemand = {
+        ...runtimeDemand, basis: 'paused', effectiveTasks: 0, targets: { ...runtimeTargets },
+      };
+    };
+    // Producers do not own demand. Stay fail-closed before the parent publishes its first
+    // per-task target and whenever the broker becomes unreachable; otherwise a stale high target
+    // can burn proxies in a harvest/failed-submit loop during broker recovery.
+    if (error || !status || !status.pools || status.demand?.mode !== 'per-task') {
+      pauseUntilAuthoritativeDemand();
+      return;
+    }
     producerBank.login = Math.max(0, Number(status.pools.login) || 0);
     producerBank.atc = Math.max(0, Number(status.pools.atc) || 0);
+    producerWaiters.login = Math.max(0, Number(status.activity?.waiting?.login) || 0);
+    producerWaiters.atc = Math.max(0, Number(status.activity?.waiting?.atc) || 0);
+    const brokerTargets = status.demand.targets || status.targets;
+    if (!brokerTargets || typeof brokerTargets !== 'object') {
+      pauseUntilAuthoritativeDemand();
+      return;
+    }
+    setRuntimeTargets(brokerTargets);
+    runtimeDemand = { ...status.demand, targets: { ...runtimeTargets } };
   });
 }
 
@@ -465,6 +505,8 @@ function producerStatusPayload() {
     browserPerformance: browserOptimizer ? browserOptimizer.snapshot() : null,
     lastSuccessAt: producerLastSuccessAt,
     startedAt: activity.startedAt,
+    demand: { ...runtimeDemand, targets: { ...runtimeTargets } },
+    targets: { ...runtimeTargets },
   };
 }
 
@@ -483,8 +525,9 @@ const server = http.createServer((req, res) => {
     // credential per call. Only the engine consumes this, and the engine is our own child — it gets
     // the token in its environment. /status stays open on purpose: it carries no secret (pid and
     // counts), and the app probes it to identify an orphaned broker before reclaiming the port, which
-    // happens across launches when the token has already been regenerated. /saveCookies stays open
-    // because the browser extension posts to it and cannot be handed a per-launch secret.
+    // happens across launches when the token has already been regenerated. External browser clients
+    // go through the main-process compatibility bridge, which adds the per-launch token without
+    // exposing it to Chrome.
     if (!tokenOk(req)) { json({ ok: false, error: 'unauthorized' }, 401); return; }
     const type = (u.searchParams.get('type') || 'login').toLowerCase();
     const wait = u.searchParams.get('wait') === '1';
@@ -502,7 +545,27 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (req.method === 'POST' && u.pathname === '/demand') {
+    // Demand controls how much proxy-backed work every producer performs, so only the parent app
+    // may mutate it. Producers learn the canonical targets from /status and never choose their own.
+    if (!tokenOk(req)) { json({ ok: false, error: 'unauthorized' }, 401); return; }
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 64000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const next = bankDemand.apply(JSON.parse(body || '{}'));
+        runtimeDemand = next.demand;
+        setRuntimeTargets(next.targets);
+        log(`bank demand: basis=${runtimeDemand.basis} active=${runtimeDemand.activeTasks}`
+          + ` standby=${runtimeDemand.standbyTasks} effective=${runtimeDemand.effectiveTasks}`
+          + ` targets login=${runtimeTargets.login} atc=${runtimeTargets.atc}`);
+        json({ ok: true, demand: { ...runtimeDemand, targets: { ...runtimeTargets } } });
+      } catch (error) { json({ ok: false, error: error.message }, 400); }
+    });
+    return;
+  }
   if (req.method === 'POST' && u.pathname === '/saveCookies') {
+    if (!tokenOk(req)) { json({ ok: false, error: 'unauthorized' }, 401); return; }
     let body = '';
     req.on('data', d => { body += d; if (body.length > 1e6) req.destroy(); });
     req.on('end', () => {
@@ -513,7 +576,7 @@ const server = http.createServer((req, res) => {
         for (const it of items) {
           const type = (it.type || 'login').toLowerCase() === 'atc' ? 'atc' : 'login';
           prune(type);
-          if (!UNCAPPED && !waiters[type].length && pool[type].length >= TARGET_POOL) continue;
+          if (!bankDemand.accepts(type, pool[type].length, waiters[type].length > 0)) continue;
           if (pushCookie(type, it.headers || {}, it.proxy || '', {
             expiresAt: Number(it.expiresAt) || 0,
             harvesterId: it.harvesterId,
@@ -597,9 +660,11 @@ const server = http.createServer((req, res) => {
       .map(item => ({ ...item }));
     const producerWorkers = harvesters.reduce((sum, item) => sum + (Number(item.activeWorkers) || 0), 0);
     const producerConfigured = harvesters.reduce((sum, item) => sum + (Number(item.configuredWorkers) || 0), 0);
-    json({ ok: true, app: 'hope-shape-broker', pid: process.pid,
-           owner: Number(process.env.HOPE_OWNER_PID) || 0,
+    const demandStatus = bankDemand.snapshot();
+    json({ ok: true, app: 'zyn-shape-broker', pid: process.pid,
+           owner: Number(process.env.ZYN_OWNER_PID) || 0,
            pools: { login: pool.login.length, atc: pool.atc.length }, proxies: PROXIES.length,
+           demand: demandStatus.demand, targets: demandStatus.targets,
            harvesters,
            activity: {
              startedAt: activity.startedAt,
@@ -1347,7 +1412,7 @@ async function farmerWorker(id, initialBrowser) {
     // critical section: all workers may observe an empty pool, but only one can claim login.
     const reservation = harvestCoordinator.reserve({
       pools: PRODUCER_MODE ? producerBank : pool,
-      waiters,
+      waiters: PRODUCER_MODE ? producerWaiters : waiters,
       workerId: id,
       unavailableTypes: harvestHealth.coolingTypes(),
     });
@@ -1365,6 +1430,7 @@ async function farmerWorker(id, initialBrowser) {
     let failure = '';
     let failureCategory = '';
     let banked = 0;
+    let parkedByTarget = false;
     let wasReused = false;
     let bandwidth = null;
     let proxy = sessionProxy;
@@ -1410,13 +1476,20 @@ async function farmerWorker(id, initialBrowser) {
         for (const captured of batch) {
           // A multi-capture page may reach a configured bank ceiling in one load. Waiting engine
           // requests still take priority; otherwise stop at the target instead of overshooting it.
-          // Uncapped banks never short-circuit — TTL prune is the only depth limit.
+          // A null target is legacy uncapped mode; dynamic zero explicitly parks prewarm.
           const bankDepth = PRODUCER_MODE ? producerBank[type] : pool[type].length;
-          if (!UNCAPPED && !waiters[type].length && bankDepth >= TARGET_POOL) break;
+          const waitingDepth = PRODUCER_MODE ? producerWaiters[type] : waiters[type].length;
+          const target = runtimeTargets[type];
+          if (target !== null && !waitingDepth && bankDepth >= target) {
+            parkedByTarget = true;
+            break;
+          }
           if (pushCookie(type, captured, proxy ? proxy.raw : '', { source })) banked++;
         }
         harvested = banked > 0;
-        if (!harvested) failure = fail || (headers ? 'captured signature could not be banked' : 'timeout');
+        if (!harvested && !parkedByTarget) {
+          failure = fail || (headers ? 'captured signature could not be banked' : 'timeout');
+        }
       }
     } catch (e) {
       bandwidth = e && e.bandwidth || bandwidth;
@@ -1424,6 +1497,12 @@ async function farmerWorker(id, initialBrowser) {
     }
     finally { reservation.release({ success: harvested }); }
     recordTransferSample(type, bandwidth, banked, !!proxy);
+    if (parkedByTarget && !harvested) {
+      log(`farmer worker ${id} [${selectedBrowser.key}]: ${type} target changed while harvesting; parking`);
+      await endSession();
+      await sleep(Math.max(500, INTERVAL_DELAY_MS));
+      continue;
+    }
     if (harvested) {
       if (browserOptimizer) browserOptimizer.recordOutcome({
         workerId: id,
@@ -1496,9 +1575,10 @@ function startFarming(browserMode) {
     const browserLeader = optimization
       ? optimization.learning ? 'learning' : optimization.leader?.key || 'none'
       : '';
-    const cap = UNCAPPED ? '' : `/${TARGET_POOL}`;
+    const loginCap = runtimeTargets.login === null ? '' : `/${runtimeTargets.login}`;
+    const atcCap = runtimeTargets.atc === null ? '' : `/${runtimeTargets.atc}`;
     const counts = PRODUCER_MODE ? producerBank : { login: pool.login.length, atc: pool.atc.length };
-    log(`bank: login=${counts.login}${cap} atc=${counts.atc}${cap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
+    log(`bank: login=${counts.login}${loginCap} atc=${counts.atc}${atcCap} (ttl ${Math.round(COOKIE_TTL_MS / 1000)}s)`
       + ` | health ok=${health.successes.total} fail=${health.failures.total}`
       + ` blocked=${health.failures.byCategory.target_block} cooldown=${cooling}`
       + ` localized=${health.backpressure.localizedFailures} quarantined=${health.quarantinedProxies}`
@@ -1575,9 +1655,10 @@ if (PRODUCER_MODE) {
     ? { key: 'chromium', channel: 'chromium', mode: 'broker-only' }
     : { key: 'pool', channel: '', mode: browserMode };
   log(`broker listening on http://${HOST}:${PORT}  (proxies: ${PROXIES.length}, browser: ${farmerBrowser.mode}`
-    + `, bank ${UNCAPPED ? 'uncapped' : `soft-target ${TARGET_POOL}`}`
+    + `, bank ${runtimeTargets.login === null && runtimeTargets.atc === null
+      ? 'uncapped' : `soft-target login=${runtimeTargets.login} atc=${runtimeTargets.atc}`}`
     + `, heavy-resources ${BLOCK_HEAVY_RESOURCES ? 'blocked' : 'allowed'})`);
-  if (farmingDisabled) { log('farmer disabled (--noFarm) — broker only, feed cookies via POST /saveCookies'); return; }
+  if (farmingDisabled) { log('farmer disabled (--noFarm) — authenticated broker-only mode'); return; }
     startFarming(browserMode);
   });
 }
@@ -1601,7 +1682,7 @@ process.on('SIGINT', () => process.exit(0));
 // polling process.kill(ppid, 0) because that is defeated by PID reuse.
 //
 // Gated on the env var the app sets, so a hand-launched standalone broker is unaffected.
-if (process.env.HOPE_PARENT_WATCH === '1') {
+if (process.env.ZYN_PARENT_WATCH === '1') {
   process.stdin.resume();
   const bye = () => process.exit(0);
   process.stdin.on('end', bye);

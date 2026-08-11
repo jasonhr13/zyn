@@ -8,6 +8,7 @@ try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
 const MAX_SHAPE_CAPTURES_PER_LOAD = 10;
 const MAX_SHAPE_LOADS_PER_BROWSER = 10;
+const DEFAULT_ATC_COOKIES_PER_TASK = 3;
 
 const FieldHelp = ({ children, align = 'left' }) => (
   <span className={`field-help${align === 'right' ? ' field-help-right' : ''}`}>
@@ -28,6 +29,11 @@ const normalizeShapeThroughput = (value, maximum, fallback) => {
   return String(Number.isFinite(parsed) ? Math.max(1, Math.min(maximum, parsed)) : fallback);
 };
 
+const normalizeAtcCookiesPerTask = value => {
+  const parsed = Number.parseInt(String(value == null ? '' : value).trim(), 10);
+  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+};
+
 class Settings extends Component {
   constructor(props) {
     super(props);
@@ -36,9 +42,9 @@ class Settings extends Component {
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
-      targetAtcHarvestTcins: '', targetCookieBank: '', targetHarvestWorkers: '', targetCookieTtlSec: '',
+      targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
-      targetVerboseLogs: false, shapeMethod: 'In Bot',
+      targetVerboseLogs: false, shapeMethod: 'In Bot', targetHarvesterExtensionId: '',
       licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -54,7 +60,7 @@ class Settings extends Component {
       // Blank means "use the engine default" — the placeholders show what that default is, so an empty
       // box is never ambiguous. targetAtcHarvestTcin (singular) is the legacy key for the same setting.
       targetAtcHarvestTcins: s.targetAtcHarvestTcins || s.targetAtcHarvestTcin || '',
-      targetCookieBank: s.targetCookieBank == null ? '' : String(s.targetCookieBank),
+      targetAtcCookiesPerTask: normalizeAtcCookiesPerTask(s.targetAtcCookiesPerTask),
       targetHarvestWorkers: s.targetHarvestWorkers == null ? '' : String(s.targetHarvestWorkers),
       targetCookieTtlSec: s.targetCookieTtlSec == null ? '' : String(s.targetCookieTtlSec),
       targetCapturesPerLoad: String(s.targetCapturesPerLoad || 1),
@@ -62,6 +68,7 @@ class Settings extends Component {
       targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!s.targetVerboseLogs,
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
+      targetHarvesterExtensionId: String(s.targetHarvesterExtensionId || '').trim().toLowerCase(),
     });
   }
 
@@ -114,8 +121,7 @@ class Settings extends Component {
       // too, so a pasted Target link survives, but stray spaces/newlines from a paste would otherwise
       // reach --atcTcins verbatim and break the argument.
       targetAtcHarvestTcins: this.state.targetAtcHarvestTcins.split(/[\s,]+/).filter(Boolean).join(','),
-      // Empty stays empty so the engine keeps falling back to its own default rather than to 0.
-      targetCookieBank: this.state.targetCookieBank.trim(),
+      targetAtcCookiesPerTask: normalizeAtcCookiesPerTask(this.state.targetAtcCookiesPerTask),
       targetHarvestWorkers: this.state.targetHarvestWorkers.trim(),
       targetCookieTtlSec: this.state.targetCookieTtlSec.trim(),
       targetCapturesPerLoad: normalizeShapeThroughput(
@@ -125,8 +131,11 @@ class Settings extends Component {
       targetBlockHeavyResources: this.state.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!this.state.targetVerboseLogs,
       shapeMethod: this.state.shapeMethod,
+      targetHarvesterExtensionId: this.state.targetHarvesterExtensionId.trim().toLowerCase(),
     };
     ipcRenderer.sendSync('saveSettings', settings);
+    try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+    try { ipcRenderer.invoke('targetCookieBank').catch(() => {}); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings } });
     this.setState({ saved: true });
     setTimeout(() => this.setState({ saved: false }), 2000);
@@ -212,9 +221,9 @@ class Settings extends Component {
 
   render() {
     const { discordWebhook, aycdApiKey, showAycdKey, saved,
-      targetAtcHarvestTcins, targetCookieBank, targetHarvestWorkers, targetCookieTtlSec,
+      targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
-      targetVerboseLogs, shapeMethod,
+      targetVerboseLogs, shapeMethod, targetHarvesterExtensionId,
       licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -327,11 +336,14 @@ class Settings extends Component {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">Cookie bank size</label>
+                <FieldLabel help="Ready add-to-cart cookies kept for each active Target task, or configured standby task before a run. Zyn scales the total automatically.">
+                  ATC cookies per task
+                </FieldLabel>
                 <input
-                  className="form-input" type="number" min="1" placeholder="blank = no limit"
-                  value={targetCookieBank}
-                  onChange={e => this.set('targetCookieBank', e.target.value)}
+                  className="form-input" type="number" min="1" max="20" step="1"
+                  aria-label="Target ATC cookies per task"
+                  value={targetAtcCookiesPerTask}
+                  onChange={e => this.set('targetAtcCookiesPerTask', e.target.value)}
                 />
               </div>
               <div className="form-group" style={{ flex: 1 }}>
@@ -364,6 +376,24 @@ class Settings extends Component {
                 </select>
               </div>
             </div>
+            {shapeMethod === 'Harvester' && (
+              <div className="form-group">
+                <FieldLabel help="Copy the 32-character ID shown for this unpacked extension on chrome://extensions. Zyn rejects every other Chrome extension origin.">
+                  Chrome extension ID
+                </FieldLabel>
+                <input
+                  className="form-input monospace"
+                  type="text"
+                  maxLength={32}
+                  pattern="[a-p]{32}"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="32 characters from chrome://extensions"
+                  value={targetHarvesterExtensionId}
+                  onChange={e => this.set('targetHarvesterExtensionId', e.target.value.toLowerCase())}
+                />
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <FieldLabel help="The maximum number of distinct signatures banked from one page before the farmer moves on. Default 1 because Target commonly emits one usable signature per page.">

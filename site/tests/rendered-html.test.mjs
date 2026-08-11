@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 async function dispatch(pathname = "/", init = {}, origin = "http://localhost") {
@@ -47,7 +48,7 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /Join the free beta/);
   assert.match(html, /href="\/join"/);
   assert.doesNotMatch(html, /Request access/);
-  assert.match(html, /mailto:hello@rcart\.app/);
+  assert.match(html, /mailto:hello@zynbot\.app/);
   assert.match(html, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
 });
 
@@ -193,6 +194,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
 
   assert.match(page, /zyn-icon\.png/);
   assert.doesNotMatch(page, /rcart-symbol\.png/);
+  await assert.rejects(access(new URL("../public/rcart-symbol.png", import.meta.url)));
   assert.match(download, /Download Zyn/);
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
@@ -218,4 +220,24 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   await access(new URL("../public/apple-touch-icon.png", import.meta.url));
   await access(new URL("../public/manifest.webmanifest", import.meta.url));
   await access(new URL("../public/og-retailers-beta.png", import.meta.url));
+});
+
+test("ships only the reviewed Zyn raster brand assets", async () => {
+  const reviewed = {
+    "apple-touch-icon.png": "784039266ddfcdcf1e0ac5e06499038ad05aa6e0257e827e43e27633574abc00",
+    "favicon.png": "268f21db55c7951a55895d4baa6f7318077983510bc56553b59d78b379b75438",
+    "og-retailers-beta.png": "cbc518f8b028fe99aa3a1be2870289c1cda3897ad0e497057cfbb45db27ce171",
+    "og-target-beta.png": "d5bfe6f405ab2f495996f9b6ef0aa4587c6a97d5ac07ee09bec8962aac3c4ddd",
+    "og.png": "1e06a3c6b28fd1bb1346a59bf418ae4e6a6b4f51c8940593f6cfb95702765cc0",
+    "zyn-icon.png": "863313a6dfc5191f8efb6f1eb5b215238c810b38eac2c070613ac134a2bb5e81",
+  };
+  const publicDirectory = new URL("../public/", import.meta.url);
+  const rasterAssets = (await readdir(publicDirectory))
+    .filter((file) => /\.(?:png|jpe?g|gif|webp)$/i.test(file))
+    .sort();
+  assert.deepEqual(rasterAssets, Object.keys(reviewed).sort());
+  for (const [file, expected] of Object.entries(reviewed)) {
+    const body = await readFile(new URL(file, publicDirectory));
+    assert.equal(createHash("sha256").update(body).digest("hex"), expected, `${file} was not reviewed`);
+  }
 });

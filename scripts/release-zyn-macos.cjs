@@ -59,6 +59,7 @@ fs.mkdirSync(workRoot, { recursive: true });
 fs.mkdirSync(outputRoot, { recursive: true });
 run('/bin/cp', ['-cR', inputApp, workApp]);
 
+run(process.execPath, [path.join(__dirname, 'verify-runtime-contract.js'), workApp]);
 run(process.execPath, [path.join(__dirname, 'sign-zyn-bundle.cjs'), workApp]);
 
 const notaryArchive = path.join(workRoot, `Zyn-${arch}-notarize.zip`);

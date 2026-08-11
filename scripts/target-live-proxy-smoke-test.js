@@ -33,7 +33,7 @@ assert.match(ui, /proxyStatus\[t\.id\].*hidden/,
   'Target task rows must render transient proxy feedback without replacing task status');
 assert.match(taskGroups, /const displayStatus = this\.proxyStatusFor\(task\) \|\| status/,
   'task groups must keep the operational status behind transient proxy feedback');
-assert.match(taskGroups, /const running = statusKind\(status\) === 'running'/,
+assert.match(taskGroups, /const running = targetTaskIsRunning\(status\)/,
   'task actions must continue to use the operational status during a proxy failure notice');
 assert.doesNotMatch(taskGroups, /Default Harvester/,
   'fresh or legacy settings must not create an implicit harvester');
@@ -106,9 +106,9 @@ assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'logi
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',
-  'github.com/PolarAIO/Polar-AIO/backend/bot-base/task.EnqueueRuntimeEdit',
-  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeEdit',
-  'github.com/PolarAIO/Polar-AIO/backend/sites/target.(*TargetTask).applyRuntimeProxy',
+  'zynbot.app/engine/bot-base/task.EnqueueRuntimeEdit',
+  'zynbot.app/engine/sites/target.(*TargetTask).applyRuntimeEdit',
+  'zynbot.app/engine/sites/target.(*TargetTask).applyRuntimeProxy',
   'Proxy Updated',
   'Proxy Switch Failed',
 ]) {

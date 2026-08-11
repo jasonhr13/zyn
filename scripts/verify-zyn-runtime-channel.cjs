@@ -4,7 +4,7 @@
 const assert = require('assert/strict');
 const { verifyManifest, MANIFEST_PATH } = require('../launcher/runtime-manager');
 
-const origin = (process.env.ZYN_UPDATE_ORIGIN || 'https://updates.rcart.app').replace(/\/+$/, '');
+const origin = (process.env.ZYN_UPDATE_ORIGIN || 'https://updates.zynbot.app').replace(/\/+$/, '');
 
 async function checkedFetch(url, options = {}) {
   const response = await fetch(url, options);

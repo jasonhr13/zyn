@@ -12,7 +12,7 @@ const https = require('https');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const DEFAULT_RUNTIME_ORIGIN = 'https://updates.rcart.app';
+const DEFAULT_RUNTIME_ORIGIN = 'https://updates.zynbot.app';
 const MANIFEST_PATH = '/runtimes/zyn-manifest-v1.json';
 
 // Zyn runtime-manifest public key. Its Ed25519 private half is stored only in the release owner's
