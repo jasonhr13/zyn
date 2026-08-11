@@ -18,5 +18,10 @@
       "binding": "RELEASES",
       "bucket_name": "hope-releases"
     }
-  ]
+  ],
+  "secrets": {
+    "required": [
+      "ZYN_EXTENSION_RELEASE_DISCORD_WEBHOOK"
+    ]
+  }
 }

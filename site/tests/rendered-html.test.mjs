@@ -182,6 +182,28 @@ test("publishes the Zyn canonical identity and keeps service traffic in the visi
   }
 });
 
+test("publishes stable and versioned public extension download redirects", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const stable = await dispatch("/download/extension", { method }, "https://zynbot.app");
+    assert.equal(stable.status, 302);
+    assert.equal(stable.headers.get("location"), "https://updates.zynbot.app/download/extension");
+    assert.equal(stable.headers.get("cache-control"), "no-store");
+
+    const versioned = await dispatch("/download/extension/1.1.2", { method }, "https://zynbot.app");
+    assert.equal(versioned.status, 302);
+    assert.equal(
+      versioned.headers.get("location"),
+      "https://updates.zynbot.app/extension/Zyn-Harvester-1.1.2.zip",
+    );
+    assert.equal(versioned.headers.get("cache-control"), "no-store");
+  }
+
+  for (const invalidVersion of ["not-a-version", "1.01.2", "0.0.0", "65536"]) {
+    const response = await dispatch(`/download/extension/${invalidVersion}`, {}, "https://zynbot.app");
+    assert.equal(response.status, 404, `${invalidVersion} should not be accepted as a Chrome version`);
+  }
+});
+
 test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   const [page, download, layout, css, domain, wrangler] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -212,6 +234,8 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(wrangler, /"pattern": "rcart\.app"/);
   assert.match(wrangler, /"pattern": "zynbot\.app"/);
   await access(new URL("../app/download/page.tsx", import.meta.url));
+  await access(new URL("../app/download/extension/route.ts", import.meta.url));
+  await access(new URL("../app/download/extension/[version]/route.ts", import.meta.url));
   await access(new URL("../app/api/download/redeem/route.ts", import.meta.url));
   await access(new URL("../app/join/page.tsx", import.meta.url));
   await access(new URL("../app/api/waitlist/route.ts", import.meta.url));

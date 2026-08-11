@@ -1,19 +1,29 @@
-# Zyn Harvester (Chrome extension)
+# Zyn Harvester (browser extension)
 
-Cookie harvester companion for **Zyn**. It drives real Chrome against Target, captures Shape-signed login/ATC headers, and banks them into Zyn over the local compatibility bridge.
+Cookie harvester companion for **Zyn**. It drives a real Chromium browser against Target, captures
+Shape-signed login/ATC headers, and banks them into Zyn over the local compatibility bridge.
 
 ## Install
 
-1. Open Chrome → `chrome://extensions`
-2. Enable **Developer mode**
-3. **Load unpacked** → select this folder (`chrome-extension/harvester`)
+Download the current ZIP from <https://zynbot.app/download/extension>, then:
+
+1. Create a permanent folder named `Zyn-Harvester` and extract the ZIP contents into it.
+   `manifest.json` must be directly inside that folder.
+2. Open Chrome → `chrome://extensions`, or Brave → `brave://extensions`
+3. Enable **Developer mode**
+4. **Load unpacked** → select the permanent `Zyn-Harvester` folder
+
+When updating, extract the new ZIP over that same folder and click **Reload** on the extension card.
+Do not load each version from a newly named folder: Chromium derives an unpacked extension's ID from
+its directory, and changing it would require reconnecting the new ID in Zyn. A repository checkout
+can instead load `chrome-extension/harvester` directly and keep using that path.
 
 ## Connect to Zyn
 
 1. Open Zyn and sign in
-2. On `chrome://extensions`, copy the 32-character ID shown for **Zyn Harvester**
-3. In Zyn **Settings** → **Target — Chrome Extension Harvester**, turn **Chrome extension
-   harvesting** on, paste the ID, and save
+2. On the browser's extensions page, copy the 32-character ID shown for **Zyn Harvester**
+3. In Zyn **Settings** → **Target — Chrome Extension Harvester**, turn extension harvesting on,
+   paste the ID, and save.
 4. Open this extension’s popup → **Connection** should show **Live**
 
 Extension harvesting is additive. It can run alongside Zyn’s in-app harvesters, and both sources feed
@@ -30,7 +40,7 @@ If something else already owns **4312** (old Polar AIO, another bot), quit it fi
 
 ## Proxies
 
-Choose **Local IP** to use Chrome's direct internet connection, or choose **Proxy list** to rotate
+Choose **Local IP** to use the browser's direct internet connection, or choose **Proxy list** to rotate
 through the selected list while harvesting. Local IP is the default, and saved proxy lists remain
 available when switching between routes. An empty or invalid selected list falls back to Local IP.
 
@@ -43,10 +53,37 @@ Paste your own proxy lines into the extension textarea (`host:port` or `host:por
 2. Click **Start Harvesting**
 3. Watch Zyn’s Target cookie bank for login/ATC counts
 
-Banked cookies are tagged `source: extension` / `harvesterId: chrome-extension` and use Zyn’s **Cookie TTL** setting.
+Banked cookies are tagged `source: extension` and use Zyn’s **Cookie TTL** setting.
 
 ## Notes
 
-- Protocol is unchanged from the Polar-era companion; only branding and packaging live here.
-- Storage key is `zynHarvesterState` (renamed from Polar). Reloading this build starts with a fresh extension settings store.
+- The local protocol remains compatible with the Polar-era companion. This build also sends optional
+  `clientId` and `browser` attribution fields that older Zyn builds safely ignore.
+- UI settings use `zynHarvesterState`. The stable per-browser installation ID uses
+  `chrome.storage.local` key `zynHarvesterClientId`.
 - Permissions (`debugger`, `proxy`, `<all_urls>`, etc.) are required for the harvest flow.
+
+## Release workflow
+
+Extension versioning, packaging, and publishing are deliberately separate. For a new release:
+
+```sh
+node scripts/bump-zyn-extension-version.cjs
+# Review, test, and commit the extension changes and manifest bump.
+node scripts/release-zyn-extension.cjs
+node scripts/upload-zyn-extension-release.cjs
+```
+
+The bump command advances only the three-part patch version in `manifest.json`. Run it once per
+release. Packaging and upload retries never change the version; rerun those commands directly if a
+build, upload, or Discord notification needs to be retried. Use
+`ZYN_OVERWRITE_RELEASE=1 node scripts/release-zyn-extension.cjs` only after inspecting an existing
+local staging directory that should be replaced.
+
+The release command packages only committed files under `chrome-extension/harvester`, with
+`manifest.json` at the ZIP root, into `release/dist/extension`. It writes strict `latest.json`
+metadata and verifies every archived byte before handoff. The upload command retrieves the existing
+`zyn-updates` R2 credential from macOS Keychain, uploads the versioned ZIP, asks the update Worker to
+finalize metadata and send Discord, and then verifies the stable, versioned, and artifact download
+routes. The Discord webhook credential stays in Cloudflare and is never present in the extension
+archive or local uploader.

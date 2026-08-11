@@ -2,8 +2,10 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { webcrypto } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const csstree = require('../frontend/node_modules/css-tree');
 const { JSDOM } = require('../frontend/node_modules/jsdom');
 
@@ -14,6 +16,7 @@ const read = relative => fs.readFileSync(path.join(extension, relative), 'utf8')
 const html = read('index.html');
 const css = read('index.css');
 const background = read('src/background.js');
+const clientIdentity = read('client-identity.js');
 const manifest = JSON.parse(read('manifest.json'));
 const dom = new JSDOM(html);
 const { document } = dom.window;
@@ -75,10 +78,20 @@ for (const node of document.querySelectorAll('link[href], script[src], img[src]'
   assert.ok(!/^(?:https?:)?\/\//i.test(reference), `remote UI asset: ${reference}`);
   assert.ok(fs.existsSync(path.join(extension, reference)), `missing UI asset: ${reference}`);
 }
+assert.deepEqual([...document.querySelectorAll('script[src]')].map(node => node.getAttribute('src')),
+  ['client-identity.js', 'index.js'], 'client identity must load before the popup bridge client');
 
 assert.equal(manifest.manifest_version, 3);
+const versionParts = String(manifest.version || '').split('.');
+assert.ok(versionParts.length >= 1 && versionParts.length <= 4,
+  'extension version must contain one to four components');
+assert.ok(versionParts.some(part => part !== '0') && versionParts.every(part => (
+  /^(?:0|[1-9]\d*)$/.test(part) && Number(part) <= 65535
+)), 'extension version must follow Chrome numeric version rules');
 assert.equal(manifest.action.default_title, 'Zyn Harvester');
 assert.ok(fs.existsSync(path.join(extension, manifest.background.service_worker)));
+assert.match(background, /import '\.\.\/client-identity\.js';\s*$/,
+  'service worker must load the shared client identity module');
 for (const icon of Object.values(manifest.icons)) assert.ok(fs.existsSync(path.join(extension, icon)));
 for (const rules of manifest.declarative_net_request.rule_resources) {
   assert.ok(fs.existsSync(path.join(extension, rules.path)));
@@ -112,10 +125,178 @@ assert.doesNotMatch(visualSource, /#5081FE|rgba\(80\s*,\s*129\s*,\s*254/i,
 assert.doesNotMatch(visualSource, /#01020A/i,
   'legacy navy background remains in the extension UI');
 
-console.log(JSON.stringify({
-  ok: true,
-  viewport: '790x570',
-  coupledIds: coupledIds.length,
-  localAssets: document.querySelectorAll('link[href], script[src], img[src]').length,
-  zynNightTheme: true,
-}, null, 2));
+async function runIdentityContext({
+  storage, userAgent, brave = false, locks = undefined, storageGate = null,
+  waitForIdentity = true,
+}) {
+  const sent = [];
+  function TestWebSocket(url) {
+    this.url = url;
+    this.readyState = TestWebSocket.OPEN;
+  }
+  TestWebSocket.OPEN = 1;
+  TestWebSocket.CLOSED = 3;
+  TestWebSocket.prototype.send = function send(data) { sent.push({ url: this.url, data }); };
+  TestWebSocket.prototype.close = function close() { this.readyState = TestWebSocket.CLOSED; };
+  const local = {
+    get(keys, callback) {
+      const read = () => {
+        const result = {};
+        for (const key of keys) if (Object.prototype.hasOwnProperty.call(storage, key)) result[key] = storage[key];
+        queueMicrotask(() => callback(result));
+      };
+      if (storageGate) storageGate.then(read);
+      else read();
+    },
+    set(values, callback) {
+      Object.assign(storage, values);
+      queueMicrotask(() => callback && callback());
+    },
+  };
+  const context = vm.createContext({
+    chrome: { storage: { local } },
+    console,
+    crypto: webcrypto,
+    navigator: {
+      userAgent,
+      userAgentData: { brands: [] },
+      ...(locks ? { locks } : {}),
+      ...(brave ? { brave: { isBrave: async () => true } } : {}),
+    },
+    queueMicrotask,
+    WebSocket: TestWebSocket,
+  });
+  vm.runInContext(clientIdentity, context, { filename: 'client-identity.js' });
+  const identityPromise = context.zynHarvesterClientIdentity();
+  if (!waitForIdentity) return { context, identityPromise, sent };
+  const identity = await identityPromise;
+  return { context, identity, identityPromise, sent };
+}
+
+async function verifyClientIdentity() {
+  const storage = {};
+  const brave = await runIdentityContext({
+    storage,
+    brave: true,
+    userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+  });
+  assert.match(brave.identity.clientId,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(storage.zynHarvesterClientId, brave.identity.clientId);
+  assert.equal(brave.identity.browser, 'Brave');
+
+  const bridge = new brave.context.WebSocket('ws://127.0.0.1:4312/ws');
+  bridge.send(JSON.stringify({ action: 'status', clientId: 'spoofed', browser: 'Spoofed' }));
+  bridge.send(JSON.stringify({ action: 'save', type: 'atc' }));
+  const unrelated = new brave.context.WebSocket('ws://127.0.0.1:9999/ws');
+  unrelated.send(JSON.stringify({ action: 'status' }));
+  await new Promise(resolve => setImmediate(resolve));
+
+  const records = brave.sent.map(item => ({ ...item, payload: JSON.parse(item.data) }));
+  const status = records.find(item => item.url.endsWith(':4312/ws') && item.payload.action === 'status').payload;
+  const save = records.find(item => item.url.endsWith(':4312/ws') && item.payload.action === 'save').payload;
+  const untouched = records.find(item => item.url.endsWith(':9999/ws')).payload;
+  assert.equal(status.clientId, brave.identity.clientId,
+    'status payload must carry the stored client ID');
+  assert.equal(status.browser, brave.identity.browser,
+    'status payload must carry the detected browser');
+  assert.equal(save.clientId, brave.identity.clientId,
+    'save payload must carry the stored client ID');
+  assert.equal(save.browser, brave.identity.browser,
+    'save payload must carry the detected browser');
+  assert.equal(untouched.clientId, undefined, 'non-bridge WebSockets must not be modified');
+
+  const chrome = await runIdentityContext({
+    storage,
+    userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+  });
+  assert.equal(chrome.identity.clientId, brave.identity.clientId,
+    'a new extension context must reuse the stored installation ID');
+  assert.equal(chrome.identity.browser, 'Chrome');
+
+  let lockTail = Promise.resolve();
+  const locks = {
+    request(_name, callback) {
+      const result = lockTail.then(callback);
+      lockTail = result.catch(() => {});
+      return result;
+    },
+  };
+  const concurrentStorage = {};
+  const [popup, serviceWorker] = await Promise.all([
+    runIdentityContext({
+      storage: concurrentStorage, locks, waitForIdentity: false,
+      userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+    }),
+    runIdentityContext({
+      storage: concurrentStorage, locks, waitForIdentity: false,
+      userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+    }),
+  ]);
+  const [popupIdentity, serviceWorkerIdentity] = await Promise.all([
+    popup.identityPromise, serviceWorker.identityPromise,
+  ]);
+  assert.equal(popupIdentity.clientId, serviceWorkerIdentity.clientId,
+    'concurrent popup/service-worker initialization must converge on one client ID');
+
+  const noLockStorage = {};
+  const [noLockPopup, noLockWorker] = await Promise.all([
+    runIdentityContext({
+      storage: noLockStorage, waitForIdentity: false,
+      userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+    }),
+    runIdentityContext({
+      storage: noLockStorage, waitForIdentity: false,
+      userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+    }),
+  ]);
+  const [noLockPopupIdentity, noLockWorkerIdentity] = await Promise.all([
+    noLockPopup.identityPromise, noLockWorker.identityPromise,
+  ]);
+  assert.equal(noLockPopupIdentity.clientId, noLockWorkerIdentity.clientId,
+    'the no-Web-Locks fallback must re-read the winning stored client ID');
+
+  let releaseStorage;
+  const storageGate = new Promise(resolve => { releaseStorage = resolve; });
+  const delayed = await runIdentityContext({
+    storage: {}, storageGate, waitForIdentity: false,
+    userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+  });
+  const delayedSocket = new delayed.context.WebSocket('ws://127.0.0.1:4312/ws');
+  delayedSocket.send(JSON.stringify({ action: 'status' }));
+  assert.equal(delayed.sent.length, 0, 'first-launch bridge send must wait for client identity');
+  releaseStorage();
+  const delayedIdentity = await delayed.identityPromise;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(delayed.sent.length, 1);
+  assert.equal(JSON.parse(delayed.sent[0].data).clientId, delayedIdentity.clientId);
+
+  let releaseClosedStorage;
+  const closedStorageGate = new Promise(resolve => { releaseClosedStorage = resolve; });
+  const closed = await runIdentityContext({
+    storage: {}, storageGate: closedStorageGate, waitForIdentity: false,
+    userAgent: 'Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36',
+  });
+  const closedSocket = new closed.context.WebSocket('ws://127.0.0.1:4312/ws');
+  closedSocket.send(JSON.stringify({ action: 'status' }));
+  closedSocket.close();
+  releaseClosedStorage();
+  await closed.identityPromise;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(closed.sent.length, 0,
+    'identity resolution must not send or retry on a WebSocket that already closed');
+}
+
+verifyClientIdentity().then(() => {
+  console.log(JSON.stringify({
+    ok: true,
+    viewport: '790x570',
+    coupledIds: coupledIds.length,
+    localAssets: document.querySelectorAll('link[href], script[src], img[src]').length,
+    stableClientIdentity: true,
+    zynNightTheme: true,
+  }, null, 2));
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
