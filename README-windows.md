@@ -1,8 +1,10 @@
 # Zyn for Windows
 
-Zyn supports Windows 10 and 11 on x64. The app packages Electron, a Windows Node runtime, and the
-native Target and Pokémon Center US checkout backend. Chromium is not bundled in the installer: the
-same signed, resumable runtime channel used by macOS downloads it only after a valid Zyn sign-in.
+Zyn supports Windows 10 and 11 on x64. The app packages Electron, a Windows Node runtime, and a
+fallback native Target and Pokémon Center US checkout backend. Chromium is not bundled in the
+installer. After a valid sign-in, the signed resumable runtime channel installs Chromium and the
+latest checkout engine, then polls every 15 minutes for side-by-side engine updates. Running tasks
+remain on their existing shared engine process until it drains.
 
 ## Build
 
@@ -23,14 +25,15 @@ Prepare and publish Windows Chromium together with the existing Mac artifacts:
 
 ```bash
 node ./scripts/prepare-zyn-runtime-artifacts.cjs windows-x64
+node ./scripts/prepare-zyn-engine-runtime.cjs windows-x64
 node ./scripts/create-zyn-runtime-manifest.cjs
 node ./scripts/upload-zyn-runtime-artifacts.cjs
 node ./scripts/verify-zyn-runtime-channel.cjs
 ```
 
 The signed manifest contains `darwin-arm64`, `darwin-x64`, and `win32-x64`. On Windows, Zyn uses
-the system `tar.exe` to install the archive under its user-data directory after login and verifies
-the archive SHA-256 and Chromium PE header before marking it ready.
+the system `tar.exe` to install versioned archives under its user-data directory after login and
+verifies each archive SHA-256 plus each executable's PE header before marking it ready.
 
 ## Unsigned release
 

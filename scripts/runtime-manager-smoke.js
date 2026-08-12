@@ -51,6 +51,15 @@ async function main() {
     const chromium = await archiveFixture(temporary, 'chromium-test', {
       'ms-playwright/chromium-1228/chrome': 'signed chromium fixture',
     });
+    const engineOne = await archiveFixture(temporary, 'engine-test-1', {
+      'engine/backend': 'engine version one',
+    });
+    const engineTwo = await archiveFixture(temporary, 'engine-test-2', {
+      'engine/backend': 'engine version two',
+    });
+    const unavailableEngine = await archiveFixture(temporary, 'engine-test-unavailable', {
+      'engine/backend': 'engine version unavailable',
+    });
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
     let manifest;
     let rangeRequests = 0;
@@ -63,7 +72,7 @@ async function main() {
         return;
       }
       const filename = path.basename(request.url || '');
-      const source = [chromium.archive]
+      const source = [chromium.archive, engineOne.archive, engineTwo.archive]
         .find((candidate) => path.basename(candidate) === filename);
       if (!source) {
         response.writeHead(404);
@@ -94,14 +103,18 @@ async function main() {
       'ms-playwright/chromium-1228/chrome',
       { root: 'ms-playwright' },
     );
-    const payload = {
+    const engineItem = (version, fixture) => runtimeItem(
+      'Checkout Engine', version, fixture, 'engine/backend', { protocol: 1 },
+    );
+    const payloadFor = (engineVersion, engineFixture) => ({
       generatedAt: new Date().toISOString(),
       platforms: {
-        'darwin-arm64': { chromium: browserItem },
-        'darwin-x64': { chromium: browserItem },
-        'win32-x64': { chromium: browserItem },
+        'darwin-arm64': { chromium: browserItem, engine: engineItem(engineVersion, engineFixture) },
+        'darwin-x64': { chromium: browserItem, engine: engineItem(engineVersion, engineFixture) },
+        'win32-x64': { chromium: browserItem, engine: engineItem(engineVersion, engineFixture) },
       },
-    };
+    });
+    let payload = payloadFor('engine-1', engineOne);
     manifest = {
       schema: 1,
       payload,
@@ -138,11 +151,49 @@ async function main() {
     assert.equal(status.ready, true);
     assert.equal(status.percent, 100);
     assert.equal(status.items.chromium.state, 'ready');
-    assert.deepEqual(Object.keys(status.items), ['chromium']);
+    assert.equal(status.items.engine.state, 'ready');
+    assert.deepEqual(Object.keys(status.items), ['chromium', 'engine']);
     assert.ok(rangeRequests >= 1, 'partial download was not resumed with a byte range');
     assert.ok(process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH.endsWith('/chromium/test-1/ms-playwright'));
+    const engineOnePath = manager.entryPath('engine');
+    assert.ok(engineOnePath.endsWith('/engine/engine-1/engine/backend'));
+    assert.equal(await fsp.readFile(engineOnePath, 'utf8'), 'engine version one');
     assert.ok(statuses.some((item) => item.state === 'downloading'));
     assert.ok(statuses.some((item) => item.state === 'installing'));
+
+    payload = payloadFor('engine-2', engineTwo);
+    manifest = {
+      schema: 1,
+      payload,
+      signature: crypto.sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString('base64'),
+    };
+    const updated = await manager.ensureAll({ background: true });
+    const engineTwoPath = manager.entryPath('engine');
+    assert.equal(updated.items.engine.version, 'engine-2');
+    assert.notEqual(engineTwoPath, engineOnePath);
+    assert.equal(await fsp.readFile(engineOnePath, 'utf8'), 'engine version one',
+      'installing an engine update removed or overwrote the prior executable');
+    assert.equal(await fsp.readFile(engineTwoPath, 'utf8'), 'engine version two');
+
+    payload = payloadFor('engine-unavailable', unavailableEngine);
+    manifest = {
+      schema: 1,
+      payload,
+      signature: crypto.sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString('base64'),
+    };
+    await assert.rejects(manager.ensureAll({ background: true }), /returned HTTP 404/);
+    assert.equal(manager.entryPath('engine'), engineTwoPath,
+      'a failed engine update displaced the last activated engine');
+    const cached = JSON.parse(await fsp.readFile(path.join(root, 'manifest.json'), 'utf8'));
+    assert.equal(cached.payload.platforms['darwin-x64'].engine.version, 'engine-2',
+      'a failed update replaced the last-known-good cached engine manifest');
+
+    payload = payloadFor('engine-2', engineTwo);
+    manifest = {
+      schema: 1,
+      payload,
+      signature: crypto.sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString('base64'),
+    };
 
     const armManager = new RuntimeManager({
       enabled: true,
@@ -158,7 +209,7 @@ async function main() {
     await armManager.initialize();
     const armStatus = await armManager.ensureAll();
     assert.equal(armStatus.ready, true);
-    assert.deepEqual(Object.keys(armStatus.items), ['chromium']);
+    assert.deepEqual(Object.keys(armStatus.items), ['chromium', 'engine']);
 
     const windowsManager = new RuntimeManager({
       enabled: true,
@@ -174,7 +225,7 @@ async function main() {
     await windowsManager.initialize();
     const windowsStatus = await windowsManager.ensureAll();
     assert.equal(windowsStatus.ready, true);
-    assert.deepEqual(Object.keys(windowsStatus.items), ['chromium']);
+    assert.deepEqual(Object.keys(windowsStatus.items), ['chromium', 'engine']);
 
     console.log('Zyn runtime manager download, resume, verification, install, and Mac/Windows smoke test passed');
   } finally {

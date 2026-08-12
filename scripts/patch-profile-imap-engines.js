@@ -74,6 +74,20 @@ function patchTarget() {
 // Packaged bot scripts reuse Electron as native Node.
 const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');`, 'Target native farmer runtime import');
 
+  source = replaceOnce(source, `function enginePath() {
+  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
+  if (packed && fs.existsSync(packed)) return packed;
+  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+}`, `function enginePath() {
+  // The runtime manager installs engines side by side and changes this pointer only for future
+  // spawns. A child that already owns tasks keeps its original executable and process image.
+  const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
+  if (downloaded && fs.existsSync(downloaded)) return downloaded;
+  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
+  if (packed && fs.existsSync(packed)) return packed;
+  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+}`, 'versioned native engine path');
+
   source = replaceOnce(source, `const skuTitles = require('./sku-titles');`, `const skuTitles = require('./sku-titles');
 const engineContract = require('./native-engine-contract');
 const nativeHyperBroker = require('./native-hyper-broker');
@@ -1436,7 +1450,7 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
 
   source = replaceOnce(source,
     "    log('ENGINE NOT FOUND: ' + exe + ` — build it with:  cd backend && go build -o ${plat.engineBin()} .`);\n    return;\n  }\n  engineProc = spawn(",
-    "    log('ENGINE NOT FOUND: ' + exe + ` — build it with:  cd backend && go build -o ${plat.engineBin()} .`);\n    failNativeEngineRuns('engine binary not found', true);\n    return;\n  }\n  try {\n    engineProc = spawn(",
+    "    log('ENGINE NOT FOUND: ' + exe + ` — build it with:  cd backend && go build -o ${plat.engineBin()} .`);\n    failNativeEngineRuns('engine binary not found', true);\n    return;\n  }\n  const engineVersion = exe === process.env.ZYN_ENGINE_PATH\n    ? String(process.env.ZYN_ENGINE_VERSION || 'downloaded') : 'bundled';\n  log('[target] starting native engine ' + engineVersion);\n  try {\n    engineProc = spawn(",
     'missing native engine failure cleanup');
   source = replaceOnce(source,
     `    ...plat.spawnOpts(),

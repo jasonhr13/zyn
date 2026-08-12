@@ -36,7 +36,8 @@ async function main() {
   assert.equal(status.ready, true);
   assert.equal(status.state, 'ready');
   assert.ok(fs.existsSync(process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH));
-  assert.deepEqual(Object.keys(status.items), ['chromium']);
+  assert.ok(fs.existsSync(process.env.ZYN_ENGINE_PATH));
+  assert.deepEqual(Object.keys(status.items), ['chromium', 'engine']);
   console.log(JSON.stringify({
     ok: true,
     arch,

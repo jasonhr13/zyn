@@ -55,8 +55,10 @@ publish it. Ad-hoc bundles are never uploaded as production updates.
 The runtime manager is ported from the established GitHub implementation rather than rebuilt. It starts only after a
 valid Zyn account sign-in, resumes interrupted HTTP range downloads, verifies an Ed25519-signed
 manifest and every archive SHA-256, rejects unsafe archive paths, installs atomically under Zyn's
-user-data directory, and caches the verified runtime for offline use. Target launches wait only for
-the Chromium component; the native checkout engine is already inside the signed app.
+user-data directory, and caches the verified runtime for offline use. A bundled native checkout
+engine remains as an offline fallback. After sign-in, Zyn also polls the runtime channel every 15
+minutes and installs engine updates side by side. A running shared engine process keeps the version
+it started with; the newly installed version is selected only after that process drains.
 
 Production runtime preparation is:
 
@@ -64,6 +66,7 @@ Production runtime preparation is:
 node ./scripts/configure-zyn-runtime-signing-key.cjs
 node ./scripts/create-zyn-runtime-manifest.cjs --verify-key
 node ./scripts/prepare-zyn-runtime-artifacts.cjs all
+node ./scripts/prepare-zyn-engine-runtime.cjs all
 node ./scripts/create-zyn-runtime-manifest.cjs
 node ./scripts/upload-zyn-runtime-artifacts.cjs
 node ./scripts/verify-zyn-runtime-channel.cjs
@@ -72,9 +75,11 @@ node ./scripts/zyn-production-runtime-install-smoke.cjs x64
 node ./scripts/verify-zyn-public-release.cjs
 ```
 
-`prepare-zyn-runtime-artifacts.cjs` signs and notarizes the ARM and Intel Chromium bundles. The
-native checkout engines are pinned separately in `config/runtime-contract.json` and packaged by
-`build-zyn.sh`. Manifest signing uses Keychain service
+`prepare-zyn-runtime-artifacts.cjs` signs and notarizes the ARM and Intel Chromium bundles.
+`prepare-zyn-engine-runtime.cjs` signs, notarizes, and packages the native checkout engines. Bump
+`config/engine-runtime.json` for a logical engine release, prepare the engine artifacts, sign the
+manifest, and upload it to publish an engine without releasing a new UI. The engine binaries remain
+pinned in `config/runtime-contract.json` as the app's bundled fallback. Manifest signing uses Keychain service
 `com.thwebco.zyn.runtime-signing`; the private key must never enter the repository. Runtime uploads
 reuse the Cloudflare R2 multipart channel and publish the signed manifest last.
 When Cloudflare restricts authenticated POSTs on the custom download domain, set

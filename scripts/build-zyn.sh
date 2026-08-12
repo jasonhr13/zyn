@@ -11,8 +11,8 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.21}"
-APP_VERSION="${ZYN_VERSION:-1.6.95}"
+APP_RELEASE="${ZYN_RELEASE:-R8.22}"
+APP_VERSION="${ZYN_VERSION:-1.6.96}"
 NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
@@ -188,8 +188,8 @@ done
 /usr/libexec/PlistBuddy -c "Add :ZynRuntimeMode string $RUNTIME_MODE" "$PLIST"
 
 if [[ "$RUNTIME_MODE" == "remote" ]]; then
-  # Target's farmer and checkout engine are native. Only Chromium is installed from the signed
-  # manifest; the small architecture-matched backend stays in the signed app bundle.
+  # Keep the small architecture-matched backend as an offline fallback. The signed runtime channel
+  # installs newer engines side by side and selects them only for future drained engine processes.
   rm -rf \
     "$RESOURCES/wine" \
     "$RESOURCES/vendor/ms-playwright" \

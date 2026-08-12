@@ -325,6 +325,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(targetEngine, /'--headless=true'/, 'Zyn does not request headless mode');
   assert.doesNotMatch(targetEngine, /'--headless=false'/, 'Zyn still requests headed mode');
   assert.match(targetEngine, /const findNodeExe = nodeExecutable/, 'Target farmer does not use native Node boundary');
+  assert.match(targetEngine, /process\.env\.ZYN_ENGINE_PATH/,
+    'Target engine does not prefer a side-by-side downloaded backend');
   assert.match(targetEngine, /process\.resourcesPath[\s\S]{0,160}'engine'/,
     'Target engine does not resolve the bundled native backend');
   assert.match(targetEngine, /nodeEnvironment\(\{ FORCE_COLOR/, 'Target farmer does not use native environment');
@@ -416,14 +418,19 @@ check('Target farmer New Headless launch contract', () => {
     assert.match(manager, /zyn-manifest-v1\.json/, 'remote runtime manager uses the wrong manifest protocol');
     assert.match(manager, /verifyManifest/, 'remote runtime manager does not verify signed manifests');
     assert.match(manager, /bytes=\$\{existing\}-/, 'remote runtime manager does not resume partial downloads');
-    assert.match(manager, /darwin: \['chromium'\]/, 'remote runtime downloads more than native Chromium');
+    assert.match(manager, /darwin: \['chromium', 'engine'\]/,
+      'remote runtime does not manage Chromium and the versioned native engine');
+    assert.match(manager, /process\.env\.ZYN_ENGINE_PATH = entry/,
+      'remote runtime does not stage a downloaded engine for the next spawn');
     assert.doesNotMatch(manager, /EXPECTED_ENGINE_SHA256|EXPECTED_WINE_VERSION/,
-      'remote runtime still pins the Windows engine or Wine');
+      'remote runtime still hard-codes the old Windows engine or Wine pins');
     const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
     assert.match(bootstrap, /waitForRuntime\(\['chromium'\]\)/,
       'Target launches do not wait for the remote Chromium component');
-    assert.match(bootstrap, /status && status\.ok === true\)[\s\S]{0,120}beginRuntimeBootstrap\(\)/,
-      'runtime download does not begin after license sign-in');
+    assert.match(bootstrap, /status && status\.ok === true\)[\s\S]{0,120}startRuntimeUpdatePolling\(\)/,
+      'runtime download and polling do not begin after license sign-in');
+    assert.match(bootstrap, /setInterval\(pollRuntimeUpdates, RUNTIME_UPDATE_POLL_MS\)/,
+      'runtime engine updates are not polled routinely');
   } else {
     assert.equal(
       fs.existsSync(path.join(resources, 'vendor', 'ms-playwright', `chromium-${chromium.revision}`, 'chrome-win64', 'chrome.exe')),

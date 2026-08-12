@@ -88,7 +88,9 @@ function packagedRuntimeMode() {
 }
 
 const runtimeMode = packagedRuntimeMode();
+const RUNTIME_UPDATE_POLL_MS = 15 * 60 * 1000;
 let runtimeBootstrapStarted = false;
+let runtimeUpdatePollTimer = null;
 const runtimeOrigin = !app.isPackaged && process.env.ZYN_RUNTIME_ORIGIN
   ? process.env.ZYN_RUNTIME_ORIGIN
   : DEFAULT_RUNTIME_ORIGIN;
@@ -119,14 +121,43 @@ function beginRuntimeBootstrap({ force = false } = {}) {
     .catch((error) => console.error(`[runtime] background setup: ${error.message}`));
 }
 
+function pollRuntimeUpdates() {
+  runtimeInitialization
+    .then(() => runtimeManager.ensureAll({ background: true }))
+    .catch((error) => console.error(`[runtime] update poll: ${error.message}`));
+}
+
+function startRuntimeUpdatePolling() {
+  if (!runtimeManager.enabled) return;
+  beginRuntimeBootstrap();
+  if (runtimeUpdatePollTimer) return;
+  runtimeUpdatePollTimer = setInterval(pollRuntimeUpdates, RUNTIME_UPDATE_POLL_MS);
+  runtimeUpdatePollTimer.unref?.();
+}
+
+function stopRuntimeUpdatePolling() {
+  if (!runtimeUpdatePollTimer) return;
+  clearInterval(runtimeUpdatePollTimer);
+  runtimeUpdatePollTimer = null;
+}
+
 async function waitForRuntime(names) {
   if (!runtimeManager.enabled) return true;
   try {
     await runtimeInitialization;
     runtimeBootstrapStarted = true;
-    await runtimeManager.waitFor(names);
+    // A task start is also an update boundary. Fetch and install the complete signed manifest so a
+    // drained engine uses the newest available binary. If only an engine update fails, Chromium
+    // and the bundled/previous engine remain valid fallbacks and the task does not become unusable.
+    await runtimeManager.ensureAll();
     return true;
   } catch (error) {
+    const status = runtimeManager.getStatus();
+    const requiredReady = names.every((name) => status.items[name]?.state === 'ready');
+    if (requiredReady && fs.existsSync(nativeBackend)) {
+      console.warn(`[runtime] using the previous engine after update failure: ${error.message}`);
+      return true;
+    }
     console.error(`[runtime] task launch blocked: ${error.message}`);
     return false;
   }
@@ -974,11 +1005,12 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
       try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
       if (status && status.ok === true) {
-        beginRuntimeBootstrap();
+        startRuntimeUpdatePolling();
         try { taskGroupScheduler?.resume?.(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
-      }
+      } else stopRuntimeUpdatePolling();
     },
     onLock: () => {
+      stopRuntimeUpdatePolling();
       setTargetHarvestAuthorization(false);
       cloudBackupManager?.pause();
       taskGroupScheduler?.pause?.();
@@ -1156,6 +1188,7 @@ function runNativeEngineSelfTest() {
 // Wine keeps one server per prefix. Stop that private server after Zyn's own
 // teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
+  stopRuntimeUpdatePolling();
   try { harvesterExtensionBridge?.stop(); } catch {}
   try { taskGroupScheduler?.dispose(); } catch {}
   try { pokemonQueueEvents?.dispose(); } catch {}

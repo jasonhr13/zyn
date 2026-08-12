@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.96",
+  "notes": [
+    "Receive checkout-engine updates independently from the desktop interface.",
+    "Keep running tasks pinned to the exact engine version that started them.",
+    "Install verified engine updates side by side without interrupting active checkouts.",
+    "Fall back to the packaged or last-known-good engine when an update is unavailable."
+  ]
+}

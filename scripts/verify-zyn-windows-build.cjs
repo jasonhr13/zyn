@@ -138,7 +138,8 @@ assert.match(bootstrap, /setTargetHarvestAuthorized\?\.\(authorized === true\)/,
 assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,
   'Windows launcher bypasses the Target engine authenticated extension-save capability');
 const runtimeManager = fs.readFileSync(path.join(resources, 'app', 'runtime-manager.js'), 'utf8');
-assert.match(runtimeManager, /win32: \['chromium'\]/);
+assert.match(runtimeManager, /win32: \['chromium', 'engine'\]/);
+assert.match(runtimeManager, /process\.env\.ZYN_ENGINE_PATH = entry/);
 assert.match(runtimeManager, /this\.platform === 'win32' \? 'tar\.exe'/);
 
 const launcherPackage = JSON.parse(fs.readFileSync(path.join(resources, 'app', 'package.json'), 'utf8'));

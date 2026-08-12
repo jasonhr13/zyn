@@ -73,6 +73,10 @@ assert.match(target, /failNativeEngineRuns\('Native engine exited', false\)/,
   'an unexpected engine exit can leave queued starts latent for later resurrection');
 assert.match(target, /failNativeEngineRuns\('engine binary not found', true\)/,
   'a missing native executable can leave optimistic starts queued forever');
+assert.match(target, /const downloaded = String\(process\.env\.ZYN_ENGINE_PATH \|\| ''\)/,
+  'Target does not resolve the side-by-side downloaded engine before its bundled fallback');
+assert.match(target, /log\('\[target\] starting native engine ' \+ engineVersion\)/,
+  'Target does not record which pinned engine version owns a run');
 assert.match(target, /function reconcileTargetMainMonitor\(\)/,
   'additive Target starts do not reconcile one monitor over the active SKU union');
 assert.match(target, /if \(startedTotal\) reconcileTargetMainMonitor\(\)/,

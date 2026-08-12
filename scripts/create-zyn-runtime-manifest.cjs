@@ -5,7 +5,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { MANIFEST_PUBLIC_KEY, MANIFEST_PATH } = require('../launcher/runtime-manager');
+const {
+  EXPECTED_ENGINE_PROTOCOL,
+  MANIFEST_PUBLIC_KEY,
+  MANIFEST_PATH,
+} = require('../launcher/runtime-manager');
+const { engineRuntime } = require('./zyn-engine-runtime-lib.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const artifactsRoot = path.join(projectRoot, 'release', 'runtime-artifacts');
@@ -82,12 +87,33 @@ function chromium(arch, info) {
   };
 }
 
+function engine(arch) {
+  const runtime = engineRuntime(arch);
+  if (runtime.protocol !== EXPECTED_ENGINE_PROTOCOL) {
+    throw new Error(`Engine protocol ${runtime.protocol} does not match desktop protocol ${EXPECTED_ENGINE_PROTOCOL}.`);
+  }
+  const info = fileInfo(runtime.archive);
+  return {
+    label: 'Checkout Engine',
+    version: runtime.version,
+    protocol: runtime.protocol,
+    archive: runtime.archive,
+    url: `/runtimes/${runtime.archive}`,
+    size: info.size,
+    sha256: info.sha256,
+    sourceSha256: runtime.sourceSha256,
+    entry: runtime.entry,
+    verify: runtime.verify,
+    format: runtime.format,
+  };
+}
+
 const payload = {
   generatedAt: new Date().toISOString(),
   platforms: {
-    'darwin-arm64': { chromium: chromium('arm64', chromiumArm) },
-    'darwin-x64': { chromium: chromium('x64', chromiumX64) },
-    'win32-x64': { chromium: chromium('windows-x64', chromiumWindowsX64) },
+    'darwin-arm64': { chromium: chromium('arm64', chromiumArm), engine: engine('arm64') },
+    'darwin-x64': { chromium: chromium('x64', chromiumX64), engine: engine('x64') },
+    'win32-x64': { chromium: chromium('windows-x64', chromiumWindowsX64), engine: engine('windows-x64') },
   },
 };
 const document = {

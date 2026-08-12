@@ -1,8 +1,9 @@
 'use strict';
 
-// Ported from the established upstream runtime manager. Zyn keeps its resumable, signed-manifest protocol,
-// but uses its own manifest path and environment namespace so an older desktop build can never
-// receive a newer engine/runtime combination by accident.
+// Ported from the established upstream runtime manager. Zyn keeps its resumable, signed-manifest
+// protocol, but uses its own manifest path and environment namespace. Chromium and the native
+// checkout engine are installed side by side by version; an engine update only changes the path
+// used by the next engine spawn and never replaces an executable that owns running tasks.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -22,11 +23,12 @@ MCowBQYDK2VwAyEAbxrlW2wsfr/+kl/nA6KVcK6AExOHXJPCRgwyQ461C2w=
 -----END PUBLIC KEY-----`;
 
 const PLATFORM_COMPONENTS = Object.freeze({
-  darwin: ['chromium'],
-  win32: ['chromium'],
+  darwin: ['chromium', 'engine'],
+  win32: ['chromium', 'engine'],
 });
 const EXPECTED_CHROMIUM_REVISION = '1228';
-const RUNTIME_NAMES = new Set(['chromium']);
+const EXPECTED_ENGINE_PROTOCOL = 1;
+const RUNTIME_NAMES = new Set(['chromium', 'engine']);
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 
@@ -164,6 +166,7 @@ class RuntimeManager {
     this.currentDocument = null;
     this.currentPayload = null;
     this.currentItems = {};
+    this.activeEntries = {};
     this.ensurePromise = null;
     this.status = {
       enabled: this.enabled,
@@ -226,8 +229,15 @@ class RuntimeManager {
     if (!platform || typeof platform !== 'object') {
       throw new Error(`Runtime manifest does not support ${this.platformKey}.`);
     }
-    const names = PLATFORM_COMPONENTS[this.platform] || [];
+    const supportedNames = PLATFORM_COMPONENTS[this.platform] || [];
     const runtimeItems = { ...platform };
+    // Engine delivery was added after the signed Chromium channel was already live. Accept a
+    // cached Chromium-only manifest so an upgraded desktop can still start offline; the next
+    // successful manifest check adds the independently versioned engine.
+    const names = supportedNames.filter((name) => runtimeItems[name] != null);
+    if (!names.includes('chromium')) {
+      throw new Error('Runtime manifest is missing the required Chromium entry.');
+    }
     for (const name of names) {
       if (!safeItem(name, runtimeItems[name])) {
         throw new Error(`Runtime manifest has an invalid ${name} entry.`);
@@ -240,6 +250,9 @@ class RuntimeManager {
     }
     if (!runtimeItems.chromium.entry.includes(`/chromium-${EXPECTED_CHROMIUM_REVISION}/`)) {
       throw new Error('Runtime manifest Chromium does not match this Zyn build’s Playwright revision.');
+    }
+    if (runtimeItems.engine && runtimeItems.engine.protocol !== EXPECTED_ENGINE_PROTOCOL) {
+      throw new Error('Runtime manifest engine protocol is not compatible with this Zyn build.');
     }
     this.currentDocument = document;
     this.currentPayload = payload;
@@ -279,9 +292,22 @@ class RuntimeManager {
 
   activate(name, item) {
     const directory = this.installDir(name, item);
+    const entry = path.join(directory, item.entry);
+    this.activeEntries[name] = entry;
     if (name === 'chromium') {
       process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH = path.join(directory, item.root || 'ms-playwright');
+    } else if (name === 'engine') {
+      // target-engine resolves this only when it creates a child process. Updating the environment
+      // while a child is live therefore stages the new engine for the next drained run without
+      // moving, deleting, or mutating the executable used by current tasks.
+      process.env.ZYN_ENGINE_PATH = entry;
+      process.env.ZYN_ENGINE_VERSION = String(item.version || '');
     }
+  }
+
+  entryPath(name) {
+    const entry = this.activeEntries[name];
+    return entry && fs.existsSync(entry) ? entry : '';
   }
 
   async hostRequirementError() {
@@ -320,21 +346,28 @@ class RuntimeManager {
     await fsp.rename(temporary, path.join(this.root, 'manifest.json'));
   }
 
-  async ensureAll({ force = false } = {}) {
+  async ensureAll({ background = false } = {}) {
     if (!this.enabled) return this.getStatus();
     if (this.ensurePromise) return this.ensurePromise;
-    this.ensurePromise = this.runEnsure().finally(() => { this.ensurePromise = null; });
+    this.ensurePromise = this.runEnsure({ background }).finally(() => { this.ensurePromise = null; });
     return this.ensurePromise;
   }
 
-  async runEnsure() {
-    this.emit({ state: 'checking', message: 'Checking runtime components…', error: '' });
+  async runEnsure({ background = false } = {}) {
+    if (!background || !this.currentPayload) {
+      this.emit({ state: 'checking', message: 'Checking runtime components…', error: '' });
+    }
     try {
+      let fetchedManifest = false;
       try {
         const document = await fetchJson(this.manifestUrl);
         const payload = verifyManifest(document, this.publicKey);
-        this.setManifest(document, payload);
-        await this.cacheManifest(document);
+        fetchedManifest = true;
+        if (JSON.stringify(payload) !== JSON.stringify(this.currentPayload)) {
+          this.setManifest(document, payload);
+        } else {
+          this.currentDocument = document;
+        }
       } catch (error) {
         if (!this.currentPayload) throw error;
         this.log.warn?.(`[runtime] remote manifest unavailable; using cached manifest: ${error.message}`);
@@ -346,6 +379,12 @@ class RuntimeManager {
       }
       const finalStatus = await this.reconcile();
       if (finalStatus.state === 'error' && finalStatus.error) throw new Error(finalStatus.error);
+      // Do not replace the last-known-good cached manifest until every component in the new one is
+      // installed. After a failed update, a restart can therefore reactivate the prior engine while
+      // the new side-by-side download resumes on the next authenticated poll.
+      if (fetchedManifest && finalStatus.ready && this.currentDocument) {
+        await this.cacheManifest(this.currentDocument);
+      }
       return finalStatus;
     } catch (error) {
       this.log.error?.(`[runtime] setup failed: ${error.stack || error.message}`);
@@ -515,5 +554,6 @@ module.exports = {
   MANIFEST_PATH,
   MANIFEST_PUBLIC_KEY,
   PLATFORM_COMPONENTS,
+  EXPECTED_ENGINE_PROTOCOL,
   verifyManifest,
 };
