@@ -40,12 +40,14 @@ const silentLogger = { warn() {} };
     const entitlementChanges = [];
     const managedEvents = [];
     const proxyRevision = 'a'.repeat(64);
+    const accountId = '11111111-1111-4111-8111-111111111111';
     const api = {
       async login(email, password) {
         calls.push({ method: 'login', email, password });
         return {
           ok: true,
           licenseToken: 'authoritative-bearer',
+          userId: accountId,
           email,
           expiresAt: now + 30 * 24 * 60 * 60 * 1000,
           taskTypes: { pokemoncenter: true, round1: false },
@@ -59,7 +61,7 @@ const silentLogger = { warn() {} };
       async validate(token, revision) {
         calls.push({ method: 'validate', token, revision });
         return {
-          ok: true, email: 'owner@example.com', expiresAt: now + 5000,
+          ok: true, userId: accountId, email: 'owner@example.com', expiresAt: now + 5000,
           taskTypes: { round1: true }, proxyAccess: true, proxyListCount: 3,
           proxyRevision, proxyListsChanged: false,
         };
@@ -67,6 +69,22 @@ const silentLogger = { warn() {} };
       async hyper(token, operation, payload) {
         calls.push({ method: 'hyper', token, operation, payload });
         return { ok: true, status: 200, body: '{"solution":"safe"}' };
+      },
+      async listBackups(token) {
+        calls.push({ method: 'listBackups', token });
+        return { ok: true, backups: [{ id: '11111111-1111-4111-8111-111111111111' }] };
+      },
+      async uploadBackup(token, buffer, metadata) {
+        calls.push({ method: 'uploadBackup', token, bytes: buffer.length, metadata });
+        return { ok: true, backup: { id: metadata.backupId } };
+      },
+      async downloadBackup(token, backupId) {
+        calls.push({ method: 'downloadBackup', token, backupId });
+        return { ok: true, buffer: Buffer.from('encrypted-test'), headers: { 'x-rcart-backup-sha256': 'a'.repeat(64) } };
+      },
+      async deleteBackup(token, backupId) {
+        calls.push({ method: 'deleteBackup', token, backupId });
+        return { ok: true };
       },
       queueEvents(token, handlers) {
         calls.push({ method: 'queueEvents', token, handlers });
@@ -103,6 +121,8 @@ const silentLogger = { warn() {} };
     assert.equal(signedIn.email, 'owner@example.com');
     assert.equal(signedIn.storage, 'encrypted');
     assert.equal(signedIn.managedProxyCount, 3);
+    assert.equal(signedIn.userId, undefined, 'stable account identifier leaked to renderer status');
+    assert.equal(authority.backupAccountId(), accountId);
     assert.deepEqual(signedIn.taskTypes, { pokemoncenter: true, round1: false });
     const rendererJson = JSON.stringify(signedIn);
     for (const secret of ['authoritative-bearer', 'account-password', 'proxy-secret']) {
@@ -122,6 +142,23 @@ const silentLogger = { warn() {} };
       payload: { pageUrl: 'https://www.pokemoncenter.com/' },
     });
     assert.equal(JSON.stringify(hyper).includes('authoritative-bearer'), false);
+    const backupId = '22222222-2222-4222-8222-222222222222';
+    const listedBackups = await authority.listBackups(accountId);
+    const uploadedBackup = await authority.uploadBackup(Buffer.from('ciphertext'), { backupId }, accountId);
+    const downloadedBackup = await authority.downloadBackup(backupId, accountId);
+    const deletedBackup = await authority.deleteBackup(backupId, accountId);
+    assert.equal(listedBackups.ok, true);
+    assert.equal(uploadedBackup.ok, true);
+    assert.equal(downloadedBackup.buffer.toString(), 'encrypted-test');
+    assert.equal(deletedBackup.ok, true);
+    for (const method of ['listBackups', 'uploadBackup', 'downloadBackup', 'deleteBackup']) {
+      assert.equal(calls.find(call => call.method === method).token, 'authoritative-bearer');
+    }
+    assert.equal(calls.find(call => call.method === 'uploadBackup').bytes, 10);
+    assert.equal(JSON.stringify({ listedBackups, uploadedBackup, deletedBackup }).includes('authoritative-bearer'), false,
+      'backup authority leaked its bearer token');
+    assert.equal((await authority.listBackups('33333333-3333-4333-8333-333333333333')).status, 409,
+      'backup authority did not bind an operation to the initiating account');
     const queueSocket = authority.openPokemonQueueEvents({ message() {} });
     assert.equal(typeof queueSocket.close, 'function');
     assert.equal(calls.find(call => call.method === 'queueEvents').token, 'authoritative-bearer');
@@ -255,6 +292,7 @@ const silentLogger = { warn() {} };
     assert.equal(loggedOut.ok, false);
     assert.equal(logoutToken, 'logout-bearer');
     assert.equal(logoutLocks, 1);
+    assert.equal((await logoutAuthority.listBackups()).status, 401);
 
     assert.ok(statuses.length >= 1);
     console.log(JSON.stringify({
@@ -273,6 +311,7 @@ const silentLogger = { warn() {} };
       managedProxyRevisionReused: true,
       hyperBearerMainOnly: true,
       queueEventBearerMainOnly: true,
+      backupBearerMainOnly: true,
     }, null, 2));
   } finally {
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });

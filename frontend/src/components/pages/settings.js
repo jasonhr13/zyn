@@ -54,6 +54,11 @@ class Settings extends Component {
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
+      cloudBackup: null, cloudBackups: [], cloudLoading: false,
+      cloudListLoaded: false, cloudListError: '',
+      cloudMsg: '', cloudMsgColor: 'var(--muted)',
+      recoveryAcknowledged: false, recoveryImport: '', recoveryExpectedFingerprint: '',
+      cloudRestoreReplace: false,
     };
   }
 
@@ -86,15 +91,27 @@ class Settings extends Component {
       licenseOffline: status.offline === true,
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
+      ...(status.ok === true ? {} : { cloudBackups: [], cloudListLoaded: false, cloudListError: '' }),
     });
+    if (status.ok === true) this.loadCloudBackups();
+  };
+
+  applyCloudBackupStatus = (eventOrStatus, pushedStatus) => {
+    const status = pushedStatus || eventOrStatus;
+    if (status && typeof status === 'object') this.setState({ cloudBackup: status });
   };
 
   componentDidMount() {
     this.syncFromProps(this.props.settings || {});
     ipcRenderer.on('licenseStatus', this.applyLicenseStatus);
+    ipcRenderer.on('cloudBackupStatus', this.applyCloudBackupStatus);
     ipcRenderer.invoke('licenseStatus').then(this.applyLicenseStatus).catch(() => {});
+    ipcRenderer.invoke('cloudBackupStatus').then(this.applyCloudBackupStatus).catch(() => {});
   }
-  componentWillUnmount() { ipcRenderer.removeListener('licenseStatus', this.applyLicenseStatus); }
+  componentWillUnmount() {
+    ipcRenderer.removeListener('licenseStatus', this.applyLicenseStatus);
+    ipcRenderer.removeListener('cloudBackupStatus', this.applyCloudBackupStatus);
+  }
   componentDidUpdate(prev) {
     if (prev.settings !== this.props.settings) this.syncFromProps(this.props.settings || {});
   }
@@ -196,6 +213,218 @@ class Settings extends Component {
     }
   };
 
+  setCloudMessage = (text, ok = false) => this.setState({
+    cloudMsg: text,
+    cloudMsgColor: ok ? 'var(--ok)' : 'var(--danger)',
+  });
+
+  loadCloudBackups = async () => {
+    this.setState({ cloudLoading: true, cloudListError: '' });
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupList');
+      if (result && result.ok) {
+        this.setState({ cloudBackups: result.backups || [], cloudListLoaded: true, cloudListError: '' });
+      } else {
+        this.setState({ cloudListError: (result && result.error) || 'Could not load encrypted backups.' });
+      }
+    } catch (error) {
+      this.setState({ cloudListError: error.message || 'Could not load encrypted backups.' });
+    }
+    this.setState({ cloudLoading: false });
+  };
+
+  setupCloudBackup = async () => {
+    this.setState({ cloudLoading: true, cloudMsg: '' });
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupSetupKey');
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not create a recovery key.');
+      else this.setState({
+        cloudBackup: result.status || this.state.cloudBackup,
+        recoveryAcknowledged: false,
+      });
+    } catch (error) { this.setCloudMessage(error.message); }
+    this.setState({ cloudLoading: false });
+  };
+
+  claimLegacyCloudBackup = async () => {
+    if (!window.confirm(
+      'Use the encrypted backup key and schedule found from the previous app installation for this signed-in Zyn account?\n\n' +
+      'This binds that local backup setup to the current account. If automatic backups were already enabled, that schedule resumes immediately.'
+    )) return;
+    this.setState({ cloudLoading: true, cloudMsg: '' });
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupClaimLegacy');
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not use the existing backup setup.');
+      else this.setState({
+        cloudBackup: result.status,
+        cloudMsg: '✓ Existing encrypted backup setup is now linked to this Zyn account.',
+        cloudMsgColor: 'var(--ok)',
+      });
+    } catch (error) { this.setCloudMessage(error.message); }
+    this.setState({ cloudLoading: false });
+  };
+
+  copyCloudBackupKey = async () => {
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupCopyKey');
+      if (result && result.canceled) return;
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not copy the recovery key.');
+      else {
+        this.setState({
+          cloudMsg: '✓ Recovery key copied. Save it securely; your operating system may sync clipboard contents.',
+          cloudMsgColor: 'var(--ok)',
+        });
+        const status = await ipcRenderer.invoke('cloudBackupStatus');
+        this.setState({ cloudBackup: status });
+      }
+    } catch (error) { this.setCloudMessage(error.message); }
+  };
+
+  saveCloudBackupKey = async () => {
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupSaveKey');
+      if (!result || result.canceled) return;
+      if (!result.ok) this.setCloudMessage(result.error || 'Could not save the recovery key.');
+      else {
+        this.setState({ cloudMsg: '✓ Recovery-key file saved.', cloudMsgColor: 'var(--ok)' });
+        const status = await ipcRenderer.invoke('cloudBackupStatus');
+        this.setState({ cloudBackup: status });
+      }
+    } catch (error) { this.setCloudMessage(error.message); }
+  };
+
+  enableCloudBackup = async () => {
+    if (!this.state.recoveryAcknowledged) return;
+    const interval = Number(this.state.cloudBackup && this.state.cloudBackup.intervalMs) || 60 * 60 * 1000;
+    this.setState({ cloudLoading: true, cloudMsg: 'Encrypting and uploading your first backup…', cloudMsgColor: 'var(--run)' });
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupEnable', interval);
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not enable backups.');
+      else {
+        this.setState({
+          cloudBackup: result.status,
+          cloudMsg: '✓ Encrypted backup saved. Automatic backups are on.',
+          cloudMsgColor: 'var(--ok)',
+        });
+        await this.loadCloudBackups();
+      }
+    } catch (error) { this.setCloudMessage(error.message); }
+    this.setState({ cloudLoading: false });
+  };
+
+  setCloudBackupSchedule = async (event) => {
+    const interval = Number(event.target.value);
+    this.setState(state => ({ cloudBackup: { ...(state.cloudBackup || {}), intervalMs: interval, enabled: interval > 0 } }));
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupSetSchedule', interval);
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not update the backup schedule.');
+      else this.setState({
+        cloudBackup: result.status,
+        cloudMsg: interval ? '✓ Backup schedule updated.' : 'Automatic backups are off.',
+        cloudMsgColor: interval ? 'var(--ok)' : 'var(--muted)',
+      });
+    } catch (error) { this.setCloudMessage(error.message); }
+  };
+
+  runCloudBackup = async () => {
+    this.setState({ cloudLoading: true, cloudMsg: 'Encrypting on this device…', cloudMsgColor: 'var(--run)' });
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupRun');
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Backup failed.');
+      else {
+        this.setState({ cloudBackup: result.status, cloudMsg: '✓ Encrypted backup saved.', cloudMsgColor: 'var(--ok)' });
+        await this.loadCloudBackups();
+      }
+    } catch (error) { this.setCloudMessage(error.message); }
+    this.setState({ cloudLoading: false });
+  };
+
+  importCloudBackupKey = async (expectedFingerprint = '') => {
+    const recoveryKey = this.state.recoveryImport.trim();
+    if (!recoveryKey) return;
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupImportKey', { recoveryKey, expectedFingerprint });
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not import that recovery key.');
+      else this.setState({
+        cloudBackup: result.status,
+        recoveryImport: '',
+        recoveryExpectedFingerprint: '',
+        cloudMsg: '✓ Recovery key imported on this device.',
+        cloudMsgColor: 'var(--ok)',
+      });
+    } catch (error) { this.setCloudMessage(error.message); }
+  };
+
+  restoreCloudBackup = async (backup) => {
+    const fingerprint = String(backup.keyFingerprint || '');
+    const availableKeys = new Set([
+      ...((this.state.cloudBackup && this.state.cloudBackup.keyFingerprints) || []),
+      (this.state.cloudBackup && this.state.cloudBackup.keyFingerprint) || '',
+    ].filter(Boolean));
+    if (!availableKeys.has(fingerprint)) {
+      this.setState({
+        recoveryExpectedFingerprint: fingerprint,
+        cloudMsg: 'Import the recovery key that matches this backup before restoring.',
+        cloudMsgColor: 'var(--danger)',
+      });
+      return;
+    }
+    this.setState({ cloudLoading: true, cloudMsg: 'Decrypting backup on this device…', cloudMsgColor: 'var(--run)' });
+    try {
+      const mode = this.state.cloudRestoreReplace ? 'replace' : 'merge';
+      const preview = await ipcRenderer.invoke('cloudBackupPreview', { backupId: backup.id, mode });
+      if (!preview || !preview.ok) {
+        this.setCloudMessage((preview && preview.error) || 'Could not decrypt that backup.');
+        this.setState({ cloudLoading: false });
+        return;
+      }
+      const counts = preview.preview || {};
+      const groups = counts.taskGroups && typeof counts.taskGroups === 'object'
+        ? counts.taskGroups
+        : { total: Number(counts.taskGroups) || 0, supported: Number(counts.taskGroups) || 0 };
+      const tasks = Number(counts.tasks || 0) + Number(counts.targetTasks || 0)
+        + Number(counts.pokemonCenterTasks || 0) + Number(counts.legacyTasks || 0);
+      const detail = `${counts.profiles || 0} profiles, ${counts.accounts || 0} accounts, ${counts.proxyLists || 0} proxy lists, ${groups.supported || 0} supported task groups, and ${tasks} tasks`;
+      const warnings = Array.isArray(counts.warnings) ? counts.warnings.filter(Boolean) : [];
+      const warningCopy = warnings.length ? `\n\nPlease review:\n• ${warnings.join('\n• ')}` : '';
+      if (!window.confirm(`${mode === 'replace' ? 'Replace current data with' : 'Merge current data from'} this backup (${detail})?${warningCopy}`)) {
+        this.setState({ cloudLoading: false, cloudMsg: '' });
+        return;
+      }
+      const result = await ipcRenderer.invoke('cloudBackupRestore', { backupId: backup.id, mode });
+      if (!result || !result.ok) {
+        this.setCloudMessage((result && result.error) || 'Restore failed.');
+        this.setState({ cloudLoading: false });
+        return;
+      }
+      this.setState({ cloudMsg: '✓ Backup restored. Reloading…', cloudMsgColor: 'var(--ok)' });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      this.setCloudMessage(error.message);
+      this.setState({ cloudLoading: false });
+    }
+  };
+
+  deleteCloudBackup = async (backup) => {
+    if (!window.confirm(`Delete the encrypted backup from ${this.formatBackupDate(backup.createdAt)}?`)) return;
+    try {
+      const result = await ipcRenderer.invoke('cloudBackupDelete', backup.id);
+      if (!result || !result.ok) this.setCloudMessage((result && result.error) || 'Could not delete that backup.');
+      else {
+        this.setState({ cloudMsg: '✓ Backup deleted.', cloudMsgColor: 'var(--ok)' });
+        await this.loadCloudBackups();
+      }
+    } catch (error) { this.setCloudMessage(error.message); }
+  };
+
+  formatBackupDate = value => value ? new Date(Number(value)).toLocaleString() : 'Never';
+  formatBytes = value => {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   exportData = async () => {
     if (!window.confirm(
       'The exported file will contain your CARD DETAILS, SITE PASSWORDS, MAILBOX PASSWORDS, and DISCORD TOKEN in plain text.\n\n' +
@@ -259,6 +488,19 @@ class Settings extends Component {
     const operatorMode = !!(this.props.settings || {}).operatorMode;
     const u = this.props.update;
     const line = this.updateLine();
+    const cloud = this.state.cloudBackup || {};
+    const backupFingerprints = new Set((this.state.cloudBackups || []).map(item => item.keyFingerprint).filter(Boolean));
+    const availableRecoveryKeys = new Set([
+      ...(Array.isArray(cloud.keyFingerprints) ? cloud.keyFingerprints : []),
+      cloud.keyFingerprint || '',
+    ].filter(Boolean));
+    const missingBackupFingerprints = [...backupFingerprints].filter(fingerprint => !availableRecoveryKeys.has(fingerprint));
+    const needsRecoveryImport = cloud.keyUnavailable || !!this.state.recoveryExpectedFingerprint
+      || missingBackupFingerprints.length > 0;
+    const requestedRecoveryFingerprint = this.state.recoveryExpectedFingerprint
+      || cloud.configuredActiveKeyFingerprint
+      || (this.state.cloudBackups[0] && this.state.cloudBackups[0].keyFingerprint)
+      || '';
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="page-header">
@@ -525,6 +767,229 @@ class Settings extends Component {
 
           <div className="settings-section">
             <div className="settings-section-title">Backup &amp; Restore</div>
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14,
+              background: 'color-mix(in srgb, var(--panel) 88%, transparent)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ maxWidth: 720 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>Encrypted cloud backup</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.55, marginTop: 5 }}>
+                    Zyn encrypts your data on this device before sending it to Cloudflare. The server
+                    stores only encrypted bytes and never receives your recovery key. Without that key,
+                    neither Zyn nor anyone operating the service can restore the backup.
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--dim)', lineHeight: 1.5, marginTop: 6 }}>
+                    Includes profiles and payment details, site and mailbox passwords, user API keys,
+                    local proxy lists, settings, tasks, and task groups. Zyn account/session credentials,
+                    browser session cookies, and managed-proxy service credentials are excluded.
+                  </div>
+                </div>
+                {cloud.hasKey && cloud.keyConfirmed && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase',
+                    color: cloud.enabled ? 'var(--ok)' : 'var(--muted)',
+                  }}>
+                    {cloud.enabled ? 'Automatic backups on' : 'Automatic backups off'}
+                  </span>
+                )}
+              </div>
+
+              {cloud.available === false && (
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 12 }}>
+                  Secure operating-system key storage is unavailable, so encrypted backup cannot be enabled.
+                </div>
+              )}
+
+              {cloud.accountBound === false && (
+                <div style={{ fontSize: 11, color: 'var(--run)', marginTop: 12 }}>
+                  Reconnect your Zyn account before configuring encrypted backup.
+                </div>
+              )}
+
+              {cloud.keyUnavailable && (
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 12, lineHeight: 1.5 }}>
+                  This device can no longer unlock its stored recovery key. Import the original recovery
+                  key below; Zyn will not silently replace it and orphan your existing backups.
+                </div>
+              )}
+
+              {cloud.accountBound !== false && cloud.legacyStateAvailable && !cloud.hasKey && (
+                <div style={{ marginTop: 12, padding: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text)', lineHeight: 1.5, marginBottom: 8 }}>
+                    An encrypted backup setup from the previous app installation is available on this device.
+                  </div>
+                  <button className="btn btn-secondary btn-sm" onClick={this.claimLegacyCloudBackup} disabled={this.state.cloudLoading}>
+                    Use existing backup setup
+                  </button>
+                </div>
+              )}
+
+              {cloud.accountBound !== false && cloud.available !== false && !cloud.hasKey && !cloud.keyUnavailable && (
+                <div style={{ marginTop: 12 }}>
+                  <button className="btn btn-primary btn-sm" onClick={this.setupCloudBackup} disabled={this.state.cloudLoading}>
+                    {cloud.legacyStateAvailable ? 'Start fresh with a new recovery key' : 'Create recovery key'}
+                  </button>
+                </div>
+              )}
+
+              {cloud.hasKey && !cloud.keyConfirmed && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 11, color: 'var(--run)', lineHeight: 1.5, marginBottom: 7 }}>
+                    Save or copy the recovery key somewhere separate from this computer. For safety,
+                    Zyn does not display or return an already-stored key in page data, and never keeps
+                    a server-side copy. Copying requires a separate native confirmation.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 9 }}>
+                    <button className="btn btn-secondary btn-sm" onClick={this.saveCloudBackupKey}>Save recovery-key file</button>
+                    <button className="btn btn-secondary btn-sm" onClick={this.copyCloudBackupKey}>Copy key</button>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginTop: 11, cursor: 'pointer', fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>
+                    <input
+                      type="checkbox"
+                      checked={this.state.recoveryAcknowledged}
+                      onChange={event => this.setState({ recoveryAcknowledged: event.target.checked })}
+                    />
+                    I saved the recovery key and understand that my data cannot be restored without it.
+                  </label>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ marginTop: 10 }}
+                    onClick={this.enableCloudBackup}
+                    disabled={!cloud.recoveryHandled || !this.state.recoveryAcknowledged || this.state.cloudLoading}
+                  >
+                    Enable &amp; back up now
+                  </button>
+                </div>
+              )}
+
+              {cloud.hasKey && cloud.keyConfirmed && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                    <select
+                      className="form-input"
+                      aria-label="Automatic encrypted backup schedule"
+                      style={{ width: 190, minHeight: 32, padding: '5px 9px' }}
+                      value={cloud.enabled ? Number(cloud.intervalMs) : 0}
+                      onChange={this.setCloudBackupSchedule}
+                      disabled={cloud.busy || this.state.cloudLoading}
+                    >
+                      <option value="0">Automatic backup: Off</option>
+                      <option value={15 * 60 * 1000}>Every 15 minutes</option>
+                      <option value={30 * 60 * 1000}>Every 30 minutes</option>
+                      <option value={60 * 60 * 1000}>Every hour</option>
+                      <option value={6 * 60 * 60 * 1000}>Every 6 hours</option>
+                      <option value={24 * 60 * 60 * 1000}>Every day</option>
+                    </select>
+                    <button className="btn btn-primary btn-sm" onClick={this.runCloudBackup} disabled={cloud.busy || this.state.cloudLoading}>
+                      {cloud.busy ? (cloud.stage || 'Working…') : 'Back up now'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={this.saveCloudBackupKey}>Save recovery-key file</button>
+                    <button className="btn btn-secondary btn-sm" onClick={this.copyCloudBackupKey}>Copy key</button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                    Last backup: {this.formatBackupDate(cloud.lastBackupAt)}
+                    {cloud.lastBackupBytes ? ` · ${this.formatBytes(cloud.lastBackupBytes)}` : ''}
+                    {cloud.enabled && cloud.nextBackupAt ? ` · Next: ${this.formatBackupDate(cloud.nextBackupAt)}` : ''}
+                    {cloud.keyFingerprint ? ` · Key ${cloud.keyFingerprint}` : ''}
+                    {Array.isArray(cloud.keyFingerprints) && cloud.keyFingerprints.length > 1
+                      ? ` · ${cloud.keyFingerprints.length} recovery keys stored` : ''}
+                  </div>
+                  {cloud.lastError && (
+                    <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>Last attempt: {cloud.lastError}</div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 14, paddingTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text)', fontWeight: 700 }}>Saved backups</div>
+                  <button className="btn btn-secondary btn-sm" onClick={this.loadCloudBackups} disabled={this.state.cloudLoading}>Refresh</button>
+                </div>
+                {this.state.cloudListError && (
+                  <div role="alert" style={{ fontSize: 11, color: 'var(--danger)', marginTop: 9 }}>
+                    {this.state.cloudBackups.length
+                      ? `Could not refresh backups: ${this.state.cloudListError} Showing the last loaded list.`
+                      : `Could not load backups: ${this.state.cloudListError}`}
+                  </div>
+                )}
+                {this.state.cloudBackups.length ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 9 }}>
+                    {this.state.cloudBackups.map(backup => (
+                      <div key={backup.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                        padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, flexWrap: 'wrap',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text)' }}>{this.formatBackupDate(backup.createdAt)}</div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                            {backup.deviceName || 'Unknown device'} · {this.formatBytes(backup.sizeBytes)} · v{backup.appVersion || 'unknown'} · Key {backup.keyFingerprint}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => this.restoreCloudBackup(backup)} disabled={this.state.cloudLoading}>Restore</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => this.deleteCloudBackup(backup)} disabled={this.state.cloudLoading}>Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
+                    {this.state.cloudLoading
+                      ? 'Loading backups…'
+                      : (this.state.cloudListError
+                        ? 'The backup list is unavailable right now.'
+                        : (this.state.cloudListLoaded
+                          ? 'No encrypted backups saved yet.'
+                          : (cloud.accountBound ? 'Backups have not loaded yet.' : 'Sign in to view encrypted backups.')))}
+                  </div>
+                )}
+
+                {needsRecoveryImport && (this.state.cloudBackups.length > 0 || cloud.keyUnavailable) && (
+                  <div style={{ marginTop: 11 }}>
+                    <label className="form-label" htmlFor="cloud-backup-recovery-key">
+                      Recovery key for {requestedRecoveryFingerprint
+                        ? `backup key ${requestedRecoveryFingerprint}`
+                        : (this.state.cloudBackups.length ? 'these backups' : 'this device')}
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <input
+                        id="cloud-backup-recovery-key"
+                        className="form-input monospace"
+                        style={{ flex: 1, minWidth: 260 }}
+                        type="password"
+                        autoComplete="off"
+                        placeholder="RCART1.… (existing backup keys remain compatible)"
+                        value={this.state.recoveryImport}
+                        onChange={event => this.setState({ recoveryImport: event.target.value })}
+                      />
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => this.importCloudBackupKey(requestedRecoveryFingerprint)}
+                        disabled={!this.state.recoveryImport.trim()}
+                      >
+                        Import key
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted)', cursor: 'pointer', marginTop: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={this.state.cloudRestoreReplace}
+                    onChange={event => this.setState({ cloudRestoreReplace: event.target.checked })}
+                  />
+                  Cloud restore replaces current data (instead of merging)
+                </label>
+              </div>
+
+              {this.state.cloudMsg && (
+                <div style={{ fontSize: 11, color: this.state.cloudMsgColor, marginTop: 9 }}>{this.state.cloudMsg}</div>
+              )}
+            </div>
+
+            <div style={{ fontSize: 11, color: 'var(--text)', fontWeight: 700, marginBottom: 8 }}>Local file</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary btn-sm" onClick={this.exportData}>
                 <i className="ion-md-download" style={{ fontSize: 12 }} /> Export all data

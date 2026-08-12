@@ -15,6 +15,9 @@ const MAX_PROXY_LINES = 50000;
 const MAX_MANAGED_LISTS = 20;
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const BACKUP_RETENTION = 10;
+const BACKUP_UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1000;
+const BACKUP_UPLOAD_RATE_MAX_REQUESTS = 30;
+const BACKUP_ORPHAN_GRACE_MS = 5 * 60 * 1000;
 const MAX_HYPER_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_HYPER_RESPONSE_BYTES = 4 * 1024 * 1024;
 const HYPER_TIMEOUT_MS = 30 * 1000;
@@ -33,6 +36,7 @@ const MAX_STORED_PROXY_CHARS = 1800000;
 const COMPRESSED_PROXY_PREFIX = 'gz1:';
 const DOWNLOAD_SITE_ORIGIN = 'https://zynbot.app';
 const HYPER_SERVICE_NAME = 'hyper';
+const BACKUP_UPLOAD_SERVICE_NAME = 'cloud-backup-upload';
 const POKEMON_QUEUE_SERVICE_NAME = 'pokemon-queue-events';
 const POKEMON_QUEUE_UPSTREAM = 'wss://polar-wss-production.up.railway.app';
 const POKEMON_QUEUE_UPSTREAM_VERSION = 'v0.0.45';
@@ -901,6 +905,7 @@ async function mintLicense(env, user, deviceId, deviceName) {
   return {
     ok: true,
     licenseToken: token,
+    userId: user.id,
     email: user.email,
     expiresAt,
     ...await licenseEntitlements(env, user),
@@ -1089,6 +1094,7 @@ async function validateLicense(request, env) {
     .bind(now, expiresAt, row.license_id).run();
   return json({
     ok: true,
+    userId: row.user_id,
     email: row.email,
     expiresAt,
     ...await licenseEntitlements(env, row, knownProxyRevision),
@@ -1562,9 +1568,211 @@ function backupJson(row) {
   };
 }
 
+function backupUploadRateLimit(env) {
+  const configured = Number(env && env.BACKUP_UPLOAD_RATE_MAX_REQUESTS);
+  return Number.isInteger(configured) && configured > 0
+    ? Math.min(configured, BACKUP_UPLOAD_RATE_MAX_REQUESTS)
+    : BACKUP_UPLOAD_RATE_MAX_REQUESTS;
+}
+
+async function consumeBackupUploadQuota(env, userId, now = Date.now()) {
+  const windowStartedAt = Math.floor(now / BACKUP_UPLOAD_RATE_WINDOW_MS) * BACKUP_UPLOAD_RATE_WINDOW_MS;
+  await env.DB.prepare(`
+    INSERT INTO service_rate_windows
+      (user_id, service, window_started_at, request_count, updated_at)
+    VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(user_id, service) DO UPDATE SET
+      request_count = CASE
+        WHEN service_rate_windows.window_started_at = excluded.window_started_at
+          THEN service_rate_windows.request_count + 1
+        ELSE 1
+      END,
+      window_started_at = excluded.window_started_at,
+      updated_at = excluded.updated_at
+  `).bind(userId, BACKUP_UPLOAD_SERVICE_NAME, windowStartedAt, now).run();
+  const row = await env.DB.prepare(`
+    SELECT request_count FROM service_rate_windows WHERE user_id = ? AND service = ?
+  `).bind(userId, BACKUP_UPLOAD_SERVICE_NAME).first();
+  const count = Number(row && row.request_count) || 1;
+  return {
+    allowed: count <= backupUploadRateLimit(env),
+    count,
+    retryAfter: Math.max(1, Math.ceil((windowStartedAt + BACKUP_UPLOAD_RATE_WINDOW_MS - now) / 1000)),
+  };
+}
+
+function checksumHex(value) {
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase();
+    return /^[a-f0-9]{64}$/.test(normalized) ? normalized : '';
+  }
+  try {
+    if (value instanceof ArrayBuffer) return bytesToHex(new Uint8Array(value));
+    if (ArrayBuffer.isView(value)) {
+      return bytesToHex(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    }
+  } catch {}
+  return '';
+}
+
+function r2Sha256(object) {
+  return checksumHex(object && object.checksums && object.checksums.sha256);
+}
+
+async function deleteR2Objects(env, keys) {
+  const unique = [...new Set((Array.isArray(keys) ? keys : [keys]).map(String).filter(Boolean))];
+  if (!unique.length) return true;
+  try {
+    await env.BACKUPS.delete(unique.length === 1 ? unique[0] : unique);
+    return true;
+  } catch (error) {
+    console.error('backup object cleanup failed', error && error.message);
+    return false;
+  }
+}
+
+async function enforceBackupRetention(env, userId) {
+  // The D1 deletion is one atomic statement. Concurrent uploaders may select the same old row, but
+  // cannot push the account below the retention limit because every statement computes its offset
+  // from the rows visible in that transaction. `rowid` breaks millisecond timestamp ties by insert
+  // order. R2 deletion follows; a failed object delete is reconciled as an inaccessible orphan.
+  const expired = await env.DB.prepare(`
+    DELETE FROM encrypted_backups
+    WHERE user_id = ? AND id IN (
+      SELECT id FROM encrypted_backups WHERE user_id = ?
+      ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
+    )
+    RETURNING object_key
+  `).bind(userId, userId, BACKUP_RETENTION).all();
+  const keys = (expired.results || []).map(row => String(row.object_key || '')).filter(Boolean);
+  if (keys.length) await deleteR2Objects(env, keys);
+  return keys;
+}
+
+async function listedBackupObjects(env, userId) {
+  const prefix = `backups/${userId}/`;
+  const objects = [];
+  let cursor;
+  let complete = false;
+  // Normal accounts have ten objects. The bound prevents a historical orphan flood from turning a
+  // foreground request into unbounded work; later requests continue the cleanup.
+  for (let page = 0; page < 10; page += 1) {
+    const listed = await env.BACKUPS.list({
+      prefix,
+      limit: 1000,
+      ...(cursor ? { cursor } : {}),
+      include: ['customMetadata'],
+    });
+    objects.push(...(listed.objects || []));
+    if (!listed.truncated) {
+      complete = true;
+      break;
+    }
+    if (!listed.cursor || listed.cursor === cursor) break;
+    cursor = listed.cursor;
+  }
+  return { complete, objects };
+}
+
+async function reconcileBackupStorage(env, userId, now = Date.now()) {
+  const rows = await env.DB.prepare(
+    'SELECT id, object_key FROM encrypted_backups WHERE user_id = ?',
+  ).bind(userId).all();
+  const knownByKey = new Map((rows.results || []).map(row => [String(row.object_key || ''), row]));
+  const listed = await listedBackupObjects(env, userId);
+  const present = new Set();
+  const staleOrphans = [];
+  for (const object of listed.objects) {
+    const key = String(object && object.key || '');
+    if (!key) continue;
+    present.add(key);
+    if (knownByKey.has(key)) continue;
+    const uploadedAt = new Date(object.uploaded).getTime();
+    // A put necessarily precedes its D1 insert. Keep recent unmatched objects so a concurrent
+    // reconciliation cannot delete a legitimate upload in that small cross-service commit window.
+    if (Number.isFinite(uploadedAt) && uploadedAt <= now - BACKUP_ORPHAN_GRACE_MS) {
+      staleOrphans.push(key);
+    }
+  }
+  if (staleOrphans.length) await deleteR2Objects(env, staleOrphans);
+
+  let missingRows = 0;
+  if (listed.complete) {
+    for (const [objectKey, row] of knownByKey) {
+      if (!objectKey || present.has(objectKey)) continue;
+      await env.DB.prepare('DELETE FROM encrypted_backups WHERE id = ? AND user_id = ?')
+        .bind(row.id, userId).run();
+      missingRows += 1;
+    }
+  }
+  return { orphanObjects: staleOrphans.length, missingRows, complete: listed.complete };
+}
+
+async function maintainBackupStorage(env, userId) {
+  try { await enforceBackupRetention(env, userId); }
+  catch (error) { console.error('backup retention failed', error && error.message); }
+  try { await reconcileBackupStorage(env, userId); }
+  catch (error) { console.error('backup reconciliation failed', error && error.message); }
+}
+
+async function purgeBackupPair(env, row, userId) {
+  if (!await deleteR2Objects(env, row.object_key)) return false;
+  try {
+    await env.DB.prepare('DELETE FROM encrypted_backups WHERE id = ? AND user_id = ?')
+      .bind(row.id, userId).run();
+  } catch (error) {
+    // The object is already gone. Reconciliation will remove this now-inaccessible metadata row.
+    console.error('backup metadata cleanup failed', error && error.message);
+    return false;
+  }
+  return true;
+}
+
+async function backupObjectBytes(object) {
+  if (object && typeof object.arrayBuffer === 'function') {
+    return new Uint8Array(await object.arrayBuffer());
+  }
+  return new Uint8Array(await new Response(object && object.body).arrayBuffer());
+}
+
+async function verifiedBackupBytes(object, row) {
+  const expectedSha = String(row.sha256 || '').toLowerCase();
+  const expectedSize = Number(row.size_bytes);
+  if (!/^[a-f0-9]{64}$/.test(expectedSha)
+      || !Number.isSafeInteger(expectedSize) || expectedSize <= 0 || expectedSize > MAX_BACKUP_BYTES
+      || !Number.isSafeInteger(Number(object && object.size)) || Number(object.size) !== expectedSize) {
+    return null;
+  }
+  const metadata = object.customMetadata && typeof object.customMetadata === 'object'
+    ? object.customMetadata : {};
+  const storedChecksum = r2Sha256(object);
+  if (metadata.integrityVersion === '1') {
+    if (metadata.sha256 !== expectedSha || Number(metadata.sizeBytes) !== expectedSize
+        || metadata.backupId !== row.id || storedChecksum !== expectedSha) return null;
+  } else {
+    // Objects created before integrityVersion=1 have no SHA-256 R2 metadata. They remain readable,
+    // but any checksum or SHA metadata that is present must agree with the authoritative D1 row.
+    if ((metadata.sha256 && metadata.sha256 !== expectedSha)
+        || (metadata.sizeBytes && Number(metadata.sizeBytes) !== expectedSize)
+        || (storedChecksum && storedChecksum !== expectedSha)) return null;
+  }
+
+  const bytes = await backupObjectBytes(object);
+  if (bytes.length !== expectedSize) return null;
+  const actualSha = bytesToHex(await crypto.subtle.digest('SHA-256', bytes));
+  if (actualSha !== expectedSha) return null;
+  const envelope = inspectBackupEnvelope(bytes);
+  if (!envelope || String(envelope.backupId || '').toLowerCase() !== String(row.id || '').toLowerCase()
+      || String(envelope.keyFingerprint || '').toLowerCase() !== String(row.key_fingerprint || '').toLowerCase()
+      || Number(envelope.createdAt) !== Number(row.client_created_at)
+      || String(envelope.appVersion || '') !== String(row.app_version || '')) return null;
+  return bytes;
+}
+
 async function listBackups(request, env) {
   const identity = await authenticatedLicense(request, env);
   if (!identity) return json({ ok: false, code: 'license_invalid', message: 'Sign in again to access backups.' }, 401);
+  await maintainBackupStorage(env, identity.user_id);
   const result = await env.DB.prepare(`
     SELECT id, created_at, client_created_at, device_name, size_bytes, sha256,
       key_fingerprint, format_version, app_version
@@ -1588,8 +1796,21 @@ async function putBackup(request, env, backupId) {
   if (!/^[a-f0-9]{16}$/.test(keyFingerprint)) return json({ ok: false, message: 'Invalid backup key fingerprint.' }, 400);
   const appVersion = String(request.headers.get('x-rcart-app-version') || '').slice(0, 40);
   const clientCreatedAt = Number(request.headers.get('x-rcart-created-at')) || 0;
+  const existing = await env.DB.prepare(
+    'SELECT id FROM encrypted_backups WHERE id = ? AND user_id = ?',
+  ).bind(backupId, identity.user_id).first();
+  if (existing) return json({ ok: false, message: 'That backup already exists.' }, 409);
+
+  const quota = await consumeBackupUploadQuota(env, identity.user_id);
+  if (!quota.allowed) {
+    return json({
+      ok: false,
+      code: 'backup_rate_limited',
+      message: 'Too many backup uploads. Try again later.',
+    }, 429, { 'retry-after': String(quota.retryAfter) });
+  }
   const bytes = new Uint8Array(await request.arrayBuffer());
-  if (!bytes.length || bytes.length > MAX_BACKUP_BYTES) {
+  if (!bytes.length || bytes.length > MAX_BACKUP_BYTES || bytes.length !== declaredLength) {
     return json({ ok: false, message: 'Encrypted backups must be 20 MB or smaller.' }, 413);
   }
   const envelope = inspectBackupEnvelope(bytes);
@@ -1599,18 +1820,29 @@ async function putBackup(request, env, backupId) {
     return json({ ok: false, message: 'Invalid encrypted backup envelope.' }, 400);
   }
 
-  const existing = await env.DB.prepare(
-    'SELECT id FROM encrypted_backups WHERE id = ? AND user_id = ?',
-  ).bind(backupId, identity.user_id).first();
-  if (existing) return json({ ok: false, message: 'That backup already exists.' }, 409);
-
   const now = Date.now();
   const objectKey = `backups/${identity.user_id}/${backupId}.rcb`;
-  const digest = bytesToHex(await crypto.subtle.digest('SHA-256', bytes));
-  await env.BACKUPS.put(objectKey, bytes, {
+  const digestBuffer = await crypto.subtle.digest('SHA-256', bytes);
+  const digest = bytesToHex(digestBuffer);
+  const stored = await env.BACKUPS.put(objectKey, bytes, {
+    onlyIf: { etagDoesNotMatch: '*' },
+    sha256: digestBuffer,
     httpMetadata: { contentType: 'application/octet-stream' },
-    customMetadata: { keyFingerprint, formatVersion: '1' },
+    customMetadata: {
+      integrityVersion: '1',
+      sha256: digest,
+      sizeBytes: String(bytes.length),
+      backupId,
+      keyFingerprint,
+      formatVersion: '1',
+    },
   });
+  if (!stored) return json({ ok: false, message: 'That backup already exists.' }, 409);
+  if (Number(stored.size) !== bytes.length || r2Sha256(stored) !== digest
+      || !stored.customMetadata || stored.customMetadata.sha256 !== digest) {
+    await deleteR2Objects(env, objectKey);
+    throw new Error('R2 did not confirm the backup checksum.');
+  }
   try {
     await env.DB.prepare(`
       INSERT INTO encrypted_backups
@@ -1623,21 +1855,14 @@ async function putBackup(request, env, backupId) {
       bytes.length, digest, keyFingerprint, appVersion,
     ).run();
   } catch (error) {
-    await env.BACKUPS.delete(objectKey);
+    await deleteR2Objects(env, objectKey);
     throw error;
   }
 
-  // Keep a small revision history. Each object has a unique id, so two devices can upload without
-  // overwriting one another; retention is applied by the server's receipt time.
-  const expired = await env.DB.prepare(`
-    SELECT id, object_key FROM encrypted_backups WHERE user_id = ?
-    ORDER BY created_at DESC LIMIT -1 OFFSET ?
-  `).bind(identity.user_id, BACKUP_RETENTION).all();
-  for (const old of (expired.results || [])) {
-    await env.BACKUPS.delete(old.object_key);
-    await env.DB.prepare('DELETE FROM encrypted_backups WHERE id = ? AND user_id = ?')
-      .bind(old.id, identity.user_id).run();
-  }
+  // The new row is authoritative even if best-effort maintenance encounters a transient R2/D1
+  // failure. A later upload or list retries retention and orphan cleanup without making the client
+  // retry an upload that already committed.
+  await maintainBackupStorage(env, identity.user_id);
 
   return json({
     ok: true,
@@ -1664,14 +1889,36 @@ async function getBackup(request, env, backupId) {
   if (!row) return json({ ok: false, message: 'Backup not found.' }, 404);
   const object = await env.BACKUPS.get(row.object_key);
   if (!object) {
-    await env.DB.prepare('DELETE FROM encrypted_backups WHERE id = ? AND user_id = ?')
-      .bind(backupId, identity.user_id).run();
+    try {
+      await env.DB.prepare('DELETE FROM encrypted_backups WHERE id = ? AND user_id = ?')
+        .bind(backupId, identity.user_id).run();
+    } catch (error) { console.error('missing backup metadata cleanup failed', error && error.message); }
     return json({ ok: false, message: 'Backup not found.' }, 404);
   }
-  return new Response(object.body, {
+  let bytes;
+  try { bytes = await verifiedBackupBytes(object, row); }
+  catch (error) {
+    // A transient body-read failure is not evidence that the stored bytes are corrupt. Keep the
+    // only encrypted copy intact and let the authenticated client retry.
+    console.error('backup integrity verification unavailable', error && error.message);
+    return json({
+      ok: false,
+      code: 'backup_read_failed',
+      message: 'The encrypted backup could not be read right now. Try again.',
+    }, 503);
+  }
+  if (!bytes) {
+    await purgeBackupPair(env, row, identity.user_id);
+    return json({
+      ok: false,
+      code: 'backup_integrity_failed',
+      message: 'The stored backup failed an integrity check and was removed.',
+    }, 502);
+  }
+  return new Response(bytes, {
     headers: apiHeaders({
       'content-type': 'application/octet-stream',
-      'content-length': String(row.size_bytes),
+      'content-length': String(bytes.length),
       'x-rcart-backup-sha256': String(row.sha256),
     }),
   });
@@ -2320,17 +2567,23 @@ async function updateUser(request, env, user) {
 }
 
 async function deleteUser(env, user) {
-  await audit(env, 'user_deleted', user);
+  let backupObjects = [];
   try {
     const backups = await env.DB.prepare(
       'SELECT object_key FROM encrypted_backups WHERE user_id = ?',
     ).bind(user.id).all();
-    for (const backup of (backups.results || [])) await env.BACKUPS.delete(backup.object_key);
+    backupObjects = (backups.results || []).map(row => String(row.object_key || '')).filter(Boolean);
   } catch (error) {
     // During a rolling deployment the table may not exist yet. No objects can exist before that
-    // migration, so user deletion should still proceed.
-    console.error('backup cleanup before user deletion failed', error && error.message);
+    // migration, so only that exact compatibility case may continue without object cleanup.
+    if (!/no such table:\s*encrypted_backups/i.test(String(error && error.message || error))) throw error;
   }
+  if (backupObjects.length && !await deleteR2Objects(env, backupObjects)) {
+    // Keep the user and D1 rows so the deletion can be retried. Cascading the rows first would leave
+    // encrypted R2 objects with no owner metadata and no authenticated request able to reconcile them.
+    return json({ ok: false, message: 'Encrypted backup cleanup failed. Try deleting the account again.' }, 503);
+  }
+  await audit(env, 'user_deleted', user);
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
   return json({ ok: true });
 }

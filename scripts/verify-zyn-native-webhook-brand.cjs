@@ -42,6 +42,8 @@ const REQUIRED_MARKERS = Object.freeze([
   ['Zyn shape-token header', 'x-zyn-token'],
   ['Zyn task-log key', 'Zyn-Task-Log-v1'],
   ['Zyn telemetry service', 'zyn-engine'],
+  ['monitor bandwidth envelope', 'monitor-bandwidth'],
+  ['monitor TLS wire measurement', 'tls-client-wire'],
 ]);
 
 function verifyNativeWebhookBrandBuffer(body, label = 'native engine') {

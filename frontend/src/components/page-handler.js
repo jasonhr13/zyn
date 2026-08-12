@@ -80,6 +80,9 @@ class PageHandler extends Component {
     ipcRenderer.on('targetRunStarted', (e, { taskIds, startedAt } = {}) => {
       this.props.dispatch({ type: 'targetRunStarted', taskIds: taskIds || [], startedAt });
     });
+    ipcRenderer.on('targetMonitorBandwidth', (e, payload = {}) => {
+      this.props.dispatch({ type: 'targetMonitorBandwidth', payload });
+    });
     ipcRenderer.on('targetOutcome', (e, payload = {}) => {
       this.props.dispatch({ type: 'targetOutcome', ...payload });
     });
@@ -122,6 +125,7 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('targetStatus');
     ipcRenderer.removeAllListeners('targetDone');
     ipcRenderer.removeAllListeners('targetRunStarted');
+    ipcRenderer.removeAllListeners('targetMonitorBandwidth');
     ipcRenderer.removeAllListeners('targetOutcome');
     ipcRenderer.removeAllListeners('targetOtp');
     ipcRenderer.removeAllListeners('pokemonLog');

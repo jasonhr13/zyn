@@ -29,6 +29,7 @@ function createTaskGroupScheduler(deps = {}) {
   const cancelTimeout = deps.clearTimeout || clearTimeout;
   const timers = new Map();
   let disposed = false;
+  let paused = false;
   let syncing = false;
 
   const timerKey = (groupId, kind) => `${groupId}:${kind}`;
@@ -103,7 +104,7 @@ function createTaskGroupScheduler(deps = {}) {
   }
 
   function fireStart(groupId) {
-    if (disposed) return;
+    if (disposed || paused) return;
     clearTimer(groupId, 'start');
     const groups = getGroups();
     const group = groups.find(candidate => String(candidate.id) === String(groupId));
@@ -200,7 +201,7 @@ function createTaskGroupScheduler(deps = {}) {
   }
 
   function sync() {
-    if (disposed || syncing) return;
+    if (disposed || paused || syncing) return;
     syncing = true;
     try {
       clearAllTimers();
@@ -220,8 +221,20 @@ function createTaskGroupScheduler(deps = {}) {
     clearAllTimers();
   }
 
+  function pause() {
+    if (disposed) return;
+    paused = true;
+    clearAllTimers();
+  }
+
+  function resume() {
+    if (disposed) return;
+    paused = false;
+    sync();
+  }
+
   function snapshot() {
-    return { disposed, armed: [...timers.keys()], maxTimeoutMs: MAX_SAFE_TIMEOUT_MS };
+    return { disposed, paused, armed: [...timers.keys()], maxTimeoutMs: MAX_SAFE_TIMEOUT_MS };
   }
 
   function describeArmed() {
@@ -233,7 +246,7 @@ function createTaskGroupScheduler(deps = {}) {
     }));
   }
 
-  return { sync, dispose, snapshot, describeArmed, fireStart, fireStop };
+  return { sync, pause, resume, dispose, snapshot, describeArmed, fireStart, fireStop };
 }
 
 module.exports = { createTaskGroupScheduler };

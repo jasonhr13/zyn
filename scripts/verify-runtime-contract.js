@@ -194,6 +194,13 @@ check('Zyn runtime branding', () => {
     'packaged native engine bridge does not route local analytics events');
   assert.match(targetEngine, /analyticsRecorder\.record\(m\)/,
     'packaged native engine bridge bypasses the account-bound analytics outbox');
+  assert.match(targetEngine, /case 'monitor-bandwidth':/,
+    'packaged Target bridge does not accept native monitor bandwidth events');
+  assert.match(targetEngine,
+    /const telemetry = engineContract\.normalizeMonitorBandwidth\(m\)/,
+    'packaged Target bridge does not sanitize native monitor bandwidth before renderer delivery');
+  assert.match(targetEngine, /toRenderer\('targetMonitorBandwidth', telemetry\)/,
+    'packaged Target bridge does not forward sanitized native monitor bandwidth');
   assert.match(targetEngine, /toRenderer\('targetOutcome'/,
     'packaged Target bridge omits per-task checkout outcomes');
   assert.match(targetEngine, /toRenderer\('targetRunStarted'/,
@@ -250,10 +257,20 @@ check('Zyn runtime branding', () => {
     'packaged captcha manager does not constrain manual solves to Pokemon Center US');
   assert.match(manualCaptchaManager, /nodeIntegration: false/,
     'packaged captcha window enables renderer Node integration');
+  assert.doesNotMatch(electronMain, /@electron\/remote|remoteMain\.(?:initialize|enable)/,
+    'packaged main window exposes main-process modules to the renderer');
+  assert.match(electronMain, /enableRemoteModule:\s*false/,
+    'packaged main window does not explicitly disable Electron remote');
+  assert.doesNotMatch(electronMain, /enableRemoteModule:\s*true/,
+    'packaged main window enables Electron remote');
   assert.match(analyticsRecorder, /createAnalyticsService/,
     'packaged analytics recorder is missing');
   assert.match(nativeEngineContract, /const PROTOCOL_VERSION = 1;/,
     'packaged native-engine protocol version is missing');
+  assert.match(nativeEngineContract, /function normalizeMonitorBandwidth\(/,
+    'packaged native-engine contract is missing monitor bandwidth validation');
+  assert.match(nativeEngineContract, /const MONITOR_BANDWIDTH_MEASUREMENT = 'tls-client-wire';/,
+    'packaged native-engine contract does not pin the wire-byte measurement');
   assert.match(nativeEngineContract, /POKEMON_CENTER_US: 'Pokemon Center US'/,
     'packaged native-engine contract omits Pokemon Center US');
   assert.match(queueEvents, /authority\.openPokemonQueueEvents/,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.19",
+  "appRelease": "R8.20",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -9,13 +9,13 @@
     "apiModuleAccess": true,
     "profileImap": true,
     "managedProxies": true,
-    "cloudBackup": false,
+    "cloudBackup": true,
     "taskScheduling": true,
     "isolatedRenderer": false
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.93",
+    "version": "1.6.94",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "f83b3c2ba2529d2043f44cb1abc510330283678b9d01dbbff3d25eada88c85ab"
+      "sha256": "c823dd75cb2f1ba27fae63658045d4409fe3a53915e7a50f9b5090acdf2092b6"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "3a5fc309738cc883461a76b2c0c03e8d388ae56e27f8c87ab278a8ad5bfe6ce4"
+      "sha256": "27d5a57e9ed1af751831fd91ced6a3b6cf448b586fadacedce329252df9414a2"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "a3720f0d1bd15c257bce47928a1f5e58dded54df83587559ee855c1100277750"
+      "sha256": "677f20844d1c1845786849394c17d3b80211a9ed2afb32cf01bde4091d24205c"
     }
   },
   "requiredResources": [
@@ -66,6 +66,8 @@
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/harvester-extension-bridge.js",
+    "Contents/Resources/app/cloud-backup.js",
+    "Contents/Resources/app/cloud-backup-data.js",
     "Contents/Resources/app/runtime-manager.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
     "Contents/Resources/app/node_modules/ws/package.json",

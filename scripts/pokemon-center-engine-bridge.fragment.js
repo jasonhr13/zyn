@@ -29,6 +29,43 @@ function pokemonDone(taskId = '') {
   toRenderer('pokemonDone', { taskId: String(taskId || '') });
 }
 
+// A native crash or spawn failure is not retryable here: blindly respawning can loop forever on a
+// missing/invalid executable. Fail every optimistic start together and clear both FIFOs so a later
+// user start cannot resurrect a card that was already reported done.
+function failNativeEngineRuns(reason, publishError = false) {
+  const detail = String(reason || 'Native engine stopped').replace(/[\r\n]+/g, ' ').slice(0, 200);
+  const failedConnection = engineConn;
+  engineConn = null;
+  try { if (failedConnection) failedConnection.close(); } catch {}
+  taskActive = false;
+  activeMonitorBandwidthRuns.clear();
+  stopLiveEditMonitor();
+  targetMainMonitorPendingStopIds.clear();
+  clearTargetMainMonitorState();
+  cancelAllOtpFetches(detail);
+  for (const id of runningTaskIds) {
+    if (publishError) status('Error', '#fb5454', detail, id, undefined, false);
+    toRenderer('targetDone', { taskId: id });
+  }
+  for (const id of pokemonTaskIds) {
+    if (publishError) pokemonStatus('Error', '#fb5454', detail, id, 0, false);
+    pokemonDone(id);
+  }
+  runningTaskIds.clear();
+  clearTargetCookieTasks();
+  clearPendingTargetStarts();
+  pokemonTaskIds.clear();
+  pokemonTaskConfigs.clear();
+  pendingPokemonStarts.length = 0;
+  engineTaskSites.clear();
+  taskAccountById.clear();
+  taskProfileById.clear();
+  taskCheckoutConfigById.clear();
+  manualCaptchaManager.cancelPending();
+  nativeHyperBroker.cancelPending();
+  toRenderer('targetDone', { taskId: '' });
+}
+
 function pokemonQueueStreamLine() {
   if (pokemonQueueStreamHealth.connected) {
     return '[queue-monitor] push event stream connected; HTTPS fallback remains active';
@@ -189,14 +226,16 @@ function addPokemonRotationProfiles(tasks) {
 }
 
 function flushPokemonStarts() {
-  if (!engineConn || engineConn.readyState !== WebSocket.OPEN) return 0;
+  if (pendingTargetEngineStop || !engineConn || engineConn.readyState !== WebSocket.OPEN) return 0;
   let started = 0;
   while (pendingPokemonStarts.length) {
-    const config = pendingPokemonStarts.shift() || {};
+    const config = pendingPokemonStarts[0] || {};
     const tasks = (config.tasks || []).filter(task => task && pokemonTaskIds.has(String(task.id || '')));
-    if (!tasks.length) continue;
+    if (!tasks.length) {
+      pendingPokemonStarts.shift();
+      continue;
+    }
     addPokemonRotationProfiles(tasks);
-    sendConfigs({ tasks });
     const messages = tasks.map(task => pokemonMessage(task, config));
     if (!messages.every(message => message.profileId && message.item.length)) {
       for (const message of messages) {
@@ -210,13 +249,18 @@ function flushPokemonStarts() {
       }
     }
     const valid = messages.filter(message => message.profileId && message.item.length);
-    if (!valid.length) continue;
-    if (sendToEngine({ type: 'start-tasks', messages: valid })) {
-      started += valid.length;
-      for (const message of valid) {
-        pokemonLog('Pokémon Center task started', message.id);
-        pokemonLog(pokemonQueueStreamLine(), message.id);
-      }
+    if (!valid.length) {
+      pendingPokemonStarts.shift();
+      continue;
+    }
+    if (!sendConfigs({ tasks }) || !sendToEngine({ type: 'start-tasks', messages: valid })) {
+      break;
+    }
+    pendingPokemonStarts.shift();
+    started += valid.length;
+    for (const message of valid) {
+      pokemonLog('Pokémon Center task started', message.id);
+      pokemonLog(pokemonQueueStreamLine(), message.id);
     }
   }
   taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
@@ -345,8 +389,7 @@ function stopPokemonCenter(taskId) {
   taskActive = false;
   nativeHyperBroker.cancelPending();
   manualCaptchaManager.cancelPending();
-  killTree(engineProc);
-  engineProc = null;
+  beginTargetEngineStop(engineProc);
   return true;
 }
 

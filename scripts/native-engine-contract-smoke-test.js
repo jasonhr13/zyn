@@ -44,6 +44,79 @@ assert.deepEqual(contract.parseEnvelope(Buffer.from(JSON.stringify(wire))), wire
 assert.throws(() => contract.createEnvelope('stop-tasks', { id: 'pc-1' }), /must be an array/);
 assert.throws(() => contract.parseEnvelope('{"type":"stop-tasks"}'), /must be an array/);
 assert.equal(contract.FROM_ENGINE.includes('analytics-event'), true);
+assert.equal(contract.FROM_ENGINE.includes('monitor-bandwidth'), true);
+
+const monitorBandwidth = {
+  schemaVersion: 1,
+  measurement: 'tls-client-wire',
+  monitorId: 'target-monitor',
+  runId: 'run-0123456789abcdef',
+  site: 'target',
+  startedAt: 1_000_000,
+  observedAt: 1_060_000,
+  sequence: 1,
+  running: true,
+  downloadBytes: 6_000,
+  uploadBytes: 600,
+  totalBytes: 6_600,
+  proxyDownloadBytes: 5_000,
+  proxyUploadBytes: 500,
+  directDownloadBytes: 1_000,
+  directUploadBytes: 100,
+  polls: 20,
+  failedPolls: 2,
+  watchedItems: 3,
+  cookie: 'must-not-cross',
+  proxyUrl: 'http://user:password@proxy.example:1234',
+};
+assert.deepEqual(contract.normalizeMonitorBandwidth(monitorBandwidth, 1_060_000), {
+  schemaVersion: 1,
+  measurement: 'tls-client-wire',
+  monitorId: 'target-monitor',
+  runId: 'run-0123456789abcdef',
+  site: 'Target',
+  startedAt: 1_000_000,
+  observedAt: 1_060_000,
+  sequence: 1,
+  running: true,
+  downloadBytes: 6_000,
+  uploadBytes: 600,
+  totalBytes: 6_600,
+  proxyDownloadBytes: 5_000,
+  proxyUploadBytes: 500,
+  directDownloadBytes: 1_000,
+  directUploadBytes: 100,
+  polls: 20,
+  failedPolls: 2,
+  watchedItems: 3,
+});
+
+function invalidMonitorBandwidth(patch) {
+  return () => contract.normalizeMonitorBandwidth({ ...monitorBandwidth, ...patch }, 1_060_000);
+}
+
+assert.throws(invalidMonitorBandwidth({ schemaVersion: 2 }), /schema version/);
+assert.throws(invalidMonitorBandwidth({ measurement: 'application-body' }), /measurement/);
+assert.throws(invalidMonitorBandwidth({ site: 'Pokemon Center US' }), /site must be Target/);
+assert.throws(invalidMonitorBandwidth({ monitorId: 'bad monitor id' }), /monitorId is invalid/);
+assert.throws(invalidMonitorBandwidth({ runId: 123 }), /runId must be a string/);
+assert.throws(invalidMonitorBandwidth({ startedAt: 0 }), /positive safe integer/);
+assert.throws(invalidMonitorBandwidth({ observedAt: 999_999 }), /precedes startedAt/);
+assert.throws(invalidMonitorBandwidth({ observedAt: 1_360_001 }), /too far in the future/);
+assert.throws(invalidMonitorBandwidth({ sequence: 0 }), /sequence must be a positive safe integer/);
+assert.throws(invalidMonitorBandwidth({ sequence: '1' }), /sequence must be a positive safe integer/);
+assert.throws(invalidMonitorBandwidth({ running: 1 }), /running must be a boolean/);
+assert.throws(invalidMonitorBandwidth({ proxyDownloadBytes: -1 }), /nonnegative safe integer/);
+assert.throws(invalidMonitorBandwidth({ directUploadBytes: 1.5 }), /nonnegative safe integer/);
+assert.throws(invalidMonitorBandwidth({ polls: Number.MAX_SAFE_INTEGER + 1 }), /nonnegative safe integer/);
+assert.throws(invalidMonitorBandwidth({ failedPolls: 21 }), /cannot exceed polls/);
+assert.throws(invalidMonitorBandwidth({ watchedItems: -1 }), /nonnegative safe integer/);
+assert.throws(invalidMonitorBandwidth({ downloadBytes: 5_999 }), /totals do not match/);
+assert.throws(invalidMonitorBandwidth({ totalBytes: 6_599 }), /totals do not match/);
+assert.throws(invalidMonitorBandwidth({
+  proxyDownloadBytes: Number.MAX_SAFE_INTEGER,
+  directDownloadBytes: 1,
+}), /exceeds the safe integer range/);
 
 assert.deepEqual(contract.buildReceivedToken({
   taskId: 'pc-1',
@@ -86,6 +159,8 @@ const goRoot = process.env.POLAR_BACKEND_SOURCE
 if (fs.existsSync(goRoot)) {
   const schema = fs.readFileSync(path.join(goRoot, 'frontend', 'schema.go'), 'utf8');
   const websocket = fs.readFileSync(path.join(goRoot, 'frontend', 'ws.go'), 'utf8');
+  const monitorFrontend = fs.readFileSync(path.join(goRoot, 'frontend', 'monitor.go'), 'utf8');
+  const frontendFunctions = fs.readFileSync(path.join(goRoot, 'frontend', 'functions.go'), 'utf8');
   const captcha = fs.readFileSync(path.join(goRoot, 'bot-base', 'captcha', 'captcha.go'), 'utf8');
   const taskSchema = fs.readFileSync(path.join(goRoot, 'bot-base', 'task', 'schema.go'), 'utf8');
   assert.match(schema, /QueueEntryDelay string `json:"QueueEntryDelay"`/,
@@ -97,6 +172,10 @@ if (fs.existsSync(goRoot)) {
   assert.match(captcha, /"taskId":\s+solve\.TaskID/);
   assert.match(taskSchema, /type AnalyticsEventMessage struct/);
   assert.match(taskSchema, /TotalCents\s+int64\s+`json:"totalCents"`/);
+  assert.match(monitorFrontend, /"status":\s+"Cloud Disconnected",[\s\S]{0,100}"running":\s+false/,
+    'a rejected monitor start must emit terminal liveness so the launcher can retry it');
+  assert.match(frontendFunctions, /"status":\s+"Idle",[\s\S]{0,100}"running":\s+false/,
+    'an already-absent monitor stop must acknowledge terminal liveness after reconnect');
 }
 
 console.log(JSON.stringify({

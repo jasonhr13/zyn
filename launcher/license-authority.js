@@ -26,6 +26,12 @@ function cleanEmail(value) {
   return String(value || '').trim().toLowerCase().slice(0, 254);
 }
 
+function cleanAccountId(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)
+    ? id : '';
+}
+
 function atomicWrite(filePath, value) {
   const directory = path.dirname(filePath);
   const temporary = `${filePath}.${process.pid}.tmp`;
@@ -57,7 +63,7 @@ function createLicenseAuthority({
   const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE });
   const sessionPath = path.join(dataDirectory, SESSION_FILE);
   const observerSessionPath = path.join(dataDirectory, OBSERVER_SESSION_FILE);
-  let licenseState = { ok: false, reason: 'Sign in to continue.', taskTypes: normalizeTaskTypes() };
+  let licenseState = { ok: false, reason: 'Sign in to continue.', accountId: '', taskTypes: normalizeTaskTypes() };
   let licenseToken = '';
   let licenseValidatedAt = 0;
   let pendingResetToken = '';
@@ -105,6 +111,7 @@ function createLicenseAuthority({
       const token = decryptToken(stored.token);
       if (!token) continue;
       return {
+        accountId: cleanAccountId(stored.userId),
         email: cleanEmail(stored.email),
         token,
         validatedAt: Number(stored.validatedAt) || 0,
@@ -115,7 +122,7 @@ function createLicenseAuthority({
         migratedFromObserver: filePath === observerSessionPath,
       };
     }
-    return { email: '', token: '', validatedAt: 0, taskTypes: normalizeTaskTypes(), migratedFromObserver: false };
+    return { accountId: '', email: '', token: '', validatedAt: 0, taskTypes: normalizeTaskTypes(), migratedFromObserver: false };
   };
 
   const loadSession = () => {
@@ -127,6 +134,7 @@ function createLicenseAuthority({
     if (licenseToken) {
       licenseState = {
         ...licenseState,
+        accountId: saved.accountId,
         email: saved.email,
         expiresAt: saved.expiresAt,
         taskTypes: saved.taskTypes,
@@ -142,6 +150,7 @@ function createLicenseAuthority({
   };
 
   const readSessionCache = () => ({
+    accountId: cleanAccountId(licenseState.accountId),
     email: cleanEmail(licenseState.email),
     token: licenseToken,
     validatedAt: licenseValidatedAt,
@@ -158,6 +167,7 @@ function createLicenseAuthority({
     if (!encrypted) return false;
     try {
       atomicWrite(sessionPath, {
+        userId: cleanAccountId(licenseState.accountId),
         email: cleanEmail(licenseState.email),
         token: encrypted,
         validatedAt: Number(licenseValidatedAt) || now(),
@@ -199,6 +209,7 @@ function createLicenseAuthority({
     licenseState = {
       ok: true,
       reason: '',
+      accountId: cleanAccountId(result.userId || licenseState.accountId),
       email: cleanEmail(result.email || licenseState.email),
       expiresAt: Number(result.expiresAt) || 0,
       offline: false,
@@ -222,6 +233,7 @@ function createLicenseAuthority({
     licenseState = {
       ok: false,
       reason: String(reason || 'Your Zyn session ended. Sign in again to continue.').slice(0, 240),
+      accountId: clear ? '' : cleanAccountId(licenseState.accountId),
       email: clear ? '' : cleanEmail(licenseState.email),
       taskTypes: normalizeTaskTypes(),
       proxyAccess: false,
@@ -280,6 +292,27 @@ function createLicenseAuthority({
 
   const revalidateUnauthorized = async (result) => {
     if (Number(result && result.status) === 401) await validate();
+  };
+
+  // Cloud-backup requests stay behind the main-process authority. Callers receive only the
+  // endpoint result; the bearer token is never returned, persisted in a backup, or exposed to IPC.
+  const backupRequest = async (expectedAccountId, method, ...args) => {
+    loadSession();
+    const accountId = cleanAccountId(licenseState.accountId);
+    if (!licenseToken || licenseState.ok !== true || !accountId) {
+      return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+    }
+    if (expectedAccountId && cleanAccountId(expectedAccountId) !== accountId) {
+      return { ok: false, status: 409, message: 'The signed-in Zyn account changed during backup.' };
+    }
+    try {
+      const result = await licenseApi[method](licenseToken, ...args);
+      await revalidateUnauthorized(result);
+      return result;
+    } catch (error) {
+      logger.warn?.(`[license] cloud backup unavailable: ${error.message}`);
+      return { ok: false, status: 0, message: 'Encrypted backup service is unavailable.' };
+    }
   };
 
   return Object.freeze({
@@ -410,6 +443,20 @@ function createLicenseAuthority({
         return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
       }
     },
+    backupAccountId: () => {
+      loadSession();
+      return cleanAccountId(licenseState.accountId);
+    },
+    listBackups: expectedAccountId => backupRequest(expectedAccountId, 'listBackups'),
+    uploadBackup: (encrypted, metadata = {}, expectedAccountId = '') => backupRequest(
+      expectedAccountId, 'uploadBackup', encrypted, metadata,
+    ),
+    downloadBackup: (backupId, expectedAccountId = '') => backupRequest(
+      expectedAccountId, 'downloadBackup', backupId,
+    ),
+    deleteBackup: (backupId, expectedAccountId = '') => backupRequest(
+      expectedAccountId, 'deleteBackup', backupId,
+    ),
     openPokemonQueueEvents(handlers = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');

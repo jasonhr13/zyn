@@ -14,6 +14,11 @@ const backend = process.env.ZYN_NATIVE_BACKEND
   ? path.resolve(process.env.ZYN_NATIVE_BACKEND)
   : path.join(root, 'native-backend', `darwin-${arch}`, 'backend');
 assert.equal(fs.existsSync(backend), true, `native backend is missing: ${backend}`);
+const backendBody = fs.readFileSync(backend);
+assert.equal(backendBody.includes(Buffer.from('monitor-bandwidth')), true,
+  'native backend is missing the monitor bandwidth envelope');
+assert.equal(backendBody.includes(Buffer.from('tls-client-wire')), true,
+  'native backend is missing the TLS wire measurement contract');
 
 const token = crypto.randomBytes(24).toString('hex');
 const server = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
@@ -107,6 +112,7 @@ async function main() {
   clearTimeout(timeout);
   console.log(JSON.stringify({
     ok: true, arch, authenticatedBridge: true, parentWatch: true, pokemonCenterDispatch: true,
+    monitorBandwidthProtocol: true,
   }, null, 2));
 }
 

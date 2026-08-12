@@ -10,6 +10,10 @@ import {
   targetHarvesterBandwidth,
 } from '../target-bank-metrics.mjs';
 import {
+  TARGET_MONITOR_BANDWIDTH_TOOLTIP,
+  targetMonitorBandwidthSummary,
+} from '../target-monitor-bandwidth.mjs';
+import {
   harvesterExtensionIdsFromSettings,
   hasHarvesterExtensionId,
 } from '../harvester-extension-ids.mjs';
@@ -927,6 +931,8 @@ class TaskGroups extends Component {
     const target = this.props.target || {};
     const logs = target.logs || [];
     const monitor = target.monitorStatus;
+    const bandwidth = targetMonitorBandwidthSummary(target.monitorBandwidth, Date.now());
+    const monitorCount = bandwidth.available ? bandwidth.runCount : 0;
     return (
       <section className="panel task-log-panel engine-log-panel engine-log-panel-dashboard">
         <div className="detail-panel-heading engine-log-heading">
@@ -952,6 +958,52 @@ class TaskGroups extends Component {
             </button>
           </div>
         </div>
+        <section
+          className={`engine-monitor-bandwidth${bandwidth.available ? '' : ' engine-monitor-bandwidth-pending'}`}
+          aria-label="Task monitor bandwidth telemetry"
+          aria-describedby="target-monitor-bandwidth-description"
+        >
+          <header>
+            <span className="engine-monitor-bandwidth-title">
+              <span className="engine-monitor-bandwidth-icon"><Icon name="activity" size={12} /></span>
+              <span>
+                <strong>Monitor bandwidth</strong>
+                <small>{bandwidth.available
+                  ? `This run · ${bandwidth.watchedItems} watched item${bandwidth.watchedItems === 1 ? '' : 's'}`
+                  : 'This run · waiting for measured traffic'}</small>
+              </span>
+            </span>
+            {bandwidth.available && (
+              <em className={bandwidth.running ? 'active' : ''}>
+                {bandwidth.running ? 'Measuring' : (bandwidth.incomplete ? 'Stopped · last sample' : 'Run complete')}
+                {monitorCount > 1 ? ` · ${monitorCount} monitor runs` : ''}
+              </em>
+            )}
+          </header>
+          {bandwidth.available ? (
+            <div className="engine-monitor-bandwidth-stats">
+              <span>
+                <strong>{bandwidth.saturated ? '≥ ' : ''}{formatBandwidth(bandwidth.totalBytes)}</strong>
+                <small>{bandwidth.saturated ? 'Display limit reached' : 'Total transport'}</small>
+              </span>
+              <span><strong>↓ {formatBandwidth(bandwidth.downloadBytes)}</strong><small>↑ {formatBandwidth(bandwidth.uploadBytes)} upload</small></span>
+              <span><strong>{bandwidth.saturated ? '≥ ' : ''}{formatBandwidth(bandwidth.bytesPerHour)}/hr</strong><small>Run average</small></span>
+              <span><strong>{formatBandwidth(bandwidth.proxyBytes)} proxy</strong><small>{formatBandwidth(bandwidth.directBytes)} direct{bandwidth.saturated ? ' · capped split' : ''}</small></span>
+              <span>
+                <strong>{bandwidth.polls.toLocaleString()} poll{bandwidth.polls === 1 ? '' : 's'}</strong>
+                <small>{bandwidth.failedPolls.toLocaleString()} failed</small>
+              </span>
+            </div>
+          ) : (
+            <div className="engine-monitor-bandwidth-empty">
+              <strong>Bandwidth not measured yet</strong>
+              <small>A compatible engine will report totals after the shared monitor starts polling. No traffic is being shown as zero.</small>
+            </div>
+          )}
+          <p id="target-monitor-bandwidth-description" className="engine-monitor-bandwidth-note">
+            {TARGET_MONITOR_BANDWIDTH_TOOLTIP}
+          </p>
+        </section>
         <div className="task-log-view engine-log-view" ref={this.engineLogBox}>
           {!logs.length ? (
             <div className="task-log-empty">

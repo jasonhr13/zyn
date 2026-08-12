@@ -30,6 +30,8 @@ const required = [
   'resources/app/license-session-reason.js',
   'resources/app/runtime-manager.js',
   'resources/app/harvester-extension-bridge.js',
+  'resources/app/cloud-backup.js',
+  'resources/app/cloud-backup-data.js',
   'resources/app/target-product-history.js',
   'resources/app/target-cookie-standby.js',
   'resources/app/package.json',
@@ -151,6 +153,10 @@ const targetEngine = asar.extractFile(
   path.join(resources, 'app-original.asar'),
   'public/helpers/target-engine.js',
 ).toString('utf8');
+const nativeEngineContract = asar.extractFile(
+  path.join(resources, 'app-original.asar'),
+  'public/helpers/native-engine-contract.js',
+).toString('utf8');
 assert.match(targetEngine, /function targetCookieDemand\(\)/,
   'Windows Target bridge omits dynamic cookie-bank demand');
 assert.match(targetEngine, /path: '\/demand'/,
@@ -163,6 +169,16 @@ assert.match(targetEngine, /module\.exports = \{[^}]*saveHarvesterCookie/,
   'Windows Target bridge does not export its narrow extension-save capability');
 assert.doesNotMatch(targetEngine, /harvesterBrokerToken/,
   'Windows Target bridge exports its raw broker token');
+assert.match(targetEngine, /case 'monitor-bandwidth':/,
+  'Windows Target bridge does not accept native monitor bandwidth events');
+assert.match(targetEngine, /const telemetry = engineContract\.normalizeMonitorBandwidth\(m\)/,
+  'Windows Target bridge does not sanitize native monitor bandwidth');
+assert.match(targetEngine, /toRenderer\('targetMonitorBandwidth', telemetry\)/,
+  'Windows Target bridge does not forward sanitized monitor bandwidth');
+assert.match(nativeEngineContract, /function normalizeMonitorBandwidth\(/,
+  'Windows native-engine contract omits monitor bandwidth validation');
+assert.match(nativeEngineContract, /'analytics-event', 'monitor-bandwidth'/,
+  'Windows native-engine contract does not allow the monitor bandwidth envelope');
 const shapeFarmer = fs.readFileSync(path.join(resources, 'bot', 'shape-farmer.mjs'), 'utf8');
 assert.match(shapeFarmer,
   /u\.pathname === '\/saveCookies'[\s\S]{0,100}if \(!tokenOk\(req\)\)/,
@@ -179,6 +195,10 @@ assert.match(rendererBundle, /ATC per task/,
   'Windows renderer omits the dynamic ATC-per-task control');
 assert.match(rendererBundle, /ATC bank needs a harvester/,
   'Windows renderer omits the dynamic bank deficit warning');
+assert.match(rendererBundle, /Monitor bandwidth/,
+  'Windows renderer omits monitor bandwidth telemetry');
+assert.match(rendererBundle, /TLS transport bytes measured by the monitor engine/,
+  'Windows renderer omits monitor bandwidth measurement semantics');
 assert.equal(originalPackage.name, 'zyn');
 assert.equal(originalPackage.productName, 'Zyn');
 assert.equal(originalPackage.description, 'Zyn Checkout Automation');

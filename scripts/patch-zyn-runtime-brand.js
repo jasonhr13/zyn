@@ -33,6 +33,32 @@ function replaceSection(source, start, end, replacement, label) {
 }
 
 rewrite('public/electron.js', source => {
+  source = replaceExactly(
+    source,
+    `const remoteMain = require('@electron/remote/main');
+remoteMain.initialize();
+
+`,
+    '',
+    1,
+    'legacy @electron/remote main-process initialization',
+  );
+  source = replaceExactly(
+    source,
+    '      enableRemoteModule: true,',
+    '      enableRemoteModule: false,',
+    1,
+    'legacy renderer remote-module preference',
+  );
+  source = replaceExactly(
+    source,
+    `
+  remoteMain.enable(mainWindow.webContents);
+`,
+    '\n',
+    1,
+    'legacy renderer @electron/remote bridge',
+  );
   const cookieBankAnchor = `ipcMain.handle('targetCookieBank', () => targetEngine.getCookieBank());`;
   if (!source.includes(cookieBankAnchor)) throw new Error('Target cookie-bank IPC anchor is missing');
   const harvesterIpc = `${cookieBankAnchor}
@@ -158,6 +184,31 @@ ${actualTargetAnchor}`;
     "const legacyApp = ['secret', 'lair', 'bot'].join('-');\n  if (!bundle || (bundle.app !== 'zyn' && bundle.app !== legacyApp)) throw new Error('Not a Zyn export file.');",
     1,
     'legacy import validation',
+  );
+  source = replaceExactly(
+    source,
+    `      const cur = getAccountsRaw();
+      const have = new Set(cur.map(a => (a.email || '').toLowerCase()));
+      let added = 0;
+      for (const a of bundle.accounts) { const e = (a.email || '').toLowerCase(); if (e && !have.has(e)) { cur.push(enc(a)); have.add(e); added++; } }
+      writeJSON('accounts.json', cur); summary.accounts = { added };`,
+    `      const cur = getAccountsRaw();
+      // An inbox may own a distinct login at each retailer. Old rows without a site predate site
+      // tagging and are Bandai accounts, matching accountForProfile and the Accounts page.
+      const accountKey = (account) => {
+        const email = String(account && account.email || '').trim().toLowerCase();
+        const site = String(account && account.site || '').trim().toLowerCase() || 'bandai';
+        return email ? JSON.stringify([site, email]) : '';
+      };
+      const have = new Set(cur.map(accountKey).filter(Boolean));
+      let added = 0;
+      for (const a of bundle.accounts) {
+        const key = accountKey(a);
+        if (key && !have.has(key)) { cur.push(enc(a)); have.add(key); added++; }
+      }
+      writeJSON('accounts.json', cur); summary.accounts = { added };`,
+    1,
+    'site-aware backup account merge',
   );
   return source;
 });

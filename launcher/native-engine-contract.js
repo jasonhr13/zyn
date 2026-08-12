@@ -24,7 +24,7 @@ const TO_ENGINE = Object.freeze([
 const FROM_ENGINE = Object.freeze([
   'update-status', 'update-input', 'task-log', 'task-notification', 'product',
   'product-titles', 'request-code', 'account-cookie', 'account-password', 'solve-captcha',
-  'analytics-event',
+  'analytics-event', 'monitor-bandwidth',
   // Reserved for the server-side Hyper broker.
   'hyper-request',
 ]);
@@ -105,6 +105,97 @@ function normalizeStartTask(message) {
   };
   delete normalized.queueEntryDelay;
   return normalized;
+}
+
+const MONITOR_BANDWIDTH_SCHEMA_VERSION = 1;
+const MONITOR_BANDWIDTH_MEASUREMENT = 'tls-client-wire';
+const MONITOR_BANDWIDTH_ID = /^[a-z0-9][a-z0-9._:-]{0,159}$/i;
+const MONITOR_BANDWIDTH_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+function monitorBandwidthIdentifier(value, label) {
+  if (typeof value !== 'string') throw new Error(`${label} must be a string`);
+  const identifier = value.trim();
+  if (!MONITOR_BANDWIDTH_ID.test(identifier)) throw new Error(`${label} is invalid`);
+  return identifier;
+}
+
+function monitorBandwidthInteger(value, label, { positive = false } = {}) {
+  if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0)) {
+    throw new Error(`${label} must be a ${positive ? 'positive' : 'nonnegative'} safe integer`);
+  }
+  return value;
+}
+
+function monitorBandwidthSum(left, right, label) {
+  const total = left + right;
+  if (!Number.isSafeInteger(total)) throw new Error(`${label} exceeds the safe integer range`);
+  return total;
+}
+
+// Monitor bandwidth is deliberately a narrow aggregate. Unknown keys are discarded so a native
+// engine can never smuggle request URLs, headers, cookies, proxy credentials, or product inputs to
+// the renderer alongside otherwise-valid counters.
+function normalizeMonitorBandwidth(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('native monitor bandwidth must be an object');
+  }
+  if (value.schemaVersion !== MONITOR_BANDWIDTH_SCHEMA_VERSION) {
+    throw new Error('native monitor bandwidth schema version is unsupported');
+  }
+  if (value.measurement !== MONITOR_BANDWIDTH_MEASUREMENT) {
+    throw new Error('native monitor bandwidth measurement is unsupported');
+  }
+  if (typeof value.site !== 'string' || canonicalSite(value.site) !== SITES.TARGET) {
+    throw new Error('native monitor bandwidth site must be Target');
+  }
+
+  const startedAt = monitorBandwidthInteger(value.startedAt, 'monitor startedAt', { positive: true });
+  const observedAt = monitorBandwidthInteger(value.observedAt, 'monitor observedAt', { positive: true });
+  const currentTime = Number.isSafeInteger(now) && now >= 0 ? now : Date.now();
+  if (observedAt < startedAt) throw new Error('monitor observedAt precedes startedAt');
+  if (observedAt > currentTime + MONITOR_BANDWIDTH_FUTURE_SKEW_MS) {
+    throw new Error('monitor observedAt is too far in the future');
+  }
+  if (typeof value.running !== 'boolean') throw new Error('monitor running must be a boolean');
+
+  const proxyDownloadBytes = monitorBandwidthInteger(value.proxyDownloadBytes, 'proxyDownloadBytes');
+  const proxyUploadBytes = monitorBandwidthInteger(value.proxyUploadBytes, 'proxyUploadBytes');
+  const directDownloadBytes = monitorBandwidthInteger(value.directDownloadBytes, 'directDownloadBytes');
+  const directUploadBytes = monitorBandwidthInteger(value.directUploadBytes, 'directUploadBytes');
+  const downloadBytes = monitorBandwidthSum(proxyDownloadBytes, directDownloadBytes, 'downloadBytes');
+  const uploadBytes = monitorBandwidthSum(proxyUploadBytes, directUploadBytes, 'uploadBytes');
+  const totalBytes = monitorBandwidthSum(downloadBytes, uploadBytes, 'totalBytes');
+  if (value.downloadBytes !== downloadBytes
+      || value.uploadBytes !== uploadBytes
+      || value.totalBytes !== totalBytes) {
+    throw new Error('native monitor bandwidth totals do not match their components');
+  }
+
+  const polls = monitorBandwidthInteger(value.polls, 'polls');
+  const failedPolls = monitorBandwidthInteger(value.failedPolls, 'failedPolls');
+  if (failedPolls > polls) throw new Error('failedPolls cannot exceed polls');
+
+  return {
+    schemaVersion: MONITOR_BANDWIDTH_SCHEMA_VERSION,
+    measurement: MONITOR_BANDWIDTH_MEASUREMENT,
+    monitorId: monitorBandwidthIdentifier(value.monitorId, 'monitorId'),
+    runId: monitorBandwidthIdentifier(value.runId, 'runId'),
+    site: SITES.TARGET,
+    startedAt,
+    observedAt,
+    sequence: monitorBandwidthInteger(value.sequence, 'sequence', { positive: true }),
+    running: value.running,
+    downloadBytes,
+    uploadBytes,
+    totalBytes,
+    proxyDownloadBytes,
+    proxyUploadBytes,
+    directDownloadBytes,
+    directUploadBytes,
+    polls,
+    failedPolls,
+    watchedItems: monitorBandwidthInteger(value.watchedItems, 'watchedItems'),
+  };
 }
 
 class TaskSiteRegistry {
@@ -212,6 +303,7 @@ module.exports = {
   createEnvelope,
   parseEnvelope,
   normalizeStartTask,
+  normalizeMonitorBandwidth,
   TaskSiteRegistry,
   buildReceivedToken,
   buildHyperRequest,

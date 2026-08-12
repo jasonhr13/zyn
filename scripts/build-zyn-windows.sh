@@ -135,7 +135,7 @@ for launcher_file in \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js target-product-history.js \
   task-group-scheduler.js target-group-launch.js target-cookie-standby.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js managed-proxy-control.js \
-  managed-proxy-ipc-guard.js harvester-extension-bridge.js runtime-manager.js; do
+  managed-proxy-ipc-guard.js harvester-extension-bridge.js cloud-backup.js cloud-backup-data.js runtime-manager.js; do
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"
 done
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"

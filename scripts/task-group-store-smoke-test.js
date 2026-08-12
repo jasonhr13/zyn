@@ -39,10 +39,23 @@ try {
   assert.equal(persisted.version, TASK_GROUP_SCHEMA_VERSION);
   assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
 
+  const legacyPokemonGroup = {
+    id: 'pokemon-rollback',
+    site: 'pokemoncenter',
+    name: 'Legacy Pokemon Group',
+    legacyOnly: { untouched: true },
+    tasks: [{ id: 'pokemon-task', profileId: 'profile-a', repeatCheckout: true }],
+  };
+  fs.writeFileSync(store.filePath, `${JSON.stringify({
+    version: TASK_GROUP_SCHEMA_VERSION,
+    groups: [...persisted.groups, legacyPokemonGroup],
+  }, null, 2)}\n`, { mode: 0o600 });
+  assert.deepEqual(store.load(), migrated, 'unsupported rollback group reached the Target runtime');
+
   const saved = store.save([{
     id: 'drop-a',
     name: '  Friday Drop  ',
-    site: 'unsupported-site',
+    site: 'target',
     skus: '11111111',
     qty: 999,
     proxyListName: 'Local',
@@ -67,11 +80,18 @@ try {
   assert.equal(saved[0].tasks[1].loopCheckout, true, 'task did not inherit its group loop default');
   assert.deepEqual(saved[0].schedule, { startAt: 1735689660000, stopAt: 1735693260000 });
   assert.deepEqual(store.load(), saved);
+  const savedOnDisk = JSON.parse(fs.readFileSync(store.filePath, 'utf8')).groups;
+  assert.deepEqual(savedOnDisk.find(group => group.id === legacyPokemonGroup.id), legacyPokemonGroup,
+    'normal Target save changed or deleted a raw rollback group');
+
+  store.save(saved, { preserveUnsupported: false });
+  assert.equal(JSON.parse(fs.readFileSync(store.filePath, 'utf8')).groups.some(
+    group => group.id === legacyPokemonGroup.id), false, 'replace-style save retained a legacy group');
 
   const backups = fs.readdirSync(path.join(directory, 'backups'));
-  assert.equal(backups.length, 1);
+  assert.equal(backups.length, 2);
   assert.equal(fs.readdirSync(directory).some(name => name.endsWith('.tmp')), false);
-  console.log('Task-group migration, normalization, backup, permissions, and atomic replacement passed.');
+  console.log('Task-group migration, normalization, rollback preservation, backup, permissions, and atomic replacement passed.');
 } finally {
   if (directory.startsWith(os.tmpdir() + path.sep + 'zyn-task-groups-')) {
     fs.rmSync(directory, { recursive: true, force: true });

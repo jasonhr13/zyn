@@ -80,6 +80,108 @@ const nativeHyperBroker = require('./native-hyper-broker');
 const manualCaptchaManager = require('./manual-captcha-manager');
 const analyticsRecorder = require('./analytics-recorder');`, 'shared native-engine contract import');
 
+  source = replaceOnce(source, `let pendingStart = null; // config queued until the engine connects`, `// Starts are additive, so a single pending slot is lossy while the engine is connecting or finishing
+// a prior run. Preserve each config as its own FIFO entry: its SKU/quantity fields belong to that
+// batch and must not be overwritten by a later group start.
+const pendingTargetStarts = [];
+
+function queueTargetStart(config) {
+  pendingTargetStarts.push(config);
+}
+
+function removePendingTargetStartTask(taskId) {
+  const requestedId = String(taskId || '');
+  if (!requestedId) return;
+  for (let index = pendingTargetStarts.length - 1; index >= 0; index -= 1) {
+    const config = pendingTargetStarts[index];
+    const tasks = Array.isArray(config && config.tasks) ? config.tasks : [];
+    const remaining = tasks.filter(task => String(task && task.id || '') !== requestedId);
+    if (!remaining.length) pendingTargetStarts.splice(index, 1);
+    else if (remaining.length !== tasks.length) pendingTargetStarts[index] = { ...config, tasks: remaining };
+  }
+}
+
+function clearPendingTargetStarts() {
+  pendingTargetStarts.length = 0;
+}`, 'lossless pending Target start queue');
+
+  source = replaceOnce(source,
+    `// ever connected, pendingStart was never flushed, and every task card sat on "Starting" for the rest`,
+    `// ever connected, the pending Target queue was never flushed, and every task card sat on "Starting" for the rest`,
+    'Target pending-start queue comment');
+
+  source = replaceOnce(source, `const killTree = plat.killTree;`, `const killTree = plat.killTree;
+
+// A full stop gives the native monitor one short, bounded chance to publish its exact final wire
+// counters. Keep only the two normalized identifiers needed to correlate that acknowledgement; the
+// telemetry payload itself, request data, proxy values, and product inputs are never retained here.
+const TARGET_ENGINE_STOP_GRACE_MS = 1500;
+const activeMonitorBandwidthRuns = new Map(); // monitorId -> runId
+let pendingTargetEngineStop = null;
+
+function trackTargetMonitorBandwidth(message) {
+  const monitorId = message.monitorId;
+  const runId = message.runId;
+  if (message.running) {
+    activeMonitorBandwidthRuns.set(monitorId, runId);
+    return null;
+  }
+  if (activeMonitorBandwidthRuns.get(monitorId) === runId) {
+    activeMonitorBandwidthRuns.delete(monitorId);
+  }
+  acknowledgeLiveEditMonitorStop(monitorId);
+  targetMainMonitorPendingStopIds.delete(monitorId);
+  const pending = pendingTargetEngineStop;
+  if (!pending || pending.expectedRuns.get(monitorId) !== runId) return null;
+  pending.expectedRuns.delete(monitorId);
+  return pending.expectedRuns.size === 0 ? pending : null;
+}
+
+function forcePendingTargetEngineStop(pending = pendingTargetEngineStop) {
+  if (!pending || pendingTargetEngineStop !== pending || pending.forceIssued) return false;
+  pending.forceIssued = true;
+  if (pending.timer) clearTimeout(pending.timer);
+  pending.timer = null;
+  killTree(pending.proc);
+  return true;
+}
+
+function beginTargetEngineStop(proc) {
+  if (!proc) {
+    activeMonitorBandwidthRuns.clear();
+    return false;
+  }
+  if (pendingTargetEngineStop) {
+    if (pendingTargetEngineStop.proc === proc) return !pendingTargetEngineStop.forceIssued;
+    forcePendingTargetEngineStop(pendingTargetEngineStop);
+  }
+  const pending = {
+    proc,
+    expectedRuns: new Map(activeMonitorBandwidthRuns),
+    timer: null,
+    forceIssued: false,
+  };
+  pendingTargetEngineStop = pending;
+  const connected = engineConn && engineConn.readyState === WebSocket.OPEN;
+  if (!connected || pending.expectedRuns.size === 0) {
+    forcePendingTargetEngineStop(pending);
+    return false;
+  }
+  pending.timer = setTimeout(() => forcePendingTargetEngineStop(pending), TARGET_ENGINE_STOP_GRACE_MS);
+  if (pending.timer && typeof pending.timer.unref === 'function') pending.timer.unref();
+  return true;
+}
+
+function finishTargetEngineStop(proc) {
+  const pending = pendingTargetEngineStop;
+  if (!pending || pending.proc !== proc) return false;
+  activeMonitorBandwidthRuns.clear();
+  if (pending.timer) clearTimeout(pending.timer);
+  pending.timer = null;
+  pendingTargetEngineStop = null;
+  return true;
+}`, 'Target native monitor graceful-stop lifecycle');
+
   source = replaceOnce(
     source,
     `      from: 'discord-monitor',`,
@@ -261,6 +363,17 @@ const engineTaskSites = new engineContract.TaskSiteRegistry();`, 'Target task/pr
   const items = msg.messages;`, 'native-engine inbound envelope validation');
 
   source = replaceOnce(source, `function handleEngineMessage(data) {`, `function handleEngineMessage(data, connection) {`, 'native-engine connection-scoped message handler');
+  source = replaceOnce(source, `function handleEngineMessage(data, connection) {
+  let msg;`, `function handleEngineMessage(data, connection) {
+  // A closing or replaced socket may still have buffered messages. Only the currently owned native
+  // connection may mutate task state or acknowledge a monitor shutdown.
+  if (!connection || engineConn !== connection) return;
+  let msg;`, 'native-engine inbound connection ownership');
+
+  source = replaceOnce(source,
+    `  sendToEngine({ type: 'send-configs', messages: [{`,
+    `  return sendToEngine({ type: 'send-configs', messages: [{`,
+    'native-engine config delivery receipt');
 
   source = replaceOnce(source,
     `  const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState;`,
@@ -368,12 +481,20 @@ let liveEditMonitorTimer = null;
 let liveEditMonitorSequence = 0;
 let liveEditStoppedMainMonitor = false;
 
+function acknowledgeLiveEditMonitorStop(id) {
+  if (!id || id !== liveEditMonitorId) return false;
+  if (liveEditMonitorTimer) clearTimeout(liveEditMonitorTimer);
+  liveEditMonitorTimer = null;
+  liveEditMonitorId = '';
+  return true;
+}
+
 function stopLiveEditMonitor() {
   if (liveEditMonitorTimer) clearTimeout(liveEditMonitorTimer);
   liveEditMonitorTimer = null;
   const id = liveEditMonitorId;
   liveEditMonitorId = '';
-  if (id && engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id }] });
+  if (id) queueTargetMonitorStop(id);
 }
 
 // A group edit changes the restock inputs in-place. Checkout tasks drain runtime edits only at safe
@@ -411,30 +532,28 @@ function editTargetTasks(config = {}) {
   const sent = sendToEngine({ type: 'edit-tasks', messages });
   if (!sent) return { ok: false, updated: 0, watched: 0, cappedTasks, error: 'The native Target engine is not connected.' };
 
+  messages.forEach((message, index) => {
+    const existing = taskCheckoutConfigById.get(message.id) || {};
+    const selectedTask = selected[index] || {};
+    taskCheckoutConfigById.set(message.id, {
+      ...existing,
+      skus: message.monitorItems.map(item => item.monitorInput),
+      qty,
+      proxyListName: selectedTask.proxyListName || existing.proxyListName || '',
+    });
+  });
+
   const watched = [...new Set(messages.flatMap(message => message.monitorItems.map(item => item.monitorInput)))];
   const monitorItems = makeItems(watched);
   stopLiveEditMonitor();
   let monitorRefreshed = true;
   if (!sharedMonitorOnly()) {
-    if (!watched.length) {
-      monitorRefreshed = sendToEngine({ type: 'stop-tasks', messages: [{ id: MONITOR_ID }] });
-      liveEditStoppedMainMonitor = monitorRefreshed;
-    } else if (liveEditStoppedMainMonitor) {
-      const first = selected[0] || {};
-      monitorRefreshed = sendToEngine({ type: 'start-monitors', messages: [{
-        id: MONITOR_ID,
-        site: 'Target',
-        proxyGroup: String(first.proxyListName || '').trim() || 'Local',
-        monitorDelay: '4000',
-        items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: '' })),
-      }] });
-      if (monitorRefreshed) liveEditStoppedMainMonitor = false;
-    } else {
-      monitorRefreshed = sendToEngine({
-        type: 'edit-tasks',
-        messages: [{ id: MONITOR_ID, type: 'Target', site: 'Target', item: monitorItems, monitorItems }],
-      });
-    }
+    monitorRefreshed = reconcileTargetMainMonitor();
+    liveEditStoppedMainMonitor = !targetMainMonitorRunning;
+  } else if (targetMainMonitorRunning) {
+    // While the one-time main scan is still alive, edit that monitor to the full active union.
+    // Once it has stopped, the temporary live-edit scan below remains the low-traffic fallback.
+    monitorRefreshed = reconcileTargetMainMonitor();
   } else if (watched.length) {
     const first = selected[0] || {};
     const id = MONITOR_ID + '-edit-' + (++liveEditMonitorSequence);
@@ -451,7 +570,7 @@ function editTargetTasks(config = {}) {
         const finishedId = liveEditMonitorId;
         liveEditMonitorId = '';
         liveEditMonitorTimer = null;
-        if (finishedId && engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: finishedId }] });
+        if (finishedId) queueTargetMonitorStop(finishedId);
         log('[target] monitor: live-edit scan done — returning to the shared monitor');
       }, 20000);
       if (liveEditMonitorTimer && typeof liveEditMonitorTimer.unref === 'function') liveEditMonitorTimer.unref();
@@ -468,6 +587,172 @@ function editTargetTasks(config = {}) {
 
 function sendStart(config) {
   liveEditStoppedMainMonitor = false;`, 'Target live task watch-list editing');
+
+  source = replaceOnce(source, `let liveEditStoppedMainMonitor = false;`, `let liveEditStoppedMainMonitor = false;
+
+// The checkout module owns one Target monitor. Additive starts update it to the union of every
+// active task's watch list. Each restart gets a generation-specific ID so native stop/start
+// goroutines cannot race on one reused key. One scan timer prevents an earlier batch stopping a
+// later batch's initial scan.
+const TARGET_MAIN_MONITOR_SYNC_MS = 100;
+const TARGET_MAIN_MONITOR_SCAN_MS = 20000;
+const TARGET_MAIN_MONITOR_RETRY_MS = 5000;
+let targetMainMonitorRunning = false;
+let targetMainMonitorId = '';
+let targetMainMonitorSequence = 0;
+let targetMainMonitorNeedsSync = false;
+const targetMainMonitorPendingStopIds = new Set();
+let targetMainMonitorSyncTimer = null;
+let targetMainMonitorScanTimer = null;
+let targetMainMonitorRetryTimer = null;
+
+function clearTargetMainMonitorState() {
+  if (targetMainMonitorSyncTimer) clearTimeout(targetMainMonitorSyncTimer);
+  if (targetMainMonitorScanTimer) clearTimeout(targetMainMonitorScanTimer);
+  if (targetMainMonitorRetryTimer) clearTimeout(targetMainMonitorRetryTimer);
+  targetMainMonitorSyncTimer = null;
+  targetMainMonitorScanTimer = null;
+  targetMainMonitorRetryTimer = null;
+  targetMainMonitorRunning = false;
+  targetMainMonitorId = '';
+  targetMainMonitorNeedsSync = false;
+}
+
+function queueTargetMainMonitorSync() {
+  targetMainMonitorNeedsSync = true;
+  if (targetMainMonitorRetryTimer || !runningTaskIds.size) return;
+  targetMainMonitorRetryTimer = setTimeout(() => {
+    targetMainMonitorRetryTimer = null;
+    if (targetMainMonitorNeedsSync && runningTaskIds.size) reconcileTargetMainMonitor();
+  }, TARGET_MAIN_MONITOR_RETRY_MS);
+  if (targetMainMonitorRetryTimer && typeof targetMainMonitorRetryTimer.unref === 'function') targetMainMonitorRetryTimer.unref();
+}
+
+function sendPendingTargetMainMonitorStop() {
+  if (!targetMainMonitorPendingStopIds.size || !engineConn) return false;
+  return sendToEngine({
+    type: 'stop-tasks', messages: [...targetMainMonitorPendingStopIds].map(id => ({ id })),
+  });
+}
+
+function queueTargetMonitorStop(id) {
+  const monitorId = String(id || '').trim();
+  if (!monitorId) return false;
+  targetMainMonitorPendingStopIds.add(monitorId);
+  return sendPendingTargetMainMonitorStop();
+}
+
+function targetMainMonitorSpec() {
+  const quantities = new Map();
+  let proxyGroup = 'Local';
+  for (const id of runningTaskIds) {
+    const config = taskCheckoutConfigById.get(id);
+    if (!config) continue;
+    if (proxyGroup === 'Local') proxyGroup = String(config.proxyListName || '').trim() || 'Local';
+    const qty = Math.max(1, parseInt(config.qty, 10) || 1);
+    for (const rawSku of (config.skus || [])) {
+      const sku = String(rawSku || '').trim();
+      if (!sku) continue;
+      const previous = quantities.get(sku);
+      quantities.set(sku, previous == null ? qty : Math.min(previous, qty));
+    }
+  }
+  const items = [...quantities.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([monitorInput, quantity]) => ({ monitorInput, quantity: String(quantity), maxPrice: '' }));
+  return { items, proxyGroup };
+}
+
+function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
+  if (!monitorId) return false;
+  const monitorItems = spec.items.map(item => ({
+    id: item.monitorInput,
+    monitorInput: item.monitorInput,
+    quantity: item.quantity,
+    color: '',
+    sizes: [],
+    maxPrice: '',
+  }));
+  return sendToEngine({
+    type: 'edit-tasks',
+    messages: [{
+      id: monitorId,
+      type: 'Target',
+      site: 'Target',
+      proxyGroup: spec.proxyGroup,
+      item: monitorItems,
+      monitorItems,
+    }],
+  });
+}
+
+function reconcileTargetMainMonitor() {
+  const spec = targetMainMonitorSpec();
+  if (!spec.items.length) {
+    let stopped = true;
+    if (targetMainMonitorRunning && targetMainMonitorId) {
+      stopped = queueTargetMonitorStop(targetMainMonitorId);
+    }
+    clearTargetMainMonitorState();
+    return stopped;
+  }
+
+  const wasRunning = targetMainMonitorRunning && !!targetMainMonitorId;
+  // A post-scan live-edit worker belongs to the old monitor generation. Retire it before creating
+  // a fresh main generation so additive starts never run two local Target monitors in parallel.
+  if (!wasRunning && liveEditMonitorId) stopLiveEditMonitor();
+  const monitorId = wasRunning
+    ? targetMainMonitorId
+    : MONITOR_ID + '-main-' + (++targetMainMonitorSequence);
+  const sent = wasRunning
+    ? editTargetMainMonitor(spec, monitorId)
+    : sendToEngine({ type: 'start-monitors', messages: [{
+      id: monitorId,
+      site: 'Target',
+      proxyGroup: spec.proxyGroup,
+      monitorDelay: '4000',
+      items: spec.items,
+    }] });
+  if (!sent) {
+    queueTargetMainMonitorSync();
+    return false;
+  }
+  targetMainMonitorRunning = true;
+  targetMainMonitorId = monitorId;
+  targetMainMonitorNeedsSync = false;
+  if (targetMainMonitorRetryTimer) clearTimeout(targetMainMonitorRetryTimer);
+  targetMainMonitorRetryTimer = null;
+
+  // Native monitor startup is asynchronous. Re-send the latest union once registration has had a
+  // chance to finish, covering an additive start that arrives in that narrow window.
+  if (!wasRunning) {
+    if (targetMainMonitorSyncTimer) clearTimeout(targetMainMonitorSyncTimer);
+    targetMainMonitorSyncTimer = setTimeout(() => {
+      targetMainMonitorSyncTimer = null;
+      if (targetMainMonitorRunning && targetMainMonitorId === monitorId && engineConn) {
+        if (!editTargetMainMonitor(targetMainMonitorSpec(), monitorId)) queueTargetMainMonitorSync();
+      }
+    }, TARGET_MAIN_MONITOR_SYNC_MS);
+    if (targetMainMonitorSyncTimer && typeof targetMainMonitorSyncTimer.unref === 'function') targetMainMonitorSyncTimer.unref();
+  }
+
+  if (sharedMonitorOnly()) {
+    if (targetMainMonitorScanTimer) clearTimeout(targetMainMonitorScanTimer);
+    targetMainMonitorScanTimer = setTimeout(() => {
+      targetMainMonitorScanTimer = null;
+      if (targetMainMonitorRunning && targetMainMonitorId === monitorId) {
+        queueTargetMonitorStop(monitorId);
+        targetMainMonitorRunning = false;
+        targetMainMonitorId = '';
+      }
+      log('[target] monitor: initial scan done — this copy is no longer polling Target');
+    }, TARGET_MAIN_MONITOR_SCAN_MS);
+    if (targetMainMonitorScanTimer && typeof targetMainMonitorScanTimer.unref === 'function') targetMainMonitorScanTimer.unref();
+  }
+  log('[target] monitor: ' + (wasRunning ? 'updated to ' : 'scanning ')
+    + spec.items.length + ' active SKU(s) across ' + runningTaskIds.size + ' task(s)');
+  return true;
+}`, 'single Target monitor union lifecycle');
 
   source = replaceOnce(source, `function sendStart(config) {
   liveEditStoppedMainMonitor = false;`, `// Continue a looping Target task only while this account still has an eligible watched SKU.
@@ -506,11 +791,41 @@ function enforceTargetLoopCheckout(taskId, accountId, purchasedTcin) {
     return;
   }
   const capped = config.skus.filter(sku => !eligible.includes(sku));
+  config.skus = eligible.slice();
   log('[loop] capped ' + capped.join(', ') + ' — continuing on ' + eligible.join(', '), taskId);
 }
 
 function sendStart(config) {
   liveEditStoppedMainMonitor = false;`, 'Target looping order-cap enforcement');
+
+  source = replaceSection(source, `function flushStart() {`, `function handleEngineMessage(data, connection) {`, `function flushStart() {
+  if (pendingTargetEngineStop || !pendingTargetStarts.length) return 0;
+  let startedTotal = 0;
+  while (pendingTargetStarts.length) {
+    const config = pendingTargetStarts[0];
+    if (!config || !Array.isArray(config.tasks) || !config.tasks.length) {
+      pendingTargetStarts.shift();
+      continue;
+    }
+    if (!sendConfigs(config)) break;
+    // Count what sendStart actually started — tasks whose account is at its 4-hour limit are
+    // refused there, and claiming them here would report a count the engine never received.
+    const started = sendStart(config);
+    if (started < 0) break;
+    pendingTargetStarts.shift();
+    if (!started) continue;
+    startedTotal += started;
+    taskActive = true;
+    log(\`\${started} task(s) started on \${(config.skus || []).length} SKU(s)\`);
+  }
+  if (startedTotal) reconcileTargetMainMonitor();
+  return startedTotal;
+}
+
+`, 'lossless pending Target start flush');
+
+  source = replaceOnce(source, `  pendingStart = config;`, `  queueTargetStart(config);`,
+    'Target start FIFO enqueue');
 
   source = replaceOnce(source,
     `            qty: 1,
@@ -530,9 +845,30 @@ function sendStart(config) {
 
   source = replaceOnce(source,
     `  sendToEngine({ type: 'start-tasks', messages });`,
-    `  if (!sendToEngine({ type: 'start-tasks', messages })) return 0;
+    `  if (!sendToEngine({ type: 'start-tasks', messages })) return -1;
   toRenderer('targetRunStarted', { taskIds: tasks.map(task => task.id), startedAt: Date.now() });`,
     'Target per-run outcome reset');
+
+  source = replaceOnce(source,
+    `  const watched = [...new Set(tasks.flatMap(t => t.skus))];`,
+    `  for (const task of tasks) {
+    const existing = taskCheckoutConfigById.get(task.id) || {};
+    taskCheckoutConfigById.set(task.id, {
+      ...existing,
+      skus: task.skus.slice(),
+      proxyListName: task.proxyListName || existing.proxyListName || '',
+    });
+  }
+  const watched = [...new Set(tasks.flatMap(t => t.skus))];`,
+    'Target eligible monitor-union state');
+
+  source = replaceSection(source,
+    `  // ONE monitor for the whole module, watching every SKU, publishing to the hub that all the`,
+    `  const grp = groupOf(tasks[0] && tasks[0].proxyListName);`,
+    `  // flushStart reconciles the one native monitor after every pending checkout batch has been
+  // delivered, so additive configs cannot race duplicate starts for the same monitor ID.
+`,
+    'Target per-config monitor startup');
 
   source = replaceOnce(source, `      taskActive = false;
       // The engine dying takes every task with it, so clear them all rather than a single id.`, `      taskActive = false;
@@ -604,6 +940,7 @@ function sendStart(config) {
     taskCheckoutConfigById.set(t.id, {
       skus: [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))],
       qty: Math.max(1, parseInt(config.qty, 10) || 2),
+      proxyListName: String(t.proxyListName || '').trim(),
       loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
     });`, 'Target task/profile association');
   source = replaceOnce(source, `      accountId: first.accountId || '',
@@ -946,6 +1283,16 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
           continue;
         }
         status(st, m.color, '', id, m.state, m.running);
+        if (m.running === false) acknowledgeLiveEditMonitorStop(rawId);
+        const pendingMonitorStopAcknowledged = m.running === false
+          || (targetMainMonitorPendingStopIds.has(rawId) && st === 'Idle');
+        if (pendingMonitorStopAcknowledged) targetMainMonitorPendingStopIds.delete(rawId);
+        const mainMonitorRejected = rawId === targetMainMonitorId && st === 'Cloud Disconnected';
+        if (rawId === targetMainMonitorId && (m.running === false || mainMonitorRejected)) {
+          const retryMainMonitor = mainMonitorRejected && runningTaskIds.size > 0;
+          clearTargetMainMonitorState();
+          if (retryMainMonitor) queueTargetMainMonitorSync();
+        }
         // The Go engine does not acknowledge start-tasks. Its first task status is the earliest
         // authoritative proof that this id was accepted (duplicates and invalid profiles can be
         // dropped silently), so only then should it consume dynamic cookie-bank capacity.
@@ -958,6 +1305,7 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
           taskAccountById.delete(id);
           releaseTargetCookieTask(id);
           taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+          if (targetMainMonitorRunning || !runningTaskIds.size) reconcileTargetMainMonitor();
         }
         // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
         // state is already shown live next to "Engine Log", so logging it as well just buries the
@@ -989,7 +1337,21 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
         }
         log('[notify] ' + JSON.stringify(m));`, 'site-aware native notification routing');
 
-  source = replaceOnce(source, `    case 'task-notification':`, `    case 'analytics-event':
+  source = replaceOnce(source, `    case 'task-notification':`, `    case 'monitor-bandwidth':
+      for (const m of items) {
+        try {
+          const telemetry = engineContract.normalizeMonitorBandwidth(m);
+          toRenderer('targetMonitorBandwidth', telemetry);
+          const completedStop = trackTargetMonitorBandwidth(telemetry);
+          if (completedStop) forcePendingTargetEngineStop(completedStop);
+        } catch (_) {
+          // Keep malformed native telemetry—and any sensitive unknown fields it may contain—out
+          // of both the renderer and logs.
+          vlog('[target] ignored invalid monitor bandwidth telemetry');
+        }
+      }
+      break;
+    case 'analytics-event':
       for (const m of items) {
         if (!analyticsRecorder.record(m)) log('[analytics] event was not recorded');
         const outcomeType = String((m && m.eventType) || '').toLowerCase();
@@ -1029,8 +1391,9 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
     else if (Object.keys(sentConfigs.proxies).length || Object.keys(sentConfigs.accounts).length) {
       vlog('engine reconnected — re-sending configs');
       sendConfigs();
-    }`, `    let flushed = false;
-    if (pendingStart) { flushStart(); flushed = true; }
+    }`, `    if (targetMainMonitorPendingStopIds.size) sendPendingTargetMainMonitorStop();
+    let flushed = false;
+    if (pendingTargetStarts.length) { flushStart(); flushed = true; }
     if (pendingPokemonStarts.length) { flushPokemonStarts(); flushed = true; }
     // An engine that reconnects — or a respawned one — comes up with empty profile/account/proxy
     // maps, because they live in that process and nothing on this side re-sent them. Any task still
@@ -1038,12 +1401,99 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
     if (!flushed && (Object.keys(sentConfigs.profiles).length || Object.keys(sentConfigs.proxies).length || Object.keys(sentConfigs.accounts).length)) {
       vlog('engine reconnected — re-sending configs');
       sendConfigs();
-    }`, 'shared native pending-start flush');
+    }
+    if (targetMainMonitorNeedsSync && runningTaskIds.size) reconcileTargetMainMonitor();`, 'shared native pending-start flush');
 
   source = replaceOnce(source, `    for (const id of runningTaskIds) status('Error', '#fb5454', 'engine bridge: ' + err.code, id);
     status('Error', '#fb5454', 'ws server: ' + err.code);`, `    for (const id of runningTaskIds) status('Error', '#fb5454', 'engine bridge: ' + err.code, id);
     for (const id of pokemonTaskIds) pokemonStatus('Error', '#fb5454', 'engine bridge: ' + err.code, id, 0, false);
     status('Error', '#fb5454', 'ws server: ' + err.code);`, 'shared native bridge errors');
+
+  source = replaceOnce(source,
+    `  const s = new WebSocket.Server({ host: '127.0.0.1', port });
+  wss = s;`,
+    `  let s;
+  try {
+    s = new WebSocket.Server({ host: '127.0.0.1', port });
+  } catch (err) {
+    log('engine server error: ' + err.message);
+    serverWaiters.length = 0;
+    failNativeEngineRuns('engine bridge: ' + (err.code || err.message), true);
+    return;
+  }
+  wss = s;`,
+    'synchronous native bridge bind cleanup');
+  source = replaceOnce(source,
+    `    log('engine server error: ' + err.message);
+    serverWaiters.length = 0;            // nothing will ever be ready; don't leave spawns queued
+    for (const id of runningTaskIds) status('Error', '#fb5454', 'engine bridge: ' + err.code, id);
+    for (const id of pokemonTaskIds) pokemonStatus('Error', '#fb5454', 'engine bridge: ' + err.code, id, 0, false);
+    status('Error', '#fb5454', 'ws server: ' + err.code);`,
+    `    log('engine server error: ' + err.message);
+    serverWaiters.length = 0;            // nothing will ever be ready; don't leave spawns queued
+    failNativeEngineRuns('engine bridge: ' + (err.code || err.message), true);`,
+    'fatal native bridge bind cleanup');
+
+  source = replaceOnce(source,
+    "    log('ENGINE NOT FOUND: ' + exe + ` — build it with:  cd backend && go build -o ${plat.engineBin()} .`);\n    return;\n  }\n  engineProc = spawn(",
+    "    log('ENGINE NOT FOUND: ' + exe + ` — build it with:  cd backend && go build -o ${plat.engineBin()} .`);\n    failNativeEngineRuns('engine binary not found', true);\n    return;\n  }\n  try {\n    engineProc = spawn(",
+    'missing native engine failure cleanup');
+  source = replaceOnce(source,
+    `    ...plat.spawnOpts(),
+  });
+  // The engine prints a timestamped line for EVERY status change and request on every task and the`,
+    `    ...plat.spawnOpts(),
+    });
+  } catch (err) {
+    engineProc = null;
+    log('engine spawn error: ' + err.message);
+    failNativeEngineRuns('engine spawn error: ' + err.message, true);
+    return;
+  }
+  // The engine prints a timestamped line for EVERY status change and request on every task and the`,
+    'synchronous native engine spawn cleanup');
+
+  source = replaceOnce(source,
+    `  // The engine prints a timestamped line for EVERY status change and request on every task and the`,
+    `  const spawnedEngine = engineProc;
+  // The engine prints a timestamped line for EVERY status change and request on every task and the`,
+    'native engine process identity');
+  source = replaceOnce(source,
+    `  engineProc.on('error', (err) => { log('engine spawn error: ' + err.message); engineProc = null; });`,
+    `  engineProc.on('error', (err) => {
+    log('engine spawn error: ' + err.message);
+    const ownsCurrentProcess = engineProc === spawnedEngine
+      || (pendingTargetEngineStop && pendingTargetEngineStop.proc === spawnedEngine);
+    if (!ownsCurrentProcess) return;
+    if (engineProc === spawnedEngine) engineProc = null;
+    finishTargetEngineStop(spawnedEngine);
+    failNativeEngineRuns('engine spawn error: ' + err.message, true);
+  });`,
+    'native engine process-scoped spawn error');
+  source = replaceOnce(source,
+    `  engineProc.on('exit', (code) => {
+    engineProc = null;`,
+    `  engineProc.on('exit', (code) => {
+    // Retire this process's socket before evaluating either graceful or unexpected cleanup.
+    // Otherwise a start arriving between child exit and WebSocket close can flush into the dead
+    // connection and the replacement can be rejected as a second engine.
+    const ownsCurrentProcess = engineProc === spawnedEngine
+      || (pendingTargetEngineStop && pendingTargetEngineStop.proc === spawnedEngine);
+    if (!ownsCurrentProcess) return;
+    const stoppedConnection = engineConn;
+    engineConn = null;
+    try { if (stoppedConnection) stoppedConnection.close(); } catch {}
+    const gracefulStop = finishTargetEngineStop(spawnedEngine);
+    if (engineProc === spawnedEngine) engineProc = null;
+    if (gracefulStop) {
+      if (!quitting && (pendingTargetStarts.length || pendingPokemonStarts.length)) {
+        setImmediate(() => {
+          if (!quitting && !engineProc && (pendingTargetStarts.length || pendingPokemonStarts.length)) spawnEngine();
+        });
+      }
+      return;
+    }`,
+    'native engine graceful-exit lifecycle');
 
   source = replaceOnce(source, `    if (taskActive) {
       log('engine exited (code ' + code + ')');
@@ -1058,35 +1508,18 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
       taskCheckoutConfigById.clear();
       manualCaptchaManager.cancelPending();
       toRenderer('targetDone', { taskId: '' });
-    }`, `    if (taskActive || runningTaskIds.size || pokemonTaskIds.size) {
+    }`, `    if (taskActive || runningTaskIds.size || pokemonTaskIds.size || targetMainMonitorRunning
+        || activeMonitorBandwidthRuns.size || pendingTargetStarts.length || pendingPokemonStarts.length) {
       log('engine exited (code ' + code + ')');
-      taskActive = false;
-      stopLiveEditMonitor();
-      cancelAllOtpFetches('Native engine exited');
-      for (const id of runningTaskIds) toRenderer('targetDone', { taskId: id });
-      for (const id of pokemonTaskIds) pokemonDone(id);
-      runningTaskIds.clear();
-      clearTargetCookieTasks();
-      pokemonTaskIds.clear();
-      pokemonTaskConfigs.clear();
-      pendingPokemonStarts.length = 0;
-      engineTaskSites.clear();
-      taskProfileById.clear();
-      taskCheckoutConfigById.clear();
-      manualCaptchaManager.cancelPending();
-      nativeHyperBroker.cancelPending();
-      toRenderer('targetDone', { taskId: '' });
+      failNativeEngineRuns('Native engine exited', false);
     }`, 'shared native engine-exit cleanup');
 
   const sharedStopTarget = `function stopTarget(taskId) {
   const requestedId = String(taskId || '');
   if (requestedId) {
     // A start can be queued while the native WebSocket is still connecting. Remove a stopped task
-    // from that envelope before the early return below, or flushStart() can resurrect it later.
-    if (pendingStart && Array.isArray(pendingStart.tasks)) {
-      const remaining = pendingStart.tasks.filter(task => String(task && task.id || '') !== requestedId);
-      pendingStart = remaining.length ? { ...pendingStart, tasks: remaining } : null;
-    }
+    // from every queued config before the early return below, or flushStart() can resurrect it later.
+    removePendingTargetStartTask(requestedId);
     if (engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: requestedId }] });
     runningTaskIds.delete(requestedId);
     releaseTargetCookieTask(requestedId);
@@ -1098,18 +1531,26 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
     manualCaptchaManager.cancelTask(requestedId);
     toRenderer('targetDone', { taskId: requestedId });
     flushLogs();
-    if (runningTaskIds.size) return;
+    if (runningTaskIds.size) {
+      if (targetMainMonitorRunning) reconcileTargetMainMonitor();
+      return;
+    }
   }
 
   startSeq += 1;
   farmerWanted = null;
-  pendingStart = null;
+  clearPendingTargetStarts();
+  if (targetMainMonitorId) targetMainMonitorPendingStopIds.add(targetMainMonitorId);
+  stopLiveEditMonitor();
+  const mainMonitorIds = [...targetMainMonitorPendingStopIds];
   if (engineConn) {
     const ids = [...runningTaskIds].map(id => ({ id }));
     if (ids.length) sendToEngine({ type: 'stop-tasks', messages: ids });
-    sendToEngine({ type: 'stop-tasks', messages: [{ id: MONITOR_ID }] });
+    if (mainMonitorIds.length) sendToEngine({
+      type: 'stop-tasks', messages: mainMonitorIds.map(id => ({ id })),
+    });
   }
-  stopLiveEditMonitor();
+  clearTargetMainMonitorState();
   cancelAllOtpFetches();
   flushLogs();
   for (const id of runningTaskIds) {
@@ -1135,11 +1576,11 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
   if (!quitting) ensureHarvesterBroker();
   if (pokemonTaskIds.size) { taskActive = true; return; }
 
+  targetMainMonitorPendingStopIds.clear();
   taskActive = false;
   nativeHyperBroker.cancelPending();
   manualCaptchaManager.cancelPending();
-  killTree(engineProc);
-  engineProc = null;
+  beginTargetEngineStop(engineProc);
 }`;
   source = replaceSection(
     source,

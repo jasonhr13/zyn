@@ -69,7 +69,7 @@ async function buildSyntheticZynEngine() {
 import "fmt"
 
 func main() {
-	fmt.Println("https://zynbot.app/zyn-icon.png zynbot.app/engine ZYN_SHAPE_TOKEN x-zyn-token Zyn-Task-Log-v1 zyn-engine")
+	fmt.Println("https://zynbot.app/zyn-icon.png zynbot.app/engine ZYN_SHAPE_TOKEN x-zyn-token Zyn-Task-Log-v1 zyn-engine monitor-bandwidth tls-client-wire")
 }
 `);
   const engine = path.join(temporary, 'synthetic-zyn-engine');

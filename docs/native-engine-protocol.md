@@ -85,6 +85,7 @@ exact spelling. A start message carries the canonical site in both `site` and `t
 | `task-log` | `taskID`, `site?`, `data` | Task registry |
 | `task-notification` | `taskID`, `site?`, nested `type`, product/order fields | Task registry |
 | `analytics-event` | `eventId`, `eventType`, `site`, task/run/order IDs, integer cents, nested items | Main-process analytics outbox |
+| `monitor-bandwidth` | aggregate wire-byte fields below | Sanitized renderer event `targetMonitorBandwidth` |
 | `product-titles` | `titles`, `missing` | Target monitor only in version 1 |
 | `request-code` | `email`, `requestId`, `taskID?` | OTP handler |
 | `account-cookie` | `accountId`, `cookie`, `site?` | Account store |
@@ -104,6 +105,46 @@ main-process outbox retries an upload.
 The event deliberately excludes profiles, addresses, cards, passwords, proxies, account email, and
 license credentials. Electron binds it to the currently authenticated Zyn account and uploads it;
 the Go process never connects to the analytics API.
+
+### Target monitor bandwidth
+
+The Target monitor emits cumulative TLS client wire-byte measurements using this exact payload:
+
+```json
+{
+  "schemaVersion": 1,
+  "measurement": "tls-client-wire",
+  "monitorId": "target-monitor",
+  "runId": "run-identifier",
+  "site": "Target",
+  "startedAt": 1786471200000,
+  "observedAt": 1786471260000,
+  "sequence": 1,
+  "running": true,
+  "downloadBytes": 6000,
+  "uploadBytes": 600,
+  "totalBytes": 6600,
+  "proxyDownloadBytes": 5000,
+  "proxyUploadBytes": 500,
+  "directDownloadBytes": 1000,
+  "directUploadBytes": 100,
+  "polls": 20,
+  "failedPolls": 2,
+  "watchedItems": 3
+}
+```
+
+All byte and count fields are nonnegative safe integers; timestamps are positive milliseconds since
+the Unix epoch, and `sequence` is a positive safe integer starting at 1. Aggregate download, upload,
+and total values must equal their component sums. Electron
+rejects malformed events, discards unknown fields, and forwards only the normalized aggregate to
+the renderer. URLs, headers, cookies, proxy values or credentials, product identifiers, and task or
+account data are never part of this event. The measurement remains on Zyn's authenticated loopback
+engine-to-Electron path and local renderer; it is not sent to checkout analytics or Cloudflare.
+On a normal stop, Electron gives active monitor runs up to 1.5 seconds to send their terminal
+cumulative snapshot before force-stopping the child. If that snapshot never arrives, the renderer
+keeps the last periodic counters and labels them as a provisional last sample rather than a complete
+measurement.
 
 ## Start-task common fields
 

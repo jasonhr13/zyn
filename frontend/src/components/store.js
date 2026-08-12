@@ -4,6 +4,11 @@ import {
   isTargetProxyRotationStatus,
   isTargetProxyStatusForGroup,
 } from './target-proxy-status';
+import {
+  emptyTargetMonitorBandwidthState,
+  reduceTargetMonitorBandwidth,
+  stopTargetMonitorBandwidthRuns,
+} from './target-monitor-bandwidth.mjs';
 import { timestampLogLine, timestampLogLines } from './log-timestamp';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
@@ -123,6 +128,9 @@ const defaultState = {
     proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
+    // Latest cumulative TLS-transport sample per monitor run. A run is replaced by sequence rather
+    // than added here, so loopback retries cannot inflate the displayed bandwidth.
+    monitorBandwidth: emptyTargetMonitorBandwidthState(),
     otpPending: [],           // [{ email, taskId, since }] logins the engine is blocked on
     logs: [],                 // module-level log (engine lifecycle, monitor, farmer)
     // Defaults applied to newly created tasks.
@@ -348,6 +356,13 @@ export function reducer(state = defaultState, action) {
       return { ...state, target: { ...state.target, taskOutcomes } };
     }
 
+    case 'targetMonitorBandwidth': {
+      const previous = state.target.monitorBandwidth;
+      const monitorBandwidth = reduceTargetMonitorBandwidth(previous, action.payload);
+      if (monitorBandwidth === previous) return state;
+      return { ...state, target: { ...state.target, monitorBandwidth } };
+    }
+
     // The engine's analytics outcome has a unique event id. Count that authoritative event instead
     // of the transient Successful status, which can be repainted by the next loop step before the
     // renderer draws and is also repeated by the status heartbeat.
@@ -461,7 +476,10 @@ export function reducer(state = defaultState, action) {
     }
 
     case 'targetDone': {
-      if (!action.taskId) return { ...state, target: { ...state.target, monitorStatus: null } };
+      if (!action.taskId) return { ...state, target: { ...state.target,
+        monitorStatus: null,
+        monitorBandwidth: stopTargetMonitorBandwidthRuns(state.target.monitorBandwidth),
+      } };
       const status = { ...state.target.taskStatus }; delete status[action.taskId];
       const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.taskId];
       return { ...state, target: { ...state.target, taskStatus: status, proxyStatus } };

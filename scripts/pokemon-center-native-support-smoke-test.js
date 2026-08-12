@@ -34,6 +34,41 @@ const pokemonEdit = fs.readFileSync(path.join(root, '../polar-backend-source/sit
 const routes = fs.readFileSync(path.join(root, 'frontend/src/components/page-handler.js'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'frontend/src/components/store.js'), 'utf8');
 
+// Backup/import merge identity is retailer + email, not email alone. A single inbox can own a
+// separate Target and Bandai login, while a blank legacy site aliases Bandai.
+const accountImportStart = dataManager.indexOf('if (Array.isArray(bundle.accounts))');
+const accountImportEnd = dataManager.indexOf('if (bundle.proxies && Array.isArray(bundle.proxies.lists))', accountImportStart);
+assert.ok(accountImportStart >= 0 && accountImportEnd > accountImportStart,
+  'site-aware account import fragment is missing');
+const accountImportFragment = dataManager.slice(accountImportStart, accountImportEnd);
+const runAccountMerge = (current, incoming) => {
+  let saved = null;
+  const sandbox = {
+    bundle: { accounts: incoming },
+    mode: 'merge',
+    summary: {},
+    getAccountsRaw: () => current.map(account => ({ ...account })),
+    encryptSecret: value => `enc:${value}`,
+    writeJSON: (filename, value) => { assert.equal(filename, 'accounts.json'); saved = value; },
+  };
+  vm.runInNewContext(`const replace = false; ${accountImportFragment}`, sandbox);
+  return { saved: JSON.parse(JSON.stringify(saved)), summary: JSON.parse(JSON.stringify(sandbox.summary)) };
+};
+const multiSiteAccounts = runAccountMerge([], [
+  { id: 'target', site: 'target', email: 'shared@example.com', password: 'target-password' },
+  { id: 'bandai', site: 'bandai', email: 'shared@example.com', password: 'bandai-password' },
+]);
+assert.equal(multiSiteAccounts.saved.length, 2, 'merge dropped a same-email account from another site');
+assert.equal(multiSiteAccounts.summary.accounts.added, 2);
+const legacyBandaiAccount = runAccountMerge([
+  { id: 'legacy', site: '', email: 'shared@example.com', password: 'already-encrypted' },
+], [
+  { id: 'bandai', site: 'bandai', email: 'shared@example.com', password: 'duplicate-bandai' },
+  { id: 'target', site: 'target', email: 'shared@example.com', password: 'target-password' },
+]);
+assert.deepEqual(legacyBandaiAccount.saved.map(account => account.id), ['legacy', 'target'],
+  'blank legacy account site did not alias Bandai during merge');
+
 assert.match(engine, /const POKEMON_SITE = engineContract\.SITES\.POKEMON_CENTER_US/);
 assert.match(engine, /function startPokemonCenter\(/);
 assert.match(engine, /function editPokemonCenter\(/);
@@ -162,6 +197,11 @@ assert.match(electron, /targetEngine\.setPokemonCenterTaskProxy/);
 assert.match(electron, /targetEngine\.stopPokemonCenter/);
 assert.doesNotMatch(electron, /th\.startPokemonCenter/);
 assert.doesNotMatch(electron, /setPokemonSku/);
+assert.doesNotMatch(electron, /@electron\/remote|remoteMain\.(?:initialize|enable)/,
+  'staged app exposes main-process modules to the renderer');
+assert.match(electron, /enableRemoteModule:\s*false/,
+  'staged main window does not explicitly disable Electron remote');
+assert.doesNotMatch(electron, /enableRemoteModule:\s*true/);
 
 assert.match(dataManager, /function getPokemonCenterTasks\(/);
 assert.match(dataManager, /function savePokemonCenterTasks\(/);

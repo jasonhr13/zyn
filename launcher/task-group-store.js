@@ -102,6 +102,18 @@ function normalizeGroups(groups, options = {}) {
     });
 }
 
+function taskGroupSite(group) {
+  return String(group && typeof group === 'object' ? group.site || 'target' : 'target')
+    .trim()
+    .toLowerCase() || 'target';
+}
+
+function storedGroups(filePath) {
+  const stored = readJson(filePath, { groups: [] });
+  if (Array.isArray(stored)) return stored;
+  return stored && Array.isArray(stored.groups) ? stored.groups : [];
+}
+
 function readJson(filePath, fallback) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -148,12 +160,21 @@ function createTaskGroupStore(dataDirectory, options = {}) {
     now: options.now || Date.now(),
   };
 
-  const write = (groups, withBackup = true) => {
-    const clean = normalizeGroups(groups, normalizeOptions);
+  const write = (groups, withBackup = true, options = {}) => {
+    const clean = normalizeGroups(
+      (Array.isArray(groups) ? groups : []).filter(group => taskGroupSite(group) === 'target'),
+      normalizeOptions,
+    );
+    const preserveUnsupported = options.preserveUnsupported !== false;
+    const unsupported = preserveUnsupported && fs.existsSync(filePath)
+      ? storedGroups(filePath).filter(group => taskGroupSite(group) !== 'target')
+      : [];
     if (withBackup) {
       try { backupCurrent(filePath); } catch {}
     }
-    atomicWrite(filePath, { version: TASK_GROUP_SCHEMA_VERSION, groups: clean });
+    // Zyn only runs Target groups, but merge-style saves must not erase raw legacy groups that a
+    // rollback build may still understand. Replace restores opt out explicitly.
+    atomicWrite(filePath, { version: TASK_GROUP_SCHEMA_VERSION, groups: [...clean, ...unsupported] });
     return clean;
   };
 
@@ -176,11 +197,13 @@ function createTaskGroupStore(dataDirectory, options = {}) {
     filePath,
     load() {
       if (!fs.existsSync(filePath)) return migrateLegacy();
-      const stored = readJson(filePath, { groups: [] });
-      return normalizeGroups(Array.isArray(stored) ? stored : stored.groups, normalizeOptions);
+      return normalizeGroups(
+        storedGroups(filePath).filter(group => taskGroupSite(group) === 'target'),
+        normalizeOptions,
+      );
     },
-    save(groups) {
-      return write(groups, true);
+    save(groups, options = {}) {
+      return write(groups, true, options);
     },
   });
 }

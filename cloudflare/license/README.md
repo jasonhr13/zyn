@@ -125,6 +125,11 @@ Encrypted account backups use a private object bucket plus D1 metadata. The desk
 the portable data bundle, encrypts it with AES-256-GCM using a locally held recovery key, and uploads
 only the encrypted envelope. Recovery keys are protected locally with Electron `safeStorage` and are
 never sent to the service. Objects are scoped by user UUID and the newest ten revisions are retained.
+Uploads are limited per account before the Worker reads the body or writes R2. New objects use
+conditional creation and an R2 SHA-256 receipt; downloads verify the R2 receipt, full encrypted body,
+D1 metadata, and envelope header before returning bytes. Legacy objects without the newer R2 custom
+metadata remain readable after full verification. See `docs/encrypted-cloud-backup.md` for the
+desktop compatibility, key lifecycle, data scope, and transactional restore contract.
 
 Checkout analytics are stored in D1 under the authenticated user's server-derived UUID. The desktop
 sends one idempotent outcome event per cart, checkout, or decline with nested product rows, integer

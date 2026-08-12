@@ -25,6 +25,7 @@ release-tools/
 /Hope-Setup*.exe
 /updates/*/
 /.wrangler/
+**/.wrangler/
 /release/dist/
 /release/work/
 /release/runtime-artifacts/

@@ -101,6 +101,16 @@ licensed = true;
 gated.sync();
 assert.equal(starts.length, 2, 'preserved start did not fire after sign-in');
 
+groups = [{ ...baseGroup, schedule: { startAt: now - 500, stopAt: now + 60_000 } }];
+const beforePause = starts.length;
+scheduler.pause();
+scheduler.sync();
+assert.equal(starts.length, beforePause, 'paused scheduler launched a task during restore');
+assert.equal(scheduler.snapshot().paused, true);
+scheduler.resume();
+assert.equal(starts.length, beforePause + 1, 'resumed scheduler did not reconcile restored schedules');
+assert.equal(scheduler.snapshot().paused, false);
+
 scheduler.dispose();
 gated.dispose();
 

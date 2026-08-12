@@ -7,6 +7,7 @@
 const childProcess = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { fileURLToPath } = require('url');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
@@ -25,6 +26,8 @@ const { installCheckoutReporting } = require('./checkout-reporting');
 const { createAnalyticsService } = require('./analytics-recorder');
 const { createPokemonQueueEvents } = require('./pokemon-queue-events');
 const { createHarvesterExtensionBridge } = require('./harvester-extension-bridge');
+const { createCloudBackupManager } = require('./cloud-backup');
+const { createCloudBackupDataAdapter } = require('./cloud-backup-data');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
@@ -281,6 +284,7 @@ let targetProductHistoryStore = null;
 let pokemonQueueEvents = null;
 let analyticsService = null;
 let harvesterExtensionBridge = null;
+let cloudBackupManager = null;
 
 function installHarvesterExtensionCompatibility(authority) {
   try {
@@ -820,6 +824,141 @@ function installManagedProxies() {
   }
 }
 
+function pushCloudBackupStatus(status) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('cloudBackupStatus', status || cloudBackupManager?.status());
+      }
+    }
+  } catch {}
+}
+
+function trustedCloudBackupSender(event) {
+  try {
+    if (!event || !event.sender || event.sender.isDestroyed()) return false;
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || owner.isDestroyed()) return false;
+    if (event.senderFrame && event.sender.mainFrame && event.senderFrame !== event.sender.mainFrame) return false;
+    if (!app.isPackaged) return true;
+    const frameUrl = String((event.senderFrame && event.senderFrame.url) || event.sender.getURL() || '');
+    const actual = path.resolve(fileURLToPath(frameUrl));
+    const expected = path.resolve(originalAsar, 'build', 'index.html');
+    return process.platform === 'win32'
+      ? actual.toLowerCase() === expected.toLowerCase()
+      : actual === expected;
+  } catch {
+    return false;
+  }
+}
+
+function installCloudBackup(authority) {
+  if (!FEATURES.cloudBackup || !authority) return null;
+  try {
+    const { clipboard, powerMonitor, safeStorage } = require('electron');
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const backupData = createCloudBackupDataAdapter({
+      dataManager,
+      taskGroupStore,
+      dataDirectory: app.getPath('userData'),
+      onTaskGroupsChanged: savedGroups => {
+        syncTargetGroupCookieStandby(savedGroups);
+        try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[backup] schedule sync: ${error.message}`); }
+      },
+    });
+    const manager = createCloudBackupManager({
+      app,
+      safeStorage,
+      dataManager: backupData,
+      api: authority,
+      getAccountId: () => authority.backupAccountId(),
+      dialog,
+      clipboard,
+      log: console,
+      onStatus: pushCloudBackupStatus,
+    });
+    const backupCall = async operation => {
+      try { return await operation(); }
+      catch (error) {
+        console.warn(`[backup] ${error && error.message || error}`);
+        return { ok: false, error: String(error && error.message || error).slice(0, 500) };
+      }
+    };
+    const parentWindow = () => BrowserWindow.getFocusedWindow()
+      || BrowserWindow.getAllWindows().find(window => !window.isDestroyed())
+      || undefined;
+    const handle = (channel, operation) => {
+      try { ipcMain.removeHandler(channel); } catch {}
+      ipcMain.handle(channel, (event, ...args) => {
+        if (!trustedCloudBackupSender(event)) {
+          console.warn(`[backup] rejected ${channel} from an untrusted renderer`);
+          return { ok: false, error: 'Encrypted backup is available only from the Zyn settings window.' };
+        }
+        return operation(event, ...args);
+      });
+    };
+
+    handle('cloudBackupStatus', () => manager.status());
+    handle('cloudBackupClaimLegacy', () => backupCall(() => manager.claimLegacyState()));
+    handle('cloudBackupSetupKey', () => backupCall(async () => ({
+      ok: true,
+      keyFingerprint: manager.setupKey().keyFingerprint,
+      status: manager.status(),
+    })));
+    handle('cloudBackupCopyKey', () => backupCall(() => manager.copyRecoveryKey(parentWindow())));
+    handle('cloudBackupSaveKey', () => backupCall(() => manager.saveRecoveryKey(parentWindow())));
+    handle('cloudBackupImportKey', (_event, payload = {}) => backupCall(async () => ({
+      ...manager.importRecoveryKey(payload.recoveryKey, payload.expectedFingerprint),
+      status: manager.status(),
+    })));
+    handle('cloudBackupEnable', (_event, intervalMs) => backupCall(async () => {
+      manager.confirmKey(intervalMs);
+      const uploaded = await manager.uploadNow({ force: true, reason: 'setup' });
+      return { ok: true, uploaded, status: manager.status() };
+    }));
+    handle('cloudBackupSetSchedule', (_event, intervalMs) => backupCall(async () => ({
+      ok: true,
+      status: manager.setSchedule(intervalMs),
+    })));
+    handle('cloudBackupRun', () => backupCall(async () => ({
+      ...await manager.uploadNow({ force: true, reason: 'manual' }),
+      status: manager.status(),
+    })));
+    handle('cloudBackupList', () => backupCall(async () => ({ ok: true, backups: await manager.listBackups() })));
+    handle('cloudBackupPreview', (_event, payload = {}) => backupCall(() => {
+      const request = typeof payload === 'string' ? { backupId: payload } : payload;
+      return manager.preview(request.backupId, request.mode);
+    }));
+    handle('cloudBackupRestore', (_event, payload = {}) => backupCall(async () => {
+      taskGroupScheduler?.pause?.();
+      setTargetHarvestAuthorization(false);
+      stopAllRunningForLicense();
+      try {
+        return await manager.restore(payload.backupId, payload.mode);
+      } finally {
+        const authorized = authority.cached().ok === true;
+        setTargetHarvestAuthorization(authorized);
+        if (authorized) taskGroupScheduler?.resume?.();
+      }
+    }));
+    handle('cloudBackupDelete', (_event, backupId) => backupCall(() => manager.deleteBackup(backupId)));
+
+    const resume = () => manager.triggerDue();
+    app.whenReady().then(() => {
+      powerMonitor.on('resume', resume);
+      if (authority.cached().ok === true) manager.start();
+    });
+    app.once('will-quit', () => {
+      try { powerMonitor.removeListener('resume', resume); } catch {}
+      manager.pause();
+    });
+    return manager;
+  } catch (error) {
+    console.error(`Could not install encrypted cloud backup: ${error.message}`);
+    return null;
+  }
+}
+
 function installReplacementLicenseEnforcement(managedProxyControl) {
   if (!FEATURES.licenseEnforce) return null;
   const { ipcMain, safeStorage } = require('electron');
@@ -829,16 +968,20 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
     safeStorage,
     onStatus: status => {
       setTargetHarvestAuthorization(status && status.ok === true);
+      if (status && status.ok === true) cloudBackupManager?.start();
+      else cloudBackupManager?.pause();
       pushLicenseStatus(status);
       try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
       if (status && status.ok === true) {
         beginRuntimeBootstrap();
-        try { taskGroupScheduler?.sync(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
+        try { taskGroupScheduler?.resume?.(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
       }
     },
     onLock: () => {
       setTargetHarvestAuthorization(false);
+      cloudBackupManager?.pause();
+      taskGroupScheduler?.pause?.();
       stopAllRunningForLicense();
     },
     onEntitlementsChanged: stopRemovedTaskTypes,
@@ -1055,6 +1198,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
     enableLocalDeveloperLicense();
   }
   installTaskGroupScheduling(licenseAuthority, managedProxyControl);
+  cloudBackupManager = installCloudBackup(licenseAuthority);
   configureUpdater();
   configureAccountReporting(licenseAuthority);
   const restoreTaskTypeIpc = licenseAuthority && FEATURES.apiModuleAccess
