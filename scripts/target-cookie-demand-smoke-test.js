@@ -92,6 +92,19 @@ settings.targetAtcCookiesPerTask = '4';
 api.syncTargetCookieBankDemand();
 assert.equal(api.targetCookieDemand().targets.atc, 8, 'live settings changes must alter demand');
 
+settings.targetAtcCookiesPerTask = '75';
+api.syncTargetCookieBankDemand();
+assert.equal(api.targetCookieDemand().atcPerTask, 75, 'values above the retired 20-cookie cap must persist');
+assert.equal(api.targetCookieDemand().targets.atc, 150, 'values above 20 must scale live task demand');
+
+settings.targetAtcCookiesPerTask = '0';
+api.syncTargetCookieBankDemand();
+assert.equal(api.targetCookieDemand().atcPerTask, 0, 'zero must remain an explicit configured value');
+assert.equal(api.targetCookieDemand().targets.atc, null, 'zero must publish uncapped ATC demand');
+
+settings.targetAtcCookiesPerTask = '4';
+api.syncTargetCookieBankDemand();
+
 api.releaseTargetCookieTask('missing');
 assert.equal(api.targetCookieDemand().activeTasks, 2, 'unknown stops must be a no-op');
 api.releaseTargetCookieTask('a');

@@ -1,6 +1,6 @@
 export const MAX_DYNAMIC_ACTIVE_TASKS = 1000;
-export const MAX_DYNAMIC_ATC_PER_TASK = 20;
 export const MAX_DYNAMIC_COOKIE_TARGET = 10000;
+export const MAX_DYNAMIC_ATC_PER_TASK = Number.MAX_SAFE_INTEGER;
 
 const clampInteger = (value, minimum, maximum, field) => {
   if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) {
@@ -44,9 +44,11 @@ export function createBankDemand({ legacyPool = 0 } = {}) {
       const standbyTasks = input.standbyTasks === undefined
         ? 0
         : clampInteger(input.standbyTasks, 0, MAX_DYNAMIC_ACTIVE_TASKS, 'standbyTasks');
-      const atcPerTask = clampInteger(
-        input.atcPerTask, 1, MAX_DYNAMIC_ATC_PER_TASK, 'atcPerTask',
-      );
+      const rawAtcPerTask = Number(input.atcPerTask);
+      if (!Number.isFinite(rawAtcPerTask) || rawAtcPerTask < 0) {
+        throw new TypeError('atcPerTask must be a non-negative number');
+      }
+      const atcPerTask = clampInteger(input.atcPerTask, 0, MAX_DYNAMIC_ATC_PER_TASK, 'atcPerTask');
       const basis = input.basis === undefined || input.basis === null || input.basis === ''
         ? activeTasks > 0 ? 'active' : standbyTasks > 0 ? 'standby' : 'paused'
         : normalizeBasis(input.basis);
@@ -55,7 +57,11 @@ export function createBankDemand({ legacyPool = 0 } = {}) {
         : basis === 'standby' ? standbyTasks : activeTasks;
       targets = {
         login: Math.min(effectiveTasks, MAX_DYNAMIC_COOKIE_TARGET),
-        atc: Math.min(effectiveTasks * atcPerTask, MAX_DYNAMIC_COOKIE_TARGET),
+        // Zero is the explicit user-facing "no limit" sentinel. Paused demand remains a real zero
+        // so signing out or stopping every task always parks prewarm workers.
+        atc: effectiveTasks > 0 && atcPerTask === 0
+          ? null
+          : Math.min(effectiveTasks * atcPerTask, MAX_DYNAMIC_COOKIE_TARGET),
       };
       demand = {
         mode: 'per-task', basis, activeTasks, standbyTasks, effectiveTasks, atcPerTask,

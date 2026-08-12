@@ -170,6 +170,41 @@ const readyDynamic = targetBankPresentation({ ...dynamicDemand, atc: 12 }, atcHa
 assert.equal(readyDynamic.state, 'ready');
 assert.equal(readyDynamic.label, 'ATC target ready');
 
+const uncappedDemand = {
+  ...dynamicDemand,
+  atc: 40,
+  demand: {
+    ...dynamicDemand.demand,
+    atcPerTask: 0,
+    targets: { login: 4, atc: null },
+  },
+  targets: { login: 4, atc: null },
+};
+const uncappedMetrics = targetBankMetrics(uncappedDemand);
+assert.equal(uncappedMetrics.atcUnlimited, true);
+assert.equal(uncappedMetrics.atcTargetLabel, '∞');
+assert.equal(uncappedMetrics.atcDeficit, 0);
+assert.equal(uncappedMetrics.atcSurplus, 0);
+const uncappedFilling = targetBankPresentation(uncappedDemand, atcHarvester, { now: 1800000000000 });
+assert.equal(uncappedFilling.state, 'filling');
+assert.equal(uncappedFilling.label, 'Filling uncapped ATC bank');
+assert.equal(uncappedFilling.demandLabel, 'No limit · 4 active');
+assert.match(uncappedFilling.description, /no bank limit is set/i);
+const uncappedWithoutHarvester = targetBankPresentation(uncappedDemand, [], { now: 1800000000000 });
+assert.equal(uncappedWithoutHarvester.state, 'deficit');
+assert.equal(uncappedWithoutHarvester.label, 'Uncapped bank needs a harvester');
+
+const pausedUncappedSetting = targetBankPresentation({
+  ...uncappedDemand,
+  demand: {
+    ...uncappedDemand.demand,
+    basis: 'paused', effectiveTasks: 0, targets: { login: 0, atc: 0 },
+  },
+  targets: { login: 0, atc: 0 },
+}, atcHarvester, { now: 1800000000000 });
+assert.equal(pausedUncappedSetting.state, 'paused', 'paused demand must override the zero/unlimited setting');
+assert.equal(pausedUncappedSetting.demandLabel, 'No limit · paused');
+
 const overTarget = targetBankPresentation({ ...dynamicDemand, atc: 14 }, atcHarvester, { now: 1800000000000 });
 assert.equal(overTarget.state, 'over-target');
 assert.equal(overTarget.atcSurplus, 2);
@@ -385,6 +420,10 @@ assert.doesNotMatch(taskGroups, /<small>Top failure<\/small>/);
 assert.doesNotMatch(taskGroups, /target-global-harvester-summary/);
 assert.match(taskGroups, /aria-label="Target ATC cookies per task"/);
 assert.match(taskGroups, /targetAtcCookiesPerTask/);
+assert.match(taskGroups, /Set 0 for no bank limit/);
+assert.doesNotMatch(taskGroups, /max="20"/);
+assert.match(taskGroups, /min="0"/);
+assert.match(taskGroups, /presentation\.atcTargetLabel/);
 assert.match(taskGroups, /const availableHarvesters = this\.state\.harvesters\.map\(harvester =>[\s\S]{0,180}enabled: false/,
   'main bank summary must not count harvesters whose proxy group is unavailable');
 assert.match(taskGroups, /syncTargetHarvesters/);
@@ -425,9 +464,14 @@ assert.match(styles, /\.target-harvester-bandwidth-summary \{/);
 assert.match(styles, /\.target-harvester-bandwidth \{ grid-area: bandwidth; \}/);
 assert.match(targetPage, />ATC TASK<\/span>/);
 assert.match(targetPage, /targetAtcCookiesPerTask/);
+assert.match(targetPage, /Set 0 for no bank limit/);
+assert.doesNotMatch(targetPage, /max="20"/);
+assert.match(targetPage, /bankMetrics\.atcTargetLabel/);
 assert.doesNotMatch(targetPage, />BANK SIZE<\/span>/);
 assert.match(settingsPage, /ATC cookies per task/);
 assert.match(settingsPage, /targetAtcCookiesPerTask/);
+assert.match(settingsPage, /Set 0 for no bank limit/);
+assert.doesNotMatch(settingsPage, /max="20"/);
 assert.doesNotMatch(settingsPage, />Cookie bank size<\/label>/);
 
 console.log('Target cookie-bank metrics smoke test passed');

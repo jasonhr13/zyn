@@ -2,9 +2,9 @@
 // this bridge is the only authority that knows which checkout tasks actually reached the engine.
 // Keep those concerns separate: publish counts and a per-task setting, never task ids or secrets.
 const TARGET_ATC_COOKIES_PER_TASK_DEFAULT = 3;
-const TARGET_ATC_COOKIES_PER_TASK_MAX = 20;
 const TARGET_COOKIE_TASK_MAX = 1000;
 const TARGET_COOKIE_TOTAL_MAX = 10000;
+const TARGET_ATC_COOKIES_PER_TASK_MAX = Number.MAX_SAFE_INTEGER;
 const targetCookieActiveTaskIds = new Set();
 const targetCookieStandbySources = new Map();
 // The launcher explicitly opens this latch after the replacement license authority reports an
@@ -24,7 +24,7 @@ function targetAtcCookiesPerTask() {
   let configured;
   try { configured = (dm.getSettings() || {}).targetAtcCookiesPerTask; } catch {}
   const parsed = Number.parseInt(String(configured == null ? '' : configured), 10);
-  return Number.isFinite(parsed) && parsed > 0
+  return Number.isFinite(parsed) && parsed >= 0
     ? Math.min(TARGET_ATC_COOKIES_PER_TASK_MAX, parsed)
     : TARGET_ATC_COOKIES_PER_TASK_DEFAULT;
 }
@@ -59,7 +59,9 @@ function targetCookieDemand() {
       // A login Shape signature is consumed when a task must establish or recover its Target
       // session. ATC is the hot path and receives the operator-selected reserve per task.
       login: effectiveTasks,
-      atc: Math.min(TARGET_COOKIE_TOTAL_MAX, effectiveTasks * atcPerTask),
+      atc: effectiveTasks > 0 && atcPerTask === 0
+        ? null
+        : Math.min(TARGET_COOKIE_TOTAL_MAX, effectiveTasks * atcPerTask),
     },
   };
 }

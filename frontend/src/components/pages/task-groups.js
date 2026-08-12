@@ -72,10 +72,13 @@ const initialHarvesterDrawerOpen = () => {
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const siteOf = account => String((account && account.site) || '').toLowerCase();
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
-const normalizeAtcCookiesPerTaskInput = value => String(value == null ? '' : value).replace(/\D/g, '').slice(0, 2);
+const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
+const normalizeAtcCookiesPerTaskInput = value => String(value == null ? '' : value).replace(/\D/g, '');
 const normalizeAtcCookiesPerTask = value => {
   const parsed = Number.parseInt(normalizeAtcCookiesPerTaskInput(value), 10);
-  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+  return String(Number.isFinite(parsed)
+    ? Math.max(0, Math.min(MAX_ATC_COOKIES_PER_TASK, parsed))
+    : DEFAULT_ATC_COOKIES_PER_TASK);
 };
 const clampInteger = (value, minimum, maximum, fallback) => {
   const parsed = Number.parseInt(String(value == null ? '' : value), 10);
@@ -1042,20 +1045,19 @@ class TaskGroups extends Component {
         <span className="cookie-bank-counts">
           <span><strong>{presentation.login}</strong><small>Login</small></span>
           <span title={presentation.demandLabel}>
-            <strong>{presentation.atc}/{presentation.demandReported ? presentation.atcTarget : '—'}</strong>
+            <strong>{presentation.atc}/{presentation.demandReported ? presentation.atcTargetLabel : '—'}</strong>
             <small>ATC</small>
           </span>
         </span>
         <label
           className="cookie-bank-limit"
-          title="Ready ATC cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically."
+          title="Ready ATC cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit."
         >
           <span>ATC per task</span>
           <input
             type="number"
             inputMode="numeric"
-            min="1"
-            max="20"
+            min="0"
             value={this.state.atcCookiesPerTask}
             aria-label="Target ATC cookies per task"
             aria-describedby="target-atc-demand-formula"

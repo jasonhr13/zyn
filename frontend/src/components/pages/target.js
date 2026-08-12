@@ -29,9 +29,12 @@ const uid = () => 't_' + Math.random().toString(36).slice(2, 10);
 // "nothing chosen" value. Only the bulk dropdown needs the distinction.
 const LOCAL_SENTINEL = '__local__';
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
+const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
 const normalizeAtcCookiesPerTask = value => {
-  const parsed = Number.parseInt(String(value == null ? '' : value).replace(/\D/g, '').slice(0, 2), 10);
-  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+  const parsed = Number.parseInt(String(value == null ? '' : value).replace(/\D/g, ''), 10);
+  return String(Number.isFinite(parsed)
+    ? Math.max(0, Math.min(MAX_ATC_COOKIES_PER_TASK, parsed))
+    : DEFAULT_ATC_COOKIES_PER_TASK);
 };
 
 // Only explicitly tagged Target accounts can be assigned to a Target task.
@@ -729,9 +732,9 @@ class Target extends Component {
     const bankMetrics = targetBankMetrics(bank);
     const demandFormula = bankMetrics.demandReported
       ? bankMetrics.demandBasis === 'paused'
-        ? `${bankMetrics.atcPerTask} per task · paused`
-        : `${bankMetrics.atcPerTask} per task · ${bankMetrics.effectiveTasks} ${bankMetrics.demandBasis || 'active'}`
-      : `${atcCookiesPerTask} per task · waiting for broker`;
+        ? `${bankMetrics.atcNoLimit ? 'No limit' : `${bankMetrics.atcPerTask} per task`} · paused`
+        : `${bankMetrics.atcNoLimit ? 'No limit' : `${bankMetrics.atcPerTask} per task`} · ${bankMetrics.effectiveTasks} ${bankMetrics.demandBasis || 'active'}`
+      : `${Number(atcCookiesPerTask) === 0 ? 'No limit' : `${atcCookiesPerTask} per task`} · waiting for broker`;
 
     const q = filter.trim().toLowerCase();
     // Matches the account OR the live status line, because during a drop the question is almost
@@ -819,14 +822,13 @@ class Target extends Component {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div
                   style={CHIP}
-                  title={'Ready add-to-cart cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically.'}
+                  title={'Ready add-to-cart cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit.'}
                 >
                   <span style={{ color: 'var(--muted)', fontWeight: 600, letterSpacing: .3 }}>ATC TASK</span>
                   <input
                     className="form-input"
                     type="number"
-                    min="1"
-                    max="20"
+                    min="0"
                     value={atcCookiesPerTask}
                     aria-label="Target ATC cookies per task"
                     onChange={e => this.setAtcCookiesPerTask(e.target.value)}
@@ -877,7 +879,7 @@ class Target extends Component {
                     </span>
                     <span title="add-to-cart cookies pooled">
                       <b style={{ color: bank.atc > 0 ? 'var(--ok)' : 'var(--run)' }}>
-                        {bank.atc}/{bankMetrics.demandReported ? bankMetrics.atcTarget : '—'}
+                        {bank.atc}/{bankMetrics.demandReported ? bankMetrics.atcTargetLabel : '—'}
                       </b>
                       <span style={{ color: 'var(--muted)' }}> atc</span>
                     </span>

@@ -174,7 +174,20 @@ try {
   assert.equal((await request(port, 'GET', '/status')).body.pools.atc, 0,
     'the waiter receives the cookie directly rather than growing the paused bank');
 
-  console.log('Dynamic Shape broker demand, auth, downscale, and waiter behavior passed');
+  const unlimitedUpdate = await request(port, 'POST', '/demand', {
+    activeTasks: 1, standbyTasks: 0, atcPerTask: 0, basis: 'active',
+  }, true);
+  assert.equal(unlimitedUpdate.status, 200);
+  assert.deepEqual(unlimitedUpdate.body.demand.targets, { login: 1, atc: null },
+    'zero cookies per task must cross the broker API as an uncapped ATC target');
+  const unlimitedBatch = await request(port, 'POST', '/saveCookies', Array.from({ length: 25 }, () => ({
+    type: 'atc', headers, proxy: '',
+  })), true);
+  assert.equal(unlimitedBatch.body.saved, 25,
+    'uncapped demand must accept a batch above the retired 20-cookie ceiling');
+  assert.equal((await request(port, 'GET', '/status')).body.pools.atc, 25);
+
+  console.log('Dynamic Shape broker demand, unlimited mode, auth, downscale, and waiter behavior passed');
 } finally {
   if (producer && producer.exitCode == null) producer.kill('SIGTERM');
   if (broker && broker.exitCode == null) broker.kill('SIGTERM');

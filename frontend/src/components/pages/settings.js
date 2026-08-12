@@ -14,6 +14,7 @@ try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 const MAX_SHAPE_CAPTURES_PER_LOAD = 10;
 const MAX_SHAPE_LOADS_PER_BROWSER = 10;
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
+const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
 
 const FieldHelp = ({ children, align = 'left' }) => (
   <span className={`field-help${align === 'right' ? ' field-help-right' : ''}`}>
@@ -36,7 +37,9 @@ const normalizeShapeThroughput = (value, maximum, fallback) => {
 
 const normalizeAtcCookiesPerTask = value => {
   const parsed = Number.parseInt(String(value == null ? '' : value).trim(), 10);
-  return String(Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : DEFAULT_ATC_COOKIES_PER_TASK);
+  return String(Number.isFinite(parsed) && parsed >= 0
+    ? Math.max(0, Math.min(MAX_ATC_COOKIES_PER_TASK, parsed))
+    : DEFAULT_ATC_COOKIES_PER_TASK);
 };
 
 class Settings extends Component {
@@ -653,11 +656,11 @@ class Settings extends Component {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <div className="form-group" style={{ flex: 1 }}>
-                <FieldLabel help="Ready add-to-cart cookies kept for each active Target task, or configured standby task before a run. Zyn scales the total automatically.">
+                <FieldLabel help="Ready add-to-cart cookies kept for each active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit.">
                   ATC cookies per task
                 </FieldLabel>
                 <input
-                  className="form-input" type="number" min="1" max="20" step="1"
+                  className="form-input" type="number" min="0" step="1"
                   aria-label="Target ATC cookies per task"
                   value={targetAtcCookiesPerTask}
                   onChange={e => this.set('targetAtcCookiesPerTask', e.target.value)}

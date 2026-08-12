@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.95",
+  "notes": [
+    "Set any positive ATC cookie target per task without the previous 20-cookie limit.",
+    "Set ATC cookies per task to 0 to keep harvesting without a bank limit.",
+    "See uncapped cookie demand clearly as infinity throughout Target and Task Groups.",
+    "Keep in-app and browser-extension harvesters filling the same uncapped bank until tasks pause."
+  ]
+}

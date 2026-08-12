@@ -169,6 +169,8 @@ function extensionStatus(status = {}) {
   const atcTarget = Number(rawAtcTarget);
   const hasAuthoritativeTarget = rawAtcTarget !== null && rawAtcTarget !== undefined
     && rawAtcTarget !== '' && Number.isFinite(atcTarget) && atcTarget >= 0;
+  const hasUncappedDynamicAtc = demand.mode === 'per-task'
+    && rawAtcTarget === null && Number.isFinite(effectiveTasks) && effectiveTasks > 0;
   return {
     login,
     atc,
@@ -181,7 +183,7 @@ function extensionStatus(status = {}) {
     waiting: {
       login: Math.max(0, Number(waiting.login) || 0),
       atc: Math.max(0, Number(waiting.atc) || 0,
-        hasAuthoritativeTarget ? Math.ceil(atcTarget - atc) : 0),
+        hasAuthoritativeTarget ? Math.ceil(atcTarget - atc) : hasUncappedDynamicAtc ? 1 : 0),
     },
   };
 }

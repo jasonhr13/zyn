@@ -27,6 +27,18 @@ assert.equal(dynamic.accepts('atc', 20), true);
 assert.equal(dynamic.accepts('atc', 21), false);
 assert.equal(dynamic.accepts('atc', 200, true), true, 'live waiters bypass the prewarm target');
 
+const aboveLegacyCap = dynamic.apply({
+  activeTasks: 2, standbyTasks: 0, atcPerTask: 75, basis: 'active',
+});
+assert.deepEqual(aboveLegacyCap.targets, { login: 2, atc: 150 },
+  'positive per-task demand is no longer capped at 20');
+const uncapped = dynamic.apply({ activeTasks: 2, standbyTasks: 0, atcPerTask: 0, basis: 'active' });
+assert.deepEqual(uncapped.targets, { login: 2, atc: null }, 'zero means uncapped ATC prewarm');
+assert.equal(dynamic.accepts('atc', 50000), true, 'uncapped dynamic ATC demand accepts every depth');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 2, standbyTasks: 0, atcPerTask: 0, basis: 'paused',
+}).targets, { login: 0, atc: 0 }, 'pausing still overrides the uncapped setting');
+
 const standby = dynamic.apply({ activeTasks: 0, standbyTasks: 9, atcPerTask: 4 });
 assert.equal(standby.demand.basis, 'standby', 'omitted basis selects standby while tasks are armed');
 assert.deepEqual(standby.targets,
@@ -37,6 +49,8 @@ assert.deepEqual(dynamic.apply({ activeTasks: 50000, standbyTasks: 0, atcPerTask
   { login: 1000, atc: 10000 }, 'untrusted demand is clamped to safe bounds');
 assert.throws(() => dynamic.apply({ activeTasks: 'nope', atcPerTask: 3 }), /activeTasks/);
 assert.throws(() => dynamic.apply({ activeTasks: 1 }), /atcPerTask/);
+assert.throws(() => dynamic.apply({ activeTasks: 1, atcPerTask: -1 }), /non-negative/,
+  'only an explicit zero, never a negative value, may enable uncapped demand');
 assert.throws(() => dynamic.apply({ activeTasks: 1, atcPerTask: 3, basis: 'sleeping' }), /basis/);
 
 const coordinator = createHarvestCoordinator({

@@ -153,8 +153,14 @@ export function targetBankMetrics(bank) {
   const standbyTasks = count(demand.standbyTasks);
   const effectiveTasks = count(demand.effectiveTasks);
   const atcPerTask = count(demand.atcPerTask);
+  const atcNoLimit = demandReported && atcPerTask === 0;
+  const atcUnlimited = demandReported
+    && Object.prototype.hasOwnProperty.call(demandTargets, 'atc')
+    && demandTargets.atc === null;
   const loginTarget = count(demandTargets.login != null ? demandTargets.login : fallbackTargets.login);
-  const atcTarget = count(demandTargets.atc != null ? demandTargets.atc : fallbackTargets.atc);
+  const atcTarget = atcUnlimited
+    ? 0
+    : count(demandTargets.atc != null ? demandTargets.atc : fallbackTargets.atc);
   const atcCount = count(bank && bank.atc);
   const activeBrowsers = browsers.filter(browser => count(browser && browser.activeWorkers) > 0);
   const recentErrorRate = Number.isFinite(Number(scaling.recentErrorRate))
@@ -220,10 +226,13 @@ export function targetBankMetrics(bank) {
     standbyTasks,
     effectiveTasks,
     atcPerTask,
+    atcNoLimit,
+    atcUnlimited,
     loginTarget,
     atcTarget,
-    atcDeficit: Math.max(0, atcTarget - atcCount),
-    atcSurplus: Math.max(0, atcCount - atcTarget),
+    atcTargetLabel: atcUnlimited ? '∞' : String(atcTarget),
+    atcDeficit: atcUnlimited ? 0 : Math.max(0, atcTarget - atcCount),
+    atcSurplus: atcUnlimited ? 0 : Math.max(0, atcCount - atcTarget),
     extensionHarvester: {
       enabled: extension.enabled === true,
       configured: extension.configured === true,
@@ -330,12 +339,33 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
       : waitingForBroker
         ? 'Opening the shared cookie bank for Target tasks and harvesters.'
         : 'Start a Target task or harvester to open the shared cookie bank.';
-  } else if (metrics.demandReported && (metrics.demandBasis === 'paused' || metrics.atcTarget === 0)) {
+  } else if (metrics.demandReported
+    && (metrics.demandBasis === 'paused' || (!metrics.atcUnlimited && metrics.atcTarget === 0))) {
     state = 'paused';
     label = 'Bank paused';
     description = metrics.atc > 0
       ? `No Target tasks need ATC cookies right now. ${metrics.atc} banked ATC cookie${metrics.atc === 1 ? '' : 's'} remain available until used or expired.`
       : 'No Target tasks need ATC cookies right now. Harvesters will resume automatically when task demand returns.';
+  } else if (metrics.demandReported && metrics.atcUnlimited && activeAtcHarvesters > 0) {
+    state = 'filling';
+    label = 'Filling uncapped ATC bank';
+    description = `${metrics.atc} ATC cookie${metrics.atc === 1 ? '' : 's'} ready; no bank limit is set. Harvesters continue until stopped or task demand pauses.`
+      + (extensionAtcRecentlySaved ? ` ${extensionSaveSentenceSubject} also recently saved an ATC cookie.` : '');
+  } else if (metrics.demandReported && metrics.atcUnlimited && extensionAtcRecentlySaved) {
+    state = 'filling';
+    label = 'Filling uncapped ATC bank';
+    description = `${metrics.atc} ATC cookie${metrics.atc === 1 ? '' : 's'} ready; no bank limit is set and ${extensionSaveSubject} recently saved an ATC cookie.`;
+  } else if (metrics.demandReported && metrics.atcUnlimited && extensionEnabled) {
+    state = 'working';
+    label = extensionReachable ? 'Waiting for browser cookies' : 'Waiting for browser extensions';
+    description = `${metrics.atc} ATC cookie${metrics.atc === 1 ? '' : 's'} ready with no bank limit. `
+      + (extensionReachable
+        ? `${extensionSubject} ${reachableExtensionCount === 1 ? 'is' : 'are'} reachable and can keep filling the bank.`
+        : 'Start browser extension harvesting in Chrome or Brave to keep filling the bank.');
+  } else if (metrics.demandReported && metrics.atcUnlimited) {
+    state = 'deficit';
+    label = 'Uncapped bank needs a harvester';
+    description = `${metrics.atc} ATC cookie${metrics.atc === 1 ? '' : 's'} ready with no bank limit, but no active ATC-capable harvester can add more.`;
   } else if (metrics.demandReported && metrics.atcDeficit > 0 && activeAtcHarvesters > 0) {
     state = 'filling';
     label = activeAtcWorkers > 0 || extensionAtcRecentlySaved
@@ -421,9 +451,9 @@ export function targetBankPresentation(bank, harvesters = [], options = {}) {
     bankedCookies,
     demandLabel: metrics.demandReported
       ? metrics.demandBasis === 'paused'
-        ? `${metrics.atcPerTask} per task · paused`
-        : `${metrics.atcPerTask} per task · ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'}`
-      : `${count(options.atcPerTask) || 3} per task · waiting for broker`,
+        ? `${metrics.atcNoLimit ? 'No limit' : `${metrics.atcPerTask} per task`} · paused`
+        : `${metrics.atcNoLimit ? 'No limit' : `${metrics.atcPerTask} per task`} · ${metrics.effectiveTasks} ${metrics.demandBasis || 'active'}`
+      : `${Number(options.atcPerTask) === 0 ? 'No limit' : `${count(options.atcPerTask) || 3} per task`} · waiting for broker`,
   };
 }
 

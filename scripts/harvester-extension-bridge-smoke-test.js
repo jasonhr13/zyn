@@ -253,7 +253,7 @@ function httpGet(port, path, origin) {
     });
     assert.deepEqual(extensionStatus({
       pools: { login: 1, atc: 3 },
-      demand: { activeTasks: 2, effectiveTasks: 2 },
+      demand: { mode: 'legacy', activeTasks: 2, effectiveTasks: 2 },
       targets: { login: null, atc: null },
       activity: { waiting: {} },
     }), {
@@ -262,6 +262,17 @@ function httpGet(port, path, origin) {
       runningTasks: 2,
       waiting: { login: 0, atc: 0 },
     }, 'an uncapped legacy target must not look like an authoritative zero');
+    assert.deepEqual(extensionStatus({
+      pools: { login: 1, atc: 300 },
+      demand: { mode: 'per-task', activeTasks: 2, effectiveTasks: 2, targets: { atc: null } },
+      targets: { login: 2, atc: null },
+      activity: { waiting: {} },
+    }), {
+      login: 1,
+      atc: 300,
+      runningTasks: 2,
+      waiting: { login: 0, atc: 1 },
+    }, 'an uncapped dynamic target must keep browser harvesting active');
     assert.deepEqual(extensionCookie({
       type: 'atc',
       headers: {
