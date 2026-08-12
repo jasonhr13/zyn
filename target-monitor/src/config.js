@@ -65,7 +65,7 @@ export const config = {
           url: process.env.DISCORD_WEBHOOK_URL,
           events: list(process.env.DISCORD_EVENTS).length
             ? list(process.env.DISCORD_EVENTS)
-            : ['stock.online.in', 'preorder.live', 'stock.online.out'],
+            : ['stock.online.in', 'preorder.live'],
         }
       : null,
   },
