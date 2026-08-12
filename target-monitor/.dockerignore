@@ -1,0 +1,8 @@
+node_modules
+data
+*.mjs
+.env
+.git
+.gitignore
+fly.toml
+README.md

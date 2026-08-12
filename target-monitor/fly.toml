@@ -1,0 +1,36 @@
+app = "hope-tcg-monitor"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "8080"
+  DB_PATH = "/data/monitor.db"
+  BRAND_ICON_URL = "https://hope-tcg-monitor.fly.dev/icon.png"
+  # Speed-first: no throttling. Everything polls hot (HOT_MIN_PRICE=0 → all hot),
+  # and WARM floored to 3s so even edge cases stay fast. Raise HOT_MIN_PRICE (e.g.
+  # 40) and WARM_INTERVAL_S (e.g. 30) to bring tiering back.
+  HOT_MIN_PRICE = "0"
+  WARM_INTERVAL_S = "3"
+
+[[mounts]]
+  source = "monitor_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
