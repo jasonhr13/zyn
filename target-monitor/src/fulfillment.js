@@ -36,14 +36,44 @@ export function createScheduler(emit) {
     const wasPurchasable = prev ? prev.purchasable === 1 : null;
     const prevPrice = prev?.price ?? null;
     let changed = false;
+    let alertsSent = prev?.alerts_sent ?? 0;
+    let lastAlertAt = prev?.last_alert_at ?? null;
 
     if (wasPurchasable !== null && s.purchasable && !wasPurchasable) {
+      // Restock (OOS -> purchasable): fire once, open the re-ping streak.
       changed = true;
       const type = s.status === 'PRE_ORDER_SELLABLE' ? 'preorder.live' : 'stock.online.in';
-      emit(type, s, { previous: { status: prev.status, purchasable: false }, current: { status: s.status, price: s.price, qty: s.qty, purchasable: true } });
+      emit(type, s, {
+        previous: { status: prev.status, purchasable: false },
+        current: { status: s.status, price: s.price, qty: s.qty, purchasable: true },
+      });
+      alertsSent = 1;
+      lastAlertAt = now;
+    } else if (s.purchasable && wasPurchasable && alertsSent >= 1) {
+      // Still in stock after a restock we announced — re-ping on the interval.
+      // (First-sighting/baseline stock has alertsSent 0, so it never re-pings.)
+      const { repingIntervalMs, repingMax } = config.restock;
+      const due = repingIntervalMs > 0 && now - (lastAlertAt ?? 0) >= repingIntervalMs;
+      const underCap = repingMax === 0 || alertsSent - 1 < repingMax;
+      if (due && underCap) {
+        alertsSent += 1;
+        lastAlertAt = now;
+        emit('stock.online.reping', s, {
+          current: { status: s.status, price: s.price, qty: s.qty, purchasable: true, seq: alertsSent },
+        });
+      }
     } else if (wasPurchasable !== null && !s.purchasable && wasPurchasable) {
+      // Went OOS: fire once, close the streak.
       changed = true;
-      emit('stock.online.out', s, { previous: { status: prev.status, purchasable: true }, current: { status: s.status, price: s.price, purchasable: false } });
+      emit('stock.online.out', s, {
+        previous: { status: prev.status, purchasable: true },
+        current: { status: s.status, price: s.price, purchasable: false },
+      });
+      alertsSent = 0;
+      lastAlertAt = null;
+    } else if (!s.purchasable) {
+      alertsSent = 0;
+      lastAlertAt = null;
     }
 
     if (prev && prevPrice != null && s.price != null && s.price !== prevPrice) {
@@ -57,9 +87,10 @@ export function createScheduler(emit) {
       price: s.price,
       qty: s.qty,
       now,
-      // Only a real transition stamps last_change_at. A first sighting leaves it
-      // null so change-promotion doesn't treat every new item as "just changed".
+      // Only a real transition stamps last_change_at (drives change-promotion).
       last_change_at: changed ? now : (prev?.last_change_at ?? null),
+      alerts_sent: alertsSent,
+      last_alert_at: lastAlertAt,
     });
   }
 

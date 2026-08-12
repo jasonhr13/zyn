@@ -10,7 +10,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Canonical event → 1-minute idempotency bucket. Dedupes rapid double-fires and
 // restart re-emits without suppressing a genuine later re-transition.
 function idemKey(type, tcin, current) {
-  const sig = current?.status ?? current?.price ?? '';
+  // seq (re-ping sequence) makes each still-in-stock ping unique; otherwise fall
+  // back to status/price + a 1-minute bucket to dedupe accidental double-fires.
+  const sig = current?.seq ?? current?.status ?? current?.price ?? '';
   return `${tcin}:${type}:${sig}:${Math.floor(Date.now() / 60000)}`;
 }
 
@@ -42,6 +44,7 @@ async function withRetry(sink, eventId, fn) {
 // event type -> the "Type" label shown in the embed
 const TYPE_LABEL = {
   'stock.online.in': 'Restock',
+  'stock.online.reping': 'Restock',
   'preorder.live': 'Preorder',
   'stock.online.out': 'Out of Stock',
   'price.changed': 'Price Change',

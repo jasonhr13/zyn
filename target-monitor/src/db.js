@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS sink_failures (
 if (!db.prepare('PRAGMA table_info(products)').all().some((c) => c.name === 'base_tier')) {
   db.exec("ALTER TABLE products ADD COLUMN base_tier TEXT DEFAULT 'hot'");
 }
+// Migration: alert bookkeeping for in-stock re-pings.
+for (const col of ['alerts_sent', 'last_alert_at']) {
+  if (!db.prepare('PRAGMA table_info(state)').all().some((c) => c.name === col)) {
+    db.exec(`ALTER TABLE state ADD COLUMN ${col} INTEGER`);
+  }
+}
 
 const stmt = {
   getProduct: db.prepare('SELECT * FROM products WHERE tcin = ?'),
@@ -80,11 +86,11 @@ const stmt = {
 
   getState: db.prepare('SELECT * FROM state WHERE tcin = ?'),
   setState: db.prepare(`
-    INSERT INTO state (tcin, purchasable, status, price, qty, updated_at, last_change_at)
-    VALUES (@tcin, @purchasable, @status, @price, @qty, @now, @last_change_at)
+    INSERT INTO state (tcin, purchasable, status, price, qty, updated_at, last_change_at, alerts_sent, last_alert_at)
+    VALUES (@tcin, @purchasable, @status, @price, @qty, @now, @last_change_at, @alerts_sent, @last_alert_at)
     ON CONFLICT(tcin) DO UPDATE SET
       purchasable=@purchasable, status=@status, price=@price, qty=@qty,
-      updated_at=@now, last_change_at=@last_change_at`),
+      updated_at=@now, last_change_at=@last_change_at, alerts_sent=@alerts_sent, last_alert_at=@last_alert_at`),
 
   insertEvent: db.prepare(`
     INSERT OR IGNORE INTO events (idem, type, tcin, payload, created_at)

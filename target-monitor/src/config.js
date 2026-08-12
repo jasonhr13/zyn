@@ -31,6 +31,13 @@ export const config = {
     // base tier, then reverts. So a cheap item that restocks still gets watched fast.
     warmAfterMs: num(process.env.WARM_AFTER_MIN, 60) * 60 * 1000,
   },
+  restock: {
+    // While a restocked item stays in stock, re-emit a "still in stock" ping on
+    // this interval. 0 disables (transition-only). Only items we actually
+    // announced (OOS -> in) re-ping — never baseline-in-stock items.
+    repingIntervalMs: num(process.env.RESTOCK_REPING_INTERVAL_S, 60) * 1000,
+    repingMax: num(process.env.RESTOCK_REPING_MAX, 0), // 0 = unlimited re-pings
+  },
   tiers: {
     // High-demand formats are pinned hot; everything else defaults to warm.
     hotTitleRegex:
@@ -65,7 +72,7 @@ export const config = {
           url: process.env.DISCORD_WEBHOOK_URL,
           events: list(process.env.DISCORD_EVENTS).length
             ? list(process.env.DISCORD_EVENTS)
-            : ['stock.online.in', 'preorder.live'],
+            : ['stock.online.in', 'preorder.live', 'stock.online.reping'],
         }
       : null,
   },
