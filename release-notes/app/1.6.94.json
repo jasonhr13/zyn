@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.94",
+  "notes": [
+    "Create encrypted cloud backups and restore your Zyn data from Settings.",
+    "Protect each backup with a recovery key that stays encrypted on your device.",
+    "Preview merge or replace restores with exact warnings for unsupported or skipped tasks.",
+    "See live monitor bandwidth, route usage, poll counts, and failures in Task Groups.",
+    "Keep shared Target monitors synchronized across starts, edits, stops, and reconnects."
+  ]
+}
