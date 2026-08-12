@@ -388,8 +388,12 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
   assert.match(rendererBundle, /ATC per task/, 'packaged task groups omit the dynamic ATC-per-task control');
-  assert.match(rendererBundle, /per task (?:·|\\xb7)/,
-    'packaged task groups omit the dynamic bank demand formula');
+  assert.match(rendererBundle, /per task/,
+    'packaged task groups omit bounded dynamic bank demand');
+  assert.match(rendererBundle, /No limit/,
+    'packaged task groups omit uncapped dynamic bank demand');
+  assert.match(rendererBundle, /Filling uncapped ATC bank/,
+    'packaged task groups omit the uncapped bank state');
   assert.match(rendererBundle, /ATC bank needs a harvester/,
     'packaged task groups omit the dynamic bank deficit warning');
   assert.match(rendererBundle, /Harvesters stopped/, 'packaged task groups omit the stopped-harvester bank state');
