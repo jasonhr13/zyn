@@ -29,8 +29,8 @@
       "adaptation": "Dedicated Target Login harvesters continuously replenish their login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
     },
     "shape-bank-demand.mjs": {
-      "sha256": "80dc0fd6f526aec27d2dd026c45a4bcd19b81eecdde817cfe92ff5d2237a8314",
-      "adaptation": "Authenticated, bounded active/standby Target task demand translated into separate Login and ATC bank targets without discarding valid over-target cookies."
+      "sha256": "5ebf6c7f64b6614e938cd813939bb7872c47804ca106c3691ff5fb4e376a86c6",
+      "adaptation": "Authenticated active/standby Target task demand translated into separate Login and ATC bank targets, including an explicit uncapped ATC mode, without discarding valid over-target cookies."
     },
     "shape-harvest-health.mjs": "54ce4cf5c9746e4b60e535b3a26586735204472257f6fb289ad5240d7bee7471",
     "shape-worker-retry.mjs": "cb7c5515630a7aaffe280320a182ccbc5461dc0820d047ca5b84b34a0244eb23",
