@@ -37,9 +37,10 @@ func StartMonitor(msg StartMonitorMessage) {
 			Type: "update-status",
 			Messages: []any{
 				map[string]any{
-					"taskID": msg.Id,
-					"status": "Cloud Disconnected",
-					"color":  constants.Colors.RED,
+					"taskID":  msg.Id,
+					"status":  "Cloud Disconnected",
+					"color":   constants.Colors.RED,
+					"running": false,
 				},
 			},
 		})

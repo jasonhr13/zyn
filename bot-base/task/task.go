@@ -13,6 +13,7 @@ import (
 	"time"
 
 	http "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
 	"zynbot.app/engine/bot-base/accounts"
 	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/profiles"
@@ -566,7 +567,20 @@ func (t *BaseTask) EnsureTLSClient(force bool) error {
 	if !force && t.Requests.Client != nil {
 		return nil
 	}
-	c, err := client.CreateNewTLSClient("")
+	// Settle the old tracker's final bytes before replacing it. Some monitor
+	// implementations deliberately rebuild their client between polls.
+	if t.Requests.Client != nil {
+		t.captureMonitorBandwidth()
+	}
+	var (
+		c   tls_client.HttpClient
+		err error
+	)
+	if t.monitorBandwidthEnabled() {
+		c, err = client.CreateNewMonitorTLSClient("")
+	} else {
+		c, err = client.CreateNewTLSClient("")
+	}
 	if err != nil {
 		return err
 	}
@@ -580,7 +594,16 @@ func (t *BaseTask) EnsureTLSClient(force bool) error {
 func (t *BaseTask) SwapProxy(rotator string) error {
 	_ = rotator
 	if t.ProxyGroup == "Local" {
-		return nil
+		if err := t.EnsureTLSClient(false); err != nil {
+			return err
+		}
+		t.Requests.IPv4 = ""
+		// tls-client rebuilds its transport on every SetProxy call. Preserve the
+		// direct keep-alive pool when this poll is already using Local.
+		if strings.TrimSpace(t.Requests.Client.GetProxy()) == "" {
+			return nil
+		}
+		return t.setHTTPClientProxy("")
 	}
 
 	if err := t.EnsureTLSClient(false); err != nil {
@@ -607,7 +630,7 @@ func (t *BaseTask) SwapProxy(rotator string) error {
 			proxyUrl = "http://" + newProxy.Address + ":" + newProxy.Port
 		}
 
-		if err := t.Requests.Client.SetProxy(proxyUrl); err != nil {
+		if err := t.setHTTPClientProxy(proxyUrl); err != nil {
 			log.Printf("[SwapProxy] Failed to set proxy '%s': %v", proxyUrl, err)
 			lastErr = err
 			proxy.ReleaseProxy(t.ProxyGroup, t.ID)
@@ -631,7 +654,7 @@ func (t *BaseTask) SetProxy(proxyStr string) error {
 	}
 	if proxyStr == "" {
 		t.Requests.IPv4 = ""
-		return t.Requests.Client.SetProxy("")
+		return t.setHTTPClientProxy("")
 	}
 
 	t.UpdateStatus("Setting Proxy", constants.Colors.BLUE)
@@ -653,12 +676,22 @@ func (t *BaseTask) SetProxy(proxyStr string) error {
 		return fmt.Errorf("invalid proxy format: %s", proxyStr)
 	}
 
-	if err := t.Requests.Client.SetProxy(proxyURL); err != nil {
+	if err := t.setHTTPClientProxy(proxyURL); err != nil {
 		log.Printf("[SetProxy] Failed to set proxy '%s': %v", proxyURL, err)
 		return err
 	}
 
 	return nil
+}
+
+func (t *BaseTask) setHTTPClientProxy(proxyURL string) error {
+	// Attribute all bytes already observed to the route that actually carried
+	// them, then rebase route attribution after tls-client applies (or rolls
+	// back) the requested proxy.
+	t.captureMonitorBandwidth()
+	err := t.Requests.Client.SetProxy(proxyURL)
+	t.captureMonitorBandwidth()
+	return err
 }
 
 func ShouldRotateProxy(err error) bool {

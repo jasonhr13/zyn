@@ -1,6 +1,7 @@
 package walmart
 
 import (
+	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
@@ -20,6 +21,9 @@ func (t *WalmartMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 		t.ErrorDelay = p.Input.RetryDelay
 	}
 	if p.Input.Proxy != "" {
+		if p.Input.Proxy != t.ProxyGroup {
+			proxy.ReleaseProxy(t.ProxyGroup, t.ID)
+		}
 		t.ProxyGroup = p.Input.Proxy
 	}
 
@@ -43,6 +47,7 @@ func (t *WalmartMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 
 func (t *WalmartMonitorTask) Monitor() {
 	defer CatchMonitorError(t)
+	defer t.FinishMonitorBandwidth()
 	for {
 		select {
 		case <-t.TaskContext.CTX.Done():
@@ -65,6 +70,7 @@ func (t *WalmartMonitorTask) Monitor() {
 				_ = t.BaseTask.SwapProxy("Walmart")
 				t.UpdateStatus("Getting Product(s)", constants.Colors.BLUE)
 				t.GetProductGraphql()
+				t.ObserveMonitorBandwidthPoll(t.Error != nil)
 				if t.HandleMonitorErrors("get-stock") {
 					break
 				}

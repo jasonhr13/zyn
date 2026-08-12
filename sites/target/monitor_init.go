@@ -71,7 +71,7 @@ func NewMonitorTask(t sites.TaskInput) (*TargetMonitorTask, bool) {
 	}
 
 	task.UserTasks.Set(newTask.BaseTask.ID, newTask, newTask.BaseTask)
-	if !monitorhub.InitMonitorTask(newTask.BaseTask, "Target") {
+	if !monitorhub.InitMonitorTask(newTask.BaseTask, "Target", len(monitorInputs)) {
 		return nil, false
 	}
 	newTask.NextStep = "get-stock"

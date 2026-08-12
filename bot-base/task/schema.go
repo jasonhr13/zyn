@@ -54,6 +54,7 @@ type BaseTask struct {
 	pendingRuntimeEdits chan RuntimeEditPayload
 	siteSlotReserved    bool
 	stopOnce            sync.Once
+	monitorBandwidth    *monitorBandwidthState
 
 	IgnoreLowStock bool `json:"ignoreLowStock"`
 }

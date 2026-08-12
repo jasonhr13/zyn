@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
@@ -23,6 +24,9 @@ func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 		t.ErrorDelay = p.Input.RetryDelay
 	}
 	if p.Input.Proxy != "" {
+		if p.Input.Proxy != t.ProxyGroup {
+			proxy.ReleaseProxy(t.ProxyGroup, t.ID)
+		}
 		t.ProxyGroup = p.Input.Proxy
 	}
 	t.IgnoreLowStock = p.Input.IgnoreLowStock
@@ -49,6 +53,7 @@ func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 		}
 		if len(monitorInputs) > 0 {
 			t.MonitorInputs = monitorInputs
+			t.SetMonitorBandwidthWatchedItems(len(monitorInputs))
 			if t.missingTcins != nil {
 				keep := make(map[string]struct{})
 				for _, in := range monitorInputs {
@@ -64,6 +69,7 @@ func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 
 func (t *TargetMonitorTask) Monitor() {
 	defer CatchMonitorError(t)
+	defer t.FinishMonitorBandwidth()
 	if t.lastInStock == nil {
 		t.lastInStock = make(map[string]bool)
 	}
@@ -92,6 +98,7 @@ func (t *TargetMonitorTask) Monitor() {
 				_ = t.BaseTask.SwapProxy("Target")
 				t.UpdateStatus("Getting Product(s)", constants.Colors.BLUE)
 				t.GetStock()
+				t.ObserveMonitorBandwidthPoll(t.Error != nil)
 				if t.HandleMonitorErrors("get-stock") {
 					break
 				}

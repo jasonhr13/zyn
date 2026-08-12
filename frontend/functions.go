@@ -221,9 +221,10 @@ func StopTasks(taskIDs []string) {
 			continue
 		}
 		missing = append(missing, map[string]any{
-			"taskID": taskID,
-			"status": "Idle",
-			"color":  constants.Colors.DEFAULT,
+			"taskID":  taskID,
+			"status":  "Idle",
+			"color":   constants.Colors.DEFAULT,
+			"running": false,
 		})
 	}
 	if len(missing) > 0 {

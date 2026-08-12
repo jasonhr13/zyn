@@ -7,10 +7,11 @@ import (
 	"zynbot.app/engine/bot-base/task/constants"
 )
 
-func InitMonitorTask(t *task.BaseTask, taskType string) bool {
+func InitMonitorTask(t *task.BaseTask, taskType string, watchedItems int) bool {
 	if t == nil {
 		return false
 	}
+	t.PrepareMonitorBandwidth(watchedItems)
 
 	t.Requests = new(task.BaseRequestsInfo)
 	t.Requests.Extras = make(map[string]interface{})
@@ -35,5 +36,6 @@ func InitMonitorTask(t *task.BaseTask, taskType string) bool {
 
 	t.InitRuntimeEditChannel()
 	t.UpdateStatus("Completed Monitor Initilization", constants.Colors.YELLOW)
+	t.StartMonitorBandwidth()
 	return true
 }
