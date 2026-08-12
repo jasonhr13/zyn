@@ -28,6 +28,7 @@ release-tools/
 **/.wrangler/
 /release/dist/
 /release/work/
+/release/archive/
 /release/runtime-artifacts/
 /release/runtime-staging/
 
