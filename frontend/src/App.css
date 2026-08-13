@@ -1913,7 +1913,7 @@ body.theme-night .form-select {
   grid-template-columns: minmax(235px, 1.05fr) minmax(190px, .75fr) minmax(205px, .8fr) auto;
   grid-template-areas: "identity stats runtime actions";
 }
-.group-config-strip-r2 { grid-template-columns: .6fr .5fr 1.15fr 1fr .85fr; }
+.group-config-strip-r2 { grid-template-columns: .55fr .45fr 1.05fr .9fr .75fr .9fr; }
 .task-group-r2-boundary {
   display: flex;
   align-items: center;

@@ -69,6 +69,7 @@ function buildTargetGroupLaunch(group, { accounts = [], profiles = [] } = {}) {
       tasks,
       skus,
       qty: Math.max(1, Math.min(99, Number.parseInt(candidate.qty, 10) || 2)),
+      useFillerItem: candidate.useFillerItem === true,
     },
     skipped,
   };

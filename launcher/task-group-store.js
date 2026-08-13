@@ -70,6 +70,7 @@ function normalizeGroup(raw, index = 0, options = {}) {
     loopCheckout: group.loopCheckout != null
       ? group.loopCheckout === true
       : group.repeatCheckout === true,
+    useFillerItem: group.useFillerItem === true,
     createdAt,
     updatedAt: Number(group.updatedAt) > 0 ? Math.floor(Number(group.updatedAt)) : now,
     tasks: [],

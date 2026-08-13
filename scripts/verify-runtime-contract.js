@@ -388,6 +388,7 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(rendererBundle, /Recently monitored/, 'packaged task groups omit Target product history');
   assert.match(rendererBundle, /Search SKU or name/, 'packaged Target product history is not searchable');
   assert.match(rendererBundle, /Loop checkout by default/, 'packaged task groups omit loop checkout controls');
+  assert.match(rendererBundle, /Pre-cart filler item/, 'packaged task groups omit the filler-item control');
   assert.match(rendererBundle, /Shared Cookie Bank/, 'packaged task groups omit the shared cookie bank');
   assert.match(rendererBundle, /ATC per task/, 'packaged task groups omit the dynamic ATC-per-task control');
   assert.match(rendererBundle, /per task/,

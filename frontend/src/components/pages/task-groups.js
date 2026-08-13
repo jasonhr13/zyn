@@ -37,6 +37,7 @@ const EMPTY_GROUP = Object.freeze({
   qty: 2,
   proxyListName: '',
   loopCheckout: false,
+  useFillerItem: false,
 });
 
 const EMPTY_HARVESTER = Object.freeze({
@@ -496,6 +497,7 @@ class TaskGroups extends Component {
         qty: group.qty || 2,
         proxyListName: group.proxyListName || '',
         loopCheckout: group.loopCheckout === true,
+        useFillerItem: group.useFillerItem === true,
       },
       productHistoryFilter: '',
     });
@@ -586,6 +588,9 @@ class TaskGroups extends Component {
     const loopCheckout = draft.loopCheckout === true;
     const liveLoopChanged = !!previousGroup
       && (previousGroup.loopCheckout === true) !== loopCheckout;
+    const useFillerItem = draft.useFillerItem === true;
+    const liveFillerChanged = !!previousGroup
+      && (previousGroup.useFillerItem === true) !== useFillerItem;
     if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
       window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
       return;
@@ -599,6 +604,7 @@ class TaskGroups extends Component {
         qty: draft.qty,
         proxyListName: draft.proxyListName,
         loopCheckout,
+        useFillerItem,
         tasks: liveLoopChanged
           ? (group.tasks || []).map(task => ({ ...task, loopCheckout }))
           : group.tasks,
@@ -614,6 +620,7 @@ class TaskGroups extends Component {
         qty: draft.qty,
         proxyListName: draft.proxyListName,
         loopCheckout,
+        useFillerItem,
         tasks: [],
         createdAt: now,
         updatedAt: now,
@@ -642,8 +649,8 @@ class TaskGroups extends Component {
       }, () => {
         if (liveEditError) {
           window.alert(`The group was saved, but its running tasks were not updated. Stop and restart them to apply the new SKUs.\n\n${liveEditError}`);
-        } else if (liveLoopChanged && liveTasks.length) {
-          window.alert('The loop-checkout setting was saved. Stop and restart the running tasks to apply it.');
+        } else if ((liveLoopChanged || liveFillerChanged) && liveTasks.length) {
+          window.alert('The group checkout settings were saved. Stop and restart the running tasks to apply them.');
         }
       });
     });
@@ -773,7 +780,12 @@ class TaskGroups extends Component {
     if (missing.length) {
       window.alert(`Skipping ${missing.length} task(s) with no matching profile:\n${missing.slice(0, 8).join('\n')}`);
     }
-    return { tasks: runnable, skus, qty: group.qty || 2 };
+    return {
+      tasks: runnable,
+      skus,
+      qty: group.qty || 2,
+      useFillerItem: group.useFillerItem === true,
+    };
   };
 
   activeOtherGroup = group => this.state.groups.find(item => item.id !== group.id
@@ -1641,6 +1653,7 @@ class TaskGroups extends Component {
             <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
             <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
+            <div><span>Filler item</span><strong>{group.useFillerItem ? 'On · SKU 84704409' : 'Off'}</strong></div>
           </div>
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
@@ -1854,6 +1867,10 @@ class TaskGroups extends Component {
             <label className={`task-repeat-toggle task-repeat-toggle-modal${draft.loopCheckout ? ' enabled' : ''}`}>
               <input type="checkbox" checked={draft.loopCheckout === true} onChange={event => this.setState({ groupDraft: { ...draft, loopCheckout: event.target.checked } })} />
               <span><strong>Loop checkout by default</strong><small>When changed, this applies to every task in the group. Individual tasks can be overridden afterward. Looping stops as each account reaches two orders per SKU in four hours.</small></span>
+            </label>
+            <label className={`task-repeat-toggle task-repeat-toggle-modal${draft.useFillerItem ? ' enabled' : ''}`}>
+              <input type="checkbox" checked={draft.useFillerItem === true} onChange={event => this.setState({ groupDraft: { ...draft, useFillerItem: event.target.checked } })} />
+              <span><strong>Pre-cart filler item</strong><small>Add one of Target SKU 84704409 before waiting for a watched product. The native engine attempts to remove the filler after checkout.</small></span>
             </label>
           </div>
           <div className="modal-footer"><button className="btn btn-secondary" onClick={this.closeGroupModal}>Cancel</button><button className="btn btn-primary" disabled={!String(draft.name || '').trim()} onClick={this.saveGroup}><Icon name="check" size={12} /> {editing ? 'Save Changes' : 'Create Group'}</button></div>

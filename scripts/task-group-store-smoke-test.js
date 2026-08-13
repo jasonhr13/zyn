@@ -33,6 +33,7 @@ try {
   assert.equal(migrated[0].name, 'Recovered Target Tasks');
   assert.equal(migrated[0].tasks[0].accountId, 'account-1');
   assert.equal(migrated[0].tasks[0].loopCheckout, true, 'legacy repeat-checkout setting was not migrated');
+  assert.equal(migrated[0].useFillerItem, false, 'legacy group unexpectedly enabled the filler item');
   assert.equal(fs.readFileSync(legacyPath, 'utf8'), originalLegacy, 'legacy rollback file changed');
 
   const persisted = JSON.parse(fs.readFileSync(store.filePath, 'utf8'));
@@ -60,6 +61,7 @@ try {
     qty: 999,
     proxyListName: 'Local',
     loopCheckout: true,
+    useFillerItem: true,
     schedule: { startAt: 1735689660000, stopAt: 1735693260000 },
     tasks: [
       { id: 'task-a', accountId: 'acct-a', profileId: 'profile-a', cardId: 'card-a', loopCheckout: false },
@@ -74,6 +76,7 @@ try {
   assert.equal(saved[0].site, 'target');
   assert.equal(saved[0].qty, 99);
   assert.equal(saved[0].loopCheckout, true);
+  assert.equal(saved[0].useFillerItem, true, 'group filler-item setting was discarded');
   assert.equal(saved[0].tasks.length, 2);
   assert.equal(saved[0].tasks[0].cardId, 'card-a');
   assert.equal(saved[0].tasks[0].loopCheckout, false, 'task-level loop override was discarded');

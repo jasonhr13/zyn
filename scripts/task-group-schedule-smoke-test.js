@@ -35,6 +35,7 @@ const baseGroup = {
   site: 'target',
   skus: '12345678\nhttps://www.target.com/p/example/-/A-87654321',
   qty: 2,
+  useFillerItem: true,
   tasks: [{ id: 'task-1', accountId: 'account-1', proxyListName: 'Local', loopCheckout: true }],
 };
 
@@ -43,6 +44,7 @@ assert.equal(launch.ok, true);
 assert.deepEqual(launch.config.skus, ['12345678', '87654321']);
 assert.equal(launch.config.tasks[0].profileId, 'profile-1');
 assert.equal(launch.config.tasks[0].loopCheckout, true);
+assert.equal(launch.config.useFillerItem, true, 'scheduled launch omitted the group filler-item setting');
 
 const fakeSetTimeout = (callback, delay) => ({ callback, delay, unref() {} });
 const fakeClearTimeout = () => {};
@@ -123,6 +125,7 @@ for (const file of ['task-group-schedule.js', 'task-group-scheduler.js', 'target
 }
 const bootstrap = read('launcher/bootstrap.js');
 const taskGroupsPage = read('frontend/src/components/pages/task-groups.js');
+const targetEngine = read('extracted/asar/public/helpers/target-engine.js');
 assert.match(bootstrap, /createTaskGroupScheduler/);
 assert.match(bootstrap, /taskGroupScheduler\?\.sync\(\)/,
   'saving task groups does not reconcile main-process timers');
@@ -133,6 +136,11 @@ assert.match(taskGroupsPage, /ipcRenderer\.on\('taskGroupSchedule'/);
 assert.match(taskGroupsPage, /Loop checkout by default/);
 assert.match(taskGroupsPage, /Loop checkout for these tasks/);
 assert.match(taskGroupsPage, /updateTaskLoopCheckout/);
+assert.match(taskGroupsPage, /Pre-cart filler item/);
+assert.match(taskGroupsPage, /useFillerItem: group\.useFillerItem === true/,
+  'manual task-group launch omitted the filler-item setting');
+assert.match(targetEngine, /useFillerItem: !!config\.useFillerItem/,
+  'native Target bridge does not forward the group filler-item setting to Go');
 
 (async () => {
   const renderer = await import('../frontend/src/components/task-group-schedule.mjs');
