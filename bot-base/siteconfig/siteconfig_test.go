@@ -33,4 +33,9 @@ func TestFrontendTargetSettingsDoNotReplaceOtherConfig(t *testing.T) {
 	if HyperAPIKey() != "hyper" || LucaAPIKey() != "luca" {
 		t.Fatal("setting frontend Target options replaced API key config")
 	}
+
+	SetLucaAPIKey("  replacement  ")
+	if LucaAPIKey() != "replacement" {
+		t.Fatal("Luca API key setter did not normalize the replacement")
+	}
 }

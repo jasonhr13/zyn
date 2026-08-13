@@ -94,6 +94,7 @@ type WebhooksStruct struct {
 
 type SettingsPayload struct {
 	Webhooks              WebhooksStruct `json:"webhooks"`
+	LucaApiKey            string         `json:"lucaApiKey"`
 	ShapeMethod           string         `json:"shapeMethod"`
 	ThrottleFallbackGroup string         `json:"throttleFallbackGroup"`
 }

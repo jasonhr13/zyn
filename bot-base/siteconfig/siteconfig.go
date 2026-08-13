@@ -67,6 +67,12 @@ func LucaAPIKey() string {
 	return cfg.LucaApiKey
 }
 
+func SetLucaAPIKey(key string) {
+	mu.Lock()
+	defer mu.Unlock()
+	cfg.LucaApiKey = strings.TrimSpace(key)
+}
+
 func ThrottleFallbackGroup() string {
 	mu.RLock()
 	defer mu.RUnlock()

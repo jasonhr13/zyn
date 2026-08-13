@@ -31,6 +31,18 @@ func (t *WalmartTask) handlePX412(body string) bool {
 	return false
 }
 
+func isPXSolverAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return containsAnyText(err.Error(),
+		"no valid auth token",
+		"invalid auth token",
+		"invalid api key",
+		"unauthorized",
+	)
+}
+
 func (t *WalmartTask) SolvePXInit() {
 	allowed, err := pxsolve.CheckAndIncrement()
 	if err != nil {
@@ -47,7 +59,12 @@ func (t *WalmartTask) SolvePXInit() {
 		return
 	}
 
-	sdk := parallaxsdk.NewPerimeterxSDK(siteconfig.LucaAPIKey(), parallaxsdk.DefaultPXHost)
+	key := siteconfig.LucaAPIKey()
+	if key == "" {
+		t.Error = fmt.Errorf("px solver key not configured")
+		return
+	}
+	sdk := parallaxsdk.NewPerimeterxSDK(key, parallaxsdk.DefaultPXHost)
 	result, err := sdk.GenerateCookies(parallaxsdk.TaskGeneratePXCookies{
 		Site:        "walmart",
 		Region:      "com",
@@ -56,7 +73,11 @@ func (t *WalmartTask) SolvePXInit() {
 	})
 	if err != nil {
 		log.Printf("[solvePXInit] ERROR: %s", err)
-		t.Error = fmt.Errorf("px init failed")
+		if isPXSolverAuthError(err) {
+			t.Error = fmt.Errorf("invalid px solver key")
+		} else {
+			t.Error = fmt.Errorf("px init failed")
+		}
 		return
 	}
 	t.applyPXResponse(result)
@@ -82,7 +103,12 @@ func (t *WalmartTask) SolvePXHoldCaptcha() {
 		return
 	}
 
-	sdk := parallaxsdk.NewPerimeterxSDK(siteconfig.LucaAPIKey(), parallaxsdk.DefaultPXHost)
+	key := siteconfig.LucaAPIKey()
+	if key == "" {
+		t.Error = fmt.Errorf("px solver key not configured")
+		return
+	}
+	sdk := parallaxsdk.NewPerimeterxSDK(key, parallaxsdk.DefaultPXHost)
 	result, err := sdk.GenerateHoldCaptcha(parallaxsdk.TaskGenerateHoldCaptcha{
 		Site:        "walmart",
 		Region:      "com",
@@ -92,8 +118,12 @@ func (t *WalmartTask) SolvePXHoldCaptcha() {
 	})
 	if err != nil {
 		log.Printf("[solvePXHoldCaptcha] ERROR: %s", err)
-		t.SwapProxy("Walmart")
-		t.Error = fmt.Errorf("px hc failed")
+		if isPXSolverAuthError(err) {
+			t.Error = fmt.Errorf("invalid px solver key")
+		} else {
+			t.SwapProxy("Walmart")
+			t.Error = fmt.Errorf("px hc failed")
+		}
 		return
 	}
 	t.applyPXResponse(&result.PxCookieResponse)

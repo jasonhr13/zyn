@@ -241,6 +241,7 @@ func readMessage(c *websocket.Conn) error {
 		_ = json.Unmarshal([]byte(configMessage.Settings), &s)
 		Webhooks = s.Webhooks
 		webhook.SetURLs(s.Webhooks.Checkout, s.Webhooks.Decline)
+		siteconfig.SetLucaAPIKey(s.LucaApiKey)
 		siteconfig.SetShapeMethod(s.ShapeMethod)
 		siteconfig.SetThrottleFallbackGroup(s.ThrottleFallbackGroup)
 

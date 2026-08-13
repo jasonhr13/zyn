@@ -79,6 +79,12 @@ func (t *WalmartTask) HandleErrors(step string) bool {
 	case containsAnyText(errText, "phone 2fa required"):
 		t.StopTask("Phone 2FA Required", constants.Colors.RED)
 		return true
+	case containsAnyText(errText, "px solver key not configured"):
+		t.StopTask("PX Solver Key Not Configured", constants.Colors.RED)
+		return true
+	case containsAnyText(errText, "invalid px solver key"):
+		t.StopTask("Invalid PX Solver Key", constants.Colors.RED)
+		return true
 	case containsAnyText(errText, "invalid code", "invaild code"):
 		if step == "submit-reset-code" {
 			t.NextStep = "get-reset-code"
