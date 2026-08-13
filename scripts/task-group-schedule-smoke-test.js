@@ -34,14 +34,24 @@ const baseGroup = {
   name: 'Drop',
   site: 'target',
   skus: '12345678\nhttps://www.target.com/p/example/-/A-87654321',
+  items: [
+    { sku: '12345678', maxPrice: '24.99' },
+    { sku: '87654321', maxPrice: '' },
+  ],
   qty: 2,
   useFillerItem: true,
+  stockConfidence: 'confirmed-10-plus',
   tasks: [{ id: 'task-1', accountId: 'account-1', proxyListName: 'Local', loopCheckout: true }],
 };
 
 const launch = buildTargetGroupLaunch(baseGroup, { accounts, profiles });
 assert.equal(launch.ok, true);
 assert.deepEqual(launch.config.skus, ['12345678', '87654321']);
+assert.deepEqual(launch.config.items, [
+  { sku: '12345678', maxPrice: '24.99' },
+  { sku: '87654321', maxPrice: '' },
+]);
+assert.equal(launch.config.ignoreLowStock, true);
 assert.equal(launch.config.tasks[0].profileId, 'profile-1');
 assert.equal(launch.config.tasks[0].loopCheckout, true);
 assert.equal(launch.config.useFillerItem, true, 'scheduled launch omitted the group filler-item setting');
@@ -143,6 +153,48 @@ assert.match(targetEngine, /useFillerItem: !!config\.useFillerItem/,
   'native Target bridge does not forward the group filler-item setting to Go');
 
 (async () => {
+  let readinessGroups = [{ ...baseGroup, schedule: { startAt: now - 500, stopAt: now + 60_000 } }];
+  const readinessStarts = [];
+  const readinessEvents = [];
+  const warningScheduler = createTaskGroupScheduler({
+    getGroups: () => structuredClone(readinessGroups),
+    saveGroups: next => { readinessGroups = structuredClone(next); return structuredClone(readinessGroups); },
+    getAccounts: () => accounts,
+    getProfiles: () => profiles,
+    getReadiness: async () => ({
+      level: 'warning', blockers: [], warnings: [{ title: 'Cookie bank below target' }],
+    }),
+    startTarget: config => readinessStarts.push(config),
+    notify: event => readinessEvents.push(event),
+    now: () => now,
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
+  });
+  await warningScheduler.fireStart('group-1');
+  assert.equal(readinessStarts.length, 1, 'scheduled readiness warning blocked an otherwise valid start');
+  assert.ok(readinessEvents.some(event => event.event === 'start-warning'));
+  warningScheduler.dispose();
+
+  readinessGroups = [{ ...baseGroup, schedule: { startAt: now - 500, stopAt: now + 60_000 } }];
+  const blockedScheduler = createTaskGroupScheduler({
+    getGroups: () => structuredClone(readinessGroups),
+    saveGroups: next => { readinessGroups = structuredClone(next); return structuredClone(readinessGroups); },
+    getAccounts: () => accounts,
+    getProfiles: () => profiles,
+    getReadiness: async () => ({
+      level: 'blocked', blockers: [{ title: 'Missing checkout profile' }], warnings: [],
+    }),
+    startTarget: config => readinessStarts.push(config),
+    notify: event => readinessEvents.push(event),
+    now: () => now,
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
+  });
+  await blockedScheduler.fireStart('group-1');
+  assert.equal(readinessStarts.length, 1, 'scheduled readiness blocker still launched Target');
+  assert.ok(readinessEvents.some(event => event.event === 'start-failed' && /start blocked/.test(event.line)));
+  blockedScheduler.dispose();
+
   const renderer = await import('../frontend/src/components/task-group-schedule.mjs');
   const draft = renderer.buildScheduleFromDraft({
     startMode: 'in', startAmount: '30', startUnit: 'minutes',

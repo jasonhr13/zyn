@@ -1,3 +1,11 @@
+// CRA 3's Jest transform does not load named exports from this existing .mjs module. These tests
+// exercise task outcomes/reset only, so keep that unrelated monitor telemetry boundary inert.
+jest.mock('./target-monitor-bandwidth.mjs', () => ({
+  emptyTargetMonitorBandwidthState: () => ({ version: 1, mainRunId: '', runs: {} }),
+  reduceTargetMonitorBandwidth: state => state,
+  stopTargetMonitorBandwidthRuns: state => state,
+}));
+
 import { reducer } from './store';
 
 const outcome = (taskId, eventId, eventType, occurredAt) => ({
@@ -46,4 +54,41 @@ test('additive starts reset only accepted task ids and task deletion clears outc
   expect(state.target.taskOutcomes['task-a']).toBeUndefined();
   state = reducer(state, { type: 'targetTasksClear' });
   expect(state.target.taskOutcomes).toEqual({});
+});
+
+test('task reset clears only run-scoped UI state and preserves task configuration', () => {
+  let state = reducer(undefined, { type: '@@test/init' });
+  const task = {
+    id: 'task-reset', accountId: 'account-1', proxyListName: 'Residential',
+    loopCheckout: false, createdAt: 123,
+  };
+  state = reducer(state, { type: 'targetTasksAdd', tasks: [task] });
+  state = reducer(state, { type: 'targetRunStarted', taskIds: [task.id], startedAt: 100 });
+  state = reducer(state, outcome(task.id, 'event-reset-0001', 'checkout', 110));
+  state = reducer(state, {
+    type: 'targetStatus', taskId: task.id, state: 'Successful', label: 'Successful',
+    color: '#34ca6e', taskState: 3, running: false,
+  });
+  state = reducer(state, { type: 'targetLog', taskId: task.id, line: 'Checked out', at: 120 });
+  state = reducer(state, {
+    type: 'targetProxyEditSent', taskId: task.id, group: 'Residential', at: 125,
+  });
+  state = reducer(state, {
+    type: 'targetOtp',
+    pending: [
+      { taskId: task.id, email: 'reset@example.com', phase: 'manual' },
+      { taskId: 'task-other', email: 'other@example.com', phase: 'polling' },
+    ],
+  });
+
+  state = reducer(state, { type: 'targetTaskReset', id: task.id, email: 'reset@example.com' });
+
+  expect(state.target.tasks).toEqual([task]);
+  expect(state.target.taskStatus[task.id]).toBeUndefined();
+  expect(state.target.taskOutcomes[task.id]).toBeUndefined();
+  expect(state.target.proxyStatus[task.id]).toBeUndefined();
+  expect(state.target.taskLogs[task.id]).toBeUndefined();
+  expect(state.target.otpPending).toEqual([
+    { taskId: 'task-other', email: 'other@example.com', phase: 'polling' },
+  ]);
 });

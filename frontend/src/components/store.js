@@ -131,7 +131,7 @@ const defaultState = {
     // Latest cumulative TLS-transport sample per monitor run. A run is replaced by sequence rather
     // than added here, so loopback retries cannot inflate the displayed bandwidth.
     monitorBandwidth: emptyTargetMonitorBandwidthState(),
-    otpPending: [],           // [{ email, taskId, since }] rendered inside that task's status cell
+    otpPending: [],           // [{ email, taskId, since, phase, message }] rendered inside that task's status cell
     logs: [],                 // module-level log (engine lifecycle, monitor, farmer)
     // Defaults applied to newly created tasks.
     proxyListName: '',
@@ -321,6 +321,27 @@ export function reducer(state = defaultState, action) {
       return { ...state, target: { ...state.target,
         tasks: state.target.tasks.filter(t => t.id !== action.id),
         taskStatus: status, taskOutcomes: outcomes, proxyStatus, taskLogs: logs } };
+    }
+
+    // Return one completed task to a clean renderer state without deleting its configuration or
+    // touching the main-process order history. The latter deliberately remains authoritative for
+    // Target's four-hour account/SKU cap, so Reset can never be used to bypass it.
+    case 'targetTaskReset': {
+      const taskId = String(action.id || '');
+      if (!taskId) return state;
+      const status = { ...state.target.taskStatus }; delete status[taskId];
+      const outcomes = { ...(state.target.taskOutcomes || {}) }; delete outcomes[taskId];
+      const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[taskId];
+      const logs = { ...state.target.taskLogs }; delete logs[taskId];
+      const email = String(action.email || '').trim().toLowerCase();
+      const otpPending = (Array.isArray(state.target.otpPending) ? state.target.otpPending : [])
+        .filter(request => {
+          const requestTaskId = String((request && request.taskId) || '');
+          if (requestTaskId) return requestTaskId !== taskId;
+          return !email || String((request && request.email) || '').trim().toLowerCase() !== email;
+        });
+      return { ...state, target: { ...state.target,
+        taskStatus: status, taskOutcomes: outcomes, proxyStatus, taskLogs: logs, otpPending } };
     }
 
     case 'targetTasksClear':

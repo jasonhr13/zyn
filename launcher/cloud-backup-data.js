@@ -13,7 +13,7 @@ const MANAGED_PROXY_PREFIX = 'managed:';
 
 const BASE_BUNDLE_KEYS = Object.freeze([
   'app', 'kind', 'version', 'exportedAt',
-  'profiles', 'accounts', 'proxies', 'settings', 'lastOrders',
+  'profiles', 'accounts', 'accountGroups', 'proxies', 'settings', 'lastOrders',
 ]);
 
 // These values belong to the license/managed-service session rather than the user configuration.
@@ -41,6 +41,7 @@ const ACCOUNT_SESSION_KEYS = new Set([
 const LIMITS = Object.freeze({
   profiles: 100000,
   accounts: 100000,
+  accountGroups: 10000,
   proxyLists: 10000,
   tasks: 500000,
   targetTasks: 500000,
@@ -53,6 +54,7 @@ const LIMITS = Object.freeze({
 const RESTORE_FILES = Object.freeze([
   'profiles.json',
   'accounts.json',
+  'account-groups.json',
   'proxies.json',
   'settings.json',
   'last-orders.json',
@@ -152,15 +154,38 @@ function sanitizeAccounts(accounts) {
 function localProxyLists(proxies) {
   if (!isRecord(proxies) || !Array.isArray(proxies.lists)) return { lists: [] };
   const lists = [];
+  const groups = [];
+  const seenGroups = new Set();
+  const addGroup = value => {
+    const group = String(value || '').trim().slice(0, 80);
+    const key = group.toLowerCase();
+    if (!group || seenGroups.has(key)) return;
+    seenGroups.add(key);
+    groups.push(group);
+  };
+  for (const group of (Array.isArray(proxies.groups) ? proxies.groups : [])) addGroup(group);
   for (const raw of proxies.lists) {
     if (!isRecord(raw)) continue;
     const name = String(raw.name || '').trim();
     const ref = String(raw.ref || '').trim();
     if (!name || raw.managed === true || name.startsWith(MANAGED_PROXY_PREFIX)
         || ref.startsWith(MANAGED_PROXY_PREFIX)) continue;
-    lists.push({ name, raw: String(raw.raw || '') });
+    const memberships = [];
+    const seenMemberships = new Set();
+    for (const value of [
+      ...(Array.isArray(raw.groups) ? raw.groups : []),
+      raw.group,
+    ]) {
+      const group = String(value || '').trim().slice(0, 80);
+      const key = group.toLowerCase();
+      if (!group || seenMemberships.has(key)) continue;
+      seenMemberships.add(key);
+      memberships.push(group);
+      addGroup(group);
+    }
+    lists.push({ name, raw: String(raw.raw || ''), ...(memberships.length ? { groups: memberships } : {}) });
   }
-  return { lists };
+  return { lists, ...(groups.length ? { groups } : {}) };
 }
 
 function assertArray(name, value, maximum) {
@@ -221,6 +246,15 @@ function validateBundle(bundle) {
   if (!Number.isFinite(exportedAt) || exportedAt <= 0) throw new Error('Backup date is invalid.');
   if (own(bundle, 'profiles')) assertArray('profiles', bundle.profiles, LIMITS.profiles);
   if (own(bundle, 'accounts')) assertArray('accounts', bundle.accounts, LIMITS.accounts);
+  if (own(bundle, 'accountGroups')) {
+    if (!isRecord(bundle.accountGroups) || !Array.isArray(bundle.accountGroups.groups)) {
+      throw new Error('Backup account groups must contain a group list.');
+    }
+    if (bundle.accountGroups.groups.length > LIMITS.accountGroups
+        || bundle.accountGroups.groups.some(group => typeof group !== 'string')) {
+      throw new Error('Backup account groups exceed the supported format.');
+    }
+  }
   if (own(bundle, 'tasks')) assertArray('tasks', bundle.tasks, LIMITS.tasks);
   if (own(bundle, 'round1Profiles')) {
     assertArray('Round1 profiles', bundle.round1Profiles, LIMITS.round1Profiles);

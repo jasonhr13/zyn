@@ -18,6 +18,7 @@ function createTaskGroupScheduler(deps = {}) {
   const saveGroups = deps.saveGroups || (groups => groups);
   const getAccounts = deps.getAccounts || (() => []);
   const getProfiles = deps.getProfiles || (() => []);
+  const getReadiness = deps.getReadiness || (() => ({ level: 'ready', blockers: [], warnings: [] }));
   const isTaskRunning = deps.isTaskRunning || (() => false);
   const startTarget = deps.startTarget || (() => {});
   const stopTarget = deps.stopTarget || (() => {});
@@ -28,6 +29,7 @@ function createTaskGroupScheduler(deps = {}) {
   const scheduleTimeout = deps.setTimeout || setTimeout;
   const cancelTimeout = deps.clearTimeout || clearTimeout;
   const timers = new Map();
+  const starting = new Set();
   let disposed = false;
   let paused = false;
   let syncing = false;
@@ -105,6 +107,7 @@ function createTaskGroupScheduler(deps = {}) {
 
   function fireStart(groupId) {
     if (disposed || paused) return;
+    if (starting.has(String(groupId))) return;
     clearTimer(groupId, 'start');
     const groups = getGroups();
     const group = groups.find(candidate => String(candidate.id) === String(groupId));
@@ -136,23 +139,67 @@ function createTaskGroupScheduler(deps = {}) {
       emit({ groupId, event: 'start-skipped', line: `[schedule] “${group.name}” is already running` });
       return;
     }
-    const launch = buildTargetGroupLaunch(group, { accounts: getAccounts(), profiles: getProfiles() });
-    if (!launch.ok) {
+    const finishStart = (readiness) => {
+      starting.delete(String(groupId));
+      if (disposed || paused) return;
+      const latestGroups = getGroups();
+      const latest = latestGroups.find(candidate => String(candidate.id) === String(groupId));
+      if (!latest || !normalizeSchedule(latest.schedule, latest.site)?.startAt) return;
+      const blockers = Array.isArray(readiness && readiness.blockers) ? readiness.blockers : [];
+      const warnings = Array.isArray(readiness && readiness.warnings) ? readiness.warnings : [];
+      if (blockers.length || (readiness && readiness.level === 'blocked')) {
+        clearStart(groupId);
+        const reason = blockers.map(item => item && (item.title || item.detail)).filter(Boolean).join(' · ')
+          || 'Target readiness check blocked the launch';
+        emit({ groupId, event: 'start-failed', readiness, line: `[schedule] “${latest.name}” start blocked — ${reason}` });
+        return;
+      }
+      if (warnings.length) {
+        emit({
+          groupId,
+          event: 'start-warning',
+          readiness,
+          line: `[schedule] “${latest.name}” readiness warning — ${warnings.map(item => item.title || item.detail).join(' · ')}`,
+        });
+      }
+      const launch = buildTargetGroupLaunch(latest, { accounts: getAccounts(), profiles: getProfiles() });
+      if (!launch.ok) {
+        clearStart(groupId);
+        emit({ groupId, event: 'start-failed', line: `[schedule] “${latest.name}” start failed — ${launch.error}` });
+        return;
+      }
       clearStart(groupId);
-      emit({ groupId, event: 'start-failed', line: `[schedule] “${group.name}” start failed — ${launch.error}` });
-      return;
-    }
-    clearStart(groupId);
-    try {
-      startTarget(launch.config);
+      try {
+        startTarget(launch.config);
+        emit({
+          groupId,
+          event: 'start',
+          readiness,
+          line: `[schedule] “${latest.name}” start fired — ${launch.config.tasks.length} task(s)`
+            + (launch.skipped ? `, ${launch.skipped} skipped without profiles` : ''),
+        });
+      } catch (error) {
+        emit({ groupId, event: 'start-failed', line: `[schedule] “${latest.name}” start failed — ${error.message || error}` });
+      }
+    };
+    const failReadiness = (error) => {
+      starting.delete(String(groupId));
+      clearStart(groupId);
       emit({
         groupId,
-        event: 'start',
-        line: `[schedule] “${group.name}” start fired — ${launch.config.tasks.length} task(s)`
-          + (launch.skipped ? `, ${launch.skipped} skipped without profiles` : ''),
+        event: 'start-failed',
+        line: `[schedule] “${group.name}” start blocked — readiness check failed: ${error && error.message || error}`,
       });
+    };
+    starting.add(String(groupId));
+    try {
+      const readiness = getReadiness(group);
+      if (readiness && typeof readiness.then === 'function') {
+        return readiness.then(finishStart, failReadiness);
+      }
+      return finishStart(readiness);
     } catch (error) {
-      emit({ groupId, event: 'start-failed', line: `[schedule] “${group.name}” start failed — ${error.message || error}` });
+      return failReadiness(error);
     }
   }
 
@@ -219,6 +266,7 @@ function createTaskGroupScheduler(deps = {}) {
   function dispose() {
     disposed = true;
     clearAllTimers();
+    starting.clear();
   }
 
   function pause() {

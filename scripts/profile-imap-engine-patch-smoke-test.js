@@ -82,6 +82,18 @@ assert.match(target, /if \(startedTotal\) reconcileTargetMainMonitor\(\)/,
   'the pending Target FIFO does not reconcile its monitor after all batches are delivered');
 assert.match(target, /proxyGroup: spec\.proxyGroup/,
   'shared Target monitor edits do not follow the selected active proxy route');
+assert.match(target, /maxPrice: maxPriceBySku\[s\] \|\| ''/,
+  'Target checkout items do not carry their per-SKU maximum price');
+assert.match(target, /maxPriceBySku: Object\.fromEntries/,
+  'Target runtime state does not retain per-SKU price ceilings');
+assert.match(target, /ignoreLowStock: config\.ignoreLowStock === true \|\| config\.stockConfidence === 'confirmed-10-plus'/,
+  'Target checkout tasks do not carry the group stock-confidence policy');
+assert.match(target, /return \{ items, proxyGroup, ignoreLowStock \}/,
+  'shared Target monitor state drops the stock-confidence policy');
+assert.match(target, /ignoreLowStock: spec\.ignoreLowStock/,
+  'shared Target monitor messages drop the stock-confidence policy');
+assert.match(target, /maxPrice: maxPrices\.get\(monitorInput\) \|\| ''/,
+  'shared Target monitor items drop per-SKU price ceilings');
 assert.match(target, /if \(!sharedMonitorOnly\(\)\) \{\s+monitorRefreshed = reconcileTargetMainMonitor\(\)/,
   'a live edit can overwrite the shared Target monitor with only one selected group');
 assert.match(target, /MONITOR_ID \+ '-main-' \+ \(\+\+targetMainMonitorSequence\)/,
@@ -977,6 +989,14 @@ assert.match(target, /billingFirstName: billingFirst, billingLastName: billingLa
 assert.match(target, /billingAddress1: b\.address/);
 assert.match(target, /profileId: first\.profileId/);
 assert.match(target, /const otpFetches = new Map\(\)/);
+assert.match(target, /phase: p\.phase \|\| 'starting'/,
+  'OTP pending events do not expose automatic mailbox progress to the renderer');
+assert.match(target, /Polling the profile IMAP mailbox for the code/,
+  'profile IMAP polling is not visible in the OTP pending event');
+assert.match(target, /phase: 'manual'[\s\S]*Automatic email lookup finished without a code/,
+  'exhausted automatic OTP lookup does not tell the renderer to request manual entry');
+assert.match(target, /phase = 'submitting'[\s\S]*Email code found — submitting to Target/,
+  'automatic OTP delivery does not publish a submitting state');
 assert.match(target, /receivedAfter/);
 assert.match(target, /cancelOtpForTask\((?:taskId|requestedId)\)/);
 assert.match(target, /cancelAllOtpFetches\(detail\)/,

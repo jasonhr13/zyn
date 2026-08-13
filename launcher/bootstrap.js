@@ -13,6 +13,7 @@ const { APP_RELEASE, FEATURES } = require('./feature-flags');
 const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
 const { createTaskGroupScheduler } = require('./task-group-scheduler');
+const { evaluateTargetReadiness } = require('./target-readiness');
 const { createTargetProductHistoryStore } = require('./target-product-history');
 const { targetGroupStandbyTaskCount } = require('./target-cookie-standby');
 const { installLicenseObservation } = require('./license-observer');
@@ -21,6 +22,8 @@ const { installTaskTypeIpcGuard } = require('./task-type-ipc-guard');
 const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
+const { createProxyGroupControl } = require('./proxy-group-control');
+const { createAccountGroupControl } = require('./account-group-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
 const { createAnalyticsService } = require('./analytics-recorder');
@@ -433,6 +436,55 @@ function installTaskGroups() {
   });
 }
 
+async function targetReadinessForGroup(group, taskIds) {
+  const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+  const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+  const candidate = group && typeof group === 'object' ? group : {};
+  const selected = Array.isArray(taskIds) ? new Set(taskIds.map(String)) : null;
+  const tasks = (Array.isArray(candidate.tasks) ? candidate.tasks : [])
+    .filter(task => !selected || selected.has(String(task && task.id)));
+  const refs = new Set(tasks.map(task => String(task.proxyListName || candidate.proxyListName || '').trim())
+    .filter(ref => ref && !/^local$/i.test(ref)));
+  const proxyCounts = {};
+  for (const ref of refs) {
+    try {
+      const lines = dataManager.getProxyLines?.(ref) || [];
+      proxyCounts[ref] = { ok: Array.isArray(lines) && lines.length > 0, count: Array.isArray(lines) ? lines.length : 0 };
+    } catch (error) {
+      proxyCounts[ref] = { ok: false, count: 0, error: String(error && error.message || error).slice(0, 300) };
+    }
+  }
+  let bank = null;
+  try { bank = await targetEngine.getCookieBank?.(); } catch {}
+  return evaluateTargetReadiness(candidate, {
+    taskIds: Array.isArray(taskIds) ? taskIds : undefined,
+    accounts: dataManager.getAccounts?.() || [],
+    profiles: dataManager.getProfiles?.() || [],
+    settings: dataManager.getSettings?.() || {},
+    proxyCounts,
+    bank,
+  });
+}
+
+function installTargetReadiness() {
+  if (!FEATURES.taskGroups || !taskGroupStore) return;
+  try { ipcMain.removeHandler('targetReadiness'); } catch {}
+  ipcMain.handle('targetReadiness', async (_event, payload = {}) => {
+    const group = taskGroupStore.load().find(candidate => String(candidate.id) === String(payload.groupId));
+    if (!group) {
+      return {
+        ok: false,
+        level: 'blocked',
+        blockers: [{ code: 'group-missing', title: 'Task group unavailable', detail: 'The Target task group no longer exists.' }],
+        warnings: [],
+        checks: [],
+        counts: { tasks: 0, skus: 0 },
+      };
+    }
+    return targetReadinessForGroup(group, Array.isArray(payload.taskIds) ? payload.taskIds : undefined);
+  });
+}
+
 function pushTargetProductHistory(items) {
   try {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -581,6 +633,7 @@ function installTaskGroupScheduling(authority, managedProxyControl) {
     saveGroups: groups => taskGroupStore.save(groups),
     getAccounts: () => dataManager.getAccounts?.() || [],
     getProfiles: () => dataManager.getProfiles?.() || [],
+    getReadiness: group => targetReadinessForGroup(group),
     isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
     canStart: () => (!authority || authority.cached().ok === true)
       && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),
@@ -645,6 +698,76 @@ function installProfileImapIpc(authority, profileControl) {
       return { ok: false, message: 'Sign in to Zyn before testing a mailbox.' };
     }
     return testImapConnection(config);
+  });
+}
+
+function installProxyGroups() {
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    return createProxyGroupControl({ dataDirectory: app.getPath('userData'), dataManager, logger: console });
+  } catch (error) {
+    console.error(`Could not install proxy groups: ${error.message}`);
+    return null;
+  }
+}
+
+function installAccountGroups() {
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    return createAccountGroupControl({ dataDirectory: app.getPath('userData'), dataManager });
+  } catch (error) {
+    console.error(`Could not install account groups: ${error.message}`);
+    return null;
+  }
+}
+
+function installAccountGroupIpc(accountGroupControl) {
+  if (!accountGroupControl) return;
+  ipcMain.on('getAccountGroups', event => { event.returnValue = accountGroupControl.getGroups(); });
+  ipcMain.on('createAccountGroup', (event, name) => {
+    try { event.returnValue = { ok: true, group: accountGroupControl.createGroup(name) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('renameAccountGroup', (event, { from, to } = {}) => {
+    try { event.returnValue = { ok: true, group: accountGroupControl.renameGroup(from, to) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('deleteAccountGroup', (event, name) => {
+    try { event.returnValue = { ok: true, affected: accountGroupControl.deleteGroup(name) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('addAccountsToGroup', (event, { ids, group } = {}) => {
+    try { event.returnValue = { ok: true, affected: accountGroupControl.addAccountsToGroup(ids || [], group) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('removeAccountsFromGroup', (event, { ids, group } = {}) => {
+    try { event.returnValue = { ok: true, affected: accountGroupControl.removeAccountsFromGroup(ids || [], group) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+}
+
+function installProxyGroupIpc(proxyGroupControl) {
+  if (!proxyGroupControl) return;
+  ipcMain.on('getProxyGroups', event => { event.returnValue = proxyGroupControl.getGroups(); });
+  ipcMain.on('createProxyGroup', (event, name) => {
+    try { event.returnValue = { ok: true, group: proxyGroupControl.createGroup(name) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('renameProxyGroup', (event, { from, to } = {}) => {
+    try { event.returnValue = { ok: true, group: proxyGroupControl.renameGroup(from, to) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('deleteProxyGroup', (event, name) => {
+    try { event.returnValue = { ok: true, affected: proxyGroupControl.deleteGroup(name) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('addProxyListsToGroup', (event, { refs, group } = {}) => {
+    try { event.returnValue = { ok: true, affected: proxyGroupControl.addListsToGroup(refs || [], group) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.on('removeProxyListsFromGroup', (event, { refs, group } = {}) => {
+    try { event.returnValue = { ok: true, affected: proxyGroupControl.removeListsFromGroup(refs || [], group) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
   });
 }
 
@@ -1216,7 +1339,10 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   installTaskGroups();
   targetProductHistoryStore = installTargetProductHistory();
   const profileImapControl = installProfileImap();
+  const accountGroupControl = installAccountGroups();
+  const proxyGroupControl = installProxyGroups();
   const managedProxyControl = installManagedProxies();
+  installTargetReadiness();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   if (!licenseAuthority) setTargetHarvestAuthorization(true);
   harvesterExtensionBridge = installHarvesterExtensionCompatibility(licenseAuthority);
@@ -1224,6 +1350,8 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);
   installProfileImapIpc(licenseAuthority, profileImapControl);
+  installAccountGroupIpc(accountGroupControl);
+  installProxyGroupIpc(proxyGroupControl);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();

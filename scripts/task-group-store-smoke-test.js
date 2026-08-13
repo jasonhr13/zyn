@@ -34,6 +34,11 @@ try {
   assert.equal(migrated[0].tasks[0].accountId, 'account-1');
   assert.equal(migrated[0].tasks[0].loopCheckout, true, 'legacy repeat-checkout setting was not migrated');
   assert.equal(migrated[0].useFillerItem, false, 'legacy group unexpectedly enabled the filler item');
+  assert.deepEqual(migrated[0].items, [
+    { sku: '12345678', maxPrice: '' },
+    { sku: '87654321', maxPrice: '' },
+  ], 'legacy watch list did not migrate to per-SKU item records');
+  assert.equal(migrated[0].stockConfidence, 'any');
   assert.equal(fs.readFileSync(legacyPath, 'utf8'), originalLegacy, 'legacy rollback file changed');
 
   const persisted = JSON.parse(fs.readFileSync(store.filePath, 'utf8'));
@@ -57,11 +62,16 @@ try {
     id: 'drop-a',
     name: '  Friday Drop  ',
     site: 'target',
-    skus: '11111111',
+    skus: '11111111\n22222222',
+    items: [
+      { sku: '11111111', maxPrice: '34.9' },
+      { sku: '22222222', maxPrice: '' },
+    ],
     qty: 999,
     proxyListName: 'Local',
     loopCheckout: true,
     useFillerItem: true,
+    stockConfidence: 'confirmed-10-plus',
     schedule: { startAt: 1735689660000, stopAt: 1735693260000 },
     tasks: [
       { id: 'task-a', accountId: 'acct-a', profileId: 'profile-a', cardId: 'card-a', loopCheckout: false },
@@ -77,6 +87,11 @@ try {
   assert.equal(saved[0].qty, 99);
   assert.equal(saved[0].loopCheckout, true);
   assert.equal(saved[0].useFillerItem, true, 'group filler-item setting was discarded');
+  assert.deepEqual(saved[0].items, [
+    { sku: '11111111', maxPrice: '34.90' },
+    { sku: '22222222', maxPrice: '' },
+  ], 'per-SKU price ceilings were not normalized');
+  assert.equal(saved[0].stockConfidence, 'confirmed-10-plus');
   assert.equal(saved[0].tasks.length, 2);
   assert.equal(saved[0].tasks[0].cardId, 'card-a');
   assert.equal(saved[0].tasks[0].loopCheckout, false, 'task-level loop override was discarded');

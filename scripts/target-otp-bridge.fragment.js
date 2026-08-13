@@ -1,11 +1,12 @@
 // Engine emits `request-code {email}` and blocks in WaitForCode until we send `received-code`.
-// Fetch the login code — AYCD first (if configured), then IMAP — same order as the register bots.
+// Fetch the login code from AYCD and profile IMAP in parallel, then use the first verified result.
 // email -> { controller }. Owning the cancellation handle here lets task/group Stop close the
 // mailbox transport instead of merely hiding the OTP prompt while a four-minute poll survives in
 // the background and later emits an uncaught socket timeout.
 const otpFetches = new Map();
 
-// Codes the engine is currently waiting on: lowercased email -> { email, taskId, since }.
+// Codes the engine is currently waiting on: lowercased email ->
+// { email, taskId, since, phase, message }.
 // Surfaced to the UI so a code can be typed in by hand when the mailbox is slow, unreachable, or
 // simply not configured — the engine blocks in WaitForCode either way, so without this a task just
 // sits there until it times out.
@@ -16,8 +17,18 @@ function emitOtpPending() {
     pending: [...otpPending.values()].map(p => ({
       email: p.email, taskId: p.taskId, since: p.since,
       waiting: p.waiters ? p.waiters.size : 1,
+      phase: p.phase || 'starting',
+      message: p.message || 'Preparing automatic email lookup…',
     })),
   });
+}
+
+function updateOtpPending(key, patch) {
+  const entry = otpPending.get(String(key || '').toLowerCase());
+  if (!entry) return false;
+  Object.assign(entry, patch || {});
+  emitOtpPending();
+  return true;
 }
 
 function abortOtpFetch(key, reason = 'OTP request cancelled') {
@@ -66,6 +77,13 @@ function deliverOtp(addr, code, source, fetchState = null) {
   }
   const entry = otpPending.get(key);
   log(`[otp] code found ${source} — submitting it`, (entry && entry.taskId) || '');
+  if (entry) {
+    entry.phase = 'submitting';
+    entry.message = source === 'entered by hand'
+      ? 'Manual code received — submitting to Target…'
+      : 'Email code found — submitting to Target…';
+    emitOtpPending();
+  }
   sendToEngine({ type: 'received-code', messages: [{ email: addr, code: String(code), site: 'Target' }] });
   // One code satisfies one login. Keep the prompt and waiter state for any sibling task using the
   // same account; each Target login sends its own message.
@@ -74,6 +92,8 @@ function deliverOtp(addr, code, source, fetchState = null) {
     entry.waiters.delete(first);
     entry.taskId = [...entry.waiters][0] || entry.taskId;
     entry.since = Date.now();
+    entry.phase = 'starting';
+    entry.message = 'Preparing the next automatic email lookup…';
     log(`[otp] ${entry.waiters.size} more task(s) still waiting on this mailbox`, entry.taskId || '');
     // The current lookup owns the code it just returned. Start a fresh provider race for the next
     // waiter after this call's finally block retires the current fetch; otherwise sibling tasks on
@@ -84,8 +104,11 @@ function deliverOtp(addr, code, source, fetchState = null) {
     }, 0);
   } else {
     otpPending.delete(key);
+    // Leave the successful hand-off visible long enough to be perceived. This only delays the
+    // renderer clear; the code has already reached the engine and the pending map is already clean.
+    setTimeout(emitOtpPending, 900);
   }
-  emitOtpPending();
+  if (otpPending.has(key)) emitOtpPending();
   return true;
 }
 
@@ -119,7 +142,14 @@ async function fetchOtpAndDeliver(email, taskId = '') {
   const open = otpPending.get(key);
   const waiters = (open && open.waiters) || new Set();
   waiters.add(taskId || `anon-${waiters.size}`);
-  otpPending.set(key, { email: addr, taskId, since: Date.now(), waiters });
+  otpPending.set(key, {
+    email: addr,
+    taskId,
+    since: Date.now(),
+    waiters,
+    phase: 'starting',
+    message: 'Preparing automatic email lookup…',
+  });
   emitOtpPending();
   const botDir = botDirPath();
   let sourceController = null;
@@ -148,6 +178,8 @@ async function fetchOtpAndDeliver(email, taskId = '') {
     if (currentPending && mailboxKey) currentPending.mailboxKey = mailboxKey;
 
     const sources = [];
+    let pollingAycd = false;
+    let pollingImap = false;
     if (aycdKey) {
       if (typeof globalThis.fetch !== 'function') {
         try { const u = require('undici'); globalThis.fetch = u.fetch; globalThis.Headers = u.Headers; globalThis.Request = u.Request; globalThis.Response = u.Response; }
@@ -155,6 +187,7 @@ async function fetchOtpAndDeliver(email, taskId = '') {
       }
       const script = path.join(botDir, 'aycd-mail-client.mjs');
       if (fs.existsSync(script)) {
+        pollingAycd = true;
         log('[otp] checking AYCD Inbox for the Target email', taskId);
         sources.push((async () => {
           try {
@@ -180,6 +213,7 @@ async function fetchOtpAndDeliver(email, taskId = '') {
     if (hasImap) {
       const script = path.join(botDir, 'imap-client.mjs');
       if (fs.existsSync(script)) {
+        pollingImap = true;
         log('[otp] checking the selected profile mailbox for the Target code', taskId);
         sources.push((async () => {
           try {
@@ -216,9 +250,22 @@ async function fetchOtpAndDeliver(email, taskId = '') {
     }
 
     if (!sources.length) {
+      updateOtpPending(key, {
+        phase: 'manual',
+        message: 'Automatic email lookup is unavailable — enter the code manually.',
+      });
       log('[otp] no OTP source configured — add an IMAP mailbox to the matching profile, or enter the code manually', taskId);
       return;
     }
+
+    updateOtpPending(key, {
+      phase: 'polling',
+      message: pollingImap && pollingAycd
+        ? 'Polling AYCD Inbox and the profile IMAP mailbox for the code…'
+        : pollingImap
+          ? 'Polling the profile IMAP mailbox for the code…'
+          : 'Polling AYCD Inbox for the code…',
+    });
 
     // AYCD and the profile inbox start together. The first verified code wins; aborting the shared
     // source controller immediately closes the losing IMAP socket or AYCD HTTP poll.
@@ -230,6 +277,10 @@ async function fetchOtpAndDeliver(email, taskId = '') {
     if (fetchState.controller.signal.aborted || e?.name === 'AbortError' || e?.code === 'ABORT_ERR') {
       vlog('[otp] mailbox fetch cancelled', taskId);
     } else {
+      updateOtpPending(key, {
+        phase: 'manual',
+        message: 'Automatic email lookup finished without a code — enter it manually.',
+      });
       log('[otp] every configured mailbox source finished without a code — enter it manually', taskId);
     }
   } finally {

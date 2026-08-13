@@ -34,10 +34,12 @@ const { ipcRenderer, clipboard } = window.require('electron');
 const EMPTY_GROUP = Object.freeze({
   name: '',
   skus: '',
+  maxPrices: {},
   qty: 2,
   proxyListName: '',
   loopCheckout: false,
   useFillerItem: false,
+  stockConfidence: 'any',
 });
 
 const EMPTY_HARVESTER = Object.freeze({
@@ -120,8 +122,34 @@ const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
   const direct = (value.match(/^(\d{6,})/) || [])[1];
   if (direct) return direct;
   const marker = value.toUpperCase().lastIndexOf('A-');
-  return ((marker >= 0 ? value.slice(marker + 2) : value).match(/^\d+/) || [])[0] || '';
+  return ((marker >= 0 ? value.slice(marker + 2) : value).match(/^\d{6,}/) || [])[0] || '';
 }).filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
+const normalizeMaxPrice = value => {
+  const text = String(value == null ? '' : value).trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!text) return '';
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
+  const number = Number(text);
+  return Number.isFinite(number) && number > 0 && number <= 100000 ? number.toFixed(2) : null;
+};
+const watchedItemsForGroup = group => {
+  const candidate = group && typeof group === 'object' ? group : {};
+  const bySku = new Map();
+  for (const item of (Array.isArray(candidate.items) ? candidate.items : [])) {
+    const sku = parseSkus(item && typeof item === 'object'
+      ? item.sku || item.tcin || item.monitorInput
+      : item)[0];
+    if (sku && !bySku.has(sku)) {
+      bySku.set(sku, {
+        sku,
+        maxPrice: normalizeMaxPrice(item && typeof item === 'object' ? item.maxPrice : '') || '',
+      });
+    }
+  }
+  for (const sku of parseSkus(candidate.skus)) {
+    if (!bySku.has(sku)) bySku.set(sku, { sku, maxPrice: '' });
+  }
+  return [...bySku.values()];
+};
 
 const STATUS_LABELS = {
   idle: 'Idle',
@@ -183,6 +211,11 @@ class TaskGroups extends Component {
     editingHarvesterId: '',
     harvesterDraft: { ...EMPTY_HARVESTER },
     throttleFallbackGroup: 'Local',
+    readinessPending: false,
+    readiness: null,
+    readinessIntent: '',
+    readinessGroupId: '',
+    readinessTaskIds: [],
   };
 
   componentDidMount() {
@@ -445,6 +478,18 @@ class TaskGroups extends Component {
   };
   accountFor = task => (this.props.accounts || []).find(account => String(account.id) === String(task.accountId));
 
+  taskHasResettableState = task => {
+    const target = this.props.target || {};
+    const account = this.accountFor(task);
+    return Boolean(
+      (target.taskStatus || {})[task.id]
+      || Object.prototype.hasOwnProperty.call(target.taskOutcomes || {}, task.id)
+      || (target.proxyStatus || {})[task.id]
+      || (((target.taskLogs || {})[task.id]) || []).length
+      || targetOtpForTask(target.otpPending, task.id, account && account.email)
+    );
+  };
+
   profileForAccount = (accountId) => {
     const account = (this.props.accounts || []).find(item => String(item.id) === String(accountId));
     const email = String((account && account.email) || '').trim().toLowerCase();
@@ -488,16 +533,19 @@ class TaskGroups extends Component {
 
   openEditGroup = group => {
     this.loadProductHistory();
+    const items = watchedItemsForGroup(group);
     this.setState({
       showGroupModal: true,
       editingGroupId: group.id,
       groupDraft: {
         name: group.name,
-        skus: group.skus || '',
+        skus: items.map(item => item.sku).join('\n'),
+        maxPrices: Object.fromEntries(items.map(item => [item.sku, item.maxPrice || ''])),
         qty: group.qty || 2,
         proxyListName: group.proxyListName || '',
         loopCheckout: group.loopCheckout === true,
         useFillerItem: group.useFillerItem === true,
+        stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
       },
       productHistoryFilter: '',
     });
@@ -512,6 +560,13 @@ class TaskGroups extends Component {
     const separator = !raw.trim() || /[\n,]\s*$/.test(raw) ? '' : '\n';
     return { groupDraft: { ...previous.groupDraft, skus: `${raw}${separator}${id}` } };
   });
+
+  setSkuMaxPrice = (sku, value) => this.setState(previous => ({
+    groupDraft: {
+      ...previous.groupDraft,
+      maxPrices: { ...(previous.groupDraft.maxPrices || {}), [sku]: value },
+    },
+  }));
 
   setScheduleDraft = patch => this.setState(previous => ({
     scheduleDraft: { ...previous.scheduleDraft, ...patch },
@@ -577,12 +632,21 @@ class TaskGroups extends Component {
       ? this.state.groups.find(group => group.id === selectedGroupId)
       : null;
     const nextSkus = parseSkus(draft.skus);
-    const previousSkus = parseSkus(previousGroup && previousGroup.skus);
+    const invalidPriceSku = nextSkus.find(sku => normalizeMaxPrice((draft.maxPrices || {})[sku]) === null);
+    if (invalidPriceSku) {
+      window.alert(`Enter a valid maximum price for Target SKU ${invalidPriceSku}, or leave it empty for no maximum.`);
+      return;
+    }
+    const items = nextSkus.map(sku => ({
+      sku,
+      maxPrice: normalizeMaxPrice((draft.maxPrices || {})[sku]) || '',
+    }));
+    const previousItems = watchedItemsForGroup(previousGroup);
     const liveTasks = previousGroup
       ? (previousGroup.tasks || []).filter(task => targetTaskIsRunning(this.statusFor(task)))
       : [];
     const liveWatchChanged = !!previousGroup && (
-      previousSkus.join(',') !== nextSkus.join(',')
+      JSON.stringify(previousItems) !== JSON.stringify(items)
       || String(previousGroup.qty || 2) !== String(draft.qty || 2)
     );
     const loopCheckout = draft.loopCheckout === true;
@@ -591,6 +655,9 @@ class TaskGroups extends Component {
     const useFillerItem = draft.useFillerItem === true;
     const liveFillerChanged = !!previousGroup
       && (previousGroup.useFillerItem === true) !== useFillerItem;
+    const stockConfidence = draft.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any';
+    const liveStockConfidenceChanged = !!previousGroup
+      && (previousGroup.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any') !== stockConfidence;
     if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
       window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
       return;
@@ -600,11 +667,13 @@ class TaskGroups extends Component {
       groups = this.state.groups.map(group => group.id === selectedGroupId ? {
         ...group,
         name,
-        skus: draft.skus,
+        items,
+        skus: items.map(item => item.sku).join('\n'),
         qty: draft.qty,
         proxyListName: draft.proxyListName,
         loopCheckout,
         useFillerItem,
+        stockConfidence,
         tasks: liveLoopChanged
           ? (group.tasks || []).map(task => ({ ...task, loopCheckout }))
           : group.tasks,
@@ -616,11 +685,13 @@ class TaskGroups extends Component {
         id: selectedGroupId,
         name,
         site: 'target',
-        skus: draft.skus,
+        items,
+        skus: items.map(item => item.sku).join('\n'),
         qty: draft.qty,
         proxyListName: draft.proxyListName,
         loopCheckout,
         useFillerItem,
+        stockConfidence,
         tasks: [],
         createdAt: now,
         updatedAt: now,
@@ -633,7 +704,10 @@ class TaskGroups extends Component {
           const result = ipcRenderer.sendSync('editTargetTasks', {
             tasks: liveTasks,
             skus: nextSkus,
+            items,
             qty: draft.qty || 2,
+            stockConfidence,
+            ignoreLowStock: stockConfidence === 'confirmed-10-plus',
           });
           if (!result || result.ok !== true || result.updated < 1) {
             liveEditError = (result && result.error) || 'The native engine did not accept the live watch-list update.';
@@ -649,7 +723,7 @@ class TaskGroups extends Component {
       }, () => {
         if (liveEditError) {
           window.alert(`The group was saved, but its running tasks were not updated. Stop and restart them to apply the new SKUs.\n\n${liveEditError}`);
-        } else if ((liveLoopChanged || liveFillerChanged) && liveTasks.length) {
+        } else if ((liveLoopChanged || liveFillerChanged || liveStockConfidenceChanged) && liveTasks.length) {
           window.alert('The group checkout settings were saved. Stop and restart the running tasks to apply them.');
         }
       });
@@ -750,21 +824,38 @@ class TaskGroups extends Component {
     });
   };
 
+  resetTask = task => {
+    if (targetTaskIsRunning(this.statusFor(task)) || !this.taskHasResettableState(task)) return;
+    const label = this.accountLabel(task);
+    if (!window.confirm(
+      `Reset “${label}” to Idle?\n\nThis clears its completed status, checkout count, temporary OTP/proxy notices, and task log. Task settings and Target order-limit history stay unchanged.`,
+    )) return;
+    const account = this.accountFor(task);
+    this.props.dispatch({
+      type: 'targetTaskReset',
+      id: task.id,
+      email: (account && account.email) || '',
+    });
+  };
+
   accountLabel = task => {
     const account = this.accountFor(task);
     return (account && (account.email || account.username || account.name)) || task.accountId || 'Unknown account';
   };
 
   runnableTasks = (group, tasks) => {
-    const skus = parseSkus(group.skus);
-    if (!skus.length) {
+    const items = watchedItemsForGroup(group);
+    const skus = items.map(item => item.sku);
+    if (!items.length) {
       window.alert('Add at least one Target SKU to this task group first.');
       return null;
     }
     const runnable = [];
     const missing = [];
     for (const task of tasks) {
-      const profile = this.profileForAccount(task.accountId);
+      const profile = task.profileId
+        ? this.profileList().find(item => String(item.id) === String(task.profileId)) || this.profileForAccount(task.accountId)
+        : this.profileForAccount(task.accountId);
       if (!profile) {
         missing.push(this.accountLabel(task));
       } else {
@@ -783,13 +874,69 @@ class TaskGroups extends Component {
     return {
       tasks: runnable,
       skus,
+      items,
       qty: group.qty || 2,
       useFillerItem: group.useFillerItem === true,
+      stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
+      ignoreLowStock: group.stockConfidence === 'confirmed-10-plus',
     };
   };
 
   activeOtherGroup = group => this.state.groups.find(item => item.id !== group.id
     && (item.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task))));
+
+  launchTasks = (group, tasks) => {
+    const config = this.runnableTasks(group, tasks);
+    if (config) {
+      this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
+      ipcRenderer.send('startTarget', config);
+    }
+  };
+
+  runReadiness = async (group, tasks, intent = 'check') => {
+    if (this.state.readinessPending) return;
+    const taskIds = (Array.isArray(tasks) ? tasks : []).map(task => String(task.id));
+    this.setState({ readinessPending: true });
+    let readiness;
+    try {
+      readiness = await ipcRenderer.invoke('targetReadiness', { groupId: group.id, taskIds });
+    } catch (error) {
+      readiness = {
+        ok: false,
+        level: 'blocked',
+        blockers: [{ code: 'check-failed', title: 'Readiness check unavailable', detail: String((error && error.message) || error) }],
+        warnings: [],
+        checks: [],
+        counts: { tasks: taskIds.length, skus: watchedItemsForGroup(group).length },
+      };
+    }
+    if (intent === 'start' && readiness && readiness.level === 'ready') {
+      this.setState({ readinessPending: false }, () => this.launchTasks(group, tasks));
+      return;
+    }
+    this.setState({
+      readinessPending: false,
+      readiness,
+      readinessIntent: intent,
+      readinessGroupId: String(group.id),
+      readinessTaskIds: taskIds,
+    });
+  };
+
+  closeReadiness = () => this.setState({
+    readiness: null,
+    readinessIntent: '',
+    readinessGroupId: '',
+    readinessTaskIds: [],
+  });
+
+  continueReadinessStart = () => {
+    const group = this.state.groups.find(item => String(item.id) === this.state.readinessGroupId);
+    const selected = new Set(this.state.readinessTaskIds);
+    const tasks = group ? (group.tasks || []).filter(task => selected.has(String(task.id))) : [];
+    this.closeReadiness();
+    if (group && tasks.length) this.launchTasks(group, tasks);
+  };
 
   startTasks = (group, tasks) => {
     const other = this.activeOtherGroup(group);
@@ -797,11 +944,7 @@ class TaskGroups extends Component {
       window.alert(`“${other.name}” is already running. The current Target engine has one shared monitor, so stop that group first.`);
       return;
     }
-    const config = this.runnableTasks(group, tasks);
-    if (config) {
-      this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
-      ipcRenderer.send('startTarget', config);
-    }
+    this.runReadiness(group, tasks, 'start');
   };
 
   stopTasks = (tasks) => {
@@ -1372,7 +1515,9 @@ class TaskGroups extends Component {
 
   renderGroupRow(group) {
     const stats = this.groupStats(group);
-    const skus = parseSkus(group.skus);
+    const items = watchedItemsForGroup(group);
+    const skus = items.map(item => item.sku);
+    const limited = items.filter(item => item.maxPrice).length;
     const running = stats.running > 0;
     return (
       <article
@@ -1394,7 +1539,7 @@ class TaskGroups extends Component {
         <div className="task-group-row-runtime">
           <div className="task-group-row-summary">
             <span className="task-group-row-summary-icon"><Icon name="list" size={15} /></span>
-            <span><small>Watch list</small><strong>{skus.length} SKU{skus.length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></span>
+            <span><small>Watch list</small><strong>{skus.length} SKU{skus.length === 1 ? '' : 's'} · qty {group.qty || 2}{limited ? ` · ${limited} price cap${limited === 1 ? '' : 's'}` : ''}</strong></span>
           </div>
         </div>
         <div className="task-group-row-actions" onClick={event => event.stopPropagation()}>
@@ -1447,6 +1592,7 @@ class TaskGroups extends Component {
           )}
         </div>
         {this.renderHarvesterDrawer()}
+        {this.renderReadinessModal()}
         {this.renderGroupModal()}
         {this.renderHarvesterModal()}
       </div>
@@ -1464,6 +1610,7 @@ class TaskGroups extends Component {
       account && account.email,
     );
     const running = targetTaskIsRunning(status);
+    const canReset = !running && this.taskHasResettableState(task);
     const checkouts = this.checkoutCountFor(task);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
@@ -1515,6 +1662,7 @@ class TaskGroups extends Component {
           ) : (
             <button className="icon-action icon-action-start" title="Start task" onClick={() => this.startTasks(group, [task])}><Icon name="play" size={12} /></button>
           )}
+          <button className="icon-action icon-action-reset" disabled={!canReset} title={canReset ? 'Reset task to Idle' : 'Task is already fresh'} onClick={() => this.resetTask(task)}><Icon name="refresh" size={12} /></button>
           <button className="icon-action icon-action-danger" title="Delete task" onClick={() => this.deleteTask(group, task)}><Icon name="trash" size={12} /></button>
         </span>
       </div>
@@ -1533,6 +1681,7 @@ class TaskGroups extends Component {
     );
     const tone = targetStatusTone(displayStatus);
     const running = targetTaskIsRunning(status);
+    const canReset = !running && this.taskHasResettableState(task);
     const checkouts = this.checkoutCountFor(task);
     const logs = ((((this.props.target || {}).taskLogs) || {})[task.id]) || [];
     const accountName = this.accountLabel(task);
@@ -1560,6 +1709,8 @@ class TaskGroups extends Component {
           </div>
           <div className="page-actions">
             <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>Back to Group</button>
+            <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, [task])}><Icon name="check" size={12} /> Check Readiness</button>
+            <button className="btn btn-secondary btn-sm" disabled={!canReset} title={canReset ? 'Clear this completed run and return the task to Idle' : 'Task is already fresh'} onClick={() => this.resetTask(task)}><Icon name="refresh" size={12} /> Reset Task</button>
             {running ? (
               <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks([task])}><Icon name="stop" size={12} /> Stop Task</button>
             ) : (
@@ -1584,7 +1735,8 @@ class TaskGroups extends Component {
                 <div><dt>Account</dt><dd>{accountName}</dd></div>
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
-                <div><dt>Watch list</dt><dd>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Watch list</dt><dd>{watchedItemsForGroup(group).length} SKU{watchedItemsForGroup(group).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Stock confidence</dt><dd>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any in-stock signal'}</dd></div>
                 <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
                 <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
                 <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
@@ -1618,6 +1770,7 @@ class TaskGroups extends Component {
           {this.renderSharedEngineLog()}
         </div>
         {this.renderHarvesterDrawer()}
+        {this.renderReadinessModal()}
         {this.renderHarvesterModal()}
       </div>
     );
@@ -1635,6 +1788,7 @@ class TaskGroups extends Component {
             <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
           </div>
           <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, group.tasks)}><Icon name="check" size={12} /> Check Readiness</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openSchedule(group)}><Icon name="activity" size={12} /> Schedule</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={12} /> Edit Group</button>
             {stats.running ? (
@@ -1650,7 +1804,8 @@ class TaskGroups extends Component {
           <div className="panel group-config-strip group-config-strip-r2">
             <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
-            <div><span>Watch list</span><strong>{parseSkus(group.skus).length} SKU{parseSkus(group.skus).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
+            <div><span>Watch list</span><strong>{watchedItemsForGroup(group).length} SKU{watchedItemsForGroup(group).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
+            <div><span>Stock confidence</span><strong>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any stock'}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
             <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
             <div><span>Filler item</span><strong>{group.useFillerItem ? 'On · SKU 84704409' : 'Off'}</strong></div>
@@ -1676,6 +1831,7 @@ class TaskGroups extends Component {
           {this.renderSharedEngineLog()}
         </div>
         {this.renderHarvesterDrawer()}
+        {this.renderReadinessModal()}
         {this.renderScheduleModal(group)}
         {this.renderGroupModal()}
         {this.renderTaskModal(group)}
@@ -1848,10 +2004,74 @@ class TaskGroups extends Component {
     );
   }
 
+  renderReadinessModal() {
+    const readiness = this.state.readiness;
+    if (!readiness) return null;
+    const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+    const warnings = Array.isArray(readiness.warnings) ? readiness.warnings : [];
+    const checks = Array.isArray(readiness.checks) ? readiness.checks : [];
+    const blocked = blockers.length > 0 || readiness.level === 'blocked';
+    const warning = !blocked && (warnings.length > 0 || readiness.level === 'warning');
+    const readinessCounts = readiness.counts || {};
+    const title = blocked ? 'Target is not ready' : warning ? 'Target readiness warnings' : 'Target is ready';
+    const detail = blocked
+      ? 'Fix the blockers below before starting these tasks.'
+      : warning
+        ? 'You can start now, but checkout may wait or use a less reliable route.'
+        : `${readinessCounts.tasks || 0} task(s) and ${readinessCounts.skus || 0} SKU(s) passed preflight.`;
+    return (
+      <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeReadiness()}>
+        <div className={`modal target-readiness-modal target-readiness-${blocked ? 'blocked' : warning ? 'warning' : 'ready'}`} onMouseDown={event => event.stopPropagation()}>
+          <div className="modal-header">
+            <div><div className="modal-title">{title}</div><p>{detail}</p></div>
+            <button className="modal-close" onClick={this.closeReadiness}>×</button>
+          </div>
+          <div className="modal-body">
+            {!!blockers.length && (
+              <section className="target-readiness-issues target-readiness-blockers">
+                <h4>Blockers</h4>
+                {blockers.map((item, index) => <div key={`${item.code || 'blocker'}-${index}`}><Icon name="warning" size={13} /><span><strong>{item.title}</strong><small>{item.detail}</small></span></div>)}
+              </section>
+            )}
+            {!!warnings.length && (
+              <section className="target-readiness-issues target-readiness-warnings">
+                <h4>Warnings</h4>
+                {warnings.map((item, index) => <div key={`${item.code || 'warning'}-${index}`}><Icon name="warning" size={13} /><span><strong>{item.title}</strong><small>{item.detail}</small></span></div>)}
+              </section>
+            )}
+            {!!checks.length && (
+              <section className="target-readiness-checks">
+                <h4>Preflight checklist</h4>
+                {checks.map((item, index) => (
+                  <div className={`target-readiness-check target-readiness-check-${item.status || 'pass'}`} key={`${item.code || 'check'}-${index}`}>
+                    <i>{item.status === 'pass' ? '✓' : item.status === 'fail' ? '×' : '!'}</i>
+                    <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+                  </div>
+                ))}
+              </section>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={this.closeReadiness}>{blocked || this.state.readinessIntent !== 'start' ? 'Close' : 'Cancel'}</button>
+            {this.state.readinessIntent === 'start' && !blocked && (
+              <button className="btn btn-primary" onClick={this.continueReadinessStart}><Icon name="play" size={12} /> {warning ? 'Start Anyway' : 'Start Tasks'}</button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   renderGroupModal() {
     if (!this.state.showGroupModal) return null;
     const draft = this.state.groupDraft;
     const editing = Boolean(this.state.editingGroupId);
+    const editingGroup = editing
+      ? this.state.groups.find(group => group.id === this.state.editingGroupId)
+      : null;
+    const controlsLocked = !!editingGroup
+      && (editingGroup.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task)));
+    const watchedSkus = parseSkus(draft.skus);
     return (
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeGroupModal()}>
         <div className="modal task-group-modal" onMouseDown={event => event.stopPropagation()}>
@@ -1859,10 +2079,57 @@ class TaskGroups extends Component {
           <div className="modal-body">
             <div className="form-group"><label className="form-label">Group name</label><input className="form-input" autoFocus value={draft.name} placeholder="Friday drop" onChange={event => this.setState({ groupDraft: { ...draft, name: event.target.value } })} /></div>
             <div className="form-group"><label className="form-label">Target SKUs or product URLs</label><textarea className="form-input group-sku-input" value={draft.skus} placeholder={'12345678\nhttps://www.target.com/p/example/-/A-87654321'} onChange={event => this.setState({ groupDraft: { ...draft, skus: event.target.value } })} /><div className="form-hint">One per line or comma-separated. Product names stay outside this field so only valid TCINs reach the monitor.</div></div>
+            {!!watchedSkus.length && (
+              <div className="target-sku-price-list">
+                <div className="target-sku-price-heading">
+                  <span><strong>Per-SKU maximum prices</strong><small>Optional unit-price ceilings. Empty means no maximum.</small></span>
+                  {controlsLocked && <em>Stop running tasks to edit</em>}
+                </div>
+                {watchedSkus.map(sku => {
+                  const rawPrice = (draft.maxPrices || {})[sku] || '';
+                  const invalid = normalizeMaxPrice(rawPrice) === null;
+                  return (
+                    <label className={`target-sku-price-row${invalid ? ' invalid' : ''}`} key={sku}>
+                      <span><small>TCIN</small><strong>{sku}</strong></span>
+                      <span className="target-sku-price-input">
+                        <i>$</i>
+                        <input
+                          className="form-input"
+                          type="text"
+                          inputMode="decimal"
+                          disabled={controlsLocked}
+                          value={rawPrice}
+                          placeholder="No max"
+                          aria-label={`Maximum price for Target SKU ${sku}`}
+                          onChange={event => this.setSkuMaxPrice(sku, event.target.value)}
+                          onBlur={() => {
+                            const normalized = normalizeMaxPrice(rawPrice);
+                            if (normalized !== null) this.setSkuMaxPrice(sku, normalized);
+                          }}
+                        />
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
             {this.renderProductHistoryPicker(draft)}
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
               <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Stock confidence</label>
+              <select
+                className="form-select"
+                value={draft.stockConfidence || 'any'}
+                disabled={controlsLocked}
+                onChange={event => this.setState({ groupDraft: { ...draft, stockConfidence: event.target.value } })}
+              >
+                <option value="any">Any in-stock signal</option>
+                <option value="confirmed-10-plus">Confirmed 10+ units</option>
+              </select>
+              <div className="form-hint">Confirmed 10+ ignores low or unknown stock quantities. This applies to every SKU in the group.</div>
             </div>
             <label className={`task-repeat-toggle task-repeat-toggle-modal${draft.loopCheckout ? ' enabled' : ''}`}>
               <input type="checkbox" checked={draft.loopCheckout === true} onChange={event => this.setState({ groupDraft: { ...draft, loopCheckout: event.target.checked } })} />
@@ -1894,7 +2161,7 @@ class TaskGroups extends Component {
               <input type="checkbox" checked={this.state.taskLoopCheckout === true} onChange={event => this.setState({ taskLoopCheckout: event.target.checked })} />
               <span><strong>Loop checkout for these tasks</strong><small>After a checkout or decline, keep trying eligible SKUs. Confirmed orders stop at two per account, per SKU, within four hours.</small></span>
             </label>
-            <div className="form-label">Accounts</div>
+            <div className="form-label task-account-section-label">Accounts</div>
             <div className="task-account-picker">
               {!accounts.length && <div className="task-account-empty">No accounts are tagged Target. Add them from Accounts first.</div>}
               {accounts.map(account => {

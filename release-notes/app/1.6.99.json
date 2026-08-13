@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.99",
+  "notes": [
+    "Target task groups now support per-SKU price limits, stock confidence, and launch readiness checks.",
+    "Filler-item checkout is more reliable, with pre-cart support and automatic post-checkout cleanup.",
+    "Completed tasks can be reset without rebuilding them, and OTP polling progress is now visible.",
+    "Accounts and proxies now share the grouped workspace experience with backup-safe organization."
+  ]
+}

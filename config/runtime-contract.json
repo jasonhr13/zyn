@@ -15,7 +15,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.6.98",
+    "version": "1.6.99",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "62f2fdb4bce7ac523997207be7a23d4ad61f66d39d7dfc90948ceaec95034272"
+      "sha256": "eff7411f484ccfe38cda2720fb60105da578804292bbec651a9e8e149f7563fc"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "b21f095581bea51f2a5dad1d9dc722485a6a3433974b5c3c60e40662ff619b45"
+      "sha256": "62be7b037b0225224b107e81fa07abb78aae9c5cc8ef2d927255b80f668ed60b"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "db8c74b00cfbc59ed7c953835fc49ca604a70cfa49d06c06427d6d6b159b70d5"
+      "sha256": "dcd9dea4c041f469ac79aa4960facf0a04b2b65e53e3c031499ca1fb7019f9e4"
     }
   },
   "requiredResources": [
@@ -58,11 +58,14 @@
     "Contents/Resources/app/target-product-history.js",
     "Contents/Resources/app/task-group-scheduler.js",
     "Contents/Resources/app/target-group-launch.js",
+    "Contents/Resources/app/target-readiness.js",
     "Contents/Resources/app/target-cookie-standby.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/app/imap-password.js",
     "Contents/Resources/app/imap-connection.js",
     "Contents/Resources/app/profile-imap-control.js",
+    "Contents/Resources/app/account-group-control.js",
+    "Contents/Resources/app/proxy-group-control.js",
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/harvester-extension-bridge.js",

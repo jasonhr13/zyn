@@ -23,6 +23,17 @@ const read = (name, fallback = null) => {
   try { return JSON.parse(fs.readFileSync(jsonPath(name), 'utf8')); } catch { return fallback; }
 };
 
+assert.deepEqual(__test.localProxyLists({
+  groups: ['Drops', 'Empty Group'],
+  lists: [
+    { name: 'Local', raw: 'local.example:8000:user:pass', groups: ['Drops'] },
+    { name: 'Remote', ref: 'managed:11111111-2222-4333-8444-555555555555', managed: true, raw: 'never-export' },
+  ],
+}), {
+  groups: ['Drops', 'Empty Group'],
+  lists: [{ name: 'Local', raw: 'local.example:8000:user:pass', groups: ['Drops'] }],
+}, 'cloud backup did not preserve local proxy organization or excluded managed proxy data');
+
 const walkFiles = (root, relative = '') => {
   const result = {};
   let entries = [];
@@ -50,6 +61,7 @@ const initial = {
     id: 'account-current', email: 'user@example.com', password: 'enc:portable-password',
     cookie: 'site-session-cookie', auth: { accessToken: 'nested-site-session' },
   }],
+  accountGroups: { version: 1, groups: ['Existing Accounts'] },
   proxies: { lists: [{ name: 'Personal', raw: 'local.example:8000:user:pass' }] },
   settings: {
     shapeMethod: 'Harvester',
@@ -90,6 +102,7 @@ const initial = {
 function resetFiles() {
   write('profiles.json', initial.profiles);
   write('accounts.json', initial.accounts);
+  write('account-groups.json', initial.accountGroups);
   write('proxies.json', initial.proxies);
   write('settings.json', initial.settings);
   write('last-orders.json', initial.lastOrders);
@@ -132,6 +145,7 @@ const dataManager = {
       app: 'zyn', kind: 'settings-export', version: 1, exportedAt: 1735689600000,
       profiles: currentProfiles(),
       accounts: currentAccounts(),
+      accountGroups: read('account-groups.json', { version: 1, groups: [] }),
       proxies: { lists: [
         ...read('proxies.json', { lists: [] }).lists,
         { name: 'Admin', ref: 'managed:11111111-2222-4333-8444-555555555555', managed: true, raw: 'remote:secret' },
@@ -173,6 +187,7 @@ const dataManager = {
       write('accounts.json', replace ? incoming : [...existing, ...additions]);
       summary.accounts = replace ? { set: incoming.length } : { added: additions.length };
     }
+    if (bundle.accountGroups) write('account-groups.json', bundle.accountGroups);
     if (bundle.proxies) write('proxies.json', bundle.proxies);
     if (bundle.lastOrders) write('last-orders.json', replace ? bundle.lastOrders : {
       ...read('last-orders.json', {}), ...bundle.lastOrders,
@@ -244,6 +259,7 @@ function comprehensiveBundle(app = 'zyn') {
       id: 'account-new', email: 'new@example.com', password: 'new-account-password',
       cookie: 'must-not-restore',
     }],
+    accountGroups: { version: 1, groups: ['Imported Accounts', 'Empty Account Group'] },
     proxies: { lists: [
       { name: 'Imported local', raw: 'imported.example:9000:user:pass' },
       { name: 'managed:forged', raw: 'must-not-restore' },
@@ -339,6 +355,7 @@ try {
   assert.equal(exported.accounts[0].password, 'portable-password');
   assert.equal(exported.accounts[0].cookie, undefined, 'site session cookie reached the cloud bundle');
   assert.equal(exported.accounts[0].auth.accessToken, undefined, 'nested account session reached the cloud bundle');
+  assert.deepEqual(exported.accountGroups, initial.accountGroups);
   assert.deepEqual(exported.proxies, { lists: initial.proxies.lists });
   assert.equal(JSON.stringify(exported).includes('remote:secret'), false, 'managed proxy reached the cloud bundle');
   const masterKey = Buffer.alloc(32, 7);
@@ -428,6 +445,7 @@ try {
   assert.equal(taskGroupSyncs.at(-1).summary.skippedUnsupported, 1);
   assert.equal(baseImports.at(-1).bundle.settings, undefined);
   assert.equal(baseImports.at(-1).bundle.accounts[0].cookie, undefined);
+  assert.deepEqual(baseImports.at(-1).bundle.accountGroups, bundle.accountGroups);
   assert.deepEqual(baseImports.at(-1).bundle.proxies, {
     lists: [{ name: 'Imported local', raw: 'imported.example:9000:user:pass' }],
   });

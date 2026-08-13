@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const TASK_GROUP_SCHEMA_VERSION = 3;
+const TASK_GROUP_SCHEMA_VERSION = 4;
 const TASK_GROUP_FILE = 'task-groups.json';
 const LEGACY_TARGET_FILE = 'target-tasks.json';
 const MAX_GROUPS = 200;
@@ -17,6 +17,48 @@ function boundedText(value, maximum, fallback = '') {
 
 function quantity(value) {
   return Math.max(1, Math.min(99, Number.parseInt(value, 10) || 2));
+}
+
+function parseSku(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const direct = (text.match(/^(\d{6,})/) || [])[1];
+  if (direct) return direct;
+  const marker = text.toUpperCase().lastIndexOf('A-');
+  return ((marker >= 0 ? text.slice(marker + 2) : text).match(/^\d{6,}/) || [])[0] || '';
+}
+
+function normalizeMaxPrice(value) {
+  const text = String(value == null ? '' : value).trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!text) return '';
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return '';
+  const number = Number(text);
+  return Number.isFinite(number) && number > 0 && number <= 100000
+    ? number.toFixed(2)
+    : '';
+}
+
+function normalizeWatchedItems(group) {
+  const candidate = group && typeof group === 'object' ? group : {};
+  const result = [];
+  const seen = new Set();
+  const add = (rawSku, rawMaxPrice = '') => {
+    const sku = parseSku(rawSku);
+    if (!sku || seen.has(sku)) return;
+    seen.add(sku);
+    result.push({ sku, maxPrice: normalizeMaxPrice(rawMaxPrice) });
+  };
+  if (Array.isArray(candidate.items)) {
+    for (const item of candidate.items) {
+      if (item && typeof item === 'object') {
+        add(item.sku || item.tcin || item.monitorInput, item.maxPrice);
+      } else {
+        add(item);
+      }
+    }
+  }
+  for (const value of String(candidate.skus || '').slice(0, 20000).split(/[\n,]/)) add(value);
+  return result;
 }
 
 function normalizeSchedule(raw, site = 'target') {
@@ -60,17 +102,24 @@ function normalizeGroup(raw, index = 0, options = {}) {
   const createId = options.createId || (() => crypto.randomUUID());
   const now = options.now || Date.now();
   const createdAt = Number(group.createdAt) > 0 ? Math.floor(Number(group.createdAt)) : now;
+  const items = normalizeWatchedItems(group);
   const normalized = {
     id: safeId(group.id, `group${index + 1}`, createId),
     name: boundedText(group.name, 80, `Target Group ${index + 1}`) || `Target Group ${index + 1}`,
     site: 'target',
-    skus: String(group.skus || '').slice(0, 20000),
+    // `items` is canonical in v4. Keep the newline mirror so rollback builds and portable backups
+    // still see the same Target watch list even though they do not understand per-SKU ceilings.
+    items,
+    skus: items.map(item => item.sku).join('\n'),
     qty: quantity(group.qty),
     proxyListName: boundedText(group.proxyListName, 240),
     loopCheckout: group.loopCheckout != null
       ? group.loopCheckout === true
       : group.repeatCheckout === true,
     useFillerItem: group.useFillerItem === true,
+    stockConfidence: group.stockConfidence === 'confirmed-10-plus' || group.ignoreLowStock === true
+      ? 'confirmed-10-plus'
+      : 'any',
     createdAt,
     updatedAt: Number(group.updatedAt) > 0 ? Math.floor(Number(group.updatedAt)) : now,
     tasks: [],
@@ -211,6 +260,8 @@ function createTaskGroupStore(dataDirectory, options = {}) {
 
 module.exports = {
   TASK_GROUP_SCHEMA_VERSION,
+  normalizeMaxPrice,
+  normalizeWatchedItems,
   normalizeSchedule,
   normalizeGroup,
   normalizeGroups,

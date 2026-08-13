@@ -6,8 +6,38 @@ function parseSkus(raw) {
     if (!value) return '';
     const marker = value.toUpperCase().lastIndexOf('A-');
     const candidate = marker >= 0 ? value.slice(marker + 2) : value;
-    return (candidate.match(/^\d+/) || [])[0] || '';
+    return (candidate.match(/^\d{6,}/) || [])[0] || '';
   }).filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
+}
+
+function normalizeMaxPrice(value) {
+  const text = String(value == null ? '' : value).trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!text || !/^\d+(?:\.\d{1,2})?$/.test(text)) return '';
+  const number = Number(text);
+  return Number.isFinite(number) && number > 0 && number <= 100000 ? number.toFixed(2) : '';
+}
+
+function parseWatchedItems(group) {
+  const candidate = group && typeof group === 'object' ? group : {};
+  const bySku = new Map();
+  if (Array.isArray(candidate.items)) {
+    for (const item of candidate.items) {
+      const raw = item && typeof item === 'object'
+        ? item.sku || item.tcin || item.monitorInput
+        : item;
+      const sku = parseSkus(raw)[0];
+      if (sku && !bySku.has(sku)) {
+        bySku.set(sku, {
+          sku,
+          maxPrice: normalizeMaxPrice(item && typeof item === 'object' ? item.maxPrice : ''),
+        });
+      }
+    }
+  }
+  for (const sku of parseSkus(candidate.skus)) {
+    if (!bySku.has(sku)) bySku.set(sku, { sku, maxPrice: '' });
+  }
+  return [...bySku.values()];
 }
 
 function profileList(profiles) {
@@ -34,8 +64,9 @@ function buildTargetGroupLaunch(group, { accounts = [], profiles = [] } = {}) {
   if (String(candidate.site || 'target').toLowerCase() !== 'target') {
     return { ok: false, error: 'Only Target task groups can be scheduled.' };
   }
-  const skus = parseSkus(candidate.skus);
-  if (!skus.length) return { ok: false, error: 'Add at least one Target SKU to this task group first.' };
+  const items = parseWatchedItems(candidate);
+  const skus = items.map(item => item.sku);
+  if (!items.length) return { ok: false, error: 'Add at least one Target SKU to this task group first.' };
 
   const tasks = [];
   let skipped = 0;
@@ -68,8 +99,11 @@ function buildTargetGroupLaunch(group, { accounts = [], profiles = [] } = {}) {
     config: {
       tasks,
       skus,
+      items,
       qty: Math.max(1, Math.min(99, Number.parseInt(candidate.qty, 10) || 2)),
       useFillerItem: candidate.useFillerItem === true,
+      stockConfidence: candidate.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
+      ignoreLowStock: candidate.stockConfidence === 'confirmed-10-plus',
     },
     skipped,
   };
@@ -91,6 +125,7 @@ function otherTargetGroupRunning(groups, groupId, isTaskRunning) {
 
 module.exports = {
   parseSkus,
+  parseWatchedItems,
   resolveProfileForTask,
   buildTargetGroupLaunch,
   groupHasRunningTasks,

@@ -517,13 +517,17 @@ function editTargetTasks(config = {}) {
   const skus = [...new Set((Array.isArray(config.skus) ? config.skus : [])
     .map(value => String(value || '').trim())
     .filter(value => /^\\d{6,}$/.test(value)))];
+  const maxPriceBySku = new Map((Array.isArray(config.items) ? config.items : [])
+    .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
+    .filter(([sku]) => skus.includes(sku)));
+  const ignoreLowStock = config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus';
   const qty = Math.max(1, parseInt(config.qty, 10) || 1);
   const selected = (Array.isArray(config.tasks) ? config.tasks : [])
     .filter(task => task && task.id && runningTaskIds.has(task.id));
   if (!selected.length) return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'No selected Target tasks are running.' };
 
   const makeItems = list => list.map(sku => ({
-    id: sku, monitorInput: sku, quantity: String(qty), color: '', sizes: [], maxPrice: '',
+    id: sku, monitorInput: sku, quantity: String(qty), color: '', sizes: [], maxPrice: maxPriceBySku.get(sku) || '',
   }));
   let cappedTasks = 0;
   const messages = selected.map(task => {
@@ -539,7 +543,7 @@ function editTargetTasks(config = {}) {
       log('[limit] live edit skipped ' + capped.join(', ') + ' for this account', task.id);
     }
     const items = makeItems(eligible);
-    return { id: task.id, type: 'Target', site: 'Target', item: items, monitorItems: items };
+    return { id: task.id, type: 'Target', site: 'Target', item: items, monitorItems: items, ignoreLowStock };
   });
 
   const sent = sendToEngine({ type: 'edit-tasks', messages });
@@ -551,8 +555,10 @@ function editTargetTasks(config = {}) {
     taskCheckoutConfigById.set(message.id, {
       ...existing,
       skus: message.monitorItems.map(item => item.monitorInput),
+      maxPriceBySku: Object.fromEntries(message.monitorItems.map(item => [item.monitorInput, item.maxPrice || ''])),
       qty,
       proxyListName: selectedTask.proxyListName || existing.proxyListName || '',
+      ignoreLowStock,
     });
   });
 
@@ -576,7 +582,8 @@ function editTargetTasks(config = {}) {
       site: 'Target',
       proxyGroup: String(first.proxyListName || '').trim() || 'Local',
       monitorDelay: '4000',
-      items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: '' })),
+      ignoreLowStock,
+      items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: maxPriceBySku.get(sku) || '' })),
     }] });
     if (monitorRefreshed) {
       liveEditMonitorTimer = setTimeout(() => {
@@ -657,23 +664,28 @@ function queueTargetMonitorStop(id) {
 
 function targetMainMonitorSpec() {
   const quantities = new Map();
+  const maxPrices = new Map();
+  let ignoreLowStock = false;
   let proxyGroup = 'Local';
   for (const id of runningTaskIds) {
     const config = taskCheckoutConfigById.get(id);
     if (!config) continue;
     if (proxyGroup === 'Local') proxyGroup = String(config.proxyListName || '').trim() || 'Local';
     const qty = Math.max(1, parseInt(config.qty, 10) || 1);
+    ignoreLowStock = ignoreLowStock || config.ignoreLowStock === true;
     for (const rawSku of (config.skus || [])) {
       const sku = String(rawSku || '').trim();
       if (!sku) continue;
       const previous = quantities.get(sku);
       quantities.set(sku, previous == null ? qty : Math.min(previous, qty));
+      const maxPrice = String((config.maxPriceBySku || {})[sku] || '').trim();
+      if (maxPrice) maxPrices.set(sku, maxPrice);
     }
   }
   const items = [...quantities.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([monitorInput, quantity]) => ({ monitorInput, quantity: String(quantity), maxPrice: '' }));
-  return { items, proxyGroup };
+    .map(([monitorInput, quantity]) => ({ monitorInput, quantity: String(quantity), maxPrice: maxPrices.get(monitorInput) || '' }));
+  return { items, proxyGroup, ignoreLowStock };
 }
 
 function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
@@ -684,7 +696,7 @@ function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
     quantity: item.quantity,
     color: '',
     sizes: [],
-    maxPrice: '',
+    maxPrice: item.maxPrice || '',
   }));
   return sendToEngine({
     type: 'edit-tasks',
@@ -693,6 +705,7 @@ function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
       type: 'Target',
       site: 'Target',
       proxyGroup: spec.proxyGroup,
+      ignoreLowStock: spec.ignoreLowStock,
       item: monitorItems,
       monitorItems,
     }],
@@ -724,6 +737,7 @@ function reconcileTargetMainMonitor() {
       site: 'Target',
       proxyGroup: spec.proxyGroup,
       monitorDelay: '4000',
+      ignoreLowStock: spec.ignoreLowStock,
       items: spec.items,
     }] });
   if (!sent) {
@@ -793,11 +807,11 @@ function enforceTargetLoopCheckout(taskId, accountId, purchasedTcin) {
   }
 
   const items = eligible.map(sku => ({
-    id: sku, monitorInput: sku, quantity: String(config.qty), color: '', sizes: [], maxPrice: '',
+    id: sku, monitorInput: sku, quantity: String(config.qty), color: '', sizes: [], maxPrice: String((config.maxPriceBySku || {})[sku] || ''),
   }));
   if (!sendToEngine({
     type: 'edit-tasks',
-    messages: [{ id: taskId, type: 'Target', site: 'Target', item: items, monitorItems: items }],
+    messages: [{ id: taskId, type: 'Target', site: 'Target', item: items, monitorItems: items, ignoreLowStock: config.ignoreLowStock === true }],
   })) {
     log('[loop] could not remove capped SKUs — stopping for safety', taskId);
     stopTarget(taskId);
@@ -909,7 +923,17 @@ function sendStart(config) {
     }
   } catch {}`, 'Target farmer account email');
   source = replaceOnce(source, `  const loginMode = otpEnabled() ? 'otp' : 'password';`, `  const loginMode = otpEnabled(config.profileId, accountEmail) ? 'otp' : 'password';`, 'Target farmer login mode');
-  source = replaceOnce(source, `    useOtpLogin: otpEnabled(), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, `    useOtpLogin: otpEnabled(t.profileId), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, 'Target task OTP mode');
+  source = replaceOnce(source, `    useOtpLogin: otpEnabled(), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, `    useOtpLogin: otpEnabled(t.profileId), startSchedule: '', stopSchedule: '', ignoreLowStock: config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus',`, 'Target task OTP and stock-confidence mode');
+
+  source = replaceOnce(source,
+    `  const itemsFor = (list) => list.map(s => ({ id: s, monitorInput: s, quantity: String(config.qty || 2), color: '', sizes: [] }));`,
+    `  const maxPriceBySku = Object.fromEntries((Array.isArray(config.items) ? config.items : [])
+    .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
+    .filter(([sku]) => sku));
+  const itemsFor = (list) => list.map(s => ({
+    id: s, monitorInput: s, quantity: String(config.qty || 2), color: '', sizes: [], maxPrice: maxPriceBySku[s] || '',
+  }));`,
+    'Target per-SKU max-price items');
 
   source = replaceOnce(source,
     `    loopCheckout: false, waitForQueue: false, QueueEntryDelay: '0',`,
@@ -952,9 +976,13 @@ function sendStart(config) {
     taskProfileById.set(t.id, t.profileId || '');
     taskCheckoutConfigById.set(t.id, {
       skus: [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))],
+      maxPriceBySku: Object.fromEntries((Array.isArray(config.items) ? config.items : [])
+        .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
+        .filter(([sku]) => sku)),
       qty: Math.max(1, parseInt(config.qty, 10) || 2),
       proxyListName: String(t.proxyListName || '').trim(),
       loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
+      ignoreLowStock: config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus',
     });`, 'Target task/profile association');
   source = replaceOnce(source, `      accountId: first.accountId || '',
       sku:`, `      accountId: first.accountId || '',

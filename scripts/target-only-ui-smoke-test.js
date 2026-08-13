@@ -51,6 +51,14 @@ assert.match(taskGroups, /<TargetOtpInput request=\{otpRequest\} large \/>/,
   'selected task detail does not expose its pending OTP entry');
 assert.match(inlineOtp, /sendSync\('targetSubmitOtp', \{ email: request\.email, code \}\)/);
 assert.match(inlineOtp, /autoComplete="one-time-code"/);
+assert.match(inlineOtp, /target-otp-message[\s\S]*role="status"[\s\S]*aria-live="polite"/,
+  'the OTP control does not surface automatic mailbox progress');
+assert.match(inlineOtp, /phase === 'submitting'[\s\S]*disabled=\{submitting\}/,
+  'the OTP control does not distinguish automatic lookup from code submission');
+assert.match(taskGroups, /Target order-limit history stay unchanged[\s\S]*type: 'targetTaskReset'/,
+  'Target task groups do not provide a safe completed-run reset');
+assert.match(taskGroups, /icon-action-reset[\s\S]*Reset Task/,
+  'Target reset is not available from both the task row and detail view');
 
 assert.match(settings, /Target workspace/);
 assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);

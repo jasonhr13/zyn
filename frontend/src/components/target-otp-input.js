@@ -34,27 +34,39 @@ export default class TargetOtpInput extends Component {
     const { request, large = false } = this.props;
     if (!request) return null;
     const code = this.state.code;
+    const phase = String(request.phase || 'starting');
+    const submitting = phase === 'submitting';
+    const message = request.message || (phase === 'manual'
+      ? 'Enter the code from your Target email.'
+      : 'Checking your configured mailbox for the code…');
     return (
-      <form
-        className={`target-otp-inline${large ? ' target-otp-inline-large' : ''}`}
-        title={`Enter the Target login code for ${request.email}`}
-        aria-label={`Login code needed for ${request.email}`}
-        onSubmit={this.submit}
-        onClick={event => event.stopPropagation()}
-        onKeyDown={event => event.stopPropagation()}
-      >
-        <span className="target-otp-inline-key" aria-hidden="true">OTP</span>
-        <input
-          value={code}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          placeholder="123456"
-          aria-label={`Code for ${request.email}`}
-          onChange={event => this.setState({ code: event.target.value.replace(/\D/g, '').slice(0, 6) })}
-        />
-        <button type="submit" disabled={!validTargetOtp(code)} title="Submit login code" aria-label="Submit login code">→</button>
-      </form>
+      <div className={`target-otp-control${large ? ' target-otp-control-large' : ''}`}>
+        <div className={`target-otp-message target-otp-message-${phase}`} role="status" aria-live="polite" title={message}>
+          <span className="target-otp-message-dot" aria-hidden="true" />
+          <span>{message}</span>
+        </div>
+        <form
+          className={`target-otp-inline${large ? ' target-otp-inline-large' : ''}`}
+          title={`Enter the Target login code for ${request.email}`}
+          aria-label={`Login code needed for ${request.email}`}
+          onSubmit={this.submit}
+          onClick={event => event.stopPropagation()}
+          onKeyDown={event => event.stopPropagation()}
+        >
+          <span className="target-otp-inline-key" aria-hidden="true">OTP</span>
+          <input
+            value={code}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder={submitting ? 'Sending' : '123456'}
+            aria-label={`Code for ${request.email}`}
+            disabled={submitting}
+            onChange={event => this.setState({ code: event.target.value.replace(/\D/g, '').slice(0, 6) })}
+          />
+          <button type="submit" disabled={submitting || !validTargetOtp(code)} title="Submit login code" aria-label="Submit login code">→</button>
+        </form>
+      </div>
     );
   }
 }
