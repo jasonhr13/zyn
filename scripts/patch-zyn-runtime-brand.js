@@ -92,11 +92,12 @@ remoteMain.initialize();
   const harvesterIpc = `${cookieBankAnchor}
 
 // The renderer persists the complete harvester list through saveSettings, then asks the bridge to
-// reconcile producer processes immediately. Schedules are also rechecked every 15 seconds.
-ipcMain.on('syncTargetHarvesters', (e) => {
+// reconcile producer processes immediately. Only an explicit Start/Stop click includes a run
+// command; ordinary settings/proxy syncs can never grant session start authorization.
+ipcMain.on('syncTargetHarvesters', (e, runCommand) => {
   if (moduleBlocked('target')) { refuseModule('Target'); e.returnValue = false; return; }
   if (!licensed()) { refuseUnlicensed('syncTargetHarvesters'); e.returnValue = false; return; }
-  try { e.returnValue = targetEngine.syncTargetHarvesters(mainWindow); }
+  try { e.returnValue = targetEngine.syncTargetHarvesters(mainWindow, runCommand || null); }
   catch (err) { log.warn('syncTargetHarvesters:', err.message); e.returnValue = false; }
 });
 

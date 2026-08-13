@@ -320,6 +320,25 @@ let analyticsService = null;
 let harvesterExtensionBridge = null;
 let cloudBackupManager = null;
 
+function disarmPersistedTargetHarvesters() {
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const settings = dataManager.getSettings?.() || {};
+    if (!Array.isArray(settings.targetHarvesters)) return 0;
+    let disarmed = 0;
+    const targetHarvesters = settings.targetHarvesters.map(harvester => {
+      if (!harvester || typeof harvester !== 'object' || harvester.enabled !== true) return harvester;
+      disarmed += 1;
+      return { ...harvester, enabled: false };
+    });
+    if (disarmed) dataManager.saveSettings({ ...settings, targetHarvesters });
+    return disarmed;
+  } catch (error) {
+    console.error(`Could not disarm saved Target harvesters: ${error.message}`);
+    return 0;
+  }
+}
+
 function installHarvesterExtensionCompatibility(authority) {
   try {
     const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
@@ -1336,6 +1355,9 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   isolateModernChromiumStorage();
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
+  // `enabled` existed as persisted run state in earlier builds. Clear it before the original app,
+  // license authority, or cookie broker can load; configurations and schedules remain intact.
+  disarmPersistedTargetHarvesters();
   installTaskGroups();
   targetProductHistoryStore = installTargetProductHistory();
   const profileImapControl = installProfileImap();

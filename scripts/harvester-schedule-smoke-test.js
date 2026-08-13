@@ -40,6 +40,7 @@ const sandbox = {
   result: null,
 };
 vm.runInNewContext(`${configSource}
+setManagedHarvesterRunning({ id: 'scheduled-harvester', running: true });
 const smokeConfig = managedHarvesterConfigs()[0];
 result = {
   config: smokeConfig,

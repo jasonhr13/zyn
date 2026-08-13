@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.0",
+  "notes": [
+    "Cookie harvesters now start stopped whenever Zyn opens and require an explicit Start click.",
+    "Harvester configuration, proxy edits, and restored settings can no longer launch workers implicitly.",
+    "Saved schedules remain available but must be armed with Start again for each app session."
+  ]
+}

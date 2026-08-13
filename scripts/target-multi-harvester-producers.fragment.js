@@ -151,8 +151,12 @@ function armHarvesterScheduleSync() {
   harvesterSyncTimer.unref?.();
 }
 
-function syncTargetHarvesters(mainWindow) {
+function syncTargetHarvesters(mainWindow, runCommand = null) {
   if (mainWindow) attachWindow(mainWindow);
+  // Reconciliation alone never grants permission to start. Only the renderer's explicit Start or
+  // Stop action sends a validated command; all other callers merely apply configuration changes to
+  // harvesters already authorized during this app session.
+  if (runCommand && typeof runCommand === 'object') setManagedHarvesterRunning(runCommand);
   ensureHarvesterBroker();
   syncTargetCookieBankDemand();
   return true;

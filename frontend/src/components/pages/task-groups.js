@@ -54,7 +54,8 @@ const EMPTY_HARVESTER = Object.freeze({
   intervalDelaySec: '10',
   startSchedule: '',
   stopSchedule: '',
-  enabled: true,
+  // Saving a new configuration must not be equivalent to clicking Start.
+  enabled: false,
 });
 
 const HARVESTER_BROWSERS = [
@@ -348,7 +349,7 @@ class TaskGroups extends Component {
     if (key === 'targetThrottleFallbackGroup') this.setState({ throttleFallbackGroup: value });
   };
 
-  persistHarvesters = (harvesters, callback) => {
+  persistHarvesters = (harvesters, callback, runCommand = null) => {
     const normalized = harvesters.map(normalizeHarvester);
     const requestedAt = Date.now();
     const expectsBroker = targetBankPresentation(null, normalized, { now: requestedAt }).activeHarvesters > 0;
@@ -370,7 +371,7 @@ class TaskGroups extends Component {
         ? previous.brokerStartRequestedAt || requestedAt
         : 0,
     }), () => {
-      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+      try { ipcRenderer.sendSync('syncTargetHarvesters', runCommand); } catch {}
       if (callback) callback();
     });
   };
@@ -441,9 +442,10 @@ class TaskGroups extends Component {
       window.alert(`Proxy group “${harvester.proxyListName}” is unavailable. Edit this harvester before starting it.`);
       return;
     }
+    const running = !harvester.enabled;
     const harvesters = this.state.harvesters.map(item => item.id === harvester.id
-      ? { ...item, enabled: !item.enabled } : item);
-    this.persistHarvesters(harvesters);
+      ? { ...item, enabled: running } : item);
+    this.persistHarvesters(harvesters, null, { id: harvester.id, running });
   };
 
   deleteHarvester = harvester => {
@@ -1936,10 +1938,7 @@ class TaskGroups extends Component {
                 <input className="form-input" type="datetime-local" value={draft.stopSchedule} onChange={event => setDraft({ stopSchedule: event.target.value })} />
               </div>
             </div>
-            <label className="target-harvester-enabled">
-              <input type="checkbox" checked={draft.enabled !== false} onChange={event => setDraft({ enabled: event.target.checked })} />
-              <span><strong>Start this harvester</strong><small>Future schedules wait until their start time. Zyn must remain open.</small></span>
-            </label>
+            <div className="form-hint">Saving never starts a harvester. Use its Start button to arm it for this app session; a future schedule waits after you click Start.</div>
           </div>
           <div className="modal-footer">
             <button className="btn btn-secondary" onClick={this.closeHarvesterModal}>Cancel</button>

@@ -54,6 +54,9 @@ Paste your own proxy lines into the extension textarea (`host:port` or `host:por
 3. Watch Zyn’s Target cookie bank for login/ATC counts
 
 Banked cookies are tagged `source: extension` and use Zyn’s **Cookie TTL** setting.
+Zyn’s **ATC cookies per task** setting is the only cookie-count authority; the extension follows the
+exact deficit reported by Zyn and does not expose a separate per-task multiplier. The extension’s
+expiry value is a requested lifetime in minutes and is capped by Zyn’s configured Cookie TTL.
 
 ## Notes
 

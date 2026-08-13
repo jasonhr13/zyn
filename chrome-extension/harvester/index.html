@@ -45,19 +45,9 @@
                         </label>
                     </div>
 
-                    <div class="inputBox">
-                        <img class="actionImage" src="assets/checklist.svg" alt="" aria-hidden="true">
-                        <span class="actionText">Cookies/Task</span>
-                        <div class="counterInput" data-counter-key="cookiesPerTask">
-                            <button class="minus-plus" type="button" data-counter-action="decrement" aria-label="Decrease cookies per task">
-                                <img src="assets/minus.svg" alt="">
-                            </button>
-                            <span class="countValue" id="cookiesPerTaskValue">3</span>
-                            <button class="minus-plus" type="button" data-counter-action="increment" aria-label="Increase cookies per task">
-                                <img src="assets/plus.svg" alt="">
-                            </button>
-                        </div>
-                    </div>
+                    <!-- The legacy popup script still writes this compatibility sink. Zyn owns the
+                         authoritative per-task target, so exposing a second control was misleading. -->
+                    <span id="cookiesPerTaskValue" hidden aria-hidden="true">3</span>
 
                     <div class="inputBox">
                         <img class="actionImage" src="assets/cookie.svg" alt="" aria-hidden="true">

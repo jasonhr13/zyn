@@ -955,19 +955,6 @@ body.theme-night .form-select {
 .target-harvester-modal-body { display: flex; flex-direction: column; gap: 2px; }
 .target-harvester-input { min-height: 74px; resize: vertical; }
 .target-harvester-schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.target-harvester-enabled {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 11px;
-  border: 1px solid var(--panel-border);
-  border-radius: 9px;
-  background: var(--panel-bg-alt);
-  cursor: pointer;
-}
-.target-harvester-enabled > span { display: flex; flex-direction: column; gap: 3px; }
-.target-harvester-enabled strong { color: var(--text2); font-size: 10px; }
-.target-harvester-enabled small { color: var(--muted); font-size: 9px; }
 
 .task-metrics-row {
   display: grid;

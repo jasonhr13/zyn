@@ -46,7 +46,14 @@ assert.ok(harvestButton.querySelector('.actionIcon'));
 assert.ok(harvestButton.querySelector('.actionButtonText'));
 assert.equal(harvestButton.getAttribute('type'), 'button');
 
-for (const key of ['cookiesPerTask', 'cookieExpiry']) {
+assert.equal(document.getElementById('cookiesPerTaskValue').hidden, true,
+  'legacy Cookies/Task script sink must not be visible');
+assert.equal(document.querySelector('[data-counter-key="cookiesPerTask"]'), null,
+  'extension still exposes its redundant Cookies/Task control');
+assert.doesNotMatch(document.body.textContent, /Cookies\s*\/\s*Task/i,
+  'extension still labels a Cookies/Task setting');
+
+for (const key of ['cookieExpiry']) {
   const counter = document.querySelector(`.counterInput[data-counter-key="${key}"]`);
   assert.ok(counter, `missing ${key} counter`);
   assert.ok(counter.querySelector('.minus-plus[data-counter-action="decrement"]'));
