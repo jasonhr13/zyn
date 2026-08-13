@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.98",
+  "notes": [
+    "Target task groups can optionally pre-cart a filler item before waiting for watched products.",
+    "Filler-item preferences are saved independently for each Target task group.",
+    "Scheduled and manual Target starts now apply the selected filler-item setting consistently.",
+    "Target group summaries show when filler-item mode is enabled and identify its SKU."
+  ]
+}
