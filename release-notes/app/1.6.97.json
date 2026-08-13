@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.6.97",
+  "notes": [
+    "Enter Target login codes directly in the affected task’s status row without blocking the workspace.",
+    "Check AYCD Inbox and the selected profile mailbox concurrently so the first verified code wins.",
+    "React immediately to IMAP new-mail notifications with a one-second polling fallback.",
+    "Continue fetching separate codes safely when multiple tasks are waiting on the same account."
+  ]
+}

@@ -985,6 +985,14 @@ assert.match(target, /cancelAllOtpFetches\(detail\)/,
 assert.match(target, /type: 'code-watcher-ready'/,
   'Target bridge does not acknowledge native OTP watcher readiness');
 assert.match(target, /onLog: \(line\) => log\(String\(line\), taskId\)/);
+assert.match(target, /const found = await Promise\.any\(sources\)/,
+  'AYCD and profile IMAP are not raced for the first verified code');
+assert.match(target, /signal: sourceController\.signal/,
+  'the losing OTP provider cannot be cancelled after another source finds the code');
+assert.match(target, /if \(next && !otpFetches\.has\(key\)\) fetchOtpAndDeliver\(next\.email, next\.taskId\)/,
+  'a sibling task on the same account can be left without a fresh code lookup');
+assert.doesNotMatch(target, /AYCD returned no code.*trying this profile’s IMAP/,
+  'profile IMAP still waits for AYCD to time out before it starts');
 assert.match(target, /Object\.assign\(sentConfigs\.proxies, buildProxyMap\(group\)\)/);
 assert.match(target, /buildProxyMap\(group\)\);\s+sendConfigs\(\);\s+}\s+return sendToEngine\(\{ type: 'set-task-proxy'/,
   'live proxy edits must configure the selected group before switching');

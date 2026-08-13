@@ -5,7 +5,6 @@ import TitleBar from './title-bar';
 import Sidebar from './sidebar';
 import ErrorBoundary from './error-boundary';
 import LicenseGate from './license-gate';
-import OtpBanner from './otp-banner';
 import RuntimeBanner from './runtime-banner';
 import Dashboard from './pages/dashboard';
 import { isTargetProxyStatus } from './target-proxy-status';
@@ -157,9 +156,6 @@ class PageHandler extends Component {
     return (
       <HashRouter>
         <TitleBar />
-        {/* Outside the router on purpose: a login code blocks a task no matter which page is open,
-            and the one place it must never be is only on the page you happen not to be looking at. */}
-        <OtpBanner />
         <RuntimeBanner />
         <div className="body-wrapper">
           <Sidebar taskTypes={license.taskTypes || {}} />

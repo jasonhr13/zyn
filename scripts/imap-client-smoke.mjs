@@ -28,6 +28,7 @@ const {
   receivedAfterMatches,
   searchQuery,
   senderMatches,
+  waitForMailboxChange,
 } = await import(pathToFileURL(modulePath).href);
 
 const now = 1_800_000_000_000;
@@ -235,5 +236,15 @@ assert.equal(delayedResult.code, '222222');
 assert.equal(delayedClient.searchCalls >= 2, true);
 assert.deepEqual(delayedClient.seenUids, [11]);
 
-process.stdout.write('IMAP freshness, delayed delivery, filtering, socket-error handling, and cancellation smoke test passed\n');
+// A real ImapFlow connection enters IDLE between scans. A new-message EXISTS notification should
+// interrupt the polling fallback so a code already arriving in INBOX is read immediately.
+const idleClient = new FakeImapClient(() => []);
+const idleStartedAt = Date.now();
+const idleWait = waitForMailboxChange(idleClient, 500);
+setTimeout(() => idleClient.emit('exists', { path: 'INBOX', count: 1, prevCount: 0 }), 15);
+assert.equal(await idleWait, 'exists');
+assert.equal(Date.now() - idleStartedAt < 300, true);
+assert.equal(idleClient.listenerCount('exists'), 0);
+
+process.stdout.write('IMAP freshness, IDLE wakeup, delayed delivery, filtering, socket-error handling, and cancellation smoke test passed\n');
 if (temporaryModuleDirectory) fs.rmSync(temporaryModuleDirectory, { recursive: true, force: true });

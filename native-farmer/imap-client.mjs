@@ -13,10 +13,29 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 1000;
 const SEARCH_WINDOW_MS = 10 * 60 * 1000;
 const MAX_RECENT_CANDIDATES = 100;
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ImapFlow enters IDLE automatically whenever its command queue is empty. Wake the next scan as
+// soon as the server announces a changed INBOX count, while retaining a short timer for providers
+// that do not deliver reliable IDLE notifications.
+export function waitForMailboxChange(client, timeoutMs) {
+  return new Promise(resolve => {
+    let timer;
+    let settled = false;
+    const finish = reason => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (typeof client?.removeListener === 'function') client.removeListener('exists', onExists);
+      resolve(reason);
+    };
+    const onExists = () => finish('exists');
+    if (typeof client?.once === 'function') client.once('exists', onExists);
+    timer = setTimeout(() => finish('poll'), Math.max(0, Number(timeoutMs) || 0));
+  });
+}
 
 export function isAbortError(error) {
   return error?.name === 'AbortError' || error?.code === 'ABORT_ERR';
@@ -243,7 +262,7 @@ export async function fetchAuthCode(
     while (Date.now() <= deadline) {
       const matches = await recentCandidateUids(client, run, MAX_RECENT_CANDIDATES);
       if (!matches.length) {
-        await run(() => delay(Math.min(pollDelayMs, Math.max(0, deadline - Date.now()))));
+        await run(() => waitForMailboxChange(client, Math.min(pollDelayMs, Math.max(0, deadline - Date.now()))));
         continue;
       }
 
@@ -290,7 +309,7 @@ export async function fetchAuthCode(
         await markSeen(client, fallback.uid, run);
         return { code: fallback.code, matchedTo: fallback.matchedTo };
       }
-      await run(() => delay(Math.min(pollDelayMs, Math.max(0, deadline - Date.now()))));
+      await run(() => waitForMailboxChange(client, Math.min(pollDelayMs, Math.max(0, deadline - Date.now()))));
     }
 
     await dumpInboxDiagnostic(client, log, run);

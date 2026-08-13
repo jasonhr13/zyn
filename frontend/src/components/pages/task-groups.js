@@ -27,6 +27,7 @@ import {
   scheduleSummary,
 } from '../task-group-schedule.mjs';
 import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
+import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -1445,6 +1446,11 @@ class TaskGroups extends Component {
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
     const displayStatus = this.proxyStatusFor(task) || status;
+    const otpRequest = targetOtpForTask(
+      this.props.target.otpPending,
+      task.id,
+      account && account.email,
+    );
     const running = targetTaskIsRunning(status);
     const checkouts = this.checkoutCountFor(task);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
@@ -1489,7 +1495,7 @@ class TaskGroups extends Component {
         >
           {checkouts}
         </span>
-        <StatusBadge status={displayStatus} />
+        {otpRequest ? <TargetOtpInput request={otpRequest} /> : <StatusBadge status={displayStatus} />}
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
         <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
           {running ? (
@@ -1508,6 +1514,11 @@ class TaskGroups extends Component {
     const profile = this.profileForAccount(task.accountId);
     const status = this.statusFor(task);
     const displayStatus = this.proxyStatusFor(task) || status;
+    const otpRequest = targetOtpForTask(
+      this.props.target.otpPending,
+      task.id,
+      account && account.email,
+    );
     const tone = targetStatusTone(displayStatus);
     const running = targetTaskIsRunning(status);
     const checkouts = this.checkoutCountFor(task);
@@ -1549,7 +1560,7 @@ class TaskGroups extends Component {
           <section className={`task-status-hero task-status-hero-${tone}`}>
             <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
-            <StatusBadge status={displayStatus} />
+            {otpRequest ? <TargetOtpInput request={otpRequest} large /> : <StatusBadge status={displayStatus} />}
           </section>
 
           {this.renderCookieBank()}

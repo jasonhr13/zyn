@@ -4,6 +4,7 @@ import { connect } from 'react-redux';
 import { proxyLabel, proxyRef } from '../proxy-options';
 import { targetBankMetrics } from '../target-bank-metrics.mjs';
 import { targetStatusTone } from '../target-task-status';
+import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 const { ipcRenderer } = window.require('electron');
 
 // Target runs ONE shared monitor over a list of SKUs plus many checkout tasks. Every task watches
@@ -905,10 +906,6 @@ class Target extends Component {
           </div>
         </div>
 
-        {/* The login-code prompt now lives in OtpBanner, pinned to the top of the app on every page.
-            Here it was only visible if you happened to be on this tab, and only after scrolling past
-            the header — which is exactly how people missed it. */}
-
         {/* The scrolling middle. Header stays above it and the log stays below, so neither can be
             pushed off screen however many tasks there are. */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -1275,6 +1272,8 @@ class Target extends Component {
             ) : shown.map(t => {
               const st = taskStatus[t.id];
               const prof = this.profileForAccount(t.accountId);
+              const accountEmail = this.accountEmail(t.accountId);
+              const otpRequest = targetOtpForTask(target.otpPending, t.id, accountEmail);
               const tlogs = taskLogs[t.id] || [];
               const open = expanded === t.id;
               return (
@@ -1327,7 +1326,7 @@ class Target extends Component {
                     </span>
                     <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {this.accountEmail(t.accountId) || <span style={{ color: '#ff5a5a' }}>account missing</span>}
+                        {accountEmail || <span style={{ color: '#ff5a5a' }}>account missing</span>}
                       </div>
                       <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                         {prof
@@ -1358,8 +1357,10 @@ class Target extends Component {
                     {this.state.proxySwitched && this.state.proxySwitched.id === t.id && (
                       <span style={{ fontSize: 10, color: '#4ade80', whiteSpace: 'nowrap' }}>change sent ✓</span>
                     )}
-                    <div style={{ flex: '0 0 150px' }}>
-                      <StatusPill st={(proxyStatus[t.id] && !proxyStatus[t.id].hidden) ? proxyStatus[t.id] : st} />
+                    <div style={{ flex: otpRequest ? '0 0 190px' : '0 0 150px' }}>
+                      {otpRequest
+                        ? <TargetOtpInput request={otpRequest} />
+                        : <StatusPill st={(proxyStatus[t.id] && !proxyStatus[t.id].hidden) ? proxyStatus[t.id] : st} />}
                     </div>
                     <button
                       className="btn btn-primary btn-sm"

@@ -12,6 +12,9 @@ const accounts = read('frontend/src/components/pages/accounts.js');
 const sidebar = read('frontend/src/components/sidebar.js');
 const routes = read('frontend/src/components/page-handler.js');
 const settings = read('frontend/src/components/pages/settings.js');
+const target = read('frontend/src/components/pages/target.js');
+const taskGroups = read('frontend/src/components/pages/task-groups.js');
+const inlineOtp = read('frontend/src/components/target-otp-input.js');
 
 assert.doesNotMatch(accounts, /SITE_TABS|activeSite|account-site-picker/);
 assert.match(accounts, /addAccountsBulk'[\s\S]*site:\s*'target'/);
@@ -38,6 +41,16 @@ assert.match(routes, /pages\/modules/);
 assert.match(routes, /pages\/pokemoncenter/);
 assert.match(routes, /license\.taskTypes[\s\S]*pokemoncenter/);
 assert.match(routes, /<Redirect to="\/modules" \/>/);
+assert.doesNotMatch(routes, /OtpBanner|otp-banner/,
+  'login-code entry must not return as a global overlay');
+assert.match(target, /otpRequest[\s\S]{0,160}<TargetOtpInput request=\{otpRequest\}/,
+  'legacy Target task rows do not replace their status with OTP entry');
+assert.match(taskGroups, /otpRequest \? <TargetOtpInput request=\{otpRequest\} \/> : <StatusBadge/,
+  'Target group task rows do not replace their status with OTP entry');
+assert.match(taskGroups, /<TargetOtpInput request=\{otpRequest\} large \/>/,
+  'selected task detail does not expose its pending OTP entry');
+assert.match(inlineOtp, /sendSync\('targetSubmitOtp', \{ email: request\.email, code \}\)/);
+assert.match(inlineOtp, /autoComplete="one-time-code"/);
 
 assert.match(settings, /Target workspace/);
 assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);

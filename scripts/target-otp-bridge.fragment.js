@@ -75,6 +75,13 @@ function deliverOtp(addr, code, source, fetchState = null) {
     entry.taskId = [...entry.waiters][0] || entry.taskId;
     entry.since = Date.now();
     log(`[otp] ${entry.waiters.size} more task(s) still waiting on this mailbox`, entry.taskId || '');
+    // The current lookup owns the code it just returned. Start a fresh provider race for the next
+    // waiter after this call's finally block retires the current fetch; otherwise sibling tasks on
+    // the same account can remain visible in the UI with no mailbox lookup behind them.
+    setTimeout(() => {
+      const next = otpPending.get(key);
+      if (next && !otpFetches.has(key)) fetchOtpAndDeliver(next.email, next.taskId);
+    }, 0);
   } else {
     otpPending.delete(key);
   }
@@ -94,8 +101,7 @@ function submitOtpManually(email, code) {
 async function fetchOtpAndDeliver(email, taskId = '') {
   const addr = String(email || '').trim();
   if (!addr) return;
-  // Anchor freshness before trying AYCD. If AYCD times out and IMAP becomes the fallback, the email
-  // may already be a couple of minutes old but still belongs to this exact login request.
+  // Both providers use the same request-time freshness anchor, with a small clock/delivery buffer.
   const receivedAfter = Date.now() - 10000;
   const key = addr.toLowerCase();
   if (otpFetches.has(key)) {
@@ -116,65 +122,121 @@ async function fetchOtpAndDeliver(email, taskId = '') {
   otpPending.set(key, { email: addr, taskId, since: Date.now(), waiters });
   emitOtpPending();
   const botDir = botDirPath();
-  const deliver = (code) => deliverOtp(addr, code, 'from mailbox', fetchState);
+  let sourceController = null;
+  let forwardAbort = null;
   try {
     const aycdKey = getAycdKey();
     const profileId = taskProfileById.get(taskId) || '';
     const c = getImapConfig(profileId, addr);
+    sourceController = new AbortController();
+    forwardAbort = () => {
+      if (!sourceController.signal.aborted) {
+        sourceController.abort(fetchState.controller.signal.reason || new Error('OTP request cancelled'));
+      }
+    };
+    fetchState.controller.signal.addEventListener('abort', forwardAbort, { once: true });
+    if (fetchState.controller.signal.aborted) forwardAbort();
+
+    // Register shared-mailbox ownership before either provider yields. Parallel task requests can
+    // then require exact To: matching instead of letting the first connection consume a sibling's
+    // code through relaxed catch-all matching.
+    const hasImap = Boolean(c.host && c.user && c.password);
+    const mailboxKey = hasImap
+      ? `${String(c.host).toLowerCase()}|${String(c.user).toLowerCase()}`
+      : '';
+    const currentPending = otpPending.get(key);
+    if (currentPending && mailboxKey) currentPending.mailboxKey = mailboxKey;
+
+    const sources = [];
     if (aycdKey) {
-      try {
-        if (typeof globalThis.fetch !== 'function') {
-          try { const u = require('undici'); globalThis.fetch = u.fetch; globalThis.Headers = u.Headers; globalThis.Request = u.Request; globalThis.Response = u.Response; }
-          catch { try { globalThis.fetch = require('node-fetch'); } catch {} }
-        }
-        const script = path.join(botDir, 'aycd-mail-client.mjs');
-        if (fs.existsSync(script)) {
-          log('[otp] checking AYCD Inbox for the Target email', taskId);
-          const { fetchAuthCodeViaAycd } = await import(pathToFileURL(script).href);
-          const found = await fetchAuthCodeViaAycd({
-            apiKey: aycdKey, targetEmail: addr, fromFilter: 'target.com',
-            codePattern: /(\d{4,8})/, timeoutMs: 120000, signal: fetchState.controller.signal,
-          });
-          if (found && found.code) { deliver(found.code); return; }
-          log('[otp] AYCD returned no code' + (c.host ? ' — trying this profile’s IMAP' : ''), taskId);
-        }
-      } catch (e) {
-        if (e?.name === 'AbortError' || e?.code === 'ABORT_ERR') throw e;
-        log('[otp] AYCD failed: ' + ((e && e.message) || e) + (c.host ? ' — falling back to this profile’s IMAP' : ''), taskId);
+      if (typeof globalThis.fetch !== 'function') {
+        try { const u = require('undici'); globalThis.fetch = u.fetch; globalThis.Headers = u.Headers; globalThis.Request = u.Request; globalThis.Response = u.Response; }
+        catch { try { globalThis.fetch = require('node-fetch'); } catch {} }
+      }
+      const script = path.join(botDir, 'aycd-mail-client.mjs');
+      if (fs.existsSync(script)) {
+        log('[otp] checking AYCD Inbox for the Target email', taskId);
+        sources.push((async () => {
+          try {
+            const { fetchAuthCodeViaAycd } = await import(pathToFileURL(script).href);
+            const found = await fetchAuthCodeViaAycd({
+              apiKey: aycdKey, targetEmail: addr, fromFilter: 'target.com',
+              codePattern: /(\d{4,8})/, timeoutMs: 120000, signal: sourceController.signal,
+            });
+            if (!found?.code) throw new Error('AYCD returned no code');
+            return { code: found.code, source: 'from AYCD Inbox' };
+          } catch (error) {
+            if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
+            log('[otp] AYCD failed: ' + ((error && error.message) || error)
+              + (hasImap ? ' — profile IMAP is still checking' : ''), taskId);
+            throw error;
+          }
+        })());
+      } else {
+        log('[otp] AYCD mailbox reader is missing from this Zyn installation', taskId);
       }
     }
-    if (!c.host || !c.user || !c.password) {
-      if (!aycdKey) log('[otp] no OTP source configured — add an IMAP mailbox to the matching profile, or enter the code manually', taskId);
+
+    if (hasImap) {
+      const script = path.join(botDir, 'imap-client.mjs');
+      if (fs.existsSync(script)) {
+        log('[otp] checking the selected profile mailbox for the Target code', taskId);
+        sources.push((async () => {
+          try {
+            const { fetchAuthCode } = await import(pathToFileURL(script).href);
+            // Let other request-code messages from the same engine frame register their mailbox
+            // keys before deciding whether relaxed recipient matching is safe.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const mailboxWaiters = [...otpPending.values()].filter(p => p.mailboxKey === mailboxKey).length;
+            const soloLogin = mailboxWaiters <= 1;
+            if (!soloLogin) {
+              log(`[otp] ${mailboxWaiters} logins share this mailbox — matching each code to its exact recipient`, taskId);
+            }
+            const result = await fetchAuthCode(
+              { host: c.host, port: c.port, user: c.user, password: c.password },
+              addr,
+              /(\d{6})/,
+              240000,
+              {
+                fromFilter: 'target', relaxTo: soloLogin, signal: sourceController.signal, receivedAfter,
+                onLog: (line) => log(String(line), taskId),
+              },
+            );
+            if (!result?.code) throw new Error('No new Target code was found in this mailbox');
+            return { code: result.code, source: 'from profile mailbox' };
+          } catch (error) {
+            if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
+            log('[otp] profile mailbox failed: ' + ((error && error.message) || error), taskId);
+            throw error;
+          }
+        })());
+      } else {
+        log('[otp] mailbox reader is missing from this Zyn installation', taskId);
+      }
+    }
+
+    if (!sources.length) {
+      log('[otp] no OTP source configured — add an IMAP mailbox to the matching profile, or enter the code manually', taskId);
       return;
     }
-    const script = path.join(botDir, 'imap-client.mjs');
-    if (!fs.existsSync(script)) { log('[otp] mailbox reader is missing from this Zyn installation', taskId); return; }
-    log('[otp] checking the selected profile mailbox for the Target code', taskId);
-    const { fetchAuthCode } = await import(pathToFileURL(script).href);
-    // Relaxed recipient matching is safe for one login using this mailbox. With several tasks on
-    // one mailbox, require exact recipients so one task cannot consume another account's code.
-    const mailboxKey = `${String(c.host).toLowerCase()}|${String(c.user).toLowerCase()}`;
-    const currentPending = otpPending.get(key);
-    if (currentPending) currentPending.mailboxKey = mailboxKey;
-    const mailboxWaiters = [...otpPending.values()].filter(p => p.mailboxKey === mailboxKey).length;
-    const soloLogin = mailboxWaiters <= 1;
-    if (!soloLogin) log(`[otp] ${mailboxWaiters} logins share this mailbox — matching each code to its exact recipient`, taskId);
-    const result = await fetchAuthCode(
-      { host: c.host, port: c.port, user: c.user, password: c.password },
-      addr,
-      /(\d{6})/,
-      240000,
-      {
-        fromFilter: 'target', relaxTo: soloLogin, signal: fetchState.controller.signal, receivedAfter,
-        onLog: (line) => log(String(line), taskId),
-      },
-    );
-    if (result && result.code) { deliver(result.code); return; }
-    log('[otp] no new Target code was found in this mailbox', taskId);
+
+    // AYCD and the profile inbox start together. The first verified code wins; aborting the shared
+    // source controller immediately closes the losing IMAP socket or AYCD HTTP poll.
+    const found = await Promise.any(sources);
+    if (deliverOtp(addr, found.code, found.source, fetchState)) {
+      sourceController.abort(new Error('OTP found by another source'));
+    }
   } catch (e) {
-    if (e?.name === 'AbortError' || e?.code === 'ABORT_ERR') vlog('[otp] mailbox fetch cancelled', taskId);
-    else log('[otp] mailbox fetch failed: ' + ((e && e.message) || e), taskId);
+    if (fetchState.controller.signal.aborted || e?.name === 'AbortError' || e?.code === 'ABORT_ERR') {
+      vlog('[otp] mailbox fetch cancelled', taskId);
+    } else {
+      log('[otp] every configured mailbox source finished without a code — enter it manually', taskId);
+    }
   } finally {
+    if (forwardAbort) fetchState.controller.signal.removeEventListener('abort', forwardAbort);
+    if (sourceController && !sourceController.signal.aborted) {
+      sourceController.abort(new Error('OTP lookup finished'));
+    }
     if (otpFetches.get(key) === fetchState) otpFetches.delete(key);
   }
 }

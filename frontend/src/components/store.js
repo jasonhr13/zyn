@@ -131,7 +131,7 @@ const defaultState = {
     // Latest cumulative TLS-transport sample per monitor run. A run is replaced by sequence rather
     // than added here, so loopback retries cannot inflate the displayed bandwidth.
     monitorBandwidth: emptyTargetMonitorBandwidthState(),
-    otpPending: [],           // [{ email, taskId, since }] logins the engine is blocked on
+    otpPending: [],           // [{ email, taskId, since }] rendered inside that task's status cell
     logs: [],                 // module-level log (engine lifecycle, monitor, farmer)
     // Defaults applied to newly created tasks.
     proxyListName: '',
