@@ -48,6 +48,7 @@ const TYPE_LABEL = {
   'preorder.live': 'Preorder',
   'stock.online.out': 'Out of Stock',
   'price.changed': 'Price Change',
+  'product.launched': 'Launched',
   'product.discovered': 'New Product',
   'product.delisted': 'Delisted',
 };

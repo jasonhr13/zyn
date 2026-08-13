@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { fetchStock, SoftBlock } from './redsky.js';
-import { getEnrolled, getProduct, getState, setState, setTier } from './db.js';
+import { getEnrolled, getProduct, getState, setState, setTier, updateProductMeta } from './db.js';
 import { log } from './log.js';
 
 const { batchSize, hotIntervalMs, warmIntervalMs, warmAfterMs } = config.fulfillment;
@@ -38,8 +38,29 @@ export function createScheduler(emit) {
     let changed = false;
     let alertsSent = prev?.alerts_sent ?? 0;
     let lastAlertAt = prev?.last_alert_at ?? null;
+    // Launch-watch: a seed TCIN's first resolution means it just went live in
+    // Target's catalog (it 404'd before). Announce it, and fire the drop alert
+    // immediately if it's already buyable — bypassing the first-sighting guard.
+    const firstLive = !prev;
+    const isSeed = firstLive && getProduct(s.tcin)?.seed === 1;
 
-    if (wasPurchasable !== null && s.purchasable && !wasPurchasable) {
+    if (firstLive && isSeed) {
+      updateProductMeta(s.tcin, { title: s.title, url: s.url, image: s.image });
+      changed = true;
+      if (s.purchasable) {
+        const type = s.status === 'PRE_ORDER_SELLABLE' ? 'preorder.live' : 'stock.online.in';
+        emit(type, s, {
+          previous: { status: 'PRE_LAUNCH', purchasable: false },
+          current: { status: s.status, price: s.price, qty: s.qty, purchasable: true },
+        });
+        alertsSent = 1;
+        lastAlertAt = now;
+      } else {
+        emit('product.launched', s, {
+          current: { status: s.status, price: s.price, qty: s.qty, purchasable: false },
+        });
+      }
+    } else if (wasPurchasable !== null && s.purchasable && !wasPurchasable) {
       // Restock (OOS -> purchasable): fire once, open the re-ping streak.
       changed = true;
       const type = s.status === 'PRE_ORDER_SELLABLE' ? 'preorder.live' : 'stock.online.in';

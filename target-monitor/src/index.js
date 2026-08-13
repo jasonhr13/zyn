@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { log } from './log.js';
+import { enrollSeeds } from './db.js';
 import { makeEmitter } from './emitter.js';
 import { createScheduler } from './fulfillment.js';
 import { startDiscovery, bindScheduler } from './discovery.js';
@@ -18,6 +19,12 @@ log.info(
   },
   'target-monitor starting',
 );
+
+// Enroll pre-launch seed TCINs before the scheduler boots so they're polled hot.
+if (config.seedTcins.length) {
+  enrollSeeds(config.seedTcins);
+  log.info({ seeds: config.seedTcins.length }, 'seed TCINs enrolled for launch-watch');
+}
 
 const emit = makeEmitter();
 const scheduler = createScheduler(emit);

@@ -12,6 +12,9 @@ primary_region = "iad"
   # 40) and WARM_INTERVAL_S (e.g. 30) to bring tiering back.
   HOT_MIN_PRICE = "0"
   WARM_INTERVAL_S = "3"
+  # Pre-launch TCINs discovery can't see yet (Pokémon 30th Anniversary, Aug 14).
+  # Polled hot; fire the moment they go live. Add/remove TCINs here as needed.
+  SEED_TCINS = "1010892065,1010892067,1010892068,1010892069,1010892070,1010892076,1010892078"
 
 [[mounts]]
   source = "monitor_data"

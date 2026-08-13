@@ -50,6 +50,10 @@ export const config = {
     intervalMs: num(process.env.HEALTH_INTERVAL_S, 1800) * 1000,
   },
   proxies: list(process.env.PROXY_URLS),
+  // Explicit TCINs to watch regardless of discovery — for pre-launch SKUs that
+  // aren't in Target's search catalog yet. Polled hot; alerts fire the moment
+  // they go live. See launch-watch logic in fulfillment.js.
+  seedTcins: list(process.env.SEED_TCINS),
   pacing: { maxRequestsPerMin: num(process.env.MAX_RPM, 600) },
   brand: {
     name: process.env.BRAND_NAME || 'Zyn',
@@ -72,7 +76,7 @@ export const config = {
           url: process.env.DISCORD_WEBHOOK_URL,
           events: list(process.env.DISCORD_EVENTS).length
             ? list(process.env.DISCORD_EVENTS)
-            : ['stock.online.in', 'preorder.live', 'stock.online.reping'],
+            : ['stock.online.in', 'preorder.live', 'stock.online.reping', 'product.launched'],
         }
       : null,
   },

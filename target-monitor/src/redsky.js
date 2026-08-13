@@ -26,7 +26,7 @@ const decode = (s) =>
   (s ?? '').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
 const visitorId = () => randomBytes(16).toString('hex').toUpperCase();
 
-async function getJson(url) {
+async function getJson(url, { allow404 = false } = {}) {
   await pace();
   const lease = proxyPool.lease();
   let res;
@@ -40,6 +40,16 @@ async function getJson(url) {
   if (res.status === 403 && text.includes('captcha')) {
     lease.mark(false);
     throw new SoftBlock(`captcha via ${lease.proxy}`);
+  }
+  // A stock batch of only-unknown TCINs (e.g. pre-launch seeds) returns 404 with
+  // a JSON error body — the request itself succeeded, so don't penalize the proxy.
+  if (res.status === 404 && allow404) {
+    lease.mark(true);
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {};
+    }
   }
   if (!res.ok) {
     lease.mark(false);
@@ -142,7 +152,7 @@ function parseSummary(s) {
 
 // Fetch one batch of up to ~25 TCINs. Returns { summaries, missing }.
 export async function fetchStock(tcins) {
-  const json = await getJson(stockUrl(tcins));
+  const json = await getJson(stockUrl(tcins), { allow404: true });
   const summaries = (json?.data?.product_summaries ?? []).map(parseSummary).filter((s) => s.tcin);
   const resolved = new Set(summaries.map((s) => s.tcin));
   const missing = tcins.filter((t) => !resolved.has(t));

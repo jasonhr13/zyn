@@ -63,6 +63,10 @@ for (const col of ['alerts_sent', 'last_alert_at']) {
     db.exec(`ALTER TABLE state ADD COLUMN ${col} INTEGER`);
   }
 }
+// Migration: seed flag (manually watched pre-launch TCINs; never auto-delisted).
+if (!db.prepare('PRAGMA table_info(products)').all().some((c) => c.name === 'seed')) {
+  db.exec('ALTER TABLE products ADD COLUMN seed INTEGER DEFAULT 0');
+}
 
 const stmt = {
   getProduct: db.prepare('SELECT * FROM products WHERE tcin = ?'),
@@ -77,12 +81,18 @@ const stmt = {
   setTier: db.prepare('UPDATE products SET tier = ? WHERE tcin = ?'),
   bumpMissesExcept: db.prepare(`
     UPDATE products SET misses = misses + 1
-    WHERE enrolled = 1 AND delisted_at IS NULL`),
+    WHERE enrolled = 1 AND delisted_at IS NULL AND seed = 0`),
   resetMisses: db.prepare('UPDATE products SET misses = 0 WHERE tcin = ?'),
   delistStale: db.prepare(`
     UPDATE products SET delisted_at = @now, tier = 'warm'
-    WHERE enrolled = 1 AND delisted_at IS NULL AND misses >= @threshold`),
-  staleForDelist: db.prepare('SELECT tcin FROM products WHERE enrolled = 1 AND delisted_at IS NULL AND misses >= ?'),
+    WHERE enrolled = 1 AND delisted_at IS NULL AND seed = 0 AND misses >= @threshold`),
+  staleForDelist: db.prepare('SELECT tcin FROM products WHERE enrolled = 1 AND delisted_at IS NULL AND seed = 0 AND misses >= ?'),
+
+  enrollSeed: db.prepare(`
+    INSERT INTO products (tcin, marketplace, first_seen, last_seen, enrolled, tier, base_tier, misses, seed)
+    VALUES (@tcin, 0, @now, @now, 1, 'hot', 'hot', 0, 1)
+    ON CONFLICT(tcin) DO UPDATE SET seed = 1, enrolled = 1, delisted_at = NULL, base_tier = 'hot'`),
+  updateMeta: db.prepare('UPDATE products SET title = @title, url = @url, image_url = @image_url WHERE tcin = @tcin'),
 
   getState: db.prepare('SELECT * FROM state WHERE tcin = ?'),
   setState: db.prepare(`
@@ -107,6 +117,9 @@ const stmt = {
       (SELECT COUNT(*) FROM products WHERE enrolled = 1 AND delisted_at IS NULL AND tier = 'warm') AS warm,
       (SELECT COUNT(*) FROM products) AS total_products,
       (SELECT COUNT(*) FROM state WHERE purchasable = 1) AS in_stock,
+      (SELECT COUNT(*) FROM products WHERE seed = 1) AS seeds,
+      (SELECT COUNT(*) FROM products p WHERE p.seed = 1
+         AND NOT EXISTS (SELECT 1 FROM state s WHERE s.tcin = p.tcin)) AS seeds_prelaunch,
       (SELECT COUNT(*) FROM events) AS events`),
 };
 
@@ -129,6 +142,20 @@ export function upsertProduct(p) {
 
 export const getProduct = (tcin) => stmt.getProduct.get(tcin);
 export const getEnrolled = () => stmt.enrolledProducts.all();
+
+// Enroll manually-specified pre-launch TCINs. Returns the count enrolled.
+export function enrollSeeds(tcins) {
+  const now = Date.now();
+  const tx = db.transaction((list) => {
+    for (const tcin of list) stmt.enrollSeed.run({ tcin, now });
+  });
+  tx(tcins);
+  return tcins.length;
+}
+
+// Fill catalog metadata once a seed resolves (it has no title until it goes live).
+export const updateProductMeta = (tcin, { title, url, image }) =>
+  stmt.updateMeta.run({ tcin, title: title ?? null, url: url ?? null, image_url: image ?? null });
 export const setTier = (tcin, tier) => stmt.setTier.run(tier, tcin);
 export const resetMisses = (tcin) => stmt.resetMisses.run(tcin);
 export const getState = (tcin) => stmt.getState.get(tcin);
