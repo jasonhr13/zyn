@@ -10,13 +10,12 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-imap-engines-'));
-for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
+for (const filename of ['target-engine.js', 'plain-log.js']) {
   fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', filename), path.join(directory, filename));
 }
 
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
 const target = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
-const walmart = fs.readFileSync(path.join(directory, 'walmart-engine.js'), 'utf8');
 const plainLog = fs.readFileSync(path.join(directory, 'plain-log.js'), 'utf8');
 const nativeEngineContract = path.join(directory, 'native-engine-contract.js');
 const nativeHyperBroker = path.join(directory, 'native-hyper-broker.js');
@@ -1024,15 +1023,11 @@ assert.match(target, /from: String\(p\.from \|\| 'discord-monitor'\)/);
 assert.doesNotMatch(target, /const otpInFlight = new Set\(\)/);
 assert.doesNotMatch(target, /log\(`\[otp\] code \$\{code\}/);
 assert.doesNotMatch(target, /function getImapConfig\(\) \{/);
-assert.match(walmart, /dm\.getProfileImap\(activeConfig && activeConfig\.profileId, addr\)/);
-assert.match(walmart, /activeConfig = config/);
-assert.match(walmart, /dm\.getProfileImap\(config\.profileId, ''\)/);
-assert.doesNotMatch(walmart, /useOtpLogin: false/);
 assert.match(plainLog, /Mailbox connected — waiting for the email code/);
 assert.match(plainLog, /Email code found — submitting/);
 assert.match(plainLog, /Could not find the new email code — enter it manually/);
 
-for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
+for (const filename of ['target-engine.js', 'plain-log.js']) {
   execFileSync(process.execPath, ['--check', path.join(directory, filename)]);
 }
 execFileSync(process.execPath, ['--check', nativeEngineContract]);
@@ -1050,5 +1045,4 @@ console.log(JSON.stringify({
   targetLiveSkuEditing: true,
   sharedNativeEngineContract: true,
   accountBoundAnalytics: true,
-  walmartProfileRouting: true,
 }, null, 2));

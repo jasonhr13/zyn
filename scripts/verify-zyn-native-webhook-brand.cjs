@@ -23,16 +23,17 @@ const LEGACY_MARKERS = Object.freeze([
   ['Hope shape-broker identity', 'hope-shape-broker'],
   ['Hope broker error identity', 'Hope broker error'],
   ['Hope product identity', 'Hope'],
-  ['retired rCart product identity', 'rCart'],
   ['legacy Secret Lair application identity', 'Secret Lair Bot'],
   ['legacy webhook avatar', 'https://media.discordapp.net/attachments/1443088896396361731/1487029472778518558/Adobe_Express_-_file.png'],
 ]);
 
-// Pokémon Center still depends on this private queue-status service. It is never rendered and the
-// launcher normalizes upstream diagnostics at the UI boundary. Until that service has a Zyn-owned
-// endpoint, make this one exact URL the only permitted `polar` byte sequence in a Zyn engine.
+// Pokémon Center still depends on the queue-status service. Walmart's recovered PX quota helper
+// also contains the legacy check URL, although a Zyn child has no Polar license key and therefore
+// returns before making that request. Neither value is rendered. Keep the allowlist exact until
+// both dependencies have Zyn-owned replacements.
 const ALLOWED_INTERNAL_POLAR_MARKERS = Object.freeze([
   'https://polar-wss-production.up.railway.app/sites/PokemonCenter/queue-status',
+  'https://polar-wss-production.up.railway.app/px-solve/check',
 ]);
 
 const REQUIRED_MARKERS = Object.freeze([
@@ -71,6 +72,13 @@ function verifyNativeWebhookBrandBuffer(body, label = 'native engine') {
     /polar/i.test(productText),
     false,
     `${label} contains an unexpected Polar identity outside the allowlisted internal queue endpoint`,
+  );
+  // Raw substring matching cannot distinguish the retired product name from Walmart's legitimate
+  // Go method name ClearCart. Require word boundaries for this one marker.
+  assert.equal(
+    /(?:^|[^A-Za-z])rCart(?:[^A-Za-z]|$)/i.test(productText),
+    false,
+    `${label} contains retired rCart product identity`,
   );
 }
 

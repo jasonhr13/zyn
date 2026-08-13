@@ -10,7 +10,7 @@ const { execFileSync } = require('child_process');
 const project = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-farmer-controls-'));
 process.on('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true }); } catch {} });
-for (const filename of ['target-engine.js', 'walmart-engine.js', 'plain-log.js']) {
+for (const filename of ['target-engine.js', 'plain-log.js']) {
   fs.copyFileSync(
     path.join(project, 'extracted', 'asar', 'public', 'helpers', filename),
     path.join(directory, filename),
@@ -75,7 +75,6 @@ for (const relative of [
   'public/helpers/monitor-parse.js',
   'public/helpers/discord-monitor.js',
   'public/helpers/license-client.js',
-  'public/helpers/walmart-engine.js',
   'public/helpers/target-engine.js',
 ]) {
   const destination = path.join(stagedApp, relative);
@@ -86,6 +85,8 @@ execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-runtime-brand.js
 const stagedElectron = fs.readFileSync(path.join(stagedApp, 'public', 'electron.js'), 'utf8');
 assert.match(stagedElectron, /ipcMain\.on\('syncTargetHarvesters'/,
   'staged main process is missing the managed harvester reconciliation channel');
+assert.doesNotMatch(stagedElectron, /walmartEngine|startWalmart|stopWalmart/,
+  'staged main process still exposes the removed Walmart bridge');
 execFileSync(process.execPath, ['--check', path.join(stagedApp, 'public', 'electron.js')]);
 
 // The native farmer is the pinned GitHub implementation, not a parallel rewrite.

@@ -10,7 +10,7 @@ const { ipcRenderer, clipboard, shell } = window.require('electron');
 const openExternal = (e, url) => { e.preventDefault(); shell.openExternal(url); };
 
 // Sub-tabs WITHIN the Generate page (not separate sidebar entries) — one module per target site.
-// bandai/target/walmart share the same "create N accounts from an email list" shape and bot-script
+// Bandai and Target share the same "create N accounts from an email list" shape and bot-script
 // calling convention; icloud is fundamentally different (see MODULE_META / the iCloud panel below)
 // so it's excluded from ACCOUNT_MODULES and rendered separately.
 // devOnly modules stay hidden from beta pushes until they're actually ready to ship.
@@ -21,18 +21,16 @@ const GENERATE_MODULES = [
   { value: 'riotgames', emoji: '🎮', label: 'Riot Games', hidden: true },
   // No longer devOnly (2026-07-28) — shipped with the Target module in v1.6.41.
   { value: 'target', emoji: '🎯', label: 'Target' },
-  { value: 'walmart', emoji: '🛒', label: 'Walmart', devOnly: true, hidden: true },
   // No longer devOnly (2026-07-24) — iCloud generation is working end-to-end and shipping to beta.
   { value: 'icloud', emoji: '🍎', label: 'iCloud' },
 ];
-const ACCOUNT_MODULES = new Set(['bandai', 'riotgames', 'target', 'walmart']);
+const ACCOUNT_MODULES = new Set(['bandai', 'riotgames', 'target']);
 
 // Which bot script each account-creation module invokes, and its default SMS-catalog service slug.
 const MODULE_META = {
   bandai: { script: 'pbandai-register.mjs', defaultSmsService: 'bandai', siteName: 'Bandai' },
   riotgames: { script: 'riotgames-register.mjs', defaultSmsService: 'riotgames', siteName: 'Riot Games' },
   target: { script: 'target-register.mjs', defaultSmsService: 'target', siteName: 'Target' },
-  walmart: { script: 'walmart-register.mjs', defaultSmsService: 'walmart', siteName: 'Walmart' },
 };
 
 // For the Catchall email-list generator — just needs to look like a plausible local part
@@ -119,8 +117,8 @@ class Generate extends Component {
       activeModule: 'bandai', // which sub-tab is showing
 
       // Account generation — one email list PER module (a Bandai batch and a Target batch are
-      // different addresses on different days), everything else shared across bandai/riotgames/target/walmart.
-      emailListByModule: { bandai: '', riotgames: '', target: '', walmart: '' },
+      // different addresses on different days), everything else shared across Bandai/Riot Games/Target.
+      emailListByModule: { bandai: '', riotgames: '', target: '' },
       // Not "Password123!" — Bandai's site rejects any password containing a 3-char run like "123";
       // kept as the shared default since it's a safe pattern for the other sites too.
       password: 'Bx9!Lq4tRz',
@@ -137,7 +135,7 @@ class Generate extends Component {
       smsProvider: 'getatext',
       smsApiKeys: {},
       smsApiUsername: '', // TextVerified only — its v2 API needs the account username alongside the key
-      smsServiceByModule: { bandai: 'bandai', riotgames: 'riotgames', target: 'target', walmart: 'walmart' },
+      smsServiceByModule: { bandai: 'bandai', riotgames: 'riotgames', target: 'target' },
 
       // Email auth code — AYCD Inbox API key and/or IMAP login can both be filled in; the bot
       // scripts try AYCD first and fall back to IMAP (see startGeneration's own comment).
@@ -327,7 +325,7 @@ class Generate extends Component {
     return imapHost === 'custom' ? imapHostCustom.trim() : imapHost;
   };
 
-  // Shared by bandai/target/walmart — they all take the same CONFIG shape and only differ in
+  // Shared by Bandai and Target — they take the same CONFIG shape and only differ in
   // which script runs and which SMS-catalog service slug they default to (see MODULE_META).
   //
   // Runs up to `concurrency` (1-5) accounts in parallel, each its own headed-Chromium OS process
@@ -359,7 +357,7 @@ class Generate extends Component {
     }
 
     // Skip emails that already have an account on THIS site — avoids burning an SMS rental and a
-    // full signup run just to hit P-Bandai's (or Target's/Walmart's) own "you already have an
+    // full signup run just to hit P-Bandai's or Target's own "you already have an
     // account with this email" rejection. Only matches accounts tagged for the SAME site
     // (account.site === activeModule): an email with a Target account shouldn't block a Bandai
     // generation for that same address, they're genuinely different site accounts. Accounts from

@@ -11,13 +11,11 @@ const START_CHANNELS = new Set([
   'startTarget',
   'editTargetTasks',
   'setTargetTaskProxy',
-  'startWalmart',
 ]);
 const MANAGED_BOT_SCRIPTS = new Set([
   'pbandai-register.mjs',
   'riotgames-register.mjs',
   'target-register.mjs',
-  'walmart-register.mjs',
 ]);
 
 function collectManagedRefs(channel, args, dataManager) {

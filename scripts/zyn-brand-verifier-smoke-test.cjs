@@ -136,8 +136,8 @@ async function main() {
   const cleanNative = Buffer.from(requiredValues.join('\u0000'));
   verifyNativeWebhookBrandBuffer(cleanNative, 'clean native fixture');
   verifyNativeWebhookBrandBuffer(
-    Buffer.concat([cleanNative, Buffer.from(`\u0000${ALLOWED_INTERNAL_POLAR_MARKERS[0]}`)]),
-    'allowlisted internal endpoint fixture',
+    Buffer.concat([cleanNative, ...ALLOWED_INTERNAL_POLAR_MARKERS.map(marker => Buffer.from(`\u0000${marker}`))]),
+    'allowlisted internal endpoints fixture',
   );
   expectFailure(
     () => verifyNativeWebhookBrandBuffer(Buffer.concat([cleanNative, Buffer.from('\u0000Polar Checkout')]), 'bare Polar fixture'),
@@ -151,6 +151,15 @@ async function main() {
       `native verifier accepted ${description}`,
     );
   }
+  expectFailure(
+    () => verifyNativeWebhookBrandBuffer(Buffer.concat([cleanNative, Buffer.from('\u0000rCart\u0000')]), 'rCart fixture'),
+    /rCart product identity/,
+    'native verifier accepted the retired rCart product identity',
+  );
+  verifyNativeWebhookBrandBuffer(
+    Buffer.concat([cleanNative, Buffer.from('\u0000ClearCart\u0000')]),
+    'Walmart ClearCart method fixture',
+  );
   for (let index = 0; index < REQUIRED_MARKERS.length; index += 1) {
     const [description] = REQUIRED_MARKERS[index];
     const missing = Buffer.from(requiredValues.filter((_, candidate) => candidate !== index).join('\u0000'));

@@ -77,6 +77,9 @@ cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
 node "$PROJECT_DIR/scripts/verify-native-farmer-upstream.js"
 cp "$PROJECT_DIR/native-farmer/runtime-paths.js" "$TEMP_DIR/app/public/helpers/runtime-paths.js"
 node "$PROJECT_DIR/scripts/patch-profile-imap-engines.js" "$TEMP_DIR/app/public/helpers"
+# Walmart remains compiled into the native engine for later use, but Zyn currently ships no
+# renderer or Electron bridge that can launch it.
+rm -f "$TEMP_DIR/app/public/helpers/walmart-engine.js"
 node "$PROJECT_DIR/scripts/patch-zyn-runtime-brand.js" "$TEMP_DIR/app"
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"

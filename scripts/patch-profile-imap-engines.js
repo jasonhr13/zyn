@@ -17,7 +17,6 @@ if (!helperDirectory || !fs.existsSync(helperDirectory)) {
 
 const SOURCES = Object.freeze({
   'target-engine.js': 'f43ff08d23fa8f4db55f8b1d2f12b76017f671eb5c33a785dc7110c9a075426d',
-  'walmart-engine.js': '2fe7f711b28f97317ca5de6940f045c8255b0ada383e32d991274c388672429e',
   'plain-log.js': '519f4e8034889a6887e31272ed14cb01dd5ae752075e675cd2a22582970c43fd',
 });
 
@@ -1620,49 +1619,6 @@ function ensureHarvesterBroker() {`, 'Target dynamic cookie-bank demand');
   saveSource(opened);
 }
 
-function patchWalmart() {
-  const opened = openSource('walmart-engine.js');
-  let source = opened.source;
-
-  source = replaceOnce(source, `// WaitForCode until we send \`received-code {email, code}\`. We fetch the code from the catch-all
-// IMAP mailbox (Settings → Email / OTP) using the same proven client the register bots use.`, `// WaitForCode until we send \`received-code {email, code}\`. We fetch from the mailbox stored on the
-// profile selected for this Walmart task, so two accounts can poll different inboxes concurrently.`, 'Walmart mailbox ownership comment');
-  source = replaceOnce(source, `const otpInFlight = new Set();   // emails we're already fetching, so a repeated request-code is a no-op`, `const otpInFlight = new Set();   // emails we're already fetching, so a repeated request-code is a no-op
-let activeConfig = null;`, 'Walmart active profile state');
-  source = replaceOnce(source, `  try {
-    let s = {};
-    try { s = dm.getSettings() || {}; } catch {}
-    if (!s.imapHost || !s.imapUser || !s.imapPass) {
-      log('[otp] no IMAP mailbox configured — set it in Settings → Email / OTP to auto-solve the login code.');
-      return;
-    }`, `  try {
-    const c = dm.getProfileImap(activeConfig && activeConfig.profileId, addr);
-    if (!c.host || !c.user || !c.password) {
-      log('[otp] no IMAP mailbox configured on the selected profile — edit that profile to auto-solve login codes.');
-      return;
-    }`, 'Walmart task mailbox lookup');
-  source = replaceOnce(source, `    log('[otp] fetching Walmart login code for ' + addr + ' …');
-    const { fetchAuthCode } = await import(pathToFileURL(script).href);
-    const imapConfig = { host: s.imapHost, port: Number(s.imapPort) || 993, user: s.imapUser, password: s.imapPass };`, `    log('[otp] fetching Walmart login code for ' + addr + ' from profile mailbox ' + c.user + ' …');
-    const { fetchAuthCode } = await import(pathToFileURL(script).href);
-    const imapConfig = { host: c.host, port: Number(c.port) || 993, user: c.user, password: c.password };`, 'Walmart profile mailbox client');
-  source = replaceOnce(source, `    useOtpLogin: false, startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, `    useOtpLogin: (() => {
-      const c = dm.getProfileImap(config.profileId, '');
-      return !!(c.host && c.user && c.password);
-    })(), startSchedule: '', stopSchedule: '', ignoreLowStock: false,`, 'Walmart task OTP mode');
-  source = replaceOnce(source, `function startWalmart(config, mainWindow) {
-  win = mainWindow;`, `function startWalmart(config, mainWindow) {
-  win = mainWindow;
-  activeConfig = config;`, 'Walmart active profile assignment');
-  source = replaceOnce(source, `  engineProc = null;
-  toRenderer('walmartDone'`, `  engineProc = null;
-  activeConfig = null;
-  toRenderer('walmartDone'`, 'Walmart active profile cleanup');
-
-  opened.source = source;
-  saveSource(opened);
-}
-
 function patchPlainLog() {
   const opened = openSource('plain-log.js');
   opened.source = replaceOnce(opened.source, `  [/bank: login=\\d+ atc=(\\d+)/i, (m) => \`Security cookies ready: \${m[1]}\`],
@@ -1686,7 +1642,6 @@ try {
     );
   }
   patchTarget();
-  patchWalmart();
   patchPlainLog();
   console.log(`Patched profile-owned IMAP routing in ${helperDirectory}`);
 } catch (error) {

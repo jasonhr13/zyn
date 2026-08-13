@@ -26,15 +26,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "c823dd75cb2f1ba27fae63658045d4409fe3a53915e7a50f9b5090acdf2092b6"
+      "sha256": "62f2fdb4bce7ac523997207be7a23d4ad61f66d39d7dfc90948ceaec95034272"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "27d5a57e9ed1af751831fd91ced6a3b6cf448b586fadacedce329252df9414a2"
+      "sha256": "b21f095581bea51f2a5dad1d9dc722485a6a3433974b5c3c60e40662ff619b45"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "677f20844d1c1845786849394c17d3b80211a9ed2afb32cf01bde4091d24205c"
+      "sha256": "db8c74b00cfbc59ed7c953835fc49ca604a70cfa49d06c06427d6d6b159b70d5"
     }
   },
   "requiredResources": [

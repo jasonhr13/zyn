@@ -140,19 +140,6 @@ const defaultState = {
     useFillerItem: false,
     endless: false,
   },
-  // Walmart: same compiled Go engine as Target, own instance (port 8728). Lives in the store
-  // (not page state) so the engine's status/log events survive the page unmounting on a tab switch.
-  walmart: {
-    instance: null,   // { state, label, color, detail } | null (not running)
-    logs: [],
-    proxyListName: '',
-    accountId: '',
-    profileId: '',
-    input: '',
-    quantity: '1',
-    maxPrice: '',
-    endless: false,
-  },
   // Riot Games: monitors for account registrations and manages multiple account generation.
   // Similar to pbandai, this lives in the store to persist across page unmounts.
   riotgames: {
@@ -484,28 +471,6 @@ export function reducer(state = defaultState, action) {
       const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.taskId];
       return { ...state, target: { ...state.target, taskStatus: status, proxyStatus } };
     }
-
-    // ── Walmart ───────────────────────────────────────────────────────────────
-    case 'walmartSet':
-      return { ...state, walmart: { ...state.walmart, ...action.obj } };
-
-    case 'walmartLaunch':
-      return { ...state, walmart: { ...state.walmart, instance: { state: 'Starting', label: 'Starting', color: '#868686', detail: '' } } };
-
-    case 'walmartLog':
-      return { ...state, walmart: { ...state.walmart,
-        logs: [...state.walmart.logs.slice(-800), timestampLogLine(action.line, action.at)] } };
-
-    case 'walmartStatus':
-      return { ...state, walmart: { ...state.walmart, instance: {
-        state: action.state,
-        label: action.label || action.state,
-        color: action.color || '#6DACFF',
-        detail: action.detail || '',
-      } } };
-
-    case 'walmartDone':
-      return { ...state, walmart: { ...state.walmart, instance: null } };
 
     // ── Riot Games ────────────────────────────────────────────────────────────
     case 'riotgamesSet':

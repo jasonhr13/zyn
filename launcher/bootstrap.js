@@ -696,7 +696,6 @@ function stopAllRunningForLicense() {
     nativeEngine.stopTarget?.();
     nativeEngine.stopPokemonCenter?.();
   } catch {}
-  try { require(path.join(originalAsar, 'public', 'helpers', 'walmart-engine.js')).stopWalmart(); } catch {}
   try {
     const { BrowserWindow } = require('electron');
     for (const window of BrowserWindow.getAllWindows()) {
@@ -812,7 +811,6 @@ function guardTaskHelpers(authority) {
   for (const [file, method, taskType] of [
     ['target-engine.js', 'startTarget', ''],
     ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
-    ['walmart-engine.js', 'startWalmart', ''],
   ]) {
     try {
       const engine = require(path.join(originalAsar, 'public', 'helpers', file));

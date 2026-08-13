@@ -35,6 +35,34 @@ function replaceSection(source, start, end, replacement, label) {
 rewrite('public/electron.js', source => {
   source = replaceExactly(
     source,
+    `const walmartEngine = require('./helpers/walmart-engine');\n`,
+    '',
+    1,
+    'Walmart main-process bridge import',
+  );
+  source = replaceExactly(
+    source,
+    `    () => walmartEngine.shutdown(),\n`,
+    '',
+    1,
+    'Walmart main-process shutdown hook',
+  );
+  source = replaceExactly(
+    source,
+    `// ── Walmart: same compiled Go engine, own instance on port 8728 (PerimeterX, no Shape farmer) ──
+ipcMain.on('startWalmart', (e, config) => {
+  if (!licensed()) { refuseUnlicensed('startWalmart'); return; }
+  walmartEngine.startWalmart(config || {}, mainWindow);
+});
+ipcMain.on('stopWalmart', (e) => { walmartEngine.stopWalmart(); e.returnValue = true; });
+
+`,
+    '',
+    1,
+    'Walmart main-process IPC handlers',
+  );
+  source = replaceExactly(
+    source,
     `const remoteMain = require('@electron/remote/main');
 remoteMain.initialize();
 
@@ -165,13 +193,20 @@ function savePokemonCenterTasks(data) {
 
 ${actualTargetAnchor}`;
   source = source.replace(actualTargetAnchor, pokemonStorage);
-  const accountProfileLinks = [
-    `const match = profiles.find(p => (p.email || '').toLowerCase() === email.toLowerCase());`,
-    `const match = profiles.find(p => (p.email || '').toLowerCase() === (email || '').toLowerCase());`,
-  ];
-  for (const before of accountProfileLinks) {
-    if (!source.includes(before)) throw new Error('Target account profile-link anchor is missing');
-    source = source.replace(before, before.replace('profiles.find(p =>', "profiles.find(p => p.profileType !== 'pokemoncenter' &&"));
+  const retailerProfileSite = `const profileSite = site === 'target' || site === 'walmart' ? site : '';`;
+  if (source.includes(retailerProfileSite)) {
+    const count = source.split(retailerProfileSite).length - 1;
+    if (count !== 2) throw new Error(`Expected two retailer profile-site anchors, found ${count}`);
+    source = source.replaceAll(retailerProfileSite, `const profileSite = site === 'target' ? site : '';`);
+  } else {
+    const accountProfileLinks = [
+      `const match = profiles.find(p => (p.email || '').toLowerCase() === email.toLowerCase());`,
+      `const match = profiles.find(p => (p.email || '').toLowerCase() === (email || '').toLowerCase());`,
+    ];
+    for (const before of accountProfileLinks) {
+      if (!source.includes(before)) throw new Error('Target account profile-link anchor is missing');
+      source = source.replace(before, before.replace('profiles.find(p =>', "profiles.find(p => p.profileType !== 'pokemoncenter' &&"));
+    }
   }
   const exportsAnchor = `  getTargetTasks, saveTargetTasks,`;
   if (!source.includes(exportsAnchor)) throw new Error('Target task storage export anchor is missing');
@@ -220,8 +255,6 @@ rewrite('public/helpers/license-client.js', source => {
   source = replaceExactly(source, '`hope:${guid}`', '`${legacyHwidPrefix}:${guid}`', 1, 'legacy GUID salt');
   return replaceExactly(source, "`hope:${parts.join('|')}`", "`${legacyHwidPrefix}:${parts.join('|')}`", 1, 'legacy fallback salt');
 });
-
-rewrite('public/helpers/walmart-engine.js', source => source.replaceAll('HOPE_PARENT_WATCH', 'ZYN_PARENT_WATCH'));
 
 rewrite('public/helpers/target-engine.js', source => {
   source = source
