@@ -21,6 +21,16 @@ const IMAP_PROVIDERS = [
 const FIRST_NAMES = ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Parker', 'Cameron', 'Reese'];
 const LAST_NAMES = ['Smith', 'Morgan', 'Brown', 'Davis', 'Wilson', 'Anderson', 'Taylor', 'Thomas', 'Moore', 'Martin'];
 const MAX_CONCURRENCY = 50;
+const GENERATOR_BROWSERS = [
+  { value: 'auto', label: 'Automatic — random installed browser' },
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'msedge', label: 'Edge' },
+  { value: 'brave', label: 'Brave' },
+  { value: 'vivaldi', label: 'Vivaldi' },
+  { value: 'yandex', label: 'Yandex' },
+  { value: 'opera', label: 'Opera' },
+  { value: 'chromium', label: 'Bundled Chromium' },
+];
 
 const randomPassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -51,6 +61,7 @@ export class TargetAccountGenerator extends Component {
       proxyListName: saved.proxyListName || '',
       profileTemplateId: saved.profileTemplateId || '',
       jigShipping: saved.jigShipping !== false,
+      browser: saved.browser || 'auto',
       concurrency: String(saved.concurrency || '1'),
       catchallDomain: '',
       catchallCount: '20',
@@ -100,6 +111,7 @@ export class TargetAccountGenerator extends Component {
         proxyListName: this.state.proxyListName,
         profileTemplateId: this.state.profileTemplateId,
         jigShipping: this.state.jigShipping,
+        browser: this.state.browser,
         concurrency: this.state.concurrency,
       };
       const settings = { ...(this.props.settings || {}), targetAccountGenerator };
@@ -214,6 +226,7 @@ export class TargetAccountGenerator extends Component {
         `--email=${email}`,
         `--password=${this.state.password}`,
         `--id=${email.split('@')[0]}-${index}`,
+        `--browser=${this.state.browser || 'auto'}`,
         ...(!this.state.randomizeName ? [
           `--firstName=${this.state.firstName.trim()}`,
           `--lastName=${this.state.lastName.trim()}`,
@@ -271,13 +284,19 @@ export class TargetAccountGenerator extends Component {
     if (profileTemplate && successfulEmails.length) {
       const profileDrafts = generatedProfilesFromTemplate(profileTemplate, successfulEmails, this.props.profiles, {
         jigShipping: this.state.jigShipping,
+        imap: this.state.imapUser.trim() && this.state.imapPass && this.effectiveImapHost() ? {
+          host: this.effectiveImapHost(),
+          port: 993,
+          user: this.state.imapUser.trim(),
+          password: this.state.imapPass,
+        } : null,
       });
       profilesSkipped = successfulEmails.length - profileDrafts.length;
       if (profileDrafts.length) {
         try {
           const created = ipcRenderer.sendSync('createProfilesBulk', profileDrafts) || [];
           profilesCreated = created.length;
-          this.addLog(`Created ${profilesCreated} matching checkout profile${profilesCreated === 1 ? '' : 's'} from “${profileTemplate.profileName || profileTemplate.email}”${this.state.jigShipping ? ' with jigged shipping' : ''}.`);
+          this.addLog(`Created ${profilesCreated} matching checkout profile${profilesCreated === 1 ? '' : 's'} from “${profileTemplate.profileName || profileTemplate.email}”${this.state.jigShipping ? ' with jigged shipping' : ''}${this.state.imapUser.trim() && this.state.imapPass && this.effectiveImapHost() ? `, OTP via ${this.state.imapUser.trim()}` : ', no IMAP mailbox so profiles cannot fetch codes'}.`);
         } catch (error) {
           this.addLog(`Accounts were saved, but matching profiles could not be created: ${error.message}`);
         }
@@ -327,7 +346,7 @@ export class TargetAccountGenerator extends Component {
           <div className="modal-header">
             <div>
               <div className="modal-title">Generate Target Accounts</div>
-              <p>Each account runs in its own headed Playwright session on one stable proxy. Target signup does not use SMS or an address.</p>
+              <p>Each account runs in a headed installed browser on one stable proxy. Automatic mode picks randomly among Chrome, Edge, Brave, and the other Chromium browsers on this Mac. Target signup does not use SMS or an address.</p>
             </div>
             <button className="modal-close" disabled={isRunning} title={isRunning ? 'Stop generation before closing' : 'Close'} onClick={this.props.onClose}>×</button>
           </div>
@@ -389,7 +408,7 @@ export class TargetAccountGenerator extends Component {
                     </option>;
                   })}
                 </select>
-                <div className="form-hint">Every successful account gets a profile with its matching email. Payment, phone, mailbox, and the card billing address stay exactly as on the template. When jigging is on, only shipping line 1 and line 2 are varied.</div>
+                <div className="form-hint">Every successful account gets a profile with its matching email. Payment, phone, and the card billing address stay exactly as on the template. OTP logs into the IMAP mailbox email below — not the random catchall — and looks for mail to that generated address. When jigging is on, only shipping line 1 and line 2 are varied.</div>
                 {!profileTemplates.length && <div className="form-hint text-danger">Create one complete Target profile first, then reopen this generator to use it as a template.</div>}
                 {selectedProfileTemplate && <>
                   <label className="target-account-generator-check">
@@ -418,8 +437,8 @@ export class TargetAccountGenerator extends Component {
               <div className="form-row">
                 <div className="form-group"><label className="form-label">IMAP provider</label><select className="form-select" value={this.state.imapHost}
                   onChange={event => this.setPersisted('imapHost', event.target.value)}>{IMAP_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">IMAP user</label><input className="form-input" type="email" value={this.state.imapUser}
-                  onChange={event => this.setPersisted('imapUser', event.target.value)} placeholder="mailbox@example.com" /></div>
+                <div className="form-group"><label className="form-label">IMAP mailbox email</label><input className="form-input" type="email" value={this.state.imapUser}
+                  onChange={event => this.setPersisted('imapUser', event.target.value)} placeholder="catchall-inbox@example.com" /></div>
               </div>
               {this.state.imapHost === 'custom' && <div className="form-group"><label className="form-label">Custom IMAP host</label><input className="form-input"
                 value={this.state.imapHostCustom} onChange={event => this.setPersisted('imapHostCustom', event.target.value)} placeholder="imap.example.com" /></div>}
@@ -428,9 +447,17 @@ export class TargetAccountGenerator extends Component {
                 <div className="target-account-generator-secret"><input className="form-input" type={this.state.showImapPass ? 'text' : 'password'} value={this.state.imapPass}
                   onChange={event => this.setState({ imapPass: event.target.value })} placeholder="Not saved after this window closes" />
                   <button type="button" onClick={() => this.setState(previous => ({ showImapPass: !previous.showImapPass }))}>{this.state.showImapPass ? 'Hide' : 'Show'}</button></div>
+                <div className="form-hint">This mailbox email + app password is the IMAP login. Generated catchalls are only the Target account address — Target sends codes there, but they cannot log into IMAP.</div>
               </div>
 
               <div className="form-row target-account-generator-run-options">
+                <div className="form-group">
+                  <label className="form-label">Browser</label>
+                  <select className="form-select" value={this.state.browser}
+                    onChange={event => this.setPersisted('browser', event.target.value)}>
+                    {GENERATOR_BROWSERS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
                 <div className="form-group"><label className="form-label">Concurrent browsers</label><input className="form-input" type="number" min="1" max={MAX_CONCURRENCY}
                   value={this.state.concurrency} onChange={event => this.setPersisted('concurrency', event.target.value)} /></div>
                 <div className="target-account-generator-status-row"><span>Account webhook</span><strong className={settings.accountGenWebhook ? 'configured' : ''}>{settings.accountGenWebhook ? 'Configured in Settings' : 'Off'}</strong></div>

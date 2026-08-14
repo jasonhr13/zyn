@@ -95,6 +95,10 @@ assert.match(styles, /\.proxy-managed-indicator\s*\{[^}]*border:\s*0;[^}]*backgr
   'managed proxy locks still render with the checkbox square behind them');
 assert.match(taskGroups, /form-label task-account-section-label/,
   'the Add Tasks Accounts heading lacks its dedicated spacing hook');
+assert.match(taskGroups, /toggleSelectAllAccounts/,
+  'the Add Tasks modal cannot select every unused Target account at once');
+assert.match(taskGroups, /Select all/,
+  'the Add Tasks modal is missing a Select all control');
 assert.match(styles, /\.task-account-section-label\s*\{[^}]*margin-top:/,
   'the Add Tasks Accounts heading is still crowded against the preceding card');
 for (const channel of ['createProxyGroup', 'renameProxyGroup', 'deleteProxyGroup', 'addProxyListsToGroup', 'removeProxyListsFromGroup']) {

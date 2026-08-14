@@ -43,6 +43,7 @@ import { fileURLToPath } from 'node:url';
 import { fetchAuthCode } from './imap-client.mjs';
 import { fetchAuthCodeViaAycd } from './aycd-mail-client.mjs';
 import { argOf, FIRST_NAMES, LAST_NAMES, pick, randomAdultDob, sleep, randomDelay, createBotContext, sendAccountCreatedWebhook } from './shared.mjs';
+import { generationLaunchOptions } from './generation-browsers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -156,6 +157,7 @@ const CONFIG = {
   // Local-IP runs require an explicit CLI override; Zyn's UI requires a proxy list for Target.
   allowLocal: argOf('allowLocal', '0') === '1',
   webhook: argOf('webhook', ''),
+  browser: argOf('browser', 'auto'),
 };
 
 const SIGNUP_ID = argOf('id', 'default');
@@ -274,16 +276,18 @@ async function main() {
   log(`Name: ${CONFIG.firstName} ${CONFIG.lastName}`);
   log('═══════════════════════════════════════════');
 
-  const launchOptions = {
+  const launchBase = {
+    // Target signup fails in New Headless. Generation always uses a real headed window.
     headless: false,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+    ignoreDefaultArgs: ['--enable-automation'],
   };
 
   if (CONFIG.proxyServer) {
-    launchOptions.proxy = { server: CONFIG.proxyServer };
+    launchBase.proxy = { server: CONFIG.proxyServer };
     if (CONFIG.proxyUser && CONFIG.proxyPass) {
-      launchOptions.proxy.username = CONFIG.proxyUser;
-      launchOptions.proxy.password = CONFIG.proxyPass;
+      launchBase.proxy.username = CONFIG.proxyUser;
+      launchBase.proxy.password = CONFIG.proxyPass;
     }
   } else if (!CONFIG.allowLocal) {
     throw new Error('Target generation requires --proxyServer (pass --allowLocal=1 only for an intentional local-IP run)');
@@ -294,6 +298,8 @@ async function main() {
   const harFile = path.join(shotsDir, 'network.har');
   log(`HAR capture: ${harFile} (written on close — full request/response log for debugging)`);
 
+  const { browser: selectedBrowser, launchOptions } = await generationLaunchOptions(CONFIG.browser, launchBase);
+  log(`Launching headed ${selectedBrowser.label} (${selectedBrowser.key})`);
   const browser = await chromium.launch(launchOptions);
   const context = await browser.newContext({ recordHar: { path: harFile, mode: 'full' } });
   const page = await context.newPage();

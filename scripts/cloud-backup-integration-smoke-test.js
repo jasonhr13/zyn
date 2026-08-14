@@ -75,6 +75,11 @@ assert.match(settings, /id="cloud-backup-recovery-key"/);
 assert.match(settings, /cloudListLoaded:\s*false, cloudListError:\s*''/);
 assert.match(settings, /Could not load backups:/);
 assert.match(settings, /The backup list is unavailable right now/);
+assert.match(settings, /CLOUD_BACKUP_VISIBLE = 3/);
+assert.match(settings, /CLOUD_BACKUP_LIST_CAP = 10/);
+assert.match(settings, /Show \$\{this\.state\.cloudBackups\.length - CLOUD_BACKUP_VISIBLE\} older backup/);
+assert.match(settings, /Hide older backups/);
+assert.match(manager, /result\.backups\.length > 10/);
 
 assert.match(worker, /licenseToken:\s*token,[\s\S]{0,80}userId:\s*user\.id/);
 assert.match(worker, /ok:\s*true,[\s\S]{0,80}userId:\s*row\.user_id/);

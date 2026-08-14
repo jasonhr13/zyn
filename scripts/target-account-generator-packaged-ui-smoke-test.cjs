@@ -24,11 +24,13 @@ const source = asar.extractFile(archive, mainAssets[0].replace(/^\//, '')).toStr
 
 for (const text of [
   'Generate Target Accounts',
+  'random installed browser',
   'Target signup does not use SMS or an address',
   'Account webhook',
   'Add Catchall',
   'Create matching profiles from',
   'Jig shipping',
+  'IMAP mailbox email',
 ]) assert.equal(source.includes(text), true, `Packaged Accounts generator is missing: ${text}`);
 
 console.log(JSON.stringify({

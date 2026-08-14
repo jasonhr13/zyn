@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.3",
+  "notes": [
+    "Target account generation can create matching checkout profiles and optionally jig shipping addresses.",
+    "Generated profiles now use the IMAP mailbox email from the generator, not the random catchall login.",
+    "Target generation can launch Chrome, Edge, Brave, or another installed browser instead of bundled Chromium.",
+    "The Add Account Tasks modal can select every unused Target account at once.",
+    "Settings shows the three newest cloud backups and keeps older ones behind a short list."
+  ]
+}

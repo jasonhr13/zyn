@@ -758,6 +758,24 @@ class TaskGroups extends Component {
       : [...selectedAccounts, accountId],
   }));
 
+  selectableAccountIds = (group) => {
+    const used = new Set(((group && group.tasks) || []).map(task => String(task.accountId)));
+    return this.targetAccounts()
+      .filter(account => !used.has(String(account.id)))
+      .map(account => account.id);
+  };
+
+  toggleSelectAllAccounts = () => {
+    const group = this.selectedGroup();
+    if (!group) return;
+    const selectable = this.selectableAccountIds(group);
+    this.setState(({ selectedAccounts }) => {
+      const selected = new Set(selectedAccounts.map(String));
+      const allSelected = selectable.length > 0 && selectable.every(id => selected.has(String(id)));
+      return { selectedAccounts: allSelected ? [] : selectable };
+    });
+  };
+
   createTasks = () => {
     const group = this.selectedGroup();
     if (!group || !this.state.selectedAccounts.length) return;
@@ -2150,6 +2168,10 @@ class TaskGroups extends Component {
     if (!this.state.showTaskModal) return null;
     const used = new Set((group.tasks || []).map(task => String(task.accountId)));
     const accounts = this.targetAccounts();
+    const selectableIds = this.selectableAccountIds(group);
+    const selectedIds = new Set(this.state.selectedAccounts.map(String));
+    const allSelectableSelected = selectableIds.length > 0
+      && selectableIds.every(id => selectedIds.has(String(id)));
     return (
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.setState({ showTaskModal: false })}>
         <div className="modal task-create-modal" onMouseDown={event => event.stopPropagation()}>
@@ -2161,7 +2183,13 @@ class TaskGroups extends Component {
               <input type="checkbox" checked={this.state.taskLoopCheckout === true} onChange={event => this.setState({ taskLoopCheckout: event.target.checked })} />
               <span><strong>Loop checkout for these tasks</strong><small>After a checkout or decline, keep trying eligible SKUs. Confirmed orders stop at two per account, per SKU, within four hours.</small></span>
             </label>
-            <div className="form-label task-account-section-label">Accounts</div>
+            <div className="task-account-section-head">
+              <div className="form-label task-account-section-label">Accounts</div>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!selectableIds.length}
+                onClick={this.toggleSelectAllAccounts}>
+                {allSelectableSelected ? 'Deselect all' : 'Select all'}
+              </button>
+            </div>
             <div className="task-account-picker">
               {!accounts.length && <div className="task-account-empty">No accounts are tagged Target. Add them from Accounts first.</div>}
               {accounts.map(account => {

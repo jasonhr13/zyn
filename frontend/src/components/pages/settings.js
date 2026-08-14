@@ -16,6 +16,8 @@ const MAX_SHAPE_LOADS_PER_BROWSER = 10;
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
 const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
 const DISCORD_WEBHOOK_RE = /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\//i;
+const CLOUD_BACKUP_VISIBLE = 3;
+const CLOUD_BACKUP_LIST_CAP = 10;
 
 const FieldHelp = ({ children, align = 'left' }) => (
   <span className={`field-help${align === 'right' ? ' field-help-right' : ''}`}>
@@ -61,7 +63,7 @@ class Settings extends Component {
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
       cloudBackup: null, cloudBackups: [], cloudLoading: false,
-      cloudListLoaded: false, cloudListError: '',
+      cloudListLoaded: false, cloudListError: '', cloudOlderBackupsOpen: false,
       cloudMsg: '', cloudMsgColor: 'var(--muted)',
       recoveryAcknowledged: false, recoveryImport: '', recoveryExpectedFingerprint: '',
       cloudRestoreReplace: false,
@@ -233,12 +235,23 @@ class Settings extends Component {
     cloudMsgColor: ok ? 'var(--ok)' : 'var(--danger)',
   });
 
+  normalizeCloudBackups = backups => [...(Array.isArray(backups) ? backups : [])]
+    .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+    .slice(0, CLOUD_BACKUP_LIST_CAP);
+
   loadCloudBackups = async () => {
     this.setState({ cloudLoading: true, cloudListError: '' });
     try {
       const result = await ipcRenderer.invoke('cloudBackupList');
       if (result && result.ok) {
-        this.setState({ cloudBackups: result.backups || [], cloudListLoaded: true, cloudListError: '' });
+        const cloudBackups = this.normalizeCloudBackups(result.backups);
+        this.setState({
+          cloudBackups,
+          cloudListLoaded: true,
+          cloudListError: '',
+          cloudOlderBackupsOpen: cloudBackups.length > CLOUD_BACKUP_VISIBLE
+            ? this.state.cloudOlderBackupsOpen : false,
+        });
       } else {
         this.setState({ cloudListError: (result && result.error) || 'Could not load encrypted backups.' });
       }
@@ -247,6 +260,24 @@ class Settings extends Component {
     }
     this.setState({ cloudLoading: false });
   };
+
+  renderCloudBackupRow = backup => (
+    <div key={backup.id} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+      padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, flexWrap: 'wrap',
+    }}>
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--text)' }}>{this.formatBackupDate(backup.createdAt)}</div>
+        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+          {backup.deviceName || 'Unknown device'} · {this.formatBytes(backup.sizeBytes)} · v{backup.appVersion || 'unknown'} · Key {backup.keyFingerprint}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => this.restoreCloudBackup(backup)} disabled={this.state.cloudLoading}>Restore</button>
+        <button className="btn btn-danger btn-sm" onClick={() => this.deleteCloudBackup(backup)} disabled={this.state.cloudLoading}>Delete</button>
+      </div>
+    </div>
+  );
 
   setupCloudBackup = async () => {
     this.setState({ cloudLoading: true, cloudMsg: '' });
@@ -954,23 +985,26 @@ class Settings extends Component {
                 )}
                 {this.state.cloudBackups.length ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 9 }}>
-                    {this.state.cloudBackups.map(backup => (
-                      <div key={backup.id} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                        padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, flexWrap: 'wrap',
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: 'var(--text)' }}>{this.formatBackupDate(backup.createdAt)}</div>
-                          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-                            {backup.deviceName || 'Unknown device'} · {this.formatBytes(backup.sizeBytes)} · v{backup.appVersion || 'unknown'} · Key {backup.keyFingerprint}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => this.restoreCloudBackup(backup)} disabled={this.state.cloudLoading}>Restore</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => this.deleteCloudBackup(backup)} disabled={this.state.cloudLoading}>Delete</button>
-                        </div>
-                      </div>
-                    ))}
+                    {this.state.cloudBackups.slice(0, CLOUD_BACKUP_VISIBLE).map(this.renderCloudBackupRow)}
+                    {this.state.cloudBackups.length > CLOUD_BACKUP_VISIBLE && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ alignSelf: 'flex-start' }}
+                          onClick={() => this.setState(state => ({ cloudOlderBackupsOpen: !state.cloudOlderBackupsOpen }))}
+                        >
+                          {this.state.cloudOlderBackupsOpen
+                            ? 'Hide older backups'
+                            : `Show ${this.state.cloudBackups.length - CLOUD_BACKUP_VISIBLE} older backup${this.state.cloudBackups.length - CLOUD_BACKUP_VISIBLE === 1 ? '' : 's'}`}
+                        </button>
+                        {this.state.cloudOlderBackupsOpen
+                          && this.state.cloudBackups.slice(CLOUD_BACKUP_VISIBLE).map(this.renderCloudBackupRow)}
+                      </>
+                    )}
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                      The last {CLOUD_BACKUP_VISIBLE} backups stay visible. At most {CLOUD_BACKUP_LIST_CAP} are kept.
+                    </div>
                   </div>
                 ) : (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
