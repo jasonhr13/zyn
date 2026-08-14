@@ -28,7 +28,7 @@ for (const text of [
   'Account webhook',
   'Add Catchall',
   'Create matching profiles from',
-  'no address jigging',
+  'Jig shipping',
 ]) assert.equal(source.includes(text), true, `Packaged Accounts generator is missing: ${text}`);
 
 console.log(JSON.stringify({

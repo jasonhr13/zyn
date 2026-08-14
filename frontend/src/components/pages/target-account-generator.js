@@ -50,6 +50,7 @@ export class TargetAccountGenerator extends Component {
       showImapPass: false,
       proxyListName: saved.proxyListName || '',
       profileTemplateId: saved.profileTemplateId || '',
+      jigShipping: saved.jigShipping !== false,
       concurrency: String(saved.concurrency || '1'),
       catchallDomain: '',
       catchallCount: '20',
@@ -98,6 +99,7 @@ export class TargetAccountGenerator extends Component {
         imapUser: this.state.imapUser,
         proxyListName: this.state.proxyListName,
         profileTemplateId: this.state.profileTemplateId,
+        jigShipping: this.state.jigShipping,
         concurrency: this.state.concurrency,
       };
       const settings = { ...(this.props.settings || {}), targetAccountGenerator };
@@ -267,13 +269,15 @@ export class TargetAccountGenerator extends Component {
     let profilesCreated = 0;
     let profilesSkipped = 0;
     if (profileTemplate && successfulEmails.length) {
-      const profileDrafts = generatedProfilesFromTemplate(profileTemplate, successfulEmails, this.props.profiles);
+      const profileDrafts = generatedProfilesFromTemplate(profileTemplate, successfulEmails, this.props.profiles, {
+        jigShipping: this.state.jigShipping,
+      });
       profilesSkipped = successfulEmails.length - profileDrafts.length;
       if (profileDrafts.length) {
         try {
           const created = ipcRenderer.sendSync('createProfilesBulk', profileDrafts) || [];
           profilesCreated = created.length;
-          this.addLog(`Created ${profilesCreated} matching checkout profile${profilesCreated === 1 ? '' : 's'} from “${profileTemplate.profileName || profileTemplate.email}”.`);
+          this.addLog(`Created ${profilesCreated} matching checkout profile${profilesCreated === 1 ? '' : 's'} from “${profileTemplate.profileName || profileTemplate.email}”${this.state.jigShipping ? ' with jigged shipping' : ''}.`);
         } catch (error) {
           this.addLog(`Accounts were saved, but matching profiles could not be created: ${error.message}`);
         }
@@ -385,9 +389,16 @@ export class TargetAccountGenerator extends Component {
                     </option>;
                   })}
                 </select>
-                <div className="form-hint">Every successful account gets a profile with its matching email. The selected template’s real shipping, billing, payment, phone, and mailbox values are copied unchanged—no address jigging.</div>
+                <div className="form-hint">Every successful account gets a profile with its matching email. Payment, phone, mailbox, and the card billing address stay exactly as on the template. When jigging is on, only shipping line 1 and line 2 are varied.</div>
                 {!profileTemplates.length && <div className="form-hint text-danger">Create one complete Target profile first, then reopen this generator to use it as a template.</div>}
-                {selectedProfileTemplate && <div className="target-account-generator-template-ready"><i className="ion-md-checkmark-circle" /> Ready: {selectedProfileTemplate.shipping?.address}, {selectedProfileTemplate.shipping?.city}</div>}
+                {selectedProfileTemplate && <>
+                  <label className="target-account-generator-check">
+                    <input type="checkbox" checked={this.state.jigShipping}
+                      onChange={event => this.setPersisted('jigShipping', event.target.checked)} />
+                    Jig shipping line 1 and line 2 for each profile
+                  </label>
+                  <div className="target-account-generator-template-ready"><i className="ion-md-checkmark-circle" /> Ready: {selectedProfileTemplate.shipping?.address}, {selectedProfileTemplate.shipping?.city}</div>
+                </>}
               </div>
 
               <div className="target-account-generator-section-title">Proxy</div>
