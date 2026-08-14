@@ -78,6 +78,30 @@ const selected = evaluateTargetReadiness({
   settings: { targetAtcCookiesPerTask: '3' },
 });
 assert.equal(selected.level, 'ready', 'single-task readiness included an unselected broken task');
+
+const folderReady = evaluateTargetReadiness({
+  ...group,
+  tasks: [{ ...group.tasks[0], proxyListName: 'group:Friday mix' }],
+}, {
+  accounts,
+  profiles,
+  proxyCounts: { 'group:Friday mix': { ok: true, count: 12 } },
+  bank: { atc: 3, login: 0 },
+  settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
+});
+assert.equal(folderReady.level, 'ready');
+
+const folderBlocked = evaluateTargetReadiness({
+  ...group,
+  tasks: [{ ...group.tasks[0], proxyListName: 'group:Friday mix' }],
+}, {
+  accounts,
+  profiles,
+  proxyCounts: { 'group:Friday mix': { ok: false, count: 0, error: 'no usable lists in this folder' } },
+  bank: { atc: 3, login: 0 },
+  settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
+});
+assert.ok(folderBlocked.blockers.some(item => item.code === 'proxy-unavailable'));
 assert.equal(selected.counts.tasks, 1);
 
 console.log('Target readiness blockers, warnings, selection, cookie demand, and per-SKU price validation passed.');

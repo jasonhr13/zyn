@@ -26,7 +26,7 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "c28eef25d935ffa4cc3d52e100689aa44b2e52ce7de4144335335a845ad42e0b"
+      "sha256": "b8c12716e97b2e049502089e8b8fbbdb4fb4346a633554263f43d3ec782163e0"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
@@ -59,6 +59,7 @@
     "Contents/Resources/app/task-group-scheduler.js",
     "Contents/Resources/app/target-group-launch.js",
     "Contents/Resources/app/target-readiness.js",
+    "Contents/Resources/app/proxy-resolve.js",
     "Contents/Resources/app/target-cookie-standby.js",
     "Contents/Resources/app/window-size-state.js",
     "Contents/Resources/app/imap-password.js",

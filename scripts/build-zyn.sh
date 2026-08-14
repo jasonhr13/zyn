@@ -156,7 +156,7 @@ for launcher_file in \
   checkout-reporting.js analytics-recorder.js \
   pokemon-queue-events.js \
   task-type-access.js task-type-ipc-guard.js task-group-store.js task-group-schedule.js target-product-history.js \
-  task-group-scheduler.js target-group-launch.js target-readiness.js target-cookie-standby.js window-size-state.js \
+  task-group-scheduler.js target-group-launch.js target-readiness.js proxy-resolve.js target-cookie-standby.js window-size-state.js \
   imap-password.js imap-connection.js profile-imap-control.js account-group-control.js proxy-group-control.js managed-proxy-control.js \
   managed-proxy-ipc-guard.js harvester-extension-bridge.js cloud-backup.js cloud-backup-data.js; do
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"

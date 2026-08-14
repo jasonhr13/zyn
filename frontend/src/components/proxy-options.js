@@ -13,9 +13,21 @@ export const proxyCount = (list) => {
   return String(list.raw || '').split('\n').filter(line => line.trim()).length;
 };
 
+export const proxyFolderRef = name => {
+  const text = String(name || '').trim();
+  return text ? `group:${text}` : '';
+};
+
+export const proxyFolderName = ref => {
+  const value = String(ref || '').trim();
+  return value.toLowerCase().startsWith('group:') ? value.slice(6).trim() : '';
+};
+
 export const proxyLabelForRef = (lists, ref, fallback = '') => {
   const value = String(ref || '');
   if (!value) return fallback;
+  const folder = proxyFolderName(value);
+  if (folder) return folder;
   const match = (Array.isArray(lists) ? lists : []).find(list => proxyRef(list) === value);
   if (match) return proxyLabel(match);
   return value.startsWith('managed:') ? 'Managed proxy unavailable' : value;

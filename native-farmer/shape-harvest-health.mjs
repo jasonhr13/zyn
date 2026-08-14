@@ -45,6 +45,30 @@ const PROXY_QUARANTINE_BASE_MS = {
   page: 15_000,
 };
 
+export function sourceWeight(score = {}) {
+  const ok = Math.max(0, Number(score.ok || score.successes) || 0);
+  const fail = Math.max(0, Number(score.fail || score.fails) || 0);
+  return (ok + 1) / (ok + fail + 2);
+}
+
+export function pickWeightedSource(sources, scores = {}, { exploreRate = 0.3, random = Math.random } = {}) {
+  const names = [...new Set((Array.isArray(sources) ? sources : []).map(value => String(value || '').trim()).filter(Boolean))];
+  if (!names.length) return '';
+  if (names.length === 1 || Number(random()) < exploreRate) {
+    return names[Math.max(0, Math.min(names.length - 1, Math.floor(Number(random()) * names.length)))];
+  }
+  let best = names[0];
+  let bestScore = sourceWeight(scores[best]);
+  for (const name of names.slice(1)) {
+    const score = sourceWeight(scores[name]);
+    if (score > bestScore) {
+      best = name;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 export function classifyHarvestFailure(value) {
   const text = String(value && (value.fail || value.error || value.message || value) || '').toLowerCase();
   // Confirmed blocks and captchas receive longer route quarantine. Require visible-page evidence,

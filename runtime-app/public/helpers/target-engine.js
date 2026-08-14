@@ -34,6 +34,10 @@ const engineContract = require('./native-engine-contract');
 const nativeHyperBroker = require('./native-hyper-broker');
 const manualCaptchaManager = require('./manual-captcha-manager');
 const analyticsRecorder = require('./analytics-recorder');
+const {
+  resolveProxyAssignment,
+  displayProxyGroup,
+} = require('./proxy-resolve');
 
 // IMAP belongs to the profile selected for this task. request-code normally carries taskID; email
 // matching remains a fallback for older engine messages that only identify the account address.
@@ -1602,7 +1606,8 @@ function spawnFarmer(config) {
 }
 
 function harvesterProxyLines(config) {
-  return proxyLinesFor(config.proxyListName).filter(line => parseProxyLine(line));
+  return resolveAssignment(config.proxyListName).sources.flatMap(source => source.lines)
+    .filter(line => parseProxyLine(line));
 }
 
 function harvesterFingerprint(config) {
@@ -1633,13 +1638,13 @@ function spawnHarvesterProducer(config) {
   sweepStaleProxyFiles();
   let proxyFile = '';
   try {
-    const lines = harvesterProxyLines(config);
+    const lines = taggedHarvesterLines(config.proxyListName);
     // A named proxy route is an instruction, not a preference. If its list was deleted, renamed,
     // emptied, or failed to decrypt, never turn a metered-proxy harvester into a home-IP harvester.
     if (config.proxyListName && !lines.length) {
       const failureKey = `proxy:${config.proxyListName}`;
       if (harvesterStartFailures.get(config.id) !== failureKey) {
-        log(`[target] harvester ${config.name} not started — proxy group ${config.proxyListName} is unavailable or empty`);
+        log(`[target] harvester ${config.name} not started — proxy group ${displayProxyGroup(config.proxyListName)} is unavailable or empty`);
         harvesterStartFailures.set(config.id, failureKey);
       }
       return;
@@ -1683,7 +1688,7 @@ function spawnHarvesterProducer(config) {
     `--harvesterName=${config.name}`,
     `--harvesterType=${config.type}`,
     `--atcMode=${config.atcMode}`,
-    `--routeLabel=${config.proxyListName || 'Local'}`,
+    `--routeLabel=${displayProxyGroup(config.proxyListName)}`,
     `--proxyFile=${proxyFile}`,
     `--atcTcins=${atcTcins}`,
     `--poolSize=${poolSize}`,
@@ -1722,7 +1727,7 @@ function spawnHarvesterProducer(config) {
     if (!quitting) setTimeout(ensureHarvesterBroker, 1000);
   });
   const mode = config.type === 'login' ? '' : config.atcMode === 'v2' ? ' ATC+' : ' ATC';
-  log(`[target] harvester ${config.name} starting — ${config.type}${mode}, ${config.workers} worker(s), ${config.proxyListName || 'Local'}`);
+  log(`[target] harvester ${config.name} starting — ${config.type}${mode}, ${config.workers} worker(s), ${displayProxyGroup(config.proxyListName)}`);
 }
 
 function syncHarvesterProducers(configs = managedHarvesterConfigs() || []) {
@@ -1846,6 +1851,31 @@ function proxyLinesFor(listName) {
   return dm.getProxyLines(listName) || [];
 }
 
+function resolveAssignment(ref) {
+  return resolveProxyAssignment(ref, {
+    getProxyLines: name => {
+      try { return dm.getProxyLines(name) || []; } catch { return []; }
+    },
+    getProxies: () => {
+      try { return dm.getProxies() || { lists: [] }; } catch { return { lists: [] }; }
+    },
+  });
+}
+
+function groupOf(name) {
+  return displayProxyGroup(name);
+}
+
+function sourceNamesFor(ref) {
+  return resolveAssignment(ref).sources.map(source => source.name);
+}
+
+function taggedHarvesterLines(ref) {
+  return resolveAssignment(ref).sources.flatMap(source => (
+    source.lines.map(line => `${source.name}\t${line}`)
+  ));
+}
+
 // Always returns a group — the fallback is not optional, the selector IS the setting. "Local" means
 // the user's own connection; anything else is one of their proxy lists. The stored value is the
 // GROUP NAME, so it travels to the engine unchanged.
@@ -1860,9 +1890,12 @@ function throttleFallbackSetting() {
 }
 
 function buildProxyMap(listName) {
-  if (!listName) return {};
-  const arr = proxyLinesFor(listName).map(parseProxyLine).filter(Boolean);
-  return { [listName]: arr };
+  const map = {};
+  for (const source of resolveAssignment(listName).sources) {
+    const arr = source.lines.map(parseProxyLine).filter(Boolean);
+    if (arr.length) map[source.name] = arr;
+  }
+  return map;
 }
 
 // ── engine messaging ─────────────────────────────────────────────────────────────
@@ -2007,10 +2040,16 @@ function targetMainMonitorSpec() {
   const maxPrices = new Map();
   let ignoreLowStock = false;
   let proxyGroup = 'Local';
+  let proxySources = [];
   for (const id of runningTaskIds) {
     const config = taskCheckoutConfigById.get(id);
     if (!config) continue;
-    if (proxyGroup === 'Local') proxyGroup = String(config.proxyListName || '').trim() || 'Local';
+    if (proxyGroup === 'Local') {
+      proxyGroup = groupOf(config.proxyListName);
+      proxySources = Array.isArray(config.proxySources) && config.proxySources.length
+        ? config.proxySources.slice()
+        : sourceNamesFor(config.proxyListName);
+    }
     const qty = Math.max(1, parseInt(config.qty, 10) || 1);
     ignoreLowStock = ignoreLowStock || config.ignoreLowStock === true;
     for (const rawSku of (config.skus || [])) {
@@ -2025,7 +2064,7 @@ function targetMainMonitorSpec() {
   const items = [...quantities.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([monitorInput, quantity]) => ({ monitorInput, quantity: String(quantity), maxPrice: maxPrices.get(monitorInput) || '' }));
-  return { items, proxyGroup, ignoreLowStock };
+  return { items, proxyGroup, proxySources, ignoreLowStock };
 }
 
 function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
@@ -2045,6 +2084,7 @@ function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
       type: 'Target',
       site: 'Target',
       proxyGroup: spec.proxyGroup,
+      proxySources: spec.proxySources || [],
       ignoreLowStock: spec.ignoreLowStock,
       item: monitorItems,
       monitorItems,
@@ -2076,6 +2116,7 @@ function reconcileTargetMainMonitor() {
       id: monitorId,
       site: 'Target',
       proxyGroup: spec.proxyGroup,
+      proxySources: spec.proxySources || [],
       monitorDelay: '4000',
       ignoreLowStock: spec.ignoreLowStock,
       items: spec.items,
@@ -2209,6 +2250,7 @@ function editTargetTasks(config = {}) {
         .map(item => [item.monitorInput, true])),
       qty,
       proxyListName: selectedTask.proxyListName || existing.proxyListName || '',
+      proxySources: sourceNamesFor(selectedTask.proxyListName || existing.proxyListName || ''),
       ignoreLowStock,
     });
   });
@@ -2231,7 +2273,8 @@ function editTargetTasks(config = {}) {
     monitorRefreshed = sendToEngine({ type: 'start-monitors', messages: [{
       id,
       site: 'Target',
-      proxyGroup: String(first.proxyListName || '').trim() || 'Local',
+      proxyGroup: groupOf(first.proxyListName),
+      proxySources: sourceNamesFor(first.proxyListName),
       monitorDelay: '4000',
       ignoreLowStock,
       items: watched.map(sku => ({
@@ -2342,7 +2385,6 @@ function sendStart(config) {
   // (BaseTask.SwapProxy). Any other value — including the empty string the UI sends for "no proxy"
   // — is treated as a real group name, GetProxy finds nothing under it, and the task is killed with
   // "Error Assigning Proxy" before it ever runs. Same for the monitor.
-  const groupOf = (name) => (String(name || '').trim() || 'Local');
 
   // Each task is handed its whole ELIGIBLE watch list. matchKeys() (sites/target/monitor_sub.go)
   // turns monitorItems into the TCINs a task will wake for. Priority SKUs are tried first when
@@ -2358,6 +2400,7 @@ function sendStart(config) {
     monitorDelay: '3000',
     retryDelay: '3000',
     proxyGroup: groupOf(t.proxyListName),
+    proxySources: sourceNamesFor(t.proxyListName),
     profileId: t.profileId || '',
     profileGroup: '',
     accountId: t.accountId || '',
@@ -2391,14 +2434,16 @@ function sendStart(config) {
       maxPriceBySku,
       priorityBySku,
       proxyListName: task.proxyListName || existing.proxyListName || '',
+      proxySources: sourceNamesFor(task.proxyListName || existing.proxyListName || ''),
     });
   }
   const watched = [...new Set(tasks.flatMap(t => t.skus))];
 
   // flushStart reconciles the one native monitor after every pending checkout batch has been
   // delivered, so additive configs cannot race duplicate starts for the same monitor ID.
-  const grp = groupOf(tasks[0] && tasks[0].proxyListName);
-  const proxyCount = grp === 'Local' ? 0 : proxyLinesFor(grp).length;
+  const firstRef = tasks[0] && tasks[0].proxyListName;
+  const grp = groupOf(firstRef);
+  const proxyCount = resolveAssignment(firstRef).sources.reduce((sum, source) => sum + source.lines.length, 0);
   log(`[target] monitor watching ${watched.length} SKU(s) for ${tasks.length} task(s)`);
   log(grp === 'Local'
     ? '[target] ⚠ proxy group: Local (your own IP) — redsky will 403 the monitor. Pick a list on the task, then STOP and START it.'
@@ -3316,6 +3361,7 @@ function startTarget(config, mainWindow) {
       ...skuMetaFromItems(config.items),
       qty: Math.max(1, parseInt(config.qty, 10) || 2),
       proxyListName: String(t.proxyListName || '').trim(),
+      proxySources: sourceNamesFor(t.proxyListName),
       loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
       ignoreLowStock: config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus',
     });
@@ -3556,12 +3602,15 @@ function setTaskProxy(taskId, proxyListName) {
   if (!runningTaskIds.has(taskId)) return false;   // not running: the stored value is enough
   // Same mapping as start-tasks: the engine treats the empty string as a real group name and kills
   // the task with "Error Assigning Proxy", so "no proxy" has to travel as the literal "Local".
-  const group = String(proxyListName || '').trim() || 'Local';
+  const group = groupOf(proxyListName);
+  const proxySources = sourceNamesFor(proxyListName);
   if (group !== 'Local') {
-    Object.assign(sentConfigs.proxies, buildProxyMap(group));
+    Object.assign(sentConfigs.proxies, buildProxyMap(proxyListName));
     sendConfigs();
   }
-  return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group }] });
+  const existing = taskCheckoutConfigById.get(taskId) || {};
+  taskCheckoutConfigById.set(taskId, { ...existing, proxyListName: String(proxyListName || '').trim(), proxySources });
+  return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
 module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, setPokemonQueueStreamHealth, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };

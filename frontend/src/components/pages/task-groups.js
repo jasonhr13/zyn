@@ -1,7 +1,7 @@
 import React, { Component, createRef } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
-import { proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
+import { proxyFolderRef, proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
 import {
   formatBandwidth,
   sameTargetBank,
@@ -475,8 +475,48 @@ class TaskGroups extends Component {
 
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
-  harvesterProxyAvailable = harvester => !harvester.proxyListName
-    || this.proxyLists().some(list => proxyRef(list) === harvester.proxyListName);
+  proxyFolders = () => {
+    try {
+      const folders = ipcRenderer.sendSync('getProxyGroups') || [];
+      if (Array.isArray(folders) && folders.length) return folders;
+    } catch {}
+    const names = new Set();
+    for (const list of this.proxyLists()) {
+      for (const group of (Array.isArray(list.groups) ? list.groups : [])) {
+        if (group) names.add(String(group));
+      }
+    }
+    return [...names];
+  };
+  renderProxySelectOptions = ({ localValue = '', localLabel = 'Local', includeLocal = true } = {}) => {
+    const folders = this.proxyFolders();
+    const lists = this.proxyLists();
+    return (
+      <>
+        {includeLocal && <option value={localValue}>{localLabel}</option>}
+        {!!folders.length && (
+          <optgroup label="Folders">
+            {folders.map(name => <option key={proxyFolderRef(name)} value={proxyFolderRef(name)}>{name}</option>)}
+          </optgroup>
+        )}
+        {!!lists.length && (
+          <optgroup label="Lists">
+            {lists.map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+          </optgroup>
+        )}
+      </>
+    );
+  };
+  harvesterProxyAvailable = harvester => {
+    const ref = String(harvester && harvester.proxyListName || '');
+    if (!ref) return true;
+    const folder = ref.toLowerCase().startsWith('group:') ? ref.slice(6).trim().toLowerCase() : '';
+    if (folder) {
+      return this.proxyLists().some(list => !list.managed && (Array.isArray(list.groups) ? list.groups : [])
+        .some(group => String(group || '').toLowerCase() === folder));
+    }
+    return this.proxyLists().some(list => proxyRef(list) === ref);
+  };
 
   extensionHarvesterConfigured = () => {
     const settings = this.props.settings || {};
@@ -1765,8 +1805,7 @@ class TaskGroups extends Component {
         <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{this.accountLabel(task)}</strong><small>{task.id}</small></span></span>
         <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
         <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
-          <option value="">Local</option>
-          {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+          {this.renderProxySelectOptions()}
         </select>
         <label
           className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
@@ -2002,9 +2041,8 @@ class TaskGroups extends Component {
                           event.target.value = '__keep';
                         }}
                       >
-                        <option value="__keep">Choose a proxy list…</option>
-                        <option value="__local">Local</option>
-                        {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+                        <option value="__keep">Choose a proxy…</option>
+                        {this.renderProxySelectOptions({ localValue: '__local', localLabel: 'Local' })}
                       </select>
                     </label>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedTaskIds: [] })}>Clear selection</button>
@@ -2106,9 +2144,8 @@ class TaskGroups extends Component {
                   const workers = proxyListName ? draft.workers : String(Math.min(2, clampInteger(draft.workers, 1, 100, 1)));
                   setDraft({ proxyListName, workers });
                 }}>
-                  <option value="">Local (no proxy)</option>
+                  {this.renderProxySelectOptions({ localLabel: 'Local (no proxy)' })}
                   {proxyMissing && <option value={draft.proxyListName}>Unavailable: {draft.proxyListName}</option>}
-                  {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
                 </select>
               </div>
               <div className="form-group">
@@ -2368,7 +2405,7 @@ class TaskGroups extends Component {
             {this.renderProductHistoryPicker(draft)}
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
-              <div className="form-group"><label className="form-label">Default proxy group</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Default proxy</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}>{this.renderProxySelectOptions()}</select></div>
             </div>
             <div className="form-group">
               <label className="form-label">Stock confidence</label>
@@ -2412,7 +2449,7 @@ class TaskGroups extends Component {
           <div className="modal-header"><div><div className="modal-title">Add Account Tasks</div><p>Select one or more Target accounts for “{group.name}”.</p></div><button className="modal-close" onClick={() => this.setState({ showTaskModal: false })}>×</button></div>
           <div className="modal-body">
             <div className="task-create-summary"><span><Icon name="user" size={14} /> {this.state.selectedAccounts.length} selected</span><strong>{accounts.length} Target accounts</strong></div>
-            <div className="form-group"><label className="form-label">Proxy group for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}><option value="">Local</option>{this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">Proxy for new tasks</label><select className="form-select" value={this.state.taskProxy} onChange={event => this.setState({ taskProxy: event.target.value })}>{this.renderProxySelectOptions()}</select></div>
             <label className={`task-repeat-toggle task-repeat-toggle-modal${this.state.taskLoopCheckout ? ' enabled' : ''}`}>
               <input type="checkbox" checked={this.state.taskLoopCheckout === true} onChange={event => this.setState({ taskLoopCheckout: event.target.checked })} />
               <span><strong>Loop checkout for these tasks</strong><small>After a checkout or decline, keep trying eligible SKUs. Confirmed orders stop at two per account, per SKU, within four hours.</small></span>

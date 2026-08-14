@@ -21,6 +21,8 @@ assert.match(taskGroups, /renderTaskDetail\(group, task\)/);
 assert.match(taskGroups, /className=\{`group-task-row group-task-row-clickable\$\{selected \? ' selected' : ''\}`\}/);
 assert.match(taskGroups, /toggleSelectVisibleTasks/);
 assert.match(taskGroups, /renderGroupDropPulse/);
+assert.match(taskGroups, /renderProxySelectOptions/);
+assert.match(taskGroups, /Folders/);
 assert.match(taskGroups, /summarizeGroupDropPulse/);
 assert.match(taskGroups, /Adding to cart/);
 assert.match(taskGroups, /Submitting order/);

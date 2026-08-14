@@ -35,7 +35,7 @@ import { makePersona, personaInitScript, makeContextOptions, createHuman } from 
 import { createHarvestCoordinator } from './shape-harvest-coordinator.mjs';
 import { createBankDemand } from './shape-bank-demand.mjs';
 import {
-  classifyHarvestPageEvidence, classifyHarvestFailure, createHarvestHealth,
+  classifyHarvestPageEvidence, classifyHarvestFailure, createHarvestHealth, pickWeightedSource,
 } from './shape-harvest-health.mjs';
 import {
   detectShapeBrowsers, distributeShapeWorkerBrowsers, shapeBrowserLaunchOptions,
@@ -95,9 +95,22 @@ function loadProxies() {
   try { fs.unlinkSync(file); } catch {}
   return raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
     .map(line => {
-      const p = line.split(':');
+      let source = '';
+      let payload = line;
+      const tab = line.indexOf('\t');
+      if (tab >= 0) {
+        source = line.slice(0, tab).trim();
+        payload = line.slice(tab + 1).trim();
+      }
+      const p = payload.split(':');
       if (p.length < 2) return null;
-      return { raw: line, server: `http://${p[0]}:${p[1]}`, username: p[2] || '', password: p[3] || '' };
+      return {
+        raw: payload,
+        source,
+        server: `http://${p[0]}:${p[1]}`,
+        username: p[2] || '',
+        password: p[3] || '',
+      };
     }).filter(Boolean);
 }
 
@@ -712,6 +725,15 @@ const PROXIES = loadProxies();
 const RECENT_MAX = Math.min(500, Math.max(1, Math.floor(PROXIES.length / 2)));
 const recent = new Set();
 const recentOrder = [];
+const sourceScores = Object.create(null);
+function recordSourceResult(source, ok) {
+  const name = String(source || '').trim();
+  if (!name) return;
+  const current = sourceScores[name] || { ok: 0, fail: 0 };
+  if (ok) current.ok += 1;
+  else current.fail += 1;
+  sourceScores[name] = current;
+}
 function pickProxy() {
   if (!PROXIES.length) return { proxy: null, waitMs: 0 };
   const healthy = [];
@@ -721,8 +743,12 @@ function pickProxy() {
   if (!healthy.length) {
     return { proxy: null, waitMs: harvestHealth.nextProxyReadyMs(PROXIES.map(proxy => proxy.raw)) || 1000 };
   }
-  const fresh = healthy.filter(idx => !recent.has(idx));
-  const choices = fresh.length ? fresh : healthy;
+  const sources = [...new Set(healthy.map(idx => PROXIES[idx].source).filter(Boolean))];
+  const preferred = sources.length > 1 ? pickWeightedSource(sources, sourceScores) : '';
+  const inSource = preferred ? healthy.filter(idx => PROXIES[idx].source === preferred) : healthy;
+  const pool = inSource.length ? inSource : healthy;
+  const fresh = pool.filter(idx => !recent.has(idx));
+  const choices = fresh.length ? fresh : pool;
   const idx = choices[Math.floor(Math.random() * choices.length)];
   recent.add(idx);
   recentOrder.push(idx);
@@ -1513,6 +1539,7 @@ async function farmerWorker(id, initialBrowser) {
         bandwidth,
       });
       harvestHealth.recordSuccess({ type, proxyKey: proxy && proxy.raw });
+      recordSourceResult(proxy && proxy.source, true);
       workerScaler.recordSuccess({
         sourceKey: workerScaleSourceKey(proxy, selectedBrowser, id), workerId: id,
       });
@@ -1531,6 +1558,7 @@ async function farmerWorker(id, initialBrowser) {
         failureCategory: category,
       });
       const outcome = harvestHealth.recordFailure({ type, category, proxyKey: proxy && proxy.raw });
+      recordSourceResult(proxy && proxy.source, false);
       // Health telemetry needs route independence without proxy credentials. Fixed scheduling never
       // uses this evidence to deactivate a worker; quarantine owns the failed route instead.
       workerScaler.recordFailure({

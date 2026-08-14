@@ -10,6 +10,7 @@ import {
 import {
   classifyHarvestFailure,
   createHarvestHealth,
+  pickWeightedSource,
 } from '../native-farmer/shape-harvest-health.mjs';
 
 const unavailable = [];
@@ -76,5 +77,8 @@ const outcome = health.recordFailure({ type: 'atc', category: tunnelCategory, pr
 assert.equal(outcome.scope, 'proxy');
 assert.equal(outcome.proxyQuarantineMs, 60_000);
 assert.equal(health.snapshot().quarantinedProxies, 1);
+
+assert.equal(pickWeightedSource(['Resi', 'ISP'], { ISP: { ok: 8, fail: 0 } }, { random: () => 0.99 }), 'ISP');
+assert.equal(pickWeightedSource(['Resi', 'ISP'], { ISP: { ok: 8, fail: 0 } }, { random: () => 0.01 }), 'Resi');
 
 console.log('Target farmer runtime health smoke test passed');

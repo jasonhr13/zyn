@@ -68,6 +68,8 @@ Task IDs must be unique across both modules while the engine process is alive.
 | `edit-tasks` | full start-task payload with `id` | Runtime item/config edit |
 | `stock-ping` | `site`, `productKey`, `inStock` | Publish external stock |
 | `set-task-proxy` | `id`, `proxyGroup` | Runtime proxy edit |
+
+Target start, edit, monitor, and `set-task-proxy` messages accept optional `proxySources: ["List A", "List B"]`. When present, the engine draws from those named lists (already in `send-configs.proxyList`) and weights later picks toward sources that carted or checked out. A missing array keeps the existing single-`proxyGroup` draw.
 | `received-code` | `email`, `code`, `site` | Complete an OTP request |
 | `code-watcher-ready` | `requestId` | Acknowledge OTP watcher setup |
 | `received-token` | `taskId`, `token` | Complete a manual captcha request |

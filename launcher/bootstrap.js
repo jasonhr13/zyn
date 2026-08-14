@@ -410,11 +410,23 @@ async function targetReadinessForGroup(group, taskIds) {
     .filter(task => !selected || selected.has(String(task && task.id)));
   const refs = new Set(tasks.map(task => String(task.proxyListName || candidate.proxyListName || '').trim())
     .filter(ref => ref && !/^local$/i.test(ref)));
+  const { resolveProxyAssignment, assignmentLineCount } = require('./proxy-resolve');
   const proxyCounts = {};
   for (const ref of refs) {
     try {
-      const lines = dataManager.getProxyLines?.(ref) || [];
-      proxyCounts[ref] = { ok: Array.isArray(lines) && lines.length > 0, count: Array.isArray(lines) ? lines.length : 0 };
+      const resolved = resolveProxyAssignment(ref, {
+        getProxyLines: name => dataManager.getProxyLines?.(name) || [],
+        getProxies: () => dataManager.getProxies?.() || { lists: [] },
+      });
+      const count = assignmentLineCount(resolved);
+      const emptyMembers = resolved.kind === 'group'
+        ? (resolved.sources.length ? '' : 'no usable lists in this folder')
+        : '';
+      proxyCounts[ref] = {
+        ok: count > 0,
+        count,
+        error: count > 0 ? '' : (emptyMembers || 'missing or empty'),
+      };
     } catch (error) {
       proxyCounts[ref] = { ok: false, count: 0, error: String(error && error.message || error).slice(0, 300) };
     }
