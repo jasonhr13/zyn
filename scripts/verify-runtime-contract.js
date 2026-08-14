@@ -151,6 +151,10 @@ check('Zyn runtime branding', () => {
   const discordMonitor = asar.extractFile(archive, 'public/helpers/discord-monitor.js').toString('utf8');
   const targetEngine = asar.extractFile(archive, 'public/helpers/target-engine.js').toString('utf8');
   const dataManager = asar.extractFile(archive, 'public/helpers/data-manager.js').toString('utf8');
+  const checkoutReporter = asar.extractFile(
+    archive,
+    'public/helpers/checkout-reporter.js',
+  ).toString('utf8');
   const nativeEngineContract = asar.extractFile(
     archive,
     'public/helpers/native-engine-contract.js',
@@ -194,6 +198,14 @@ check('Zyn runtime branding', () => {
     'packaged native engine bridge does not route local analytics events');
   assert.match(targetEngine, /analyticsRecorder\.record\(m\)/,
     'packaged native engine bridge bypasses the account-bound analytics outbox');
+  assert.match(targetEngine, /webhooks: \{ checkout: checkoutHook, decline: declineHook \}/,
+    'packaged Target bridge does not keep success and decline webhooks separate');
+  assert.match(targetEngine, /discordDeclineWebhook/,
+    'packaged Target bridge omits the user decline-webhook setting');
+  assert.match(dataManager, /discordDeclineWebhook: ''/,
+    'packaged settings storage omits the decline-webhook default');
+  assert.match(checkoutReporter, /if \(!ok\) return;[\s\S]*await postJson\(GLOBAL_WEBHOOK/,
+    'packaged global collector still receives failed checkout events');
   assert.match(targetEngine, /case 'monitor-bandwidth':/,
     'packaged Target bridge does not accept native monitor bandwidth events');
   assert.match(targetEngine,

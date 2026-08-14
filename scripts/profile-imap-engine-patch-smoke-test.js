@@ -10,13 +10,14 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const project = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-imap-engines-'));
-for (const filename of ['target-engine.js', 'plain-log.js']) {
+for (const filename of ['target-engine.js', 'plain-log.js', 'data-manager.js']) {
   fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', filename), path.join(directory, filename));
 }
 
 execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
 const target = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
 const plainLog = fs.readFileSync(path.join(directory, 'plain-log.js'), 'utf8');
+const dataManager = fs.readFileSync(path.join(directory, 'data-manager.js'), 'utf8');
 const nativeEngineContract = path.join(directory, 'native-engine-contract.js');
 const nativeHyperBroker = path.join(directory, 'native-hyper-broker.js');
 const manualCaptchaManager = path.join(directory, 'manual-captcha-manager.js');
@@ -29,6 +30,16 @@ assert.match(target, /require\('\.\/native-engine-contract'\)/);
 assert.match(target, /require\('\.\/native-hyper-broker'\)/);
 assert.match(target, /require\('\.\/manual-captcha-manager'\)/);
 assert.match(target, /require\('\.\/analytics-recorder'\)/);
+assert.match(target, /checkoutHook = String\(webhookSettings\.discordWebhook \|\| ''\)\.trim\(\)/,
+  'Target success webhook does not use the existing success setting');
+assert.match(target, /declineHook = String\(webhookSettings\.discordDeclineWebhook \|\| ''\)\.trim\(\)/,
+  'Target decline webhook does not use its independent setting');
+assert.match(target, /webhooks: \{ checkout: checkoutHook, decline: declineHook \}/,
+  'Target native config collapses success and decline webhooks together');
+assert.doesNotMatch(target, /webhooks: \{ checkout: hook, decline: hook \}/,
+  'Target native config still routes declines to the success webhook');
+assert.match(dataManager, /discordDeclineWebhook: ''/,
+  'settings storage does not provide a default for the independent decline webhook');
 assert.match(target, /case 'monitor-bandwidth':/);
 assert.match(target,
   /const telemetry = engineContract\.normalizeMonitorBandwidth\(m\)/,
@@ -1047,7 +1058,7 @@ assert.match(plainLog, /Mailbox connected — waiting for the email code/);
 assert.match(plainLog, /Email code found — submitting/);
 assert.match(plainLog, /Could not find the new email code — enter it manually/);
 
-for (const filename of ['target-engine.js', 'plain-log.js']) {
+for (const filename of ['target-engine.js', 'plain-log.js', 'data-manager.js']) {
   execFileSync(process.execPath, ['--check', path.join(directory, filename)]);
 }
 execFileSync(process.execPath, ['--check', nativeEngineContract]);

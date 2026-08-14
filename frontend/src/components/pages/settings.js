@@ -47,6 +47,7 @@ class Settings extends Component {
     super(props);
     this.state = {
       discordWebhook: '',
+      discordDeclineWebhook: '',
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
@@ -69,6 +70,7 @@ class Settings extends Component {
     const g = s.generate || {};
     this.setState({
       discordWebhook: s.discordWebhook || '',
+      discordDeclineWebhook: s.discordDeclineWebhook || '',
       aycdApiKey: s.aycdApiKey || g.aycdApiKey || '',
       // Blank means "use the engine default" — the placeholders show what that default is, so an empty
       // box is never ambiguous. targetAtcHarvestTcin (singular) is the legacy key for the same setting.
@@ -157,6 +159,7 @@ class Settings extends Component {
     const settings = {
       ...previousSettings,
       discordWebhook: this.state.discordWebhook,
+      discordDeclineWebhook: this.state.discordDeclineWebhook,
       aycdApiKey: this.state.aycdApiKey.trim(),
       // Normalise the TCIN list to bare comma-separated numbers: the farmer accepts full product URLs
       // too, so a pasted Target link survives, but stray spaces/newlines from a paste would otherwise
@@ -480,7 +483,7 @@ class Settings extends Component {
   }
 
   render() {
-    const { discordWebhook, aycdApiKey, showAycdKey, saved,
+    const { discordWebhook, discordDeclineWebhook, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
@@ -578,6 +581,19 @@ class Settings extends Component {
                 value={discordWebhook}
                 onChange={e => this.set('discordWebhook', e.target.value)}
               />
+              <div className="form-hint">Receives confirmed orders only.</div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Declined Webhook URL (optional)</label>
+              <input
+                className="form-input monospace"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={discordDeclineWebhook}
+                onChange={e => this.set('discordDeclineWebhook', e.target.value)}
+              />
+              <div className="form-hint">
+                Receives payment declines separately. Leave blank to disable decline notifications.
+              </div>
             </div>
           </div>
 

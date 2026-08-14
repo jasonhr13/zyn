@@ -59,6 +59,8 @@
   --target-status-cart-bg: #fef3c7;
   --target-status-checkout: #1d4ed8;
   --target-status-checkout-bg: #dbeafe;
+  --target-status-submit: #7e22ce;
+  --target-status-submit-bg: #f3e8ff;
   --target-status-success: #15803d;
   --target-status-success-bg: #dcfce7;
   --target-status-error: #b91c1c;
@@ -130,6 +132,8 @@ body.theme-night {
   --target-status-cart-bg: #392f19;
   --target-status-checkout: #60a5fa;
   --target-status-checkout-bg: #1d3048;
+  --target-status-submit: #c084fc;
+  --target-status-submit-bg: #34204a;
   --target-status-success: #4ade80;
   --target-status-success-bg: #1b3829;
   --target-status-error: #fb7185;

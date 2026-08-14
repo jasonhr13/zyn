@@ -157,6 +157,7 @@ const STATUS_LABELS = {
   watching: 'Watching',
   carting: 'Carting',
   checkout: 'Checking out',
+  submitting: 'Submitting order',
   success: 'Success',
   error: 'Attention',
 };

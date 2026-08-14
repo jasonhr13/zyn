@@ -1296,6 +1296,7 @@ body.theme-night .form-select {
 .target-task-status-watching { color: var(--target-status-neutral); background: var(--target-status-neutral-bg); }
 .target-task-status-carting { color: var(--target-status-cart); background: var(--target-status-cart-bg); }
 .target-task-status-checkout { color: var(--target-status-checkout); background: var(--target-status-checkout-bg); }
+.target-task-status-submitting { color: var(--target-status-submit); background: var(--target-status-submit-bg); }
 .target-task-status-success { color: var(--target-status-success); background: var(--target-status-success-bg); }
 .target-task-status-error { color: var(--target-status-error); background: var(--target-status-error-bg); }
 .group-status-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
@@ -1335,6 +1336,8 @@ body.theme-night .form-select {
 .task-status-hero-carting .task-status-hero-icon { color: var(--target-status-cart); background: var(--target-status-cart-bg); }
 .task-status-hero-checkout { border-color: color-mix(in srgb, var(--target-status-checkout) 24%, transparent); }
 .task-status-hero-checkout .task-status-hero-icon { color: var(--target-status-checkout); background: var(--target-status-checkout-bg); }
+.task-status-hero-submitting { border-color: color-mix(in srgb, var(--target-status-submit) 24%, transparent); }
+.task-status-hero-submitting .task-status-hero-icon { color: var(--target-status-submit); background: var(--target-status-submit-bg); }
 
 .task-detail-grid { display: grid; grid-template-columns: minmax(240px, .7fr) minmax(420px, 1.5fr); gap: 14px; align-items: stretch; }
 .task-detail-grid .panel { margin-bottom: 0; }

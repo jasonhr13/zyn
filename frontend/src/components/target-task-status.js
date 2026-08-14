@@ -30,7 +30,7 @@ export function targetStatusTone(status) {
   if (/^could not (?:switch|clear)/.test(text)) return 'error';
   if (/^product found:/.test(text)) return 'carting';
   if (/^rotated profile to:/.test(text)
-    || /^(?:switch(?:ed)? to|throttled - switched to)\b/.test(text)) return 'checkout';
+    || /^(?:switch(?:ed)? to|throttled - switched to)\b/.test(text)) return 'submitting';
 
   // These confirmation states are intentionally green before the final status arrives, making it
   // obvious at a glance that the task is waiting on Target rather than still building the order.
@@ -48,7 +48,7 @@ export function targetStatusTone(status) {
   // Prefixes are checked before generic error words so a product name containing “error” or
   // “blocked” cannot turn a healthy Product Found status red.
   if (/^product in stock\b/.test(text)
-    || /\b(?:adding to cart|carting filler item|getting cart info|getting cart|using alternate cart flow)\b/.test(text)
+    || /\b(?:adding to cart|carting filler item|getting cart(?! info)|using alternate cart flow)\b/.test(text)
     || /^limit reached$/.test(text)) {
     return 'carting';
   }
@@ -57,7 +57,14 @@ export function targetStatusTone(status) {
     return 'error';
   }
 
-  if (/\b(?:preparing runtime|starting(?: task)?|completed task init|getting session|logging in|login|requesting login code|waiting for code|submitting code|validating login|getting details|setting details|waiting for shape|submitting payment|submitting cvv|submitting order|out of stock, checking cart|rotating proxy|setting proxy|proxy updated|rotating profile|throttled|finishing on home ip)\b/.test(text)) {
+  // Once Target has accepted an item into the cart, use a dedicated order-submission tone. These
+  // steps used to share the blue setup/Shape color, which made the most important phase invisible
+  // when scanning a large task group.
+  if (/\b(?:carted|get(?:ting)? cart info|preparing checkout|setting address|setting payment|submitting payment|submitting cvv|submitting order|out of stock, checking cart|rotating profile|throttled|finishing on home ip)\b/.test(text)) {
+    return 'submitting';
+  }
+
+  if (/\b(?:preparing runtime|starting(?: task)?|completed task init|getting session|logging in|login|requesting login code|waiting for code|submitting code|validating login|getting details|setting details|waiting for shape|rotating proxy|setting proxy|proxy updated)\b/.test(text)) {
     return 'checkout';
   }
 

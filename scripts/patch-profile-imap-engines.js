@@ -18,6 +18,7 @@ if (!helperDirectory || !fs.existsSync(helperDirectory)) {
 const SOURCES = Object.freeze({
   'target-engine.js': 'f43ff08d23fa8f4db55f8b1d2f12b76017f671eb5c33a785dc7110c9a075426d',
   'plain-log.js': '519f4e8034889a6887e31272ed14cb01dd5ae752075e675cd2a22582970c43fd',
+  'data-manager.js': '6faee35832763f7f538b8452b0de823096cfbe484a6feccf6e8efc563a8e0e49',
 });
 
 function sha256(buffer) {
@@ -64,6 +65,27 @@ function saveSource(opened) {
 function patchTarget() {
   const opened = openSource('target-engine.js');
   let source = opened.source;
+
+  source = replaceOnce(source, `  // The engine posts its own checkout/decline Discord embeds — it just needs the URL. Without this
+  // it logged "webhook: skip send (empty decline URL)" and nothing ever reached Discord.
+  let hook = '';
+  try { hook = ((dm.getSettings() || {}).discordWebhook || '').trim(); } catch {}`,
+  `  // Success and decline notifications are independently optional. The legacy discordWebhook key
+  // remains the success destination so existing users keep their confirmed-order notifications;
+  // declines never inherit it implicitly.
+  let checkoutHook = '';
+  let declineHook = '';
+  try {
+    const webhookSettings = dm.getSettings() || {};
+    checkoutHook = String(webhookSettings.discordWebhook || '').trim();
+    declineHook = String(webhookSettings.discordDeclineWebhook || '').trim();
+  } catch {}`,
+  'separate Target success and decline webhook settings');
+
+  source = replaceOnce(source,
+    `    webhooks: { checkout: hook, decline: hook },`,
+    `    webhooks: { checkout: checkoutHook, decline: declineHook },`,
+    'separate native Target success and decline webhook config');
 
   // The packaged farmer defaults to New Headless too, but pass it explicitly from Zyn
   // so the selected display mode is unambiguous in the spawned process command line.
@@ -1662,6 +1684,15 @@ function patchPlainLog() {
   saveSource(opened);
 }
 
+function patchDataManager() {
+  const opened = openSource('data-manager.js');
+  opened.source = replaceOnce(opened.source, `    discordWebhook: '',
+    defaultQty: 1,`, `    discordWebhook: '',
+    discordDeclineWebhook: '',
+    defaultQty: 1,`, 'decline webhook settings default');
+  saveSource(opened);
+}
+
 try {
   for (const filename of ['native-engine-contract.js', 'native-hyper-broker.js', 'manual-captcha-manager.js', 'analytics-recorder.js']) {
     fs.copyFileSync(
@@ -1671,6 +1702,7 @@ try {
   }
   patchTarget();
   patchPlainLog();
+  patchDataManager();
   console.log(`Patched profile-owned IMAP routing in ${helperDirectory}`);
 } catch (error) {
   console.error(`Profile IMAP engine patch failed: ${error.message}`);

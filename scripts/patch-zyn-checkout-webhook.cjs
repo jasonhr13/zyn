@@ -42,6 +42,20 @@ function replaceReporter(source, webhook) {
   const matches = source.match(assignment) || [];
   if (matches.length !== 1) throw new Error(`Expected one checkout-reporter webhook assignment, found ${matches.length}`);
   source = source.replace(assignment, `const GLOBAL_WEBHOOK =\n  ${JSON.stringify(webhook)};`);
+  source = source.replace(
+    `//   2. the global Discord webhook           → your collector channel, tagged with Buyer`,
+    `//   2. confirmed successes to the global Discord webhook → your collector channel, tagged with Buyer`,
+  );
+  const collectorAnchor = `  // ── 2. global collector webhook ─────────────────────────────────────────`;
+  if ((source.split(collectorAnchor).length - 1) !== 1) {
+    throw new Error('Expected one central collector section');
+  }
+  source = source.replace(collectorAnchor, `  // Declines remain useful in the user's private analytics, but they are commonly a cart that lost
+  // stock rather than a genuine checkout failure. Never send those noisy events to the operator's
+  // global Discord collector.
+  if (!ok) return;
+
+${collectorAnchor}`);
   const payloadAnchor = `  await postJson(GLOBAL_WEBHOOK, {
     embeds: [`;
   if ((source.split(payloadAnchor).length - 1) !== 1) throw new Error('Expected one central collector payload');
@@ -61,7 +75,17 @@ function replacePbandai(source, webhook) {
   const literal = /https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g;
   const matches = source.match(literal) || [];
   if (matches.length !== 1) throw new Error(`Expected one P-Bandai collector webhook, found ${matches.length}`);
-  return source.replace(literal, webhook);
+  source = source.replace(literal, webhook);
+  const outcomeAnchor = 'await ye([t.webhook,we],be(t,e,a,s[n]||n),$e(e))';
+  if ((source.split(outcomeAnchor).length - 1) !== 1) {
+    throw new Error('Expected one P-Bandai final-outcome collector call');
+  }
+  // Keep the user's own P-Bandai webhook behavior intact, but add the operator collector only for
+  // a confirmed order. This mirrors the central native reporter policy.
+  return source.replace(
+    outcomeAnchor,
+    'await ye([t.webhook,...(n==="confirmed"?[we]:[])],be(t,e,a,s[n]||n),$e(e))',
+  );
 }
 
 const files = process.argv.slice(2).map(file => path.resolve(file));
