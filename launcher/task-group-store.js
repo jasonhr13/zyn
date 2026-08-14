@@ -42,16 +42,18 @@ function normalizeWatchedItems(group) {
   const candidate = group && typeof group === 'object' ? group : {};
   const result = [];
   const seen = new Set();
-  const add = (rawSku, rawMaxPrice = '') => {
+  const add = (rawSku, rawMaxPrice = '', rawPriority = false) => {
     const sku = parseSku(rawSku);
     if (!sku || seen.has(sku)) return;
     seen.add(sku);
-    result.push({ sku, maxPrice: normalizeMaxPrice(rawMaxPrice) });
+    const item = { sku, maxPrice: normalizeMaxPrice(rawMaxPrice) };
+    if (rawPriority === true) item.priority = true;
+    result.push(item);
   };
   if (Array.isArray(candidate.items)) {
     for (const item of candidate.items) {
       if (item && typeof item === 'object') {
-        add(item.sku || item.tcin || item.monitorInput, item.maxPrice);
+        add(item.sku || item.tcin || item.monitorInput, item.maxPrice, item.priority === true);
       } else {
         add(item);
       }

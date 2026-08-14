@@ -15,6 +15,32 @@ export function targetTaskIsRunning(status) {
   return !!text && !/\b(?:successful|checked out|payment declined)\b/.test(text);
 }
 
+// Live drop buckets. These are current-state only: a task leaves the count as soon as it
+// returns to restock, errors, or moves to another phase. Successful checkouts are counted
+// separately from task outcomes and stay until the next start.
+export function targetDropPhase(status) {
+  if (!status) return '';
+  const text = textOf(status);
+  if (/\b(?:adding to cart|using alternate cart flow)\b/.test(text)) return 'carting';
+  if (/\b(?:submitting payment|submitting cvv|submitting order)\b/.test(text)) return 'submitting';
+  return '';
+}
+
+export function summarizeGroupDropPulse(tasks, { statusFor, checkoutCountFor } = {}) {
+  const statusOf = typeof statusFor === 'function' ? statusFor : () => null;
+  const checkoutsOf = typeof checkoutCountFor === 'function' ? checkoutCountFor : () => 0;
+  let carting = 0;
+  let submitting = 0;
+  let checkouts = 0;
+  for (const task of (Array.isArray(tasks) ? tasks : [])) {
+    const phase = targetDropPhase(statusOf(task));
+    if (phase === 'carting') carting += 1;
+    else if (phase === 'submitting') submitting += 1;
+    checkouts += Math.max(0, Number(checkoutsOf(task)) || 0);
+  }
+  return { carting, submitting, checkouts };
+}
+
 export function targetStatusTone(status) {
   if (!status) return 'idle';
   const text = textOf(status);

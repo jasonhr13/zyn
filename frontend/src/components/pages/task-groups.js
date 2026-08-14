@@ -26,7 +26,7 @@ import {
   scheduleDetailLine,
   scheduleSummary,
 } from '../task-group-schedule.mjs';
-import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
+import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsRunning } from '../target-task-status';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 
 const { ipcRenderer, clipboard } = window.require('electron');
@@ -35,6 +35,7 @@ const EMPTY_GROUP = Object.freeze({
   name: '',
   skus: '',
   maxPrices: {},
+  priorities: {},
   qty: 2,
   proxyListName: '',
   loopCheckout: false,
@@ -143,13 +144,21 @@ const watchedItemsForGroup = group => {
       bySku.set(sku, {
         sku,
         maxPrice: normalizeMaxPrice(item && typeof item === 'object' ? item.maxPrice : '') || '',
+        priority: !!(item && typeof item === 'object' && item.priority === true),
       });
     }
   }
   for (const sku of parseSkus(candidate.skus)) {
-    if (!bySku.has(sku)) bySku.set(sku, { sku, maxPrice: '' });
+    if (!bySku.has(sku)) bySku.set(sku, { sku, maxPrice: '', priority: false });
   }
   return [...bySku.values()];
+};
+const watchListSummary = group => {
+  const items = watchedItemsForGroup(group);
+  const priorityCount = items.filter(item => item.priority).length;
+  const skuPart = `${items.length} SKU${items.length === 1 ? '' : 's'}`;
+  const priorityPart = priorityCount ? ` · ${priorityCount} priority` : '';
+  return `${skuPart}${priorityPart} · qty ${group.qty || 2}`;
 };
 
 const STATUS_LABELS = {
@@ -186,11 +195,14 @@ class TaskGroups extends Component {
     groups: [],
     selectedGroupId: '',
     selectedTaskId: '',
+    selectedTaskIds: [],
     groupFilter: '',
     taskFilter: '',
     showGroupModal: false,
     editingGroupId: '',
     groupDraft: { ...EMPTY_GROUP },
+    skuInput: '',
+    skuInputError: '',
     productHistory: [],
     productHistoryFilter: '',
     showScheduleModal: false,
@@ -296,7 +308,7 @@ class TaskGroups extends Component {
       this.props.dispatch({ type: 'update', obj: { settings: migratedSettings } });
       try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     }
-    this.setState(({ selectedGroupId, selectedTaskId }) => ({
+    this.setState(({ selectedGroupId, selectedTaskId, selectedTaskIds }) => ({
       groups,
       loaded: true,
       atcCookiesPerTask,
@@ -305,6 +317,7 @@ class TaskGroups extends Component {
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
       selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
         ? selectedTaskId : '',
+      selectedTaskIds: selectedTaskIds.filter(id => groups.some(group => (group.tasks || []).some(task => task.id === id))),
     }));
   };
 
@@ -475,6 +488,10 @@ class TaskGroups extends Component {
   statusFor = task => (this.props.target.taskStatus || {})[task.id];
   outcomeFor = task => ((this.props.target.taskOutcomes || {})[task.id]) || {};
   checkoutCountFor = task => Math.max(0, Number(this.outcomeFor(task).checkouts) || 0);
+  groupDropPulse = group => summarizeGroupDropPulse(group && group.tasks, {
+    statusFor: this.statusFor,
+    checkoutCountFor: this.checkoutCountFor,
+  });
   proxyStatusFor = task => {
     const status = (this.props.target.proxyStatus || {})[task.id];
     return status && !status.hidden ? status : null;
@@ -530,6 +547,8 @@ class TaskGroups extends Component {
       showGroupModal: true,
       editingGroupId: '',
       groupDraft: { ...EMPTY_GROUP },
+      skuInput: '',
+      skuInputError: '',
       productHistoryFilter: '',
     });
   };
@@ -544,30 +563,82 @@ class TaskGroups extends Component {
         name: group.name,
         skus: items.map(item => item.sku).join('\n'),
         maxPrices: Object.fromEntries(items.map(item => [item.sku, item.maxPrice || ''])),
+        priorities: Object.fromEntries(items.map(item => [item.sku, item.priority === true])),
         qty: group.qty || 2,
         proxyListName: group.proxyListName || '',
         loopCheckout: group.loopCheckout === true,
         useFillerItem: group.useFillerItem === true,
         stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
       },
+      skuInput: '',
+      skuInputError: '',
       productHistoryFilter: '',
     });
   };
 
-  closeGroupModal = () => this.setState({ showGroupModal: false, editingGroupId: '' });
+  closeGroupModal = () => this.setState({
+    showGroupModal: false,
+    editingGroupId: '',
+    skuInput: '',
+    skuInputError: '',
+  });
 
-  addProductFromHistory = sku => this.setState(previous => {
+  productNameForSku = sku => {
+    const item = (this.state.productHistory || []).find(entry => String(entry.sku) === String(sku));
+    return String(item && item.name || '').trim();
+  };
+
+  addWatchedSkus = raw => {
+    const incoming = parseSkus(raw);
+    if (!incoming.length) {
+      this.setState({ skuInputError: 'Paste a Target TCIN or product URL.' });
+      return false;
+    }
+    this.setState(previous => {
+      const existing = parseSkus(previous.groupDraft.skus);
+      const next = [...existing];
+      for (const sku of incoming) {
+        if (!next.includes(sku)) next.push(sku);
+      }
+      const added = next.length - existing.length;
+      return {
+        skuInput: '',
+        skuInputError: added ? '' : incoming.length === 1
+          ? 'That SKU is already on the list.'
+          : 'Those SKUs are already on the list.',
+        groupDraft: added ? { ...previous.groupDraft, skus: next.join('\n') } : previous.groupDraft,
+      };
+    });
+    return true;
+  };
+
+  addProductFromHistory = sku => this.addWatchedSkus(sku);
+
+  removeSku = sku => this.setState(previous => {
     const id = String(sku || '').trim();
-    if (!id || parseSkus(previous.groupDraft.skus).includes(id)) return null;
-    const raw = String(previous.groupDraft.skus || '');
-    const separator = !raw.trim() || /[\n,]\s*$/.test(raw) ? '' : '\n';
-    return { groupDraft: { ...previous.groupDraft, skus: `${raw}${separator}${id}` } };
+    if (!id) return null;
+    const next = parseSkus(previous.groupDraft.skus).filter(item => item !== id);
+    const maxPrices = { ...(previous.groupDraft.maxPrices || {}) };
+    const priorities = { ...(previous.groupDraft.priorities || {}) };
+    delete maxPrices[id];
+    delete priorities[id];
+    return {
+      skuInputError: '',
+      groupDraft: { ...previous.groupDraft, skus: next.join('\n'), maxPrices, priorities },
+    };
   });
 
   setSkuMaxPrice = (sku, value) => this.setState(previous => ({
     groupDraft: {
       ...previous.groupDraft,
       maxPrices: { ...(previous.groupDraft.maxPrices || {}), [sku]: value },
+    },
+  }));
+
+  setSkuPriority = (sku, value) => this.setState(previous => ({
+    groupDraft: {
+      ...previous.groupDraft,
+      priorities: { ...(previous.groupDraft.priorities || {}), [sku]: value === true },
     },
   }));
 
@@ -643,13 +714,19 @@ class TaskGroups extends Component {
     const items = nextSkus.map(sku => ({
       sku,
       maxPrice: normalizeMaxPrice((draft.maxPrices || {})[sku]) || '',
+      ...((draft.priorities || {})[sku] ? { priority: true } : {}),
     }));
     const previousItems = watchedItemsForGroup(previousGroup);
     const liveTasks = previousGroup
       ? (previousGroup.tasks || []).filter(task => targetTaskIsRunning(this.statusFor(task)))
       : [];
+    const serializeWatch = list => JSON.stringify((list || []).map(item => ({
+      sku: item.sku,
+      maxPrice: item.maxPrice || '',
+      priority: item.priority === true,
+    })));
     const liveWatchChanged = !!previousGroup && (
-      JSON.stringify(previousItems) !== JSON.stringify(items)
+      serializeWatch(previousItems) !== serializeWatch(items)
       || String(previousGroup.qty || 2) !== String(draft.qty || 2)
     );
     const loopCheckout = draft.loopCheckout === true;
@@ -740,7 +817,7 @@ class TaskGroups extends Component {
       this.props.dispatch({ type: 'targetTaskDelete', id: task.id });
     }
     this.persist(this.state.groups.filter(item => item.id !== group.id), () => {
-      if (this.state.selectedGroupId === group.id) this.setState({ selectedGroupId: '', selectedTaskId: '' });
+      if (this.state.selectedGroupId === group.id) this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [] });
     });
   };
 
@@ -804,20 +881,46 @@ class TaskGroups extends Component {
   };
 
   updateTaskProxy = (group, task, proxyListName) => {
+    this.updateTasksProxy(group, [task], proxyListName);
+  };
+
+  updateTasksProxy = (group, tasks, proxyListName) => {
+    const ids = new Set((Array.isArray(tasks) ? tasks : []).map(task => task.id));
+    if (!ids.size) return;
     const groups = this.state.groups.map(item => item.id === group.id ? {
       ...item,
-      tasks: item.tasks.map(candidate => candidate.id === task.id ? { ...candidate, proxyListName } : candidate),
+      tasks: item.tasks.map(candidate => ids.has(candidate.id) ? { ...candidate, proxyListName } : candidate),
       updatedAt: Date.now(),
     } : item);
     this.persist(groups);
-    try {
-      if (ipcRenderer.sendSync('setTargetTaskProxy', task.id, proxyListName)) {
-        this.props.dispatch({
-          type: 'targetProxyEditSent', taskId: task.id, at: Date.now(),
-          group: String(proxyListName || '').trim() || 'Local',
-        });
-      }
-    } catch {}
+    const label = String(proxyListName || '').trim() || 'Local';
+    for (const task of tasks) {
+      try {
+        if (ipcRenderer.sendSync('setTargetTaskProxy', task.id, proxyListName)) {
+          this.props.dispatch({
+            type: 'targetProxyEditSent', taskId: task.id, at: Date.now(),
+            group: label,
+          });
+        }
+      } catch {}
+    }
+  };
+
+  toggleTaskSelected = taskId => this.setState(({ selectedTaskIds }) => ({
+    selectedTaskIds: selectedTaskIds.includes(taskId)
+      ? selectedTaskIds.filter(id => id !== taskId)
+      : [...selectedTaskIds, taskId],
+  }));
+
+  toggleSelectVisibleTasks = visibleTasks => {
+    const visibleIds = (Array.isArray(visibleTasks) ? visibleTasks : []).map(task => task.id);
+    this.setState(({ selectedTaskIds }) => {
+      const selected = new Set(selectedTaskIds);
+      const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
+      if (allVisibleSelected) visibleIds.forEach(id => selected.delete(id));
+      else visibleIds.forEach(id => selected.add(id));
+      return { selectedTaskIds: [...selected] };
+    });
   };
 
   updateTaskLoopCheckout = (group, task, loopCheckout) => {
@@ -841,7 +944,10 @@ class TaskGroups extends Component {
       updatedAt: Date.now(),
     } : item);
     this.persist(groups, () => {
-      if (this.state.selectedTaskId === task.id) this.setState({ selectedTaskId: '' });
+      this.setState(({ selectedTaskId, selectedTaskIds }) => ({
+        selectedTaskId: selectedTaskId === task.id ? '' : selectedTaskId,
+        selectedTaskIds: selectedTaskIds.filter(id => id !== task.id),
+      }));
     });
   };
 
@@ -1537,7 +1643,6 @@ class TaskGroups extends Component {
   renderGroupRow(group) {
     const stats = this.groupStats(group);
     const items = watchedItemsForGroup(group);
-    const skus = items.map(item => item.sku);
     const limited = items.filter(item => item.maxPrice).length;
     const running = stats.running > 0;
     return (
@@ -1545,8 +1650,8 @@ class TaskGroups extends Component {
         className="task-group-row task-group-r2-row"
         key={group.id}
         tabIndex="0"
-        onClick={() => this.setState({ selectedGroupId: group.id })}
-        onKeyDown={event => event.key === 'Enter' && this.setState({ selectedGroupId: group.id })}
+        onClick={() => this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
+        onKeyDown={event => event.key === 'Enter' && this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
       >
         <div className="task-group-row-identity">
           <span className="site-mark"><Icon name="target" size={19} /></span>
@@ -1560,7 +1665,7 @@ class TaskGroups extends Component {
         <div className="task-group-row-runtime">
           <div className="task-group-row-summary">
             <span className="task-group-row-summary-icon"><Icon name="list" size={15} /></span>
-            <span><small>Watch list</small><strong>{skus.length} SKU{skus.length === 1 ? '' : 's'} · qty {group.qty || 2}{limited ? ` · ${limited} price cap${limited === 1 ? '' : 's'}` : ''}</strong></span>
+            <span><small>Watch list</small><strong>{watchListSummary(group)}{limited ? ` · ${limited} price cap${limited === 1 ? '' : 's'}` : ''}</strong></span>
           </div>
         </div>
         <div className="task-group-row-actions" onClick={event => event.stopPropagation()}>
@@ -1571,7 +1676,7 @@ class TaskGroups extends Component {
           )}
           <button className="icon-action" title="Edit group" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={13} /></button>
           <button className="icon-action icon-action-danger" title="Delete group" onClick={() => this.deleteGroup(group)}><Icon name="trash" size={13} /></button>
-          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedGroupId: group.id })}>Open</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}>Open</button>
         </div>
       </article>
     );
@@ -1634,9 +1739,10 @@ class TaskGroups extends Component {
     const canReset = !running && this.taskHasResettableState(task);
     const checkouts = this.checkoutCountFor(task);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
+    const selected = this.state.selectedTaskIds.includes(task.id);
     return (
       <div
-        className="group-task-row group-task-row-clickable"
+        className={`group-task-row group-task-row-clickable${selected ? ' selected' : ''}`}
         key={task.id}
         tabIndex="0"
         aria-label={`Open task for ${this.accountLabel(task)}`}
@@ -1648,6 +1754,14 @@ class TaskGroups extends Component {
           }
         }}
       >
+        <span className="task-select-cell" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={`Select ${this.accountLabel(task)}`}
+            onChange={() => this.toggleTaskSelected(task.id)}
+          />
+        </span>
         <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{this.accountLabel(task)}</strong><small>{task.id}</small></span></span>
         <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
         <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
@@ -1720,7 +1834,7 @@ class TaskGroups extends Component {
         <div className="page-header task-view-header">
           <div>
             <div className="task-breadcrumbs">
-              <button onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}>Task Groups</button>
+              <button onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}>Task Groups</button>
               <span>/</span>
               <button onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>{group.name}</button>
               <span>/</span>
@@ -1756,7 +1870,7 @@ class TaskGroups extends Component {
                 <div><dt>Account</dt><dd>{accountName}</dd></div>
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
-                <div><dt>Watch list</dt><dd>{watchedItemsForGroup(group).length} SKU{watchedItemsForGroup(group).length === 1 ? '' : 's'} · qty {group.qty || 2}</dd></div>
+                <div><dt>Watch list</dt><dd>{watchListSummary(group)}</dd></div>
                 <div><dt>Stock confidence</dt><dd>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any in-stock signal'}</dd></div>
                 <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
                 <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
@@ -1797,15 +1911,43 @@ class TaskGroups extends Component {
     );
   }
 
+  renderGroupDropPulse(group) {
+    const pulse = this.groupDropPulse(group);
+    const stats = [
+      { key: 'cart', icon: 'cart', count: pulse.carting, label: 'Adding to cart' },
+      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Submitting order' },
+      { key: 'success', icon: 'check', count: pulse.checkouts, label: 'Successful checkouts this run' },
+    ];
+    return (
+      <div className="group-drop-pulse" role="status" aria-live="polite" aria-label="Drop status">
+        {stats.map(stat => (
+          <span
+            className={`group-drop-stat group-drop-stat-${stat.key}${stat.count ? ' active' : ''}`}
+            key={stat.key}
+            title={stat.label}
+          >
+            <Icon name={stat.icon} size={13} />
+            <strong>{stat.count}</strong>
+            <em>{stat.label}</em>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   renderGroup(group) {
     const stats = this.groupStats(group);
     const filter = this.state.taskFilter.trim().toLowerCase();
     const visibleTasks = (group.tasks || []).filter(task => !filter || this.accountLabel(task).toLowerCase().includes(filter));
+    const selectedIds = new Set(this.state.selectedTaskIds);
+    const selectedVisible = visibleTasks.filter(task => selectedIds.has(task.id));
+    const selectedInGroup = (group.tasks || []).filter(task => selectedIds.has(task.id));
+    const allVisibleSelected = visibleTasks.length > 0 && selectedVisible.length === visibleTasks.length;
     return (
       <div className="tasks-workspace tasks-workspace-with-harvester-dock">
         <div className="page-header task-view-header">
           <div>
-            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
+            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
             <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
           </div>
           <div className="page-actions">
@@ -1825,7 +1967,7 @@ class TaskGroups extends Component {
           <div className="panel group-config-strip group-config-strip-r2">
             <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>
             <div><span>Tasks</span><strong>{stats.total}</strong></div>
-            <div><span>Watch list</span><strong>{watchedItemsForGroup(group).length} SKU{watchedItemsForGroup(group).length === 1 ? '' : 's'} · qty {group.qty || 2}</strong></div>
+            <div><span>Watch list</span><strong>{watchListSummary(group)}</strong></div>
             <div><span>Stock confidence</span><strong>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any stock'}</strong></div>
             <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
             <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
@@ -1834,6 +1976,7 @@ class TaskGroups extends Component {
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
               <div><h2>Account tasks</h2><p>A matching checkout profile is required for each Target account.</p></div>
+              {this.renderGroupDropPulse(group)}
               <div className="page-actions">
                 {(group.tasks || []).length > 0 && <input className="form-input task-filter" placeholder="Filter tasks…" value={this.state.taskFilter} onChange={event => this.setState({ taskFilter: event.target.value })} />}
                 <button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}><Icon name="plus" size={12} /> Add Tasks</button>
@@ -1843,7 +1986,45 @@ class TaskGroups extends Component {
               <div className="group-tasks-empty"><span><Icon name="user" size={19} /></span><h3>No account tasks yet</h3><p>Add Target accounts to this group. Their checkout profiles are matched automatically by email.</p><button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}>Add Tasks</button></div>
             ) : (
               <div>
-                <div className="group-task-row group-task-table-head"><span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Checkouts</span><span>Status</span><span>Created</span><span>Actions</span></div>
+                {selectedInGroup.length > 0 && (
+                  <div className="group-task-bulk-bar">
+                    <strong>{selectedInGroup.length} selected</strong>
+                    <label className="group-task-bulk-proxy">
+                      <span>Set proxy</span>
+                      <select
+                        className="form-select task-proxy-select"
+                        defaultValue=""
+                        key={selectedInGroup.map(task => task.id).join(',')}
+                        onChange={event => {
+                          const value = event.target.value;
+                          if (value === '__keep') return;
+                          this.updateTasksProxy(group, selectedInGroup, value === '__local' ? '' : value);
+                          event.target.value = '__keep';
+                        }}
+                      >
+                        <option value="__keep">Choose a proxy list…</option>
+                        <option value="__local">Local</option>
+                        {this.proxyLists().map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedTaskIds: [] })}>Clear selection</button>
+                  </div>
+                )}
+                <div className="group-task-row group-task-table-head">
+                  <span className="task-select-cell">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={!visibleTasks.length}
+                      aria-label="Select all visible tasks"
+                      ref={element => {
+                        if (element) element.indeterminate = selectedVisible.length > 0 && !allVisibleSelected;
+                      }}
+                      onChange={() => this.toggleSelectVisibleTasks(visibleTasks)}
+                    />
+                  </span>
+                  <span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Checkouts</span><span>Status</span><span>Created</span><span>Actions</span>
+                </div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
               </div>
@@ -2095,42 +2276,95 @@ class TaskGroups extends Component {
         <div className="modal task-group-modal" onMouseDown={event => event.stopPropagation()}>
           <div className="modal-header"><div><div className="modal-title">{editing ? 'Edit Target Group' : 'New Target Group'}</div><p>One shared watch list, with one checkout task per account.</p></div><button className="modal-close" onClick={this.closeGroupModal}>×</button></div>
           <div className="modal-body">
-            <div className="form-group"><label className="form-label">Group name</label><input className="form-input" autoFocus value={draft.name} placeholder="Friday drop" onChange={event => this.setState({ groupDraft: { ...draft, name: event.target.value } })} /></div>
-            <div className="form-group"><label className="form-label">Target SKUs or product URLs</label><textarea className="form-input group-sku-input" value={draft.skus} placeholder={'12345678\nhttps://www.target.com/p/example/-/A-87654321'} onChange={event => this.setState({ groupDraft: { ...draft, skus: event.target.value } })} /><div className="form-hint">One per line or comma-separated. Product names stay outside this field so only valid TCINs reach the monitor.</div></div>
-            {!!watchedSkus.length && (
-              <div className="target-sku-price-list">
-                <div className="target-sku-price-heading">
-                  <span><strong>Per-SKU maximum prices</strong><small>Optional unit-price ceilings. Empty means no maximum.</small></span>
-                  {controlsLocked && <em>Stop running tasks to edit</em>}
-                </div>
-                {watchedSkus.map(sku => {
-                  const rawPrice = (draft.maxPrices || {})[sku] || '';
-                  const invalid = normalizeMaxPrice(rawPrice) === null;
-                  return (
-                    <label className={`target-sku-price-row${invalid ? ' invalid' : ''}`} key={sku}>
-                      <span><small>TCIN</small><strong>{sku}</strong></span>
-                      <span className="target-sku-price-input">
-                        <i>$</i>
-                        <input
-                          className="form-input"
-                          type="text"
-                          inputMode="decimal"
-                          disabled={controlsLocked}
-                          value={rawPrice}
-                          placeholder="No max"
-                          aria-label={`Maximum price for Target SKU ${sku}`}
-                          onChange={event => this.setSkuMaxPrice(sku, event.target.value)}
-                          onBlur={() => {
-                            const normalized = normalizeMaxPrice(rawPrice);
-                            if (normalized !== null) this.setSkuMaxPrice(sku, normalized);
-                          }}
-                        />
-                      </span>
-                    </label>
-                  );
-                })}
+            <div className="form-group"><label className="form-label">Group name</label><input className="form-input" autoFocus={!editing} value={draft.name} placeholder="Friday drop" onChange={event => this.setState({ groupDraft: { ...draft, name: event.target.value } })} /></div>
+            <div className="form-group target-sku-watch">
+              <div className="target-sku-watch-heading">
+                <span>
+                  <label className="form-label">Watch list</label>
+                  <small>Add TCINs or Target URLs. Remove a SKU to drop it from running tasks before payment.</small>
+                </span>
+                {controlsLocked && <em>Prices lock while tasks run. Add, remove, and priority still apply on save.</em>}
               </div>
-            )}
+              <form
+                className="target-sku-add"
+                onSubmit={event => {
+                  event.preventDefault();
+                  this.addWatchedSkus(this.state.skuInput);
+                }}
+              >
+                <input
+                  className="form-input"
+                  autoFocus={editing}
+                  value={this.state.skuInput}
+                  placeholder="12345678 or https://www.target.com/p/…/-/A-87654321"
+                  aria-label="Add Target SKUs or product URLs"
+                  onChange={event => this.setState({ skuInput: event.target.value, skuInputError: '' })}
+                  onPaste={event => {
+                    const text = event.clipboardData && event.clipboardData.getData('text');
+                    if (!text || !/[\n,]/.test(text)) return;
+                    event.preventDefault();
+                    this.addWatchedSkus(`${this.state.skuInput}\n${text}`);
+                  }}
+                />
+                <button type="submit" className="btn btn-secondary">Add</button>
+              </form>
+              {!!this.state.skuInputError && <div className="form-hint target-sku-add-error">{this.state.skuInputError}</div>}
+              {watchedSkus.length ? (
+                <div className="target-sku-watch-list">
+                  {watchedSkus.map(sku => {
+                    const rawPrice = (draft.maxPrices || {})[sku] || '';
+                    const invalid = normalizeMaxPrice(rawPrice) === null;
+                    const priority = (draft.priorities || {})[sku] === true;
+                    const name = this.productNameForSku(sku);
+                    return (
+                      <div className={`target-sku-watch-row${invalid ? ' invalid' : ''}${priority ? ' priority' : ''}`} key={sku}>
+                        <button
+                          type="button"
+                          className={`target-sku-priority${priority ? ' active' : ''}`}
+                          aria-pressed={priority}
+                          aria-label={`${priority ? 'Remove priority from' : 'Mark as priority'} Target SKU ${sku}`}
+                          onClick={() => this.setSkuPriority(sku, !priority)}
+                        >
+                          <Icon name="star" size={11} />
+                          {priority ? 'Priority' : 'Normal'}
+                        </button>
+                        <span className="target-sku-watch-identity">
+                          <strong className={name ? '' : 'pending'}>{name || 'Name not fetched yet'}</strong>
+                          <small>{sku}</small>
+                        </span>
+                        <label className="target-sku-price-input">
+                          <i>$</i>
+                          <input
+                            className="form-input"
+                            type="text"
+                            inputMode="decimal"
+                            disabled={controlsLocked}
+                            value={rawPrice}
+                            placeholder="No max"
+                            aria-label={`Maximum price for Target SKU ${sku}`}
+                            onChange={event => this.setSkuMaxPrice(sku, event.target.value)}
+                            onBlur={() => {
+                              const normalized = normalizeMaxPrice(rawPrice);
+                              if (normalized !== null) this.setSkuMaxPrice(sku, normalized);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm target-sku-remove"
+                          aria-label={`Remove Target SKU ${sku}`}
+                          onClick={() => this.removeSku(sku)}
+                        >
+                          <Icon name="trash" size={11} /> Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="target-sku-watch-empty">No SKUs yet. Paste a TCIN or pick one from recently monitored.</div>
+              )}
+            </div>
             {this.renderProductHistoryPicker(draft)}
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>

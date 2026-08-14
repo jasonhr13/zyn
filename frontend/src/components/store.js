@@ -115,8 +115,9 @@ const defaultState = {
   //
   // Shape of the module, which mirrors how the engine actually works:
   //   skus     — ONE shared watch list (newline separated). A single monitor task watches all of
-  //              them; every checkout task is handed the whole list, so `matchKeys()` makes each
-  //              task fire on whichever SKU restocks first rather than being pinned to one.
+  //              them; every checkout task is handed the whole list, so `matchKeys()` wakes each
+  //              task on any watched restock. Priority SKUs are tried first, and a running task
+  //              pivots to a priority SKU that comes in stock before payment.
   //   tasks[]  — checkout tasks. A task selects an ACCOUNT; its profile is resolved by matching
   //              profile.email to account.email (see resolveProfileForAccount), so there is no
   //              separate profile picker to keep in sync.

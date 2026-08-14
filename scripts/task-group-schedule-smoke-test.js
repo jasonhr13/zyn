@@ -35,7 +35,7 @@ const baseGroup = {
   site: 'target',
   skus: '12345678\nhttps://www.target.com/p/example/-/A-87654321',
   items: [
-    { sku: '12345678', maxPrice: '24.99' },
+    { sku: '12345678', maxPrice: '24.99', priority: true },
     { sku: '87654321', maxPrice: '' },
   ],
   qty: 2,
@@ -48,7 +48,7 @@ const launch = buildTargetGroupLaunch(baseGroup, { accounts, profiles });
 assert.equal(launch.ok, true);
 assert.deepEqual(launch.config.skus, ['12345678', '87654321']);
 assert.deepEqual(launch.config.items, [
-  { sku: '12345678', maxPrice: '24.99' },
+  { sku: '12345678', maxPrice: '24.99', priority: true },
   { sku: '87654321', maxPrice: '' },
 ]);
 assert.equal(launch.config.ignoreLowStock, true);

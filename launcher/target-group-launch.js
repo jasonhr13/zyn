@@ -27,10 +27,12 @@ function parseWatchedItems(group) {
         : item;
       const sku = parseSkus(raw)[0];
       if (sku && !bySku.has(sku)) {
-        bySku.set(sku, {
+        const next = {
           sku,
           maxPrice: normalizeMaxPrice(item && typeof item === 'object' ? item.maxPrice : ''),
-        });
+        };
+        if (item && typeof item === 'object' && item.priority === true) next.priority = true;
+        bySku.set(sku, next);
       }
     }
   }

@@ -2137,25 +2137,46 @@ function stopLiveEditMonitor() {
   if (id) queueTargetMonitorStop(id);
 }
 
-// A group edit changes the restock inputs in-place. Checkout tasks drain runtime edits only at safe
-// step boundaries, so a task already carting or submitting keeps its selected TCIN; the new watch
-// list is used the next time it returns to restock selection.
+function skuMetaFromItems(items) {
+  const maxPriceBySku = {};
+  const priorityBySku = {};
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const sku = String(item && (item.sku || item.monitorInput) || '').trim();
+    if (!sku) continue;
+    maxPriceBySku[sku] = String(item && item.maxPrice || '').trim();
+    if (item && item.priority === true) priorityBySku[sku] = true;
+  }
+  return { maxPriceBySku, priorityBySku };
+}
+
+function engineItemsFor(skus, qty, maxPriceBySku = {}, priorityBySku = {}) {
+  return (Array.isArray(skus) ? skus : []).map(sku => ({
+    id: sku,
+    monitorInput: sku,
+    quantity: String(qty || 1),
+    color: '',
+    sizes: [],
+    maxPrice: maxPriceBySku[sku] || '',
+    priority: priorityBySku[sku] === true,
+  }));
+}
+
+// A group edit replaces restock inputs in-place. Checkout tasks drain those edits at every step.
+// If the selected TCIN is no longer watched, or a higher-priority watched SKU is in stock, the
+// engine abandons the current product before payment and returns to restock selection. After
+// submit-order starts, the checkout stays locked to the selected TCIN.
 function editTargetTasks(config = {}) {
   const skus = [...new Set((Array.isArray(config.skus) ? config.skus : [])
     .map(value => String(value || '').trim())
     .filter(value => /^\d{6,}$/.test(value)))];
-  const maxPriceBySku = new Map((Array.isArray(config.items) ? config.items : [])
-    .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
-    .filter(([sku]) => skus.includes(sku)));
+  const { maxPriceBySku, priorityBySku } = skuMetaFromItems(config.items);
   const ignoreLowStock = config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus';
   const qty = Math.max(1, parseInt(config.qty, 10) || 1);
   const selected = (Array.isArray(config.tasks) ? config.tasks : [])
     .filter(task => task && task.id && runningTaskIds.has(task.id));
   if (!selected.length) return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'No selected Target tasks are running.' };
 
-  const makeItems = list => list.map(sku => ({
-    id: sku, monitorInput: sku, quantity: String(qty), color: '', sizes: [], maxPrice: maxPriceBySku.get(sku) || '',
-  }));
+  const makeItems = list => engineItemsFor(list, qty, maxPriceBySku, priorityBySku);
   let cappedTasks = 0;
   const messages = selected.map(task => {
     const accountId = task.accountId || taskAccountById.get(task.id) || '';
@@ -2183,6 +2204,9 @@ function editTargetTasks(config = {}) {
       ...existing,
       skus: message.monitorItems.map(item => item.monitorInput),
       maxPriceBySku: Object.fromEntries(message.monitorItems.map(item => [item.monitorInput, item.maxPrice || ''])),
+      priorityBySku: Object.fromEntries(message.monitorItems
+        .filter(item => item.priority === true)
+        .map(item => [item.monitorInput, true])),
       qty,
       proxyListName: selectedTask.proxyListName || existing.proxyListName || '',
       ignoreLowStock,
@@ -2210,7 +2234,11 @@ function editTargetTasks(config = {}) {
       proxyGroup: String(first.proxyListName || '').trim() || 'Local',
       monitorDelay: '4000',
       ignoreLowStock,
-      items: watched.map(sku => ({ monitorInput: sku, quantity: String(qty), maxPrice: maxPriceBySku.get(sku) || '' })),
+      items: watched.map(sku => ({
+        monitorInput: sku,
+        quantity: String(qty),
+        maxPrice: maxPriceBySku[sku] || '',
+      })),
     }] });
     if (monitorRefreshed) {
       liveEditMonitorTimer = setTimeout(() => {
@@ -2256,9 +2284,7 @@ function enforceTargetLoopCheckout(taskId, accountId, purchasedTcin) {
     return;
   }
 
-  const items = eligible.map(sku => ({
-    id: sku, monitorInput: sku, quantity: String(config.qty), color: '', sizes: [], maxPrice: String((config.maxPriceBySku || {})[sku] || ''),
-  }));
+  const items = engineItemsFor(eligible, config.qty, config.maxPriceBySku || {}, config.priorityBySku || {});
   if (!sendToEngine({
     type: 'edit-tasks',
     messages: [{ id: taskId, type: 'Target', site: 'Target', item: items, monitorItems: items, ignoreLowStock: config.ignoreLowStock === true }],
@@ -2319,15 +2345,10 @@ function sendStart(config) {
   const groupOf = (name) => (String(name || '').trim() || 'Local');
 
   // Each task is handed its whole ELIGIBLE watch list. matchKeys() (sites/target/monitor_sub.go)
-  // turns monitorItems into the set of TCINs a task will wake for, so giving each task all of them
-  // means any task fires on whichever SKU restocks first, rather than being pinned to one product —
-  // and leaving a capped SKU out of that set is what actually stops the task buying it.
-  const maxPriceBySku = Object.fromEntries((Array.isArray(config.items) ? config.items : [])
-    .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
-    .filter(([sku]) => sku));
-  const itemsFor = (list) => list.map(s => ({
-    id: s, monitorInput: s, quantity: String(config.qty || 2), color: '', sizes: [], maxPrice: maxPriceBySku[s] || '',
-  }));
+  // turns monitorItems into the TCINs a task will wake for. Priority SKUs are tried first when
+  // more than one is in stock. Leaving a capped SKU out of that set is what stops the task buying it.
+  const { maxPriceBySku, priorityBySku } = skuMetaFromItems(config.items);
+  const itemsFor = (list) => engineItemsFor(list, config.qty || 2, maxPriceBySku, priorityBySku);
 
   const messages = tasks.map(t => ({
     id: t.id,
@@ -2367,6 +2388,8 @@ function sendStart(config) {
     taskCheckoutConfigById.set(task.id, {
       ...existing,
       skus: task.skus.slice(),
+      maxPriceBySku,
+      priorityBySku,
       proxyListName: task.proxyListName || existing.proxyListName || '',
     });
   }
@@ -3290,9 +3313,7 @@ function startTarget(config, mainWindow) {
     taskProfileById.set(t.id, t.profileId || '');
     taskCheckoutConfigById.set(t.id, {
       skus: [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))],
-      maxPriceBySku: Object.fromEntries((Array.isArray(config.items) ? config.items : [])
-        .map(item => [String(item && (item.sku || item.monitorInput) || '').trim(), String(item && item.maxPrice || '').trim()])
-        .filter(([sku]) => sku)),
+      ...skuMetaFromItems(config.items),
       qty: Math.max(1, parseInt(config.qty, 10) || 2),
       proxyListName: String(t.proxyListName || '').trim(),
       loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.4",
+  "notes": [
+    "Target groups can mark priority SKUs so tasks switch to them before payment.",
+    "Removing a SKU from a running group now drops that checkout before the order submits.",
+    "The group editor lists products by name with one-click add and remove.",
+    "The Account tasks header shows live cart, submit, and checkout counts during a drop."
+  ]
+}

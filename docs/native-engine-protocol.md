@@ -76,6 +76,12 @@ Task IDs must be unique across both modules while the engine process is alive.
 The recovered Go schema uses the capitalized JSON field `QueueEntryDelay`. Builders must retain that
 exact spelling. A start message carries the canonical site in both `site` and `type`.
 
+Target `item` and `monitorItems` entries accept optional `priority: true`. The engine tries those
+TCINs first when more than one watched SKU is in stock. A running checkout abandons a non-priority
+selection before payment if a priority SKU comes in stock, and it also abandons a selected TCIN that
+`edit-tasks` has removed from the watch list. After `submit-order` starts, the selected TCIN stays
+locked.
+
 ## Engine to Electron
 
 | Envelope type | Important payload fields | Routing |

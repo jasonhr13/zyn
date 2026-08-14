@@ -1,4 +1,4 @@
-import { targetStatusTone, targetTaskIsRunning } from './target-task-status';
+import { targetDropPhase, targetStatusTone, targetTaskIsRunning, summarizeGroupDropPulse } from './target-task-status';
 
 const status = (label, extra = {}) => ({ label, state: label, running: true, ...extra });
 
@@ -39,6 +39,36 @@ test.each([
   [status('Stopped', { running: false }), 'idle'],
 ])('maps Target status %# to %s', (input, expected) => {
   expect(targetStatusTone(input)).toBe(expected);
+});
+
+test.each([
+  [null, ''],
+  [status('Waiting For Restock'), ''],
+  [status('Product Found: Prismatic Evolutions'), ''],
+  [status('Adding To Cart'), 'carting'],
+  [status('Using Alternate Cart Flow'), 'carting'],
+  [status('Carted'), ''],
+  [status('Submitting Payment'), 'submitting'],
+  [status('Submitting CVV'), 'submitting'],
+  [status('Submitting Order'), 'submitting'],
+  [status('Successful', { taskState: 3 }), ''],
+])('maps Target drop phase %# to %s', (input, expected) => {
+  expect(targetDropPhase(input)).toBe(expected);
+});
+
+test('group drop pulse counts live cart/submit and cumulative checkouts', () => {
+  const tasks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const statuses = {
+    a: status('Adding To Cart'),
+    b: status('Submitting Order'),
+    c: status('Waiting For Restock'),
+    d: status('Submitting Payment'),
+  };
+  const checkouts = { a: 1, b: 0, c: 2, d: 0 };
+  expect(summarizeGroupDropPulse(tasks, {
+    statusFor: task => statuses[task.id],
+    checkoutCountFor: task => checkouts[task.id],
+  })).toEqual({ carting: 1, submitting: 2, checkouts: 3 });
 });
 
 test('visual success and error tones do not change task liveness', () => {
