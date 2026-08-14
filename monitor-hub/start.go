@@ -16,11 +16,12 @@ type Item struct {
 }
 
 type StartInput struct {
-	ID           string
-	Site         string
-	ProxyGroup   string
-	MonitorDelay int
-	Items        []Item
+	ID             string
+	Site           string
+	ProxyGroup     string
+	MonitorDelay   int
+	IgnoreLowStock bool
+	Items          []Item
 }
 
 type Starter func(in StartInput)

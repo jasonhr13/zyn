@@ -39,6 +39,34 @@ func TestApplyRuntimeEditReplacesWatchListWithoutChangingActiveCheckout(t *testi
 	}
 }
 
+func TestApplyRuntimeEditCopiesPriorityFlags(t *testing.T) {
+	targetTask := &TargetTask{
+		Inputs:       []sites.Input{{Input: "11111111", Quantity: 2}},
+		MonitorItems: []sites.Input{{Input: "11111111", Quantity: 2}},
+		RestockTCIN:  "11111111",
+	}
+
+	targetTask.applyRuntimeEdit(task.RuntimeEditPayload{
+		Input: sites.TaskInput{
+			Items: []sites.Item{
+				{MonitorInput: "11111111", Quantity: 2},
+				{MonitorInput: "22222222", Quantity: 2, Priority: true},
+			},
+		},
+		MonitorItems: []sites.Item{
+			{MonitorInput: "11111111", Quantity: 2},
+			{MonitorInput: "22222222", Quantity: 2, Priority: true},
+		},
+	})
+
+	if len(targetTask.MonitorItems) != 2 || !targetTask.MonitorItems[1].Priority {
+		t.Fatalf("priority flag was not applied: %#v", targetTask.MonitorItems)
+	}
+	if targetTask.RestockTCIN != "11111111" {
+		t.Fatalf("runtime edit should not itself clear RestockTCIN: %q", targetTask.RestockTCIN)
+	}
+}
+
 func TestApplyRuntimeEditCanClearRestockWatchList(t *testing.T) {
 	targetTask := &TargetTask{
 		Inputs:       []sites.Input{{Input: "11111111", Quantity: 2}},

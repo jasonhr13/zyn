@@ -22,11 +22,12 @@ func startMonitorMessageToInput(msg StartMonitorMessage) monitorhub.StartInput {
 		})
 	}
 	return monitorhub.StartInput{
-		ID:           msg.Id,
-		Site:         msg.Site,
-		ProxyGroup:   msg.ProxyGroup,
-		MonitorDelay: delay,
-		Items:        items,
+		ID:             msg.Id,
+		Site:           msg.Site,
+		ProxyGroup:     msg.ProxyGroup,
+		MonitorDelay:   delay,
+		IgnoreLowStock: msg.IgnoreLowStock,
+		Items:          items,
 	}
 }
 

@@ -15,7 +15,6 @@ import (
 	"zynbot.app/engine/bot-base/safego"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
-	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 var FillerItem = "84704409"
@@ -32,6 +31,7 @@ func (t *TargetTask) HandleTask() {
 			t.DrainPendingRuntimeEdits(func(p task.RuntimeEditPayload) {
 				t.applyRuntimeEdit(p)
 			})
+			t.applyWatchListSelectionChange()
 			switch t.NextStep {
 			case "stop":
 				if t.Checkout {
@@ -394,8 +394,8 @@ func (t *TargetTask) HandleTask() {
 					qty = 1
 				}
 				maxPrice := t.monitorMaxPriceForTCIN(ping.ProductKey)
-				if maxPrice > 0 && !monitorhub.PingWithinMaxPrice(ping, maxPrice) {
-					// Don't rematch the same over-budget ping in a tight loop.
+				if !targetPingMeetsControls(ping, maxPrice, t.IgnoreLowStock) {
+					// Don't rematch the same over-budget or low-confidence ping in a tight loop.
 					t.stockWaitAfter = ping.At
 					t.SleepTask(t.MonitorDelay)
 					break

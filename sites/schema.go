@@ -35,6 +35,7 @@ type Item struct {
 	MaxPrice     float64  `json:"maxPrice"`
 	Color        string   `json:"color"`
 	Size         []string `json:"size"`
+	Priority     bool     `json:"priority,omitempty"`
 }
 
 type Input struct {
@@ -48,4 +49,5 @@ type Input struct {
 	ExcludeKeywords []string `json:"excludeKeywords"`
 	Sku             string   `json:"sku"`
 	Found           bool     `json:"found"`
+	Priority        bool     `json:"priority,omitempty"`
 }

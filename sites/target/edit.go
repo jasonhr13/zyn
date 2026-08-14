@@ -22,6 +22,7 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 		newInputs = append(newInputs, sites.Input{
 			Input:        it.MonitorInput,
 			Quantity:     it.Quantity,
+			Priority:     it.Priority,
 			ProductFound: false,
 		})
 	}
@@ -37,6 +38,7 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 			Input:    it.MonitorInput,
 			Quantity: it.Quantity,
 			MaxPrice: it.MaxPrice,
+			Priority: it.Priority,
 		})
 	}
 	t.MonitorItems = newMonitorItems

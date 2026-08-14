@@ -21,6 +21,7 @@ func StartTask(t sites.TaskInput) {
 		newInputs = append(newInputs, sites.Input{
 			Input:        t.Items[a].MonitorInput,
 			Quantity:     t.Items[a].Quantity,
+			Priority:     t.Items[a].Priority,
 			ProductFound: false,
 		})
 	}
@@ -31,6 +32,7 @@ func StartTask(t sites.TaskInput) {
 			Input:    item.MonitorInput,
 			Quantity: item.Quantity,
 			MaxPrice: item.MaxPrice,
+			Priority: item.Priority,
 		})
 	}
 

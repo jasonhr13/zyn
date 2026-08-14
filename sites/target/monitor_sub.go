@@ -5,18 +5,51 @@ import (
 	"time"
 
 	"zynbot.app/engine/bot-base/task"
+	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
 	"zynbot.app/engine/sites"
 )
 
 func (t *TargetTask) matchKeys() []string {
-	src := t.MonitorItems
-	if len(src) == 0 {
-		src = t.Inputs
+	src := t.monitorItemsSrc()
+	type keyed struct {
+		tcin     string
+		priority bool
 	}
-	keys := make([]string, 0, len(src))
+	ordered := make([]keyed, 0, len(src))
 	seen := make(map[string]struct{}, len(src))
 	for _, in := range src {
+		tcin := parseTcinFromInput(in.Input)
+		if tcin == "" {
+			continue
+		}
+		if _, dup := seen[tcin]; dup {
+			continue
+		}
+		seen[tcin] = struct{}{}
+		ordered = append(ordered, keyed{tcin: tcin, priority: in.Priority})
+	}
+	keys := make([]string, 0, len(ordered))
+	for _, item := range ordered {
+		if item.priority {
+			keys = append(keys, item.tcin)
+		}
+	}
+	for _, item := range ordered {
+		if !item.priority {
+			keys = append(keys, item.tcin)
+		}
+	}
+	return keys
+}
+
+func (t *TargetTask) priorityKeys() []string {
+	keys := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, in := range t.monitorItemsSrc() {
+		if !in.Priority {
+			continue
+		}
 		tcin := parseTcinFromInput(in.Input)
 		if tcin == "" {
 			continue
@@ -28,6 +61,102 @@ func (t *TargetTask) matchKeys() []string {
 		keys = append(keys, tcin)
 	}
 	return keys
+}
+
+func (t *TargetTask) watchesTCIN(tcin string) bool {
+	if tcin == "" {
+		return false
+	}
+	for _, key := range t.matchKeys() {
+		if key == tcin {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) monitorPriorityForTCIN(tcin string) bool {
+	if tcin == "" {
+		return false
+	}
+	for _, in := range t.monitorItemsSrc() {
+		if parseTcinFromInput(in.Input) == tcin {
+			return in.Priority
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) checkoutCommitted() bool {
+	if t == nil || t.BaseTask == nil {
+		return false
+	}
+	if t.Checkout || t.TaskState == constants.StatusSteps.CheckedOut {
+		return true
+	}
+	switch t.NextStep {
+	case "submit-order", "oos-check-cart", "remove-payment", "wait-to-check", "check-order", "cancel-filler", "checkout", "decline", "stop":
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *TargetTask) shouldAbandonSelected() (string, bool) {
+	if t == nil || t.checkoutCommitted() || t.RestockTCIN == "" {
+		return "", false
+	}
+	if t.watchesTCIN(t.RestockTCIN) {
+		return "", false
+	}
+	return "SKU removed from watch list", true
+}
+
+func (t *TargetTask) shouldPivotToPriority() (string, bool) {
+	if t == nil || t.checkoutCommitted() || t.RestockTCIN == "" {
+		return "", false
+	}
+	if t.monitorPriorityForTCIN(t.RestockTCIN) {
+		return "", false
+	}
+	for _, key := range t.priorityKeys() {
+		ping, ok := monitorhub.Default.Match("Target", []string{key}, time.Time{})
+		if !ok || !t.acceptsTargetPing(ping, []string{key}, time.Time{}) {
+			continue
+		}
+		return "Switching to priority SKU", true
+	}
+	return "", false
+}
+
+func (t *TargetTask) applyWatchListSelectionChange() bool {
+	if reason, ok := t.shouldAbandonSelected(); ok {
+		t.abandonSelectedProduct(reason)
+		return true
+	}
+	if reason, ok := t.shouldPivotToPriority(); ok {
+		t.abandonSelectedProduct(reason)
+		return true
+	}
+	return false
+}
+
+func (t *TargetTask) abandonSelectedProduct(reason string) {
+	if t == nil || t.checkoutCommitted() {
+		return
+	}
+	if reason != "" && t.BaseTask != nil {
+		t.UpdateStatus(reason, constants.Colors.YELLOW)
+		t.AddLog(reason)
+	}
+	hadProductCart := t.BaseTask != nil && t.TaskState == constants.StatusSteps.Carted
+	t.bailToRestockKeepSignal()
+	t.RestockTCIN = ""
+	t.RestockQty = 0
+	t.StockPing = monitorhub.StockPing{}
+	if hadProductCart {
+		t.NextStep = "clear-cart"
+	}
 }
 
 func (t *TargetTask) monitorItemsSrc() []sites.Input {
@@ -50,8 +179,12 @@ func (t *TargetTask) monitorQtyForTCIN(tcin string) int {
 }
 
 func (t *TargetTask) monitorMaxPriceForTCIN(tcin string) float64 {
+	fallback := 0.0
+	if t != nil && t.BaseTask != nil {
+		fallback = t.MaxPrice
+	}
 	if tcin == "" {
-		return t.MaxPrice
+		return fallback
 	}
 	for _, in := range t.monitorItemsSrc() {
 		if parseTcinFromInput(in.Input) == tcin {
@@ -61,7 +194,17 @@ func (t *TargetTask) monitorMaxPriceForTCIN(tcin string) float64 {
 			break
 		}
 	}
-	return t.MaxPrice
+	return fallback
+}
+
+func targetPingMeetsControls(ping monitorhub.StockPing, maxPrice float64, confirmedStock bool) bool {
+	if confirmedStock && ping.StockLevel < monitorhub.FullStockLevel {
+		return false
+	}
+	if maxPrice > 0 && (ping.Price <= 0 || ping.Price > maxPrice) {
+		return false
+	}
+	return true
 }
 
 func (t *TargetTask) waitForStockPing() (monitorhub.StockPing, bool) {
@@ -137,7 +280,7 @@ func (t *TargetTask) acceptsTargetPing(ping monitorhub.StockPing, keys []string,
 		return false
 	}
 	maxPrice := t.monitorMaxPriceForTCIN(ping.ProductKey)
-	if maxPrice > 0 && !monitorhub.PingWithinMaxPrice(ping, maxPrice) {
+	if !targetPingMeetsControls(ping, maxPrice, t.IgnoreLowStock) {
 		return false
 	}
 	return true

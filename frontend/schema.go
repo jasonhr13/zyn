@@ -14,6 +14,7 @@ type TaskItemMessage struct {
 	MaxPrice     string   `json:"maxPrice,omitempty"`
 	Color        string   `json:"color"`
 	Sizes        []string `json:"sizes"`
+	Priority     bool     `json:"priority,omitempty"`
 }
 
 type StartTaskMessage struct {
@@ -65,11 +66,12 @@ type MonitorItemMessage struct {
 
 // StartMonitorMessage starts a global monitor worker (not a checkout task).
 type StartMonitorMessage struct {
-	Id           string               `json:"id"`
-	Site         string               `json:"site"`
-	ProxyGroup   string               `json:"proxyGroup"`
-	MonitorDelay string               `json:"monitorDelay"`
-	Items        []MonitorItemMessage `json:"items"`
+	Id             string               `json:"id"`
+	Site           string               `json:"site"`
+	ProxyGroup     string               `json:"proxyGroup"`
+	MonitorDelay   string               `json:"monitorDelay"`
+	IgnoreLowStock bool                 `json:"ignoreLowStock"`
+	Items          []MonitorItemMessage `json:"items"`
 }
 
 type SentMessage struct {

@@ -144,7 +144,7 @@ func (t *TargetMonitorTask) Monitor() {
 					}
 
 					inStock := stock.Fulfillment.ShippingOptions.AvailabilityStatus == "IN_STOCK" || stock.Fulfillment.ShippingOptions.AvailabilityStatus == "PRE_ORDER_SELLABLE"
-					if inStock && t.IgnoreLowStock && !monitorhub.IsFullStock(int(stock.Fulfillment.ShippingOptions.AvailableToPromiseQuantity)) {
+					if inStock && t.IgnoreLowStock && int(stock.Fulfillment.ShippingOptions.AvailableToPromiseQuantity) < monitorhub.FullStockLevel {
 						inStock = false
 					}
 					price := float64(stock.Price.CurrentRetail)
@@ -155,7 +155,7 @@ func (t *TargetMonitorTask) Monitor() {
 					if inStock && t.MinPrice > 0 && (price <= 0 || price < t.MinPrice) {
 						inStock = false
 					}
-					if inStock && maxPrice > 0 && !monitorhub.PingWithinMaxPrice(monitorhub.StockPing{Price: price}, maxPrice) {
+					if inStock && maxPrice > 0 && (price <= 0 || price > maxPrice) {
 						inStock = false
 					}
 					if inStock {

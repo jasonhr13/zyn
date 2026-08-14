@@ -88,6 +88,7 @@ func startMessageToSiteInput(TaskInfo StartTaskMessage) sites.TaskInput {
 			MaxPrice:     mp,
 			Color:        it.Color,
 			Size:         it.Sizes,
+			Priority:     it.Priority,
 		})
 	}
 
@@ -101,6 +102,7 @@ func startMessageToSiteInput(TaskInfo StartTaskMessage) sites.TaskInput {
 			MaxPrice:     mp,
 			Color:        it.Color,
 			Size:         it.Sizes,
+			Priority:     it.Priority,
 		})
 	}
 

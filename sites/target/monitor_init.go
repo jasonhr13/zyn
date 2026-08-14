@@ -22,12 +22,13 @@ func startMonitorWorker(in monitorhub.StartInput) {
 		})
 	}
 	StartMonitorTask(sites.TaskInput{
-		Id:           in.ID,
-		Site:         in.Site,
-		Mode:         "Monitor",
-		Proxy:        in.ProxyGroup,
-		MonitorDelay: in.MonitorDelay,
-		Items:        items,
+		Id:             in.ID,
+		Site:           in.Site,
+		Mode:           "Monitor",
+		Proxy:          in.ProxyGroup,
+		MonitorDelay:   in.MonitorDelay,
+		IgnoreLowStock: in.IgnoreLowStock,
+		Items:          items,
 	})
 }
 func NewMonitorTask(t sites.TaskInput) (*TargetMonitorTask, bool) {
