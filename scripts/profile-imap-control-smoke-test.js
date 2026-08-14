@@ -12,8 +12,11 @@ const write = (name, value) => fs.writeFileSync(path.join(directory, name), `${J
 const read = name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
 
 write('profiles.json', [
-  { id: 'one', profileName: 'One', email: 'one@example.com' },
-  { id: 'two', profileName: 'Two', email: 'two@example.com' },
+  {
+    id: 'one', profileName: 'One', email: 'one@example.com',
+    payment: { cardNumber: '4111111111111111', cardMonth: '12', cardYear: '2099', cardCvv: '123' },
+  },
+  { id: 'two', profileName: 'Two', email: 'two@example.com', cardNumber: '5555555555554444', cardCvv: '456' },
 ]);
 write('settings.json', {
   imapHost: 'imap.legacy.example',
@@ -46,12 +49,25 @@ assert.equal(dataManager.getProfileImap('', 'TWO@example.com').profileId, 'two')
 
 const rawAfterMigration = fs.readFileSync(path.join(directory, 'profiles.json'), 'utf8');
 assert.equal(rawAfterMigration.includes('legacy secret'), false, 'profile file contains a plaintext mailbox password');
+assert.equal(rawAfterMigration.includes('4111111111111111'), false, 'profile file contains a plaintext card number');
+assert.equal(rawAfterMigration.includes('5555555555554444'), false, 'legacy profile card number was not migrated');
+assert.equal(rawAfterMigration.includes('"cardCvv": "123"'), false, 'profile file contains a plaintext CVV');
 assert.match(read('profiles.json')[0].imap.password, /^enc:/);
+assert.match(read('profiles.json')[0].payment.cardNumber, /^enc:/);
+assert.match(read('profiles.json')[0].payment.cardCvv, /^enc:/);
+assert.match(read('profiles.json')[1].cardNumber, /^enc:/);
+assert.equal(dataManager.getProfiles()[0].payment.cardNumber, '4111111111111111');
+assert.equal(dataManager.getProfiles()[0].payment.cardCvv, '123');
+assert.equal(dataManager.getProfiles()[1].cardNumber, '5555555555554444');
 assert.equal(read('settings.json').imapPass, undefined);
 assert.equal(read('settings.json').profileImapMigrationVersion, 1);
+assert.equal(read('settings.json').profilePaymentMigrationVersion, 1);
 assert.equal(read('settings.json').aycdApiKey, 'preserved');
 assert.equal(fs.existsSync(path.join(directory, 'profiles.json.pre-profile-imap-r6.bak')), true);
 assert.equal(fs.existsSync(path.join(directory, 'settings.json.pre-profile-imap-r6.bak')), true);
+const protectedProfileBackup = fs.readFileSync(path.join(directory, 'profiles.json.pre-profile-imap-r6.bak'), 'utf8');
+assert.equal(protectedProfileBackup.includes('4111111111111111'), false, 'legacy profile backup contains a plaintext card');
+assert.match(read('profiles.json.pre-profile-imap-r6.bak')[0].payment.cardNumber, /^enc:/);
 assert.equal(fs.statSync(path.join(directory, 'profiles.json')).mode & 0o777, 0o600);
 
 dataManager.updateProfile('one', {
@@ -114,5 +130,6 @@ console.log(JSON.stringify({
   migrationVersion: control.migrationVersion,
   profileLookup: true,
   encryptedAtRest: true,
+  paymentEncryptedAtRest: true,
   backupRoundTrip: true,
 }, null, 2));

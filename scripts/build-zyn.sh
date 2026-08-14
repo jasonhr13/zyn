@@ -3,7 +3,6 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BASE_APP="${ZYN_BASE_APP:-$PROJECT_DIR/dist/Zyn-Runtime-Base.app}"
 APP_ARCH="${ZYN_ARCH:-$(uname -m)}"
 if [[ "$APP_ARCH" == "x86_64" ]]; then APP_ARCH="x64"; fi
 if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
@@ -11,6 +10,7 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
+ELECTRON_RUNTIME="$PROJECT_DIR/vendor/electron-v43.3.0-darwin-$APP_ARCH/Electron.app"
 APP_RELEASE="${ZYN_RELEASE:-}"
 APP_VERSION="${ZYN_VERSION:-}"
 if [[ -z "$APP_VERSION" ]]; then
@@ -35,12 +35,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -d "$BASE_APP" ]]; then
-  echo "Missing Zyn runtime base: $BASE_APP" >&2
+if [[ ! -d "$ELECTRON_RUNTIME" ]]; then
+  echo "Missing Electron runtime: $ELECTRON_RUNTIME" >&2
+  echo "Run node scripts/prepare-zyn-electron.cjs $APP_ARCH first." >&2
   exit 1
 fi
 if [[ ! -x "$ASAR_BIN" ]]; then
   echo "Missing ASAR packer. Run npm install in frontend/ first." >&2
+  exit 1
+fi
+if [[ ! -d "$PROJECT_DIR/runtime-app/node_modules" ]]; then
+  echo "Missing runtime app dependencies. Run npm ci in runtime-app/ first." >&2
+  exit 1
+fi
+if [[ ! -d "$PROJECT_DIR/bot-runtime/node_modules" ]]; then
+  echo "Missing bot runtime dependencies. Run npm ci in bot-runtime/ first." >&2
   exit 1
 fi
 if [[ ! -x "$NATIVE_BACKEND" ]]; then
@@ -70,22 +79,19 @@ fi
   node --openssl-legacy-provider node_modules/react-scripts/scripts/build.js
 )
 
-cp -cR "$PROJECT_DIR/extracted/asar" "$TEMP_DIR/app"
-rm -rf "$TEMP_DIR/app/build"
+mkdir -p "$TEMP_DIR/app"
+rsync -a --exclude='node_modules' --exclude='package-lock.json' \
+  "$PROJECT_DIR/runtime-app/" "$TEMP_DIR/app/"
+cp -R "$PROJECT_DIR/runtime-app/node_modules" "$TEMP_DIR/app/node_modules"
 cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
 node "$PROJECT_DIR/scripts/verify-native-farmer-upstream.js"
 cp "$PROJECT_DIR/native-farmer/runtime-paths.js" "$TEMP_DIR/app/public/helpers/runtime-paths.js"
-node "$PROJECT_DIR/scripts/patch-profile-imap-engines.js" "$TEMP_DIR/app/public/helpers"
-# Walmart remains compiled into the native engine for later use, but Zyn currently ships no
-# renderer or Electron bridge that can launch it.
-rm -f "$TEMP_DIR/app/public/helpers/walmart-engine.js"
-node "$PROJECT_DIR/scripts/patch-zyn-runtime-brand.js" "$TEMP_DIR/app"
+for helper in \
+  analytics-recorder.js manual-captcha-manager.js native-engine-contract.js native-hyper-broker.js; do
+  cp "$PROJECT_DIR/launcher/$helper" "$TEMP_DIR/app/public/helpers/$helper"
+done
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
-
-# The runtime base carries an obsolete embedded engine. Zyn always loads the architecture-correct,
-# contract-pinned binary from Resources/engine; keeping the duplicate in ASAR leaks stale metadata.
-rm -rf "$TEMP_DIR/app/backend"
 
 node -e '
   const fs = require("fs");
@@ -95,41 +101,30 @@ node -e '
   pkg.productName = "Zyn";
   pkg.description = "Zyn Checkout Automation";
   pkg.version = process.argv[2];
-  pkg.dependencies.react = "18.3.1";
-  pkg.dependencies["react-dom"] = "18.3.1";
   fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$TEMP_DIR/app/package.json" "$APP_VERSION"
 
-"$ASAR_BIN" pack "$TEMP_DIR/app" "$TEMP_DIR/app-original.asar" \
-  --unpack-dir node_modules/node-notifier
+"$ASAR_BIN" pack "$TEMP_DIR/app" "$TEMP_DIR/app-original.asar"
 
-cp -cR "$BASE_APP" "$OUTPUT_APP"
+cp -cR "$ELECTRON_RUNTIME" "$OUTPUT_APP"
 CONTENTS="$OUTPUT_APP/Contents"
 RESOURCES="$CONTENTS/Resources"
-node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
-  "$RESOURCES/bot/pbandai-buyer.cjs"
-BASE_EXECUTABLE="$(plutil -extract CFBundleExecutable raw "$CONTENTS/Info.plist")"
-if [[ "$APP_ARCH" == "x64" ]]; then
-  X64_ELECTRON="$PROJECT_DIR/vendor/electron-v43.3.0-darwin-x64/Electron.app"
-  if [[ ! -d "$X64_ELECTRON" ]]; then
-    echo "Missing Intel Electron runtime: $X64_ELECTRON" >&2
-    exit 1
-  fi
-  rm -rf "$CONTENTS/Frameworks" "$CONTENTS/MacOS"
-  cp -R "$X64_ELECTRON/Contents/Frameworks" "$CONTENTS/Frameworks"
-  cp -R "$X64_ELECTRON/Contents/MacOS" "$CONTENTS/MacOS"
-  mv "$CONTENTS/MacOS/Electron" "$CONTENTS/MacOS/$BASE_EXECUTABLE"
-fi
-
+rm -f "$RESOURCES/default_app.asar"
+rm -rf "$RESOURCES/bot" "$RESOURCES/node_modules"
+mkdir -p "$RESOURCES/bot"
+rsync -a --exclude='node_modules' --exclude='package-lock.json' --exclude='package.json' --exclude='README.md' \
+  "$PROJECT_DIR/bot-runtime/" "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
 node "$PROJECT_DIR/scripts/patch-zyn-bot-webhook-brand.cjs" "$RESOURCES/bot"
+node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
+  "$RESOURCES/bot/pbandai-buyer.cjs"
+cp -R "$PROJECT_DIR/bot-runtime/node_modules" "$RESOURCES/node_modules"
+mkdir -p "$RESOURCES/vendor"
 rm -rf "$RESOURCES/engine"
 mkdir -p "$RESOURCES/engine"
 cp "$NATIVE_BACKEND" "$RESOURCES/engine/backend"
 chmod 0755 "$RESOURCES/engine/backend"
-mkdir -p "$RESOURCES/bot/node_modules"
-cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/bot/node_modules/"
 rm -rf "$RESOURCES/vendor/ms-playwright-mac" "$RESOURCES/vendor/ms-playwright-mac-arm64"
 if [[ "$RUNTIME_MODE" == "bundled" ]]; then
   NATIVE_BROWSER_RUNTIME="$PROJECT_DIR/vendor/ms-playwright-mac-$APP_ARCH"
@@ -142,13 +137,20 @@ if [[ "$RUNTIME_MODE" == "bundled" ]]; then
   rsync -a --exclude='chromium_headless_shell-*' \
     "$NATIVE_BROWSER_RUNTIME/" "$RESOURCES/vendor/ms-playwright-mac/"
 fi
+# Zyn's macOS engine is native and every JavaScript bot reuses Electron as Node. Never add a
+# Windows Node, Windows Chromium, or Wine payload to a Zyn build.
+rm -rf "$RESOURCES/wine" "$RESOURCES/vendor/ms-playwright"
+rm -f "$RESOURCES/vendor/node" "$RESOURCES/vendor/node.exe"
 rm -f "$RESOURCES/app-original.asar"
 rm -rf "$RESOURCES/app-original.asar.unpacked"
 rm -f "$RESOURCES/app-react16-original.asar"
 rm -rf "$RESOURCES/app-react16-original.asar.unpacked"
 cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
-cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"
+if [[ -d "$TEMP_DIR/app-original.asar.unpacked" ]]; then
+  cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"
+fi
 
+mkdir -p "$RESOURCES/app"
 for launcher_file in \
   bootstrap.js feature-flags.js license-client.js license-session-reason.js license-authority.js license-observer.js \
   checkout-reporting.js analytics-recorder.js \
@@ -199,11 +201,7 @@ done
 if [[ "$RUNTIME_MODE" == "remote" ]]; then
   # Keep the small architecture-matched backend as an offline fallback. The signed runtime channel
   # installs newer engines side by side and selects them only for future drained engine processes.
-  rm -rf \
-    "$RESOURCES/wine" \
-    "$RESOURCES/vendor/ms-playwright" \
-    "$RESOURCES/vendor/ms-playwright-mac"
-  rm -f "$RESOURCES/vendor/node" "$RESOURCES/vendor/node.exe"
+  rm -rf "$RESOURCES/vendor/ms-playwright-mac"
 fi
 
 rm -f "$RESOURCES/electron.icns"

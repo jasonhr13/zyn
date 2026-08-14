@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const WebSocket = require(path.join(__dirname, '..', 'extracted', 'asar', 'node_modules', 'ws'));
+const WebSocket = require(path.join(__dirname, '..', 'launcher', 'node_modules', 'ws'));
 
 const port = Number(process.argv[2]);
 const screenshotPath = process.argv[3];
@@ -160,6 +160,10 @@ async function main() {
   const result = {
     ...evaluated.result.value,
     encryptedAtRest: !rawProfiles.includes('mail box secret') && /"password":\s*"enc:/.test(rawProfiles),
+    paymentEncryptedAtRest: !rawProfiles.includes('4111111111111111')
+      && !rawProfiles.includes('"cardCvv": "123"')
+      && /"cardNumber":\s*"enc:/.test(rawProfiles)
+      && /"cardCvv":\s*"enc:/.test(rawProfiles),
     profileFileMode: fs.statSync(profilesPath).mode & 0o777,
     rendererExceptions,
     rendererErrors,
@@ -180,6 +184,7 @@ async function main() {
   });
   assert.equal(result.cardShowsMailbox, true);
   assert.equal(result.encryptedAtRest, true);
+  assert.equal(result.paymentEncryptedAtRest, true);
   assert.equal(result.profileFileMode, 0o600);
   assert.equal(rendererExceptions, 0);
   assert.equal(rendererErrors, 0);

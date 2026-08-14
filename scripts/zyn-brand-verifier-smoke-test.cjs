@@ -279,9 +279,12 @@ async function main() {
   }
   for (const buildScript of ['scripts/build-zyn.sh', 'scripts/build-zyn-windows.sh']) {
     const source = fs.readFileSync(path.join(project, buildScript), 'utf8');
-    assert.match(source, /rm -rf "\$TEMP_DIR\/app\/backend"/, `${buildScript} does not remove the embedded backend`);
+    assert.match(source, /runtime-app/, `${buildScript} does not stage the tracked runtime source`);
+    assert.doesNotMatch(source, /extracted\/asar/, `${buildScript} still stages the recovered runtime input`);
     assert.match(source, /pkg\.description = "Zyn Checkout Automation"/, `${buildScript} does not set the Zyn package description`);
   }
+  assert.equal(fs.existsSync(path.join(project, 'runtime-app', 'backend')), false,
+    'tracked runtime source contains an obsolete embedded backend');
   const macBuild = fs.readFileSync(path.join(project, 'scripts', 'build-zyn.sh'), 'utf8');
   const macContractVerifier = fs.readFileSync(path.join(project, 'scripts', 'verify-runtime-contract.js'), 'utf8');
   assert.match(macBuild, /verify-runtime-contract\.js/, 'mac build does not invoke the runtime-contract verifier');

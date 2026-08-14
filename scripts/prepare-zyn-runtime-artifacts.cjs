@@ -54,18 +54,14 @@ for (const arch of architectures) {
   if (arch === 'windows-x64') {
     const source = path.join(
       projectRoot,
-      'dist',
-      'Zyn-Runtime-Base.app',
-      'Contents',
-      'Resources',
       'vendor',
-      'ms-playwright',
+      'ms-playwright-windows-x64',
       `chromium-${chromiumRevision}`,
     );
     const stage = path.join(stagingRoot, arch, 'chromium');
     const destination = path.join(stage, 'ms-playwright', `chromium-${chromiumRevision}`);
     if (!fs.existsSync(path.join(source, 'chrome-win64', 'chrome.exe'))) {
-      throw new Error(`Missing Windows Chromium source: ${source}`);
+      throw new Error(`Missing Windows Chromium source: ${source}. Run ZYN_ARCH=windows-x64 node scripts/prepare-native-farmer-runtime.js first.`);
     }
     fs.rmSync(stage, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(destination), { recursive: true });

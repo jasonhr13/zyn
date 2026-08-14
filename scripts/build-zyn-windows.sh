@@ -3,8 +3,6 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BASE_APP="${ZYN_BASE_APP:-$PROJECT_DIR/dist/Zyn-Runtime-Base.app}"
-BASE_RESOURCES="$BASE_APP/Contents/Resources"
 ELECTRON_RUNTIME="$PROJECT_DIR/vendor/electron-v43.3.0-win32-x64"
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-win32-x64}"
 APP_VERSION="${ZYN_VERSION:-}"
@@ -26,12 +24,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -d "$BASE_RESOURCES" ]]; then
-  echo "Missing Zyn runtime base: $BASE_APP" >&2
-  exit 1
-fi
 if [[ ! -x "$ASAR_BIN" ]]; then
   echo "Missing ASAR packer. Run npm install in frontend/ first." >&2
+  exit 1
+fi
+if [[ ! -d "$PROJECT_DIR/runtime-app/node_modules" ]]; then
+  echo "Missing runtime app dependencies. Run npm ci in runtime-app/ first." >&2
+  exit 1
+fi
+if [[ ! -d "$PROJECT_DIR/bot-runtime/node_modules" ]]; then
+  echo "Missing bot runtime dependencies. Run npm ci in bot-runtime/ first." >&2
   exit 1
 fi
 if [[ ! -f "$NATIVE_BACKEND" ]]; then
@@ -39,13 +41,9 @@ if [[ ! -f "$NATIVE_BACKEND" ]]; then
   echo "Run ./scripts/build-native-target-engine.sh windows-x64 first." >&2
   exit 1
 fi
-if [[ ! -f "$BASE_RESOURCES/vendor/node.exe" ]]; then
-  echo "Missing bundled Windows Node runtime: $BASE_RESOURCES/vendor/node.exe" >&2
-  exit 1
-fi
 if [[ ! -f "$ELECTRON_RUNTIME/electron.exe" ]]; then
   echo "Missing Windows Electron runtime: $ELECTRON_RUNTIME" >&2
-  echo "Run node scripts/prepare-zyn-windows-electron.cjs first." >&2
+  echo "Run node scripts/prepare-zyn-electron.cjs windows-x64 first." >&2
   exit 1
 fi
 if [[ -e "$OUTPUT_APP" ]]; then
@@ -71,22 +69,19 @@ fi
   node --openssl-legacy-provider node_modules/react-scripts/scripts/build.js
 )
 
-cp -cR "$PROJECT_DIR/extracted/asar" "$TEMP_DIR/app"
-rm -rf "$TEMP_DIR/app/build"
+mkdir -p "$TEMP_DIR/app"
+rsync -a --exclude='node_modules' --exclude='package-lock.json' \
+  "$PROJECT_DIR/runtime-app/" "$TEMP_DIR/app/"
+cp -R "$PROJECT_DIR/runtime-app/node_modules" "$TEMP_DIR/app/node_modules"
 cp -R "$PROJECT_DIR/frontend/build" "$TEMP_DIR/app/build"
 node "$PROJECT_DIR/scripts/verify-native-farmer-upstream.js"
 cp "$PROJECT_DIR/native-farmer/runtime-paths.js" "$TEMP_DIR/app/public/helpers/runtime-paths.js"
-node "$PROJECT_DIR/scripts/patch-profile-imap-engines.js" "$TEMP_DIR/app/public/helpers"
-# Walmart remains compiled into the native engine for later use, but Zyn currently ships no
-# renderer or Electron bridge that can launch it.
-rm -f "$TEMP_DIR/app/public/helpers/walmart-engine.js"
-node "$PROJECT_DIR/scripts/patch-zyn-runtime-brand.js" "$TEMP_DIR/app"
+for helper in \
+  analytics-recorder.js manual-captcha-manager.js native-engine-contract.js native-hyper-broker.js; do
+  cp "$PROJECT_DIR/launcher/$helper" "$TEMP_DIR/app/public/helpers/$helper"
+done
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
-
-# The runtime base carries an obsolete embedded engine. Zyn always loads the architecture-correct,
-# contract-pinned binary from resources/engine; keeping the duplicate in ASAR leaks stale metadata.
-rm -rf "$TEMP_DIR/app/backend"
 
 node -e '
   const fs = require("fs");
@@ -96,13 +91,10 @@ node -e '
   pkg.productName = "Zyn";
   pkg.description = "Zyn Checkout Automation";
   pkg.version = process.argv[2];
-  pkg.dependencies.react = "18.3.1";
-  pkg.dependencies["react-dom"] = "18.3.1";
   fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$TEMP_DIR/app/package.json" "$APP_VERSION"
 
-"$ASAR_BIN" pack "$TEMP_DIR/app" "$TEMP_DIR/app-original.asar" \
-  --unpack-dir node_modules/node-notifier
+"$ASAR_BIN" pack "$TEMP_DIR/app" "$TEMP_DIR/app-original.asar"
 
 mkdir -p "$OUTPUT_APP"
 rsync -a --exclude='.zyn-source.sha256' "$ELECTRON_RUNTIME/" "$OUTPUT_APP/"
@@ -110,21 +102,20 @@ mv "$OUTPUT_APP/electron.exe" "$OUTPUT_APP/Zyn.exe"
 RESOURCES="$OUTPUT_APP/resources"
 rm -f "$RESOURCES/default_app.asar"
 
-cp -R "$BASE_RESOURCES/bot" "$RESOURCES/bot"
-cp -R "$BASE_RESOURCES/node_modules" "$RESOURCES/node_modules"
+mkdir -p "$RESOURCES/bot"
+rsync -a --exclude='node_modules' --exclude='package-lock.json' --exclude='package.json' --exclude='README.md' \
+  "$PROJECT_DIR/bot-runtime/" "$RESOURCES/bot/"
+cp -R "$PROJECT_DIR/bot-runtime/node_modules" "$RESOURCES/node_modules"
 mkdir -p "$RESOURCES/vendor"
-cp "$BASE_RESOURCES/vendor/node.exe" "$RESOURCES/vendor/node.exe"
-node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
-  "$RESOURCES/bot/pbandai-buyer.cjs"
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"
 node "$PROJECT_DIR/scripts/patch-zyn-bot-webhook-brand.cjs" "$RESOURCES/bot"
-mkdir -p "$RESOURCES/bot/node_modules"
-cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/bot/node_modules/"
+node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
+  "$RESOURCES/bot/pbandai-buyer.cjs"
 
 mkdir -p "$RESOURCES/engine"
 cp "$NATIVE_BACKEND" "$RESOURCES/engine/backend.exe"
-chmod 0755 "$RESOURCES/engine/backend.exe" "$RESOURCES/vendor/node.exe"
+chmod 0755 "$RESOURCES/engine/backend.exe"
 cp "$TEMP_DIR/app-original.asar" "$RESOURCES/app-original.asar"
 if [[ -d "$TEMP_DIR/app-original.asar.unpacked" ]]; then
   cp -R "$TEMP_DIR/app-original.asar.unpacked" "$RESOURCES/app-original.asar.unpacked"

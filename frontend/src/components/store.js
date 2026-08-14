@@ -84,7 +84,7 @@ const defaultState = {
     // page selects nothing.
     selected: {},
     rotate: false,   // Rotate Mode active (an order frees its slot for the next profile)
-    // connection: which proxies to use. 'inhouse1'|'inhouse2'|'inhouse3'|'inhousemix' | 'list:<name>'
+    // connection: which proxies to use. 'none' | 'list:<name>'
     // (a personal Proxies-page list) | 'none' (home IP). Derived into useVpn/inHousePool/proxyListName
     // at send time in pbandai.js.
     // Default: home IP. The in-house pools are down, so a default that points at them makes

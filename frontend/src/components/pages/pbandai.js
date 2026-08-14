@@ -80,9 +80,8 @@ class Pbandai extends Component {
   // Turn the single 'connection' selector into the fields the engine expects.
   connPayload = () => {
     const c = this.props.pb.connection || 'none';
-    if (c === 'none') return { useVpn: false, inHousePool: '1', proxyListName: '' };
     if (c.startsWith('list:')) return { useVpn: false, inHousePool: '1', proxyListName: c.slice(5) };
-    return { useVpn: true, inHousePool: c.replace('inhouse', '') || '1', proxyListName: '' };
+    return { useVpn: false, inHousePool: '1', proxyListName: '' };
   };
 
   codesFromWatchlist = () => this.props.pb.watchlist.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
@@ -358,13 +357,9 @@ class Pbandai extends Component {
               <label className="form-label">Connection</label>
               <select
                 className="form-select"
-                value={connection || 'inhouse1'}
+                value={String(connection || '').startsWith('list:') ? connection : 'none'}
                 onChange={e => this.set('connection', e.target.value)}
               >
-                <option value="inhouse1">In-House Proxy 1</option>
-                <option value="inhouse2">In-House Proxy 2</option>
-                <option value="inhouse3">In-House Proxy 3</option>
-                <option value="inhousemix">In-House Proxy Mix (all 3)</option>
                 {proxyLists.map(l => (
                   <option key={proxyRef(l)} value={`list:${proxyRef(l)}`}>My Proxies: {proxyLabel(l)}</option>
                 ))}

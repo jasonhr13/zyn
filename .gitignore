@@ -15,6 +15,8 @@
 frontend/node_modules/
 frontend/build/
 launcher/node_modules/
+runtime-app/node_modules/
+bot-runtime/node_modules/
 release-tools/
 
 # Packaged applications, installers, downloaded runtimes, and staging output
@@ -29,6 +31,7 @@ release-tools/
 /release/dist/
 /release/work/
 /release/archive/
+/release/qa/
 /release/runtime-artifacts/
 /release/runtime-staging/
 

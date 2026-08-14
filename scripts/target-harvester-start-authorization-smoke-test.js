@@ -11,7 +11,7 @@ const read = relative => fs.readFileSync(path.join(project, relative), 'utf8');
 const configSource = read('scripts/target-multi-harvester-config.fragment.js');
 const producerSource = read('scripts/target-multi-harvester-producers.fragment.js');
 const rendererSource = read('frontend/src/components/pages/task-groups.js');
-const runtimePatchSource = read('scripts/patch-zyn-runtime-brand.js');
+const runtimeMainSource = read('runtime-app/public/electron.js');
 const bootstrapSource = read('launcher/bootstrap.js');
 
 let settings = {
@@ -113,7 +113,7 @@ assert.match(rendererSource, /Saving never starts a harvester[\s\S]*Use its Star
 assert.match(rendererSource,
   /persistHarvesters\(harvesters, null, \{ id: harvester\.id, running \}\)/,
   'Start/Stop clicks do not send an explicit run command');
-assert.match(runtimePatchSource,
+assert.match(runtimeMainSource,
   /ipcMain\.on\('syncTargetHarvesters', \(e, runCommand\)[\s\S]*syncTargetHarvesters\(mainWindow, runCommand \|\| null\)/,
   'the main-process bridge does not forward explicit run authorization');
 assert.match(bootstrapSource,

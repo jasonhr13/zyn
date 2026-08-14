@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyCount, proxyLabel, proxyRef } from '../proxy-options';
+import { parseProxyLine } from '../proxy-line.mjs';
 import { timestampLogLine } from '../log-timestamp';
 
 const { ipcRenderer, clipboard, shell } = window.require('electron');
@@ -26,11 +27,12 @@ const GENERATE_MODULES = [
 ];
 const ACCOUNT_MODULES = new Set(['bandai', 'riotgames', 'target']);
 
-// Which bot script each account-creation module invokes, and its default SMS-catalog service slug.
+// Site capabilities keep irrelevant credentials and CLI arguments out of each account-generation
+// flow. In particular, Target signup is email/password only and requires a stable proxy session.
 const MODULE_META = {
-  bandai: { script: 'pbandai-register.mjs', defaultSmsService: 'bandai', siteName: 'Bandai' },
-  riotgames: { script: 'riotgames-register.mjs', defaultSmsService: 'riotgames', siteName: 'Riot Games' },
-  target: { script: 'target-register.mjs', defaultSmsService: 'target', siteName: 'Target' },
+  bandai: { script: 'pbandai-register.mjs', defaultSmsService: 'bandai', siteName: 'Bandai', usesSms: true, usesState: true },
+  riotgames: { script: 'riotgames-register.mjs', defaultSmsService: 'riotgames', siteName: 'Riot Games', usesCaptcha: true },
+  target: { script: 'target-register.mjs', defaultSmsService: 'target', siteName: 'Target', requiresProxy: true },
 };
 
 // For the Catchall email-list generator — just needs to look like a plausible local part
@@ -325,16 +327,13 @@ class Generate extends Component {
     return imapHost === 'custom' ? imapHostCustom.trim() : imapHost;
   };
 
-  // Shared by Bandai and Target — they take the same CONFIG shape and only differ in
-  // which script runs and which SMS-catalog service slug they default to (see MODULE_META).
-  //
+  // Shared queue/process lifecycle for account modules; MODULE_META controls which site-specific
+  // settings are included in each child process.
   // Runs up to `concurrency` (1-5) accounts in parallel, each its own headed-Chromium OS process
   // (spawned via runBotScript/task-handler.js) — NOT threads in this process, so there is no
   // shared JS state between concurrent runs to worry about. The two things that matter for
   // correctness at concurrency:
-  //   - SMS: each process calls createSmsClient() and rents its OWN number, tracked by its OWN
-  //     purchaseId — provider-side, not app-side, so two concurrent runs can never poll each
-  //     other's number.
+  //   - SMS modules: each process rents its OWN number and tracks its OWN purchaseId.
   //   - Email auth: imap-client.mjs's fetchAuthCode() opens its OWN IMAP connection per process and
   //     explicitly re-checks the parsed To: header against ITS target email before ever accepting a
   //     code — even when N processes share one catchall inbox and a coarse FROM+SINCE search
@@ -343,7 +342,7 @@ class Generate extends Component {
   //     comment on the To: verification) — running several at once just exercises it in parallel.
   startGeneration = async () => {
     const { activeModule, password, state, firstName, lastName, randomizeName, smsProvider, smsApiUsername, imapUser, imapPass, aycdApiKey, hcaptchaApiKey, hcaptchaSolver, concurrency } = this.state;
-    const discordWebhook = (this.props.settings || {}).discordWebhook || '';
+    const accountGenWebhook = (this.props.settings || {}).accountGenWebhook || '';
     const meta = MODULE_META[activeModule];
     const emailList = this.currentEmailList();
     const smsService = this.currentSmsService();
@@ -377,9 +376,22 @@ class Generate extends Component {
     }
 
     const selectedProxyList = this.selectedProxyList();
-    const proxyLines = this.proxyLines();
+    const rawProxyLines = this.proxyLines();
+    const proxyLines = rawProxyLines.map(parseProxyLine).filter(Boolean);
     const managedProxyRef = selectedProxyList?.managed ? proxyRef(selectedProxyList) : '';
     const maxConcurrent = Math.max(1, Math.min(MAX_CONCURRENCY, parseInt(concurrency, 10) || 1));
+
+    if (meta.requiresProxy && !selectedProxyList) {
+      this.addLog(`Error: ${meta.siteName} generation requires a proxy list.`);
+      return;
+    }
+    if (meta.requiresProxy && !managedProxyRef && proxyLines.length === 0) {
+      this.addLog(`Error: The selected proxy list has no valid host:port entries.`);
+      return;
+    }
+    if (rawProxyLines.length > proxyLines.length) {
+      this.addLog(`Ignored ${rawProxyLines.length - proxyLines.length} invalid proxy line(s).`);
+    }
 
     this.stopRequested = false;
     this.activeRunIds = new Set();
@@ -398,36 +410,35 @@ class Generate extends Component {
       const args = [
         `--email=${email}`,
         `--password=${password}`,
-        `--state=${state}`,
+        ...(meta.usesState ? [`--state=${state}`] : []),
         // randomizeName forces the bot to pick its own random name even if the fields have text —
         // a batch of tournament sign-ups shouldn't all share one fixed identity.
         ...(!randomizeName && firstName ? [`--firstName=${firstName}`] : []),
         ...(!randomizeName && lastName ? [`--lastName=${lastName}`] : []),
-        `--smsProvider=${smsProvider}`,
-        `--smsApiKey=${smsApiKey}`,
-        `--smsService=${smsService}`,
-        ...(smsProvider === 'textverified' && smsApiUsername ? [`--smsApiUsername=${smsApiUsername}`] : []),
+        ...(meta.usesSms ? [
+          `--smsProvider=${smsProvider}`,
+          `--smsApiKey=${smsApiKey}`,
+          `--smsService=${smsService}`,
+          ...(smsProvider === 'textverified' && smsApiUsername ? [`--smsApiUsername=${smsApiUsername}`] : []),
+        ] : []),
         // Both can be set at once — the bot scripts try AYCD first, then fall back to IMAP.
         ...(aycdApiKey ? [`--aycdApiKey=${aycdApiKey}`] : []),
         ...(imapUser && imapPass ? [`--imapHost=${imapHost}`, `--imapPort=${IMAP_PORT}`, `--imapUser=${imapUser}`, `--imapPass=${imapPass}`] : []),
         // hCaptcha solver (for Riot Games)
-        ...(hcaptchaApiKey ? [`--hcaptchaApiKey=${hcaptchaApiKey}`, `--hcaptchaSolver=${hcaptchaSolver}`] : []),
+        ...(meta.usesCaptcha && hcaptchaApiKey ? [`--hcaptchaApiKey=${hcaptchaApiKey}`, `--hcaptchaSolver=${hcaptchaSolver}`] : []),
         `--id=${email.split('@')[0]}`,
-        ...(discordWebhook ? [`--webhook=${discordWebhook}`] : []),
+        ...(accountGenWebhook ? [`--webhook=${accountGenWebhook}`] : []),
       ];
 
       if (proxyLines.length) {
         // Random, not proxyLines[i]. Sequential meant account 0 always got proxy 0, account 1 got
         // proxy 1, and so on — so every user sharing this pool marched through the same first
         // entries together and burned them, while the rest of the list went untouched.
-        const pick = proxyLines[Math.floor(Math.random() * proxyLines.length)];
-        const [host, port, user, pass] = pick.split(':');
-        if (host && port) {
-          args.push(`--proxyServer=${host}:${port}`);
-          if (user && pass) {
-            args.push(`--proxyUser=${user}`);
-            args.push(`--proxyPass=${pass}`);
-          }
+        const pickedProxy = proxyLines[Math.floor(Math.random() * proxyLines.length)];
+        if (pickedProxy) {
+          args.push(`--proxyServer=${pickedProxy.server}`);
+          if (pickedProxy.username) args.push(`--proxyUser=${pickedProxy.username}`);
+          if (pickedProxy.password) args.push(`--proxyPass=${pickedProxy.password}`);
         }
       }
 
@@ -628,6 +639,7 @@ class Generate extends Component {
     const smsService = this.currentSmsService();
     const proxyLists = (this.props.proxies || {}).lists || [];
     const isAccountModule = ACCOUNT_MODULES.has(activeModule);
+    const activeMeta = MODULE_META[activeModule] || {};
     const toggleShow = (field) => this.setState(s => ({ [field]: !s[field] }));
     const eyeBtn = (field, shown) => (
       <button
@@ -720,14 +732,17 @@ class Generate extends Component {
                   {eyeBtn('showPassword', showPassword)}
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">State</label>
-                <select className="form-select" name="state" value={state} onChange={this.handleInputChange}>
-                  {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
+              {activeMeta.usesState && (
+                <div className="form-group">
+                  <label className="form-label">State</label>
+                  <select className="form-select" name="state" value={state} onChange={this.handleInputChange}>
+                    {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
 
+            {activeMeta.usesSms && <React.Fragment>
             <hr className="form-divider" />
             <div className="settings-section-title" style={{ marginBottom: 12 }}>SMS Provider</div>
 
@@ -757,9 +772,10 @@ class Generate extends Component {
 
             <div className="form-group">
               <label className="form-label">Service Slug</label>
-              <input className="form-input" type="text" value={smsService} onChange={e => this.setSmsService(e.target.value)} placeholder={MODULE_META[activeModule].defaultSmsService} />
-              <div className="form-hint">Must match a service your provider's catalog actually lists — these providers sell numbers per target site, and most don't list {MODULE_META[activeModule].siteName} by default. Check your provider's dashboard for a matching or "any site" slug.</div>
+              <input className="form-input" type="text" value={smsService} onChange={e => this.setSmsService(e.target.value)} placeholder={activeMeta.defaultSmsService} />
+              <div className="form-hint">Must match a service your provider's catalog actually lists — these providers sell numbers per target site, and most don't list {activeMeta.siteName} by default. Check your provider's dashboard for a matching or "any site" slug.</div>
             </div>
+            </React.Fragment>}
 
             <hr className="form-divider" />
             <div className="settings-section-title" style={{ marginBottom: 12 }}>Email Auth Code</div>
@@ -807,8 +823,9 @@ class Generate extends Component {
               </div>
             )}
 
+            {activeMeta.usesCaptcha && <React.Fragment>
             <hr className="form-divider" />
-            <div className="settings-section-title" style={{ marginBottom: 12 }}>hCaptcha Solver <span style={{ color: 'var(--dim)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(for Riot Games)</span></div>
+            <div className="settings-section-title" style={{ marginBottom: 12 }}>hCaptcha Solver</div>
 
             <div className="form-row">
               <div className="form-group">
@@ -827,16 +844,18 @@ class Generate extends Component {
               </div>
             </div>
             <div className="form-hint">Get your API key from <a href="https://2captcha.com" onClick={e => openExternal(e, 'https://2captcha.com')} className="text-purple">2captcha.com</a> or <a href="https://anti-captcha.com" onClick={e => openExternal(e, 'https://anti-captcha.com')} className="text-purple">anti-captcha.com</a>. Fund your account with $1+ to enable hCaptcha solving.</div>
+            </React.Fragment>}
 
             <hr className="form-divider" />
-            <div className="settings-section-title" style={{ marginBottom: 12 }}>Proxy <span style={{ color: 'var(--dim)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></div>
+            <div className="settings-section-title" style={{ marginBottom: 12 }}>Proxy <span style={{ color: 'var(--dim)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({activeMeta.requiresProxy ? 'required' : 'optional'})</span></div>
 
             <div className="form-group">
               <label className="form-label">Proxy List</label>
               <select className="form-select" name="proxyListName" value={proxyListName} onChange={this.handleInputChange}>
-                <option value="">None (home IP)</option>
+                <option value="">{activeMeta.requiresProxy ? 'Select a proxy list' : 'None (home IP)'}</option>
                 {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
               </select>
+              {activeMeta.requiresProxy && <div className="form-hint">One proxy stays attached to each account's complete browser session.</div>}
             </div>
 
             <hr className="form-divider" />
@@ -856,7 +875,7 @@ class Generate extends Component {
               />
               {parseInt(concurrency, 10) > CONCURRENCY_ADVISED && (
                 <div className="form-hint" style={{ marginTop: 4, lineHeight: 1.4 }}>
-                  Each account is a real Chromium window, an SMS number and an IMAP connection.
+                  Each account is a real Chromium window{activeMeta.usesSms ? ', an SMS number, and' : ' and'} an IMAP connection.
                   Past about {CONCURRENCY_ADVISED} the limit is usually your mail provider — Gmail
                   allows roughly 15 connections per account — and it shows up as tasks hanging on the
                   email code.

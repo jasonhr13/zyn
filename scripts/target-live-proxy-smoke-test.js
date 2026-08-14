@@ -13,12 +13,12 @@ const taskGroups = source('frontend/src/components/pages/task-groups.js');
 const proxiesPage = source('frontend/src/components/pages/proxies.js');
 const pageHandler = source('frontend/src/components/page-handler.js');
 const store = source('frontend/src/components/store.js');
-const runtimePatcher = source('scripts/patch-profile-imap-engines.js');
-const brandPatcher = source('scripts/patch-zyn-runtime-brand.js');
+const runtimePatcher = source('runtime-app/public/helpers/target-engine.js');
+const brandPatcher = source('runtime-app/public/electron.js');
 const harvesterConfig = source('scripts/target-multi-harvester-config.fragment.js');
 const harvesterProducers = source('scripts/target-multi-harvester-producers.fragment.js');
-const electron = source('extracted/asar/public/electron.js');
-const bridge = source('extracted/asar/public/helpers/target-engine.js');
+const electron = source('runtime-app/public/electron.js');
+const bridge = source('runtime-app/public/helpers/target-engine.js');
 const farmer = source('native-farmer/shape-farmer.mjs');
 const engine = fs.readFileSync(path.join(
   root,

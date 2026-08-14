@@ -135,7 +135,7 @@ for (const file of ['task-group-schedule.js', 'task-group-scheduler.js', 'target
 }
 const bootstrap = read('launcher/bootstrap.js');
 const taskGroupsPage = read('frontend/src/components/pages/task-groups.js');
-const targetEngine = read('extracted/asar/public/helpers/target-engine.js');
+const targetEngine = read('runtime-app/public/helpers/target-engine.js');
 assert.match(bootstrap, /createTaskGroupScheduler/);
 assert.match(bootstrap, /taskGroupScheduler\?\.sync\(\)/,
   'saving task groups does not reconcile main-process timers');

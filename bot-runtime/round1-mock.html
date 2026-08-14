@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Jul 2026: One Piece Collab_Phase 1 (LOCAL MOCK)</title>
+<!--
+  Local Round1 mock with a REAL Cloudflare Turnstile widget.
+  Served by round1-register.mjs itself when you pass --url=test, so no external server is needed.
+
+  Cloudflare publishes sitekeys that work on any origin, including localhost. Which one is used is
+  chosen with ?cf= so all three outcomes are testable without touching a live campaign:
+
+    ?cf=pass        1x00000000000000000000AA  visible widget, ALWAYS passes   (default)
+    ?cf=invisible   1x00000000000000000000BB  invisible, always passes — matches the live site
+    ?cf=interactive 3x00000000000000000000FF  forces a challenge a human must click
+    ?cf=block       2x00000000000000000000AB  ALWAYS fails — for testing the give-up path
+
+  Unlike the live page this one deliberately does NOT show "We are no longer accepting entries", and
+  the ENTER button really submits: it validates, then renders the success text the engine matches on
+  ("successfully registered"), so a full fill-and-submit can be verified end to end offline.
+
+  The form only appears once Turnstile issues a token, which is exactly how ShortStack behaves — that
+  ordering is the whole reason a challenge can look like a blank page.
+-->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=cfReady" defer></script>
+<style>
+  body { background:#a01820; color:#fff; font-family: sans-serif; max-width:700px; margin:40px auto; padding:0 16px; }
+  h1 { font-size:22px; }
+  .widget { margin:14px 0; }
+  label { display:block; margin-bottom:4px; }
+  input[type=text], input[type=email], select { width:100%; padding:10px; background:#555; color:#fff; border:1px solid #333; box-sizing:border-box; }
+  .row { display:flex; gap:16px; } .row .widget { flex:1; }
+  button { background:#e0b050; color:#222; font-weight:bold; padding:14px 28px; border:none; cursor:pointer; margin-top:10px; }
+  button[disabled] { opacity:.5; cursor:not-allowed; }
+  .cb { display:flex; gap:8px; align-items:flex-start; margin:14px 0; }
+  .err { color:#ffd0d0; margin-top:8px; }
+  .ok { background:#0f5132; padding:16px; border-radius:8px; font-size:18px; font-weight:bold; }
+  #gate { color:#ffd9d9; font-size:14px; }
+</style>
+</head>
+<body>
+<h3>REGISTER NOW</h3>
+<h1>ONE PIECE CARD GAME - ROUND1 Promotion Pack - (LOCAL MOCK)</h1>
+
+<!-- The mount point the real page uses, so the engine's render detection is exercised too. -->
+<div id="tw_container">
+  <div id="gate">Verifying you are human…</div>
+  <div id="cf"></div>
+</div>
+
+<!-- Honeypot, to confirm the engine's trap-field filter still works. -->
+<input type="text" id="website" name="website" style="display:none">
+
+<div id="form-area" hidden>
+  <div class="row">
+    <div class="widget"><label>First*</label><input type="text" id="f-first"></div>
+    <div class="widget"><label>Last*</label><input type="text" id="f-last"></div>
+  </div>
+  <div class="widget"><label>Email*</label><input type="email" id="f-email"></div>
+  <div class="widget">
+    <label>Designated Round1 Location for Pickup*</label>
+    <!-- All 59 locations, mirroring the live Phase 2 form (and the picker in the Round1 tab).
+         This used to carry only five, so testing any other store failed with "not offered" —
+         a fault of the fixture, not of the profile or the matcher. Tab between state and name
+         is deliberate: the live form does that, and it proves the matcher normalises whitespace. -->
+    <select id="f-store">
+      <option>AZ	Arrowhead Town Center</option>
+      <option>AZ	Chandler Fashion Center</option>
+      <option>AZ	Park Place Mall</option>
+      <option>CA	Burbank Town Center</option>
+      <option>CA	Eastridge Shopping Center</option>
+      <option>CA	Lakewood Mall</option>
+      <option>CA	Main Place Mall</option>
+      <option>CA	Mission Viejo</option>
+      <option>CA	Moreno Valley Mall</option>
+      <option>CA	Northridge Mall</option>
+      <option>CA	Plaza Bonita</option>
+      <option>CA	Puente Hills Mall</option>
+      <option>CA	Roseville Mall</option>
+      <option>CA	Southland Mall</option>
+      <option>CA	Stonestown Galleria</option>
+      <option>CA	Sunvalley Mall</option>
+      <option>CA	Temecula Mall</option>
+      <option>CO	Southwest Plaza</option>
+      <option>CT	Danbury Fair</option>
+      <option>FL	Pembroke Lakes Mall</option>
+      <option>GA	Cumberland Mall</option>
+      <option>IL	Fox Valley Mall</option>
+      <option>IL	Gurnee Mills</option>
+      <option>IL	North Riverside Mall</option>
+      <option>KS	Towne East Square</option>
+      <option>MA	Holyoke Mall</option>
+      <option>MD	Towson Town Center</option>
+      <option>ME	Maine Mall</option>
+      <option>MI	Great Lakes Crossing</option>
+      <option>NC	Four Seasons</option>
+      <option>NE	Gateway Mall</option>
+      <option>NJ	Deptford Mall</option>
+      <option>NJ	Jersey Gardens</option>
+      <option>NJ	Menlo Park Mall</option>
+      <option>NM	Coronado Mall</option>
+      <option>NV	Las Vegas South Premium Outlets</option>
+      <option>NV	Meadowood Mall</option>
+      <option>NV	Meadows Mall</option>
+      <option>NY	Broadway Mall</option>
+      <option>NY	Crystal Run</option>
+      <option>OH	Fairfield Commons</option>
+      <option>OH	Great Lakes Mall</option>
+      <option>OK	Quail Springs Mall</option>
+      <option>OR	Valley River</option>
+      <option>PA	Exton Square Mall</option>
+      <option>PA	Fashion District</option>
+      <option>PA	Millcreek Mall</option>
+      <option>PA	Park City Center</option>
+      <option>TX	Arlington Parks Mall</option>
+      <option>TX	Deerbrook Mall</option>
+      <option>TX	Grapevine Mills Mall</option>
+      <option>TX	North Star Mall</option>
+      <option>TX	Willowbrook Mall</option>
+      <option>UT	South Town Mall</option>
+      <option>VA	Potomac Mills Mall</option>
+      <option>WA	South Center Mall</option>
+      <option>WA	South Hill Mall</option>
+      <option>WA	Vancouver Mall</option>
+      <option>WI	Southridge Mall</option>
+    </select>
+  </div>
+  <div class="cb"><input type="checkbox" id="f-terms"><span>I agree to the ONE PIECE CARD GAME - ROUND 1 Promotion Pack Terms and Conditions*</span></div>
+  <div class="cb"><input type="checkbox" id="f-news"><span>Get the latest offers, exclusive deals from Round1</span></div>
+  <button id="f-submit" type="button">ENTER</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div id="done" hidden></div>
+
+<script>
+  var KEYS = {
+    pass:        '1x00000000000000000000AA',
+    invisible:   '1x00000000000000000000BB',
+    interactive: '3x00000000000000000000FF',
+    block:       '2x00000000000000000000AB'
+  };
+  var mode = new URLSearchParams(location.search).get('cf') || 'pass';
+  var sitekey = KEYS[mode] || KEYS.pass;
+
+  // Called by the Turnstile script once it is ready.
+  window.cfReady = function () {
+    turnstile.render('#cf', {
+      sitekey: sitekey,
+      size: mode === 'invisible' ? 'invisible' : 'normal',
+      callback: function () {
+        // Token issued -> reveal the form. Same ordering as the live site.
+        document.getElementById('gate').textContent = '';
+        document.getElementById('form-area').hidden = false;
+      },
+      'error-callback': function () {
+        document.getElementById('gate').textContent = 'Verification failed. Please try again.';
+      }
+    });
+  };
+
+  document.getElementById('f-submit').addEventListener('click', function () {
+    var v = function (id) { return (document.getElementById(id).value || '').trim(); };
+    var missing = [];
+    if (!v('f-first')) missing.push('first name');
+    if (!v('f-last')) missing.push('last name');
+    if (!/.+@.+\..+/.test(v('f-email'))) missing.push('a valid email');
+    if (!document.getElementById('f-terms').checked) missing.push('the terms checkbox');
+    var tok = document.querySelector('[name="cf-turnstile-response"]');
+    if (!tok || !tok.value) missing.push('human verification');
+    if (missing.length) { document.getElementById('err').textContent = 'Please provide ' + missing.join(', ') + '.'; return; }
+
+    // The exact phrasing the engine matches on, so a real end-to-end pass can be verified offline.
+    document.getElementById('form-area').hidden = true;
+    var d = document.getElementById('done');
+    d.hidden = false;
+    d.className = 'ok';
+    d.textContent = 'You have successfully registered! Check ' + v('f-email') +
+      ' for confirmation. Pickup: ' + document.getElementById('f-store').value.replace(/\s+/g, ' ');
+  });
+</script>
+</body>
+</html>

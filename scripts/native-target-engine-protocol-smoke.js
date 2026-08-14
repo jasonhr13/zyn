@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const WebSocket = require(path.join(root, 'extracted', 'asar', 'node_modules', 'ws'));
+const WebSocket = require(path.join(root, 'launcher', 'node_modules', 'ws'));
 const arch = process.arch === 'x64' ? 'x64' : 'arm64';
 const backend = process.env.ZYN_NATIVE_BACKEND
   ? path.resolve(process.env.ZYN_NATIVE_BACKEND)

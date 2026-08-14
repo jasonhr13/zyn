@@ -11,81 +11,35 @@ if (!botDir || !fs.existsSync(botDir)) {
 }
 
 const avatar = 'https://zynbot.app/zyn-icon.png';
+const read = name => fs.readFileSync(path.join(botDir, name), 'utf8');
 
-function replaceExactly(source, from, to, expected, label) {
-  const count = source.split(from).length - 1;
-  if (count !== expected) throw new Error(`Expected ${expected} ${label}, found ${count}`);
-  return source.split(from).join(to);
-}
-
-function rewrite(name, transform) {
-  const file = path.join(botDir, name);
-  const before = fs.readFileSync(file, 'utf8');
-  const after = transform(before);
-  if (after === before) throw new Error(`Zyn webhook branding patch made no change to ${name}`);
-  if (/username\s*:\s*["'](?:Hope|Polar AIO)["']/.test(after)) {
-    throw new Error(`${name} still contains a legacy webhook username`);
+function verifyWebhookBrand(name, { footer = true } = {}) {
+  const source = read(name);
+  if (!source.includes('Zyn') || !source.includes(avatar)) {
+    throw new Error(`${name} does not contain the canonical Zyn webhook identity`);
   }
-  fs.writeFileSync(file, after, 'utf8');
-  console.log(`Applied Zyn webhook branding in ${name}`);
+  if (/username\s*:\s*["'](?:Hope|Polar AIO)["']|ACCOUNT_GLOBAL_WEBHOOK/.test(source)) {
+    throw new Error(`${name} contains legacy branding or a global account webhook`);
+  }
+  if (footer && !/footer\s*:\s*\{\s*text\s*:\s*["']Zyn["']/.test(source)) {
+    throw new Error(`${name} does not contain the canonical Zyn webhook footer`);
+  }
 }
 
-rewrite('pbandai-buyer.cjs', source => {
-  source = replaceExactly(source, 'a="Hope"', 'a="Zyn"', 1, 'P-Bandai default webhook titles');
-  source = replaceExactly(
-    source,
-    'username:"Hope"',
-    `username:"Zyn",avatar_url:"${avatar}"`,
-    1,
-    'P-Bandai webhook usernames',
-  );
-  return replaceExactly(
-    source,
-    'footer:{text:"Hope"}',
-    `footer:{text:"Zyn",icon_url:"${avatar}"}`,
-    1,
-    'P-Bandai webhook footers',
-  );
-});
+verifyWebhookBrand('pbandai-buyer.cjs');
+verifyWebhookBrand('secret-lair-browserless.mjs');
+verifyWebhookBrand('shared.mjs');
 
-rewrite('shared.mjs', source => {
-  source = replaceExactly(
-    source,
-    "username: 'Hope'",
-    `username: 'Zyn', avatar_url: '${avatar}'`,
-    1,
-    'account webhook usernames',
-  );
-  return replaceExactly(
-    source,
-    'embeds: [{ title, color, fields, timestamp: new Date().toISOString() }]',
-    `embeds: [{ title, color, fields, footer: { text: 'Zyn', icon_url: '${avatar}' }, timestamp: new Date().toISOString() }]`,
-    1,
-    'account webhook embeds',
-  );
-});
+if (/\bHope\b/i.test(read('round1-register.mjs'))) {
+  throw new Error('round1-register.mjs contains a legacy product reference');
+}
 
-rewrite('secret-lair-browserless.mjs', source => {
-  source = replaceExactly(
-    source,
-    'body   : JSON.stringify({\n        embeds: [{',
-    `body   : JSON.stringify({\n        username: 'Zyn',\n        avatar_url: '${avatar}',\n        embeds: [{`,
-    1,
-    'browserless webhook payloads',
-  );
-  return replaceExactly(
-    source,
-    "footer: { text: 'Secret Lair Bot' },",
-    `footer: { text: 'Zyn', icon_url: '${avatar}' },`,
-    1,
-    'browserless webhook footers',
-  );
-});
+for (const name of fs.readdirSync(botDir)) {
+  if (!/\.(?:c?js|mjs)$/.test(name)) continue;
+  const source = read(name);
+  if (/https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/.test(source)) {
+    throw new Error(`${name} contains an embedded Discord webhook credential`);
+  }
+}
 
-rewrite('round1-register.mjs', source => replaceExactly(
-  source,
-  'so Hope can run many of these at once:',
-  'so Zyn can run many of these at once:',
-  1,
-  'Round1 product references',
-));
+console.log('Verified tracked Zyn bot webhook branding and credential boundary.');

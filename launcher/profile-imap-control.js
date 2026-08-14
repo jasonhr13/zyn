@@ -1,14 +1,16 @@
 'use strict';
 
-// Integration adapter for the profile-owned IMAP schema. The normalization,
-// migration, secret encoding, and lookup rules below follow its data-manager implementation while
-// leaving the archived R5 data manager and every unrelated record type untouched.
+// Integration adapter for profile-owned secrets. IMAP credentials, full card numbers, and CVVs are
+// encoded with Electron safeStorage before profiles.json is written. Callers inside the trusted main
+// process still receive the existing plaintext profile shape, so checkout and profile editing keep
+// their established contract while legacy files migrate without losing data.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { sanitizeImapPassword } = require('./imap-password');
 
 const PROFILE_IMAP_MIGRATION_VERSION = 1;
+const PROFILE_PAYMENT_MIGRATION_VERSION = 1;
 const PROFILE_FILE = 'profiles.json';
 const SETTINGS_FILE = 'settings.json';
 
@@ -75,18 +77,48 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
   }
 
   function decodeProfileSecrets(profile) {
-    if (!profile || typeof profile !== 'object' || !profile.imap) return profile;
-    const imap = normalizeImapConfig(profile.imap);
-    const stored = imap.password;
-    imap.password = sanitizeImapPassword(stored.startsWith('enc:') || stored.startsWith('b64:')
-      ? decryptSecret(stored) : stored);
-    return { ...profile, imap };
+    if (!profile || typeof profile !== 'object') return profile;
+    const next = { ...profile };
+    if (profile.imap) {
+      const imap = normalizeImapConfig(profile.imap);
+      const stored = imap.password;
+      imap.password = sanitizeImapPassword(stored.startsWith('enc:') || stored.startsWith('b64:')
+        ? decryptSecret(stored) : stored);
+      next.imap = imap;
+    }
+    if (profile.payment && typeof profile.payment === 'object') {
+      const payment = { ...profile.payment };
+      for (const field of ['cardNumber', 'cardCvv']) {
+        const stored = String(payment[field] == null ? '' : payment[field]);
+        payment[field] = stored.startsWith('enc:') || stored.startsWith('b64:')
+          ? decryptSecret(stored) : stored;
+      }
+      next.payment = payment;
+    }
+    for (const field of ['cardNumber', 'cardCvv']) {
+      const stored = String(profile[field] == null ? '' : profile[field]);
+      if (stored) next[field] = stored.startsWith('enc:') || stored.startsWith('b64:')
+        ? decryptSecret(stored) : stored;
+    }
+    return next;
   }
 
   function encodeProfileSecrets(profile) {
-    if (!profile || typeof profile !== 'object' || !profile.imap) return profile;
-    const imap = normalizeImapConfig(profile.imap);
-    return { ...profile, imap: { ...imap, password: encryptSecret(imap.password) } };
+    if (!profile || typeof profile !== 'object') return profile;
+    const next = { ...profile };
+    if (profile.imap) {
+      const imap = normalizeImapConfig(profile.imap);
+      next.imap = { ...imap, password: encryptSecret(imap.password) };
+    }
+    if (profile.payment && typeof profile.payment === 'object') {
+      const payment = { ...profile.payment };
+      for (const field of ['cardNumber', 'cardCvv']) payment[field] = encryptSecret(payment[field]);
+      next.payment = payment;
+    }
+    for (const field of ['cardNumber', 'cardCvv']) {
+      if (Object.prototype.hasOwnProperty.call(profile, field)) next[field] = encryptSecret(profile[field]);
+    }
+    return next;
   }
 
   function writeProfiles(profiles) {
@@ -106,7 +138,7 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
 
   function getProfilesRaw() {
     let stored = readJSON(PROFILE_FILE, []);
-    const settings = readJSON(SETTINGS_FILE, {});
+    let settings = readJSON(SETTINGS_FILE, {});
     if (Number(settings.profileImapMigrationVersion || 0) < PROFILE_IMAP_MIGRATION_VERSION && stored.length) {
       const legacy = legacyImapConfig(settings);
       if (imapConfigured(legacy)) {
@@ -124,7 +156,23 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
         const nextSettings = { ...settings, profileImapMigrationVersion: PROFILE_IMAP_MIGRATION_VERSION };
         for (const key of ['imapHost', 'imapPort', 'imapUser', 'imapPass', 'imapByHost']) delete nextSettings[key];
         writeJSON(SETTINGS_FILE, nextSettings);
+        settings = nextSettings;
       }
+    }
+    if (Number(settings.profilePaymentMigrationVersion || 0) < PROFILE_PAYMENT_MIGRATION_VERSION && stored.length) {
+      // writeJSON is atomic, so do not leave a second plaintext-card backup behind during this
+      // migration. The existing profile array remains untouched if encryption or the write fails.
+      writeProfiles(stored.map(decodeProfileSecrets));
+      stored = readJSON(PROFILE_FILE, []);
+      // R6's one-time IMAP migration backup predates payment encryption and can contain complete
+      // profiles. Keep the recovery copy, but protect its card and mailbox secrets too.
+      const legacyProfileBackup = `${PROFILE_FILE}.pre-profile-imap-r6.bak`;
+      if (fs.existsSync(filePath(legacyProfileBackup))) {
+        const backupProfiles = readJSON(legacyProfileBackup, []);
+        writeJSON(legacyProfileBackup, backupProfiles.map(profile => encodeProfileSecrets(decodeProfileSecrets(profile))));
+      }
+      settings = { ...settings, profilePaymentMigrationVersion: PROFILE_PAYMENT_MIGRATION_VERSION };
+      writeJSON(SETTINGS_FILE, settings);
     }
     return stored;
   }
@@ -386,6 +434,7 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
 
   return Object.freeze({
     migrationVersion: PROFILE_IMAP_MIGRATION_VERSION,
+    paymentMigrationVersion: PROFILE_PAYMENT_MIGRATION_VERSION,
     getProfiles,
     getProfileImap,
     getGroups,
@@ -399,4 +448,8 @@ function createProfileImapControl({ dataDirectory, safeStorage, dataManager, log
   });
 }
 
-module.exports = { PROFILE_IMAP_MIGRATION_VERSION, createProfileImapControl };
+module.exports = {
+  PROFILE_IMAP_MIGRATION_VERSION,
+  PROFILE_PAYMENT_MIGRATION_VERSION,
+  createProfileImapControl,
+};

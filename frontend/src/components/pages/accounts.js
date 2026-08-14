@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
+import TargetAccountGenerator from './target-account-generator';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -49,6 +50,7 @@ class Accounts extends Component {
     newGroupName: '',
     renamingGroup: false,
     renameGroupName: '',
+    generating: false,
   };
 
   componentDidMount() {
@@ -435,6 +437,9 @@ class Accounts extends Component {
                 <button className="btn btn-secondary btn-sm" disabled={!accounts.length} title="Copy every Target email" onClick={this.copyAll}>
                   <i className="ion-md-copy" /> Copy All
                 </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ generating: true, note: '' })}>
+                  <i className="ion-md-flash" /> Generate
+                </button>
                 <button className="btn btn-primary btn-sm" onClick={() => this.setState({ adding: true, note: '' })}>
                   <i className="ion-md-add" /> Add Accounts
                 </button>
@@ -498,7 +503,10 @@ class Accounts extends Component {
                     <p>{terms.length ? 'Try a different email, profile, or group.' : this.isCustomGroup()
                       ? 'Add accounts here or select saved accounts and assign them to this group.'
                       : 'Paste email:password accounts to add Target logins.'}</p>
-                    {!terms.length && <button className="btn btn-primary btn-sm" onClick={() => this.setState({ adding: true })}><i className="ion-md-add" /> Add Accounts</button>}
+                    {!terms.length && <div className="account-empty-actions">
+                      <button className="btn btn-primary btn-sm" onClick={() => this.setState({ generating: true })}><i className="ion-md-flash" /> Generate Accounts</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ adding: true })}><i className="ion-md-add" /> Add Existing</button>
+                    </div>}
                   </div>
                 )}
               </div>
@@ -508,6 +516,11 @@ class Accounts extends Component {
 
         {this.renderAddModal()}
         {this.renderEditModal()}
+        {this.state.generating && <TargetAccountGenerator
+          accountGroup={this.isCustomGroup() ? activeGroup : ''}
+          onClose={() => this.setState({ generating: false })}
+          onAccountsChanged={() => { this.refresh(); this.refreshGroups(activeGroup); }}
+        />}
       </div>
     );
   }

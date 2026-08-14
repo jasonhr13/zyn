@@ -11,11 +11,8 @@ const { execFileSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-pokemon-native-'));
 const staged = path.join(temporary, 'app');
-fs.cpSync(path.join(root, 'extracted', 'asar', 'public'), path.join(staged, 'public'), { recursive: true });
-fs.copyFileSync(path.join(root, 'extracted', 'asar', 'package.json'), path.join(staged, 'package.json'));
-
-execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), path.join(staged, 'public', 'helpers')], { stdio: 'inherit' });
-execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-runtime-brand.js'), staged], { stdio: 'inherit' });
+fs.cpSync(path.join(root, 'runtime-app', 'public'), path.join(staged, 'public'), { recursive: true });
+fs.copyFileSync(path.join(root, 'runtime-app', 'package.json'), path.join(staged, 'package.json'));
 
 const read = relative => fs.readFileSync(path.join(staged, relative), 'utf8');
 const engine = read('public/helpers/target-engine.js');
@@ -207,7 +204,7 @@ assert.match(dataManager, /function getPokemonCenterTasks\(/);
 assert.match(dataManager, /function savePokemonCenterTasks\(/);
 assert.match(dataManager, /pokemon-center-tasks\.json/);
 assert.match(dataManager, /products: Array\.isArray/);
-assert.match(dataManager, /p\.profileType !== 'pokemoncenter'/);
+assert.match(profileImap, /profileType !== 'pokemoncenter'/);
 
 assert.match(page, /placeholder/);
 assert.match(page, /MAX_PRODUCTS = 3/);

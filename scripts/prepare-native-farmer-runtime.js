@@ -5,22 +5,19 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-if (process.platform !== 'darwin') {
-  console.error(`Native farmer runtime requires macOS; received ${process.platform}-${process.arch}`);
-  process.exit(1);
-}
-
 const project = path.resolve(__dirname, '..');
-const requestedArch = String(process.env.ZYN_ARCH || process.arch).toLowerCase();
+const requestedArch = String(process.env.ZYN_ARCH || (process.platform === 'win32' ? 'windows-x64' : process.arch)).toLowerCase();
 const runtimeArch = requestedArch === 'x86_64' ? 'x64' : requestedArch;
-if (!['arm64', 'x64'].includes(runtimeArch)) {
+if (!['arm64', 'x64', 'windows-x64'].includes(runtimeArch)) {
   console.error(`Unsupported native farmer architecture: ${runtimeArch}`);
   process.exit(1);
 }
-const browserRoot = path.join(project, 'vendor', `ms-playwright-mac-${runtimeArch}`);
-const playwrightCli = path.join(project, 'extracted', 'app', 'resources', 'node_modules', 'playwright', 'cli.js');
+const browserRoot = path.join(project, 'vendor', runtimeArch === 'windows-x64'
+  ? 'ms-playwright-windows-x64'
+  : `ms-playwright-mac-${runtimeArch}`);
+const playwrightCli = path.join(project, 'bot-runtime', 'node_modules', 'playwright', 'cli.js');
 if (!fs.existsSync(playwrightCli)) {
-  console.error(`Missing recovered Playwright CLI: ${playwrightCli}`);
+  console.error(`Missing bot-runtime Playwright CLI: ${playwrightCli}. Run npm ci in bot-runtime/.`);
   process.exit(1);
 }
 
@@ -36,7 +33,9 @@ const result = spawnSync(runtimeExecutable, [playwrightCli, 'install', 'chromium
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: runtimeExecutable === x64Electron ? '1' : process.env.ELECTRON_RUN_AS_NODE,
-    PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: runtimeArch === 'x64' ? 'mac26' : process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE,
+    PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: runtimeArch === 'windows-x64'
+      ? 'win64'
+      : (runtimeArch === 'x64' ? 'mac26' : process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE),
     PLAYWRIGHT_BROWSERS_PATH: browserRoot,
   },
   stdio: 'inherit',

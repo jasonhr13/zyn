@@ -16,8 +16,7 @@ if (process.argv[2]) {
   fs.mkdirSync(botDirectory, { recursive: true });
   modulePath = path.join(botDirectory, 'imap-client.mjs');
   fs.copyFileSync(path.resolve('native-farmer/imap-client.mjs'), modulePath);
-  fs.symlinkSync(path.resolve('launcher/node_modules'), path.join(botDirectory, 'node_modules'));
-  fs.symlinkSync(path.resolve('extracted/asar/node_modules'), path.join(resourcesDirectory, 'node_modules'));
+  fs.symlinkSync(path.resolve('bot-runtime/node_modules'), path.join(resourcesDirectory, 'node_modules'));
 }
 const {
   extractCode,

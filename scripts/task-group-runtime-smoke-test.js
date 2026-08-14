@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const WebSocket = require(path.join(__dirname, '..', 'extracted', 'asar', 'node_modules', 'ws'));
+const WebSocket = require(path.join(__dirname, '..', 'launcher', 'node_modules', 'ws'));
 
 const port = Number(process.argv[2]);
 const screenshotPath = process.argv[3];

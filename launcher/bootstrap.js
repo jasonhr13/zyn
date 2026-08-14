@@ -42,16 +42,13 @@ Object.defineProperty(global, '__zynApp', {
 });
 
 const resources = process.resourcesPath;
-const bundledWine = path.join(resources, 'wine', 'bin', 'wine');
 const originalAsar = path.join(resources, 'app-original.asar');
 const nativeBackend = path.join(resources, 'engine', process.platform === 'win32' ? 'backend.exe' : 'backend');
-const originalSpawn = childProcess.spawn.bind(childProcess);
-const originalSpawnSync = childProcess.spawnSync.bind(childProcess);
 const localDeveloperIdentity = process.env.ZYN_DEVELOPER_EMAIL || 'developer@localhost';
 const nativePlaywrightBrowsers = path.join(resources, 'vendor', 'ms-playwright-mac');
 if (fs.existsSync(nativePlaywrightBrowsers)) {
   // The native farmer reuses this signed Electron executable as Node. Point Playwright at the
-  // matching macOS Chromium bundle; the original Windows runtime remains available to backend.exe.
+  // matching architecture-native Chromium bundle.
   process.env.ZYN_PLAYWRIGHT_BROWSERS_PATH = nativePlaywrightBrowsers;
 }
 
@@ -86,7 +83,7 @@ function packagedRuntimeMode() {
     const receipt = JSON.parse(fs.readFileSync(path.join(resources, 'zyn-build.json'), 'utf8'));
     return receipt.runtime && receipt.runtime.delivery === 'remote' ? 'remote' : 'bundled';
   } catch {
-    return fs.existsSync(bundledWine) ? 'bundled' : 'remote';
+    return 'remote';
   }
 }
 
@@ -174,57 +171,6 @@ ipcMain.handle('retryRuntimeSetup', async () => {
   runtimeBootstrapStarted = true;
   return runtimeManager.ensureAll({ force: true });
 });
-
-function winePath() {
-  return process.env.ZYN_WINE_PATH || bundledWine;
-}
-
-function wineserverPath() {
-  return path.join(path.dirname(winePath()), 'wineserver');
-}
-
-const windowsLaunchers = new Set([
-  path.normalize(path.join(resources, 'vendor', 'node')),
-  path.normalize(path.join(resources, 'vendor', 'node.exe')),
-]);
-
-function winePrefix() {
-  return path.join(app.getPath('userData'), 'wine-prefix');
-}
-
-function wineEnvironment(environment) {
-  const prefix = winePrefix();
-  fs.mkdirSync(prefix, { recursive: true });
-  return {
-    ...process.env,
-    ...(environment || {}),
-    WINEPREFIX: prefix,
-    WINEARCH: 'win64',
-    WINEDEBUG: '-all',
-    WINEDLLOVERRIDES: 'winemenubuilder.exe=d',
-    // Wine's Vulkan bridge is very chatty by default. The backend and Node do
-    // not need those diagnostics, and they otherwise flood Zyn's task logs.
-    MVK_CONFIG_LOG_LEVEL: '0',
-  };
-}
-
-function shouldUseWine(command) {
-  if (process.platform === 'win32') return false;
-  if (typeof command !== 'string') return false;
-  const normalized = path.normalize(path.resolve(command));
-  return windowsLaunchers.has(normalized);
-}
-
-childProcess.spawn = function spawnWithBundledWine(command, args, options) {
-  if (!shouldUseWine(command)) return originalSpawn(command, args, options);
-
-  const launchArgs = [command, ...(Array.isArray(args) ? args : [])];
-  const launchOptions = {
-    ...(options || {}),
-    env: wineEnvironment(options && options.env),
-  };
-  return originalSpawn(winePath(), launchArgs, launchOptions);
-};
 
 function configureUpdater() {
   try {
@@ -1325,31 +1271,18 @@ function runNativeEngineSelfTest() {
   });
 }
 
-// Wine keeps one server per prefix. Stop that private server after Zyn's own
-// teardown handlers close their child pipes so no backend or browser can linger.
 app.on('will-quit', () => {
   stopRuntimeUpdatePolling();
   try { harvesterExtensionBridge?.stop(); } catch {}
   try { taskGroupScheduler?.dispose(); } catch {}
   try { pokemonQueueEvents?.dispose(); } catch {}
-  if (process.platform === 'win32') return;
-  const prefix = winePrefix();
-  const wineserver = wineserverPath();
-  if (!fs.existsSync(prefix) || !fs.existsSync(wineserver)) return;
-  try {
-    originalSpawnSync(wineserver, ['-k'], {
-      env: wineEnvironment(),
-      stdio: 'ignore',
-      timeout: 4000,
-    });
-  } catch {}
 });
 
 if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const missing = !fs.existsSync(originalAsar) ? 'original application archive' : 'native checkout backend';
   dialog.showErrorBox('Zyn could not start', `The ${missing} is missing from the app bundle.`);
   app.quit();
-} else if (process.env.ZYN_ENGINE_SELFTEST === '1' || process.env.ZYN_WINE_SELFTEST === '1') {
+} else if (process.env.ZYN_ENGINE_SELFTEST === '1') {
   runNativeEngineSelfTest();
 } else {
   isolateModernChromiumStorage();

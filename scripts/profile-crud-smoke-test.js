@@ -5,8 +5,7 @@ const path = require('path');
 const WebSocket = require(path.join(
   __dirname,
   '..',
-  'extracted',
-  'asar',
+  'launcher',
   'node_modules',
   'ws',
 ));

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/z04231992/secret-lair-releases",
+  "release": "v1.6.78",
+  "capturedAt": "2026-08-14",
+  "upstreamFiles": {
+    "resources/bot/target-register.mjs": "29c1485069fe861e8b469291a791384cb805658500834ee1b75bd398d401418e",
+    "resources/bot/shared.mjs": "d6bcdd7d1bf22e279680517349093b961cc3059ad5a7c1b3fab302ca457064a6"
+  },
+  "zynFiles": {
+    "target": "bot-runtime/target-register.mjs",
+    "shared": "bot-runtime/shared.mjs",
+    "imap": "native-farmer/imap-client.mjs",
+    "aycd": "native-farmer/aycd-mail-client.mjs"
+  },
+  "adaptations": [
+    "Remove unused Target SMS and phone configuration.",
+    "Require a proxy unless an explicit local-IP override is supplied.",
+    "Send account notifications only to the user's account-generation webhook.",
+    "Use Zyn's generalized IMAP client with a Target sender filter.",
+    "Use the Zyn webhook identity and assets."
+  ]
+}

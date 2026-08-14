@@ -4,17 +4,16 @@ const path = require('path');
 
 const bundle = path.resolve(process.argv[2] || '');
 const macEntitlements = path.resolve(process.argv[3] || path.join(__dirname, '..', 'release', 'entitlements.mac.plist'));
-const wineEntitlements = path.resolve(process.argv[4] || path.join(__dirname, '..', 'release', 'entitlements.wine.plist'));
 const configuredIdentity = process.env.ZYN_SIGNING_IDENTITY || 'thwebco, LLC (GXWBXH5M77)';
 const identity = configuredIdentity.startsWith('Developer ID Application:')
   ? configuredIdentity
   : `Developer ID Application: ${configuredIdentity}`;
 
 if (!bundle || !fs.existsSync(bundle)) {
-  console.error('Usage: node scripts/sign-zyn-bundle.cjs <bundle.app> [mac-entitlements.plist] [wine-entitlements.plist]');
+  console.error('Usage: node scripts/sign-zyn-bundle.cjs <bundle.app> [mac-entitlements.plist]');
   process.exit(1);
 }
-for (const entitlements of [macEntitlements, wineEntitlements]) {
+for (const entitlements of [macEntitlements]) {
   if (!fs.existsSync(entitlements)) {
     console.error(`Entitlements file not found: ${entitlements}`);
     process.exit(1);
@@ -51,10 +50,7 @@ console.log(`Signing ${candidates.length} Mach-O files in ${bundle}`);
 for (const [index, item] of candidates.entries()) {
   const args = ['--force', '--timestamp', '--options', 'runtime', '--sign', identity];
   if (/executable/.test(item.description)) {
-    const entitlements = item.file.includes(`${path.sep}Resources${path.sep}wine${path.sep}`)
-      ? wineEntitlements
-      : macEntitlements;
-    args.push('--entitlements', entitlements);
+    args.push('--entitlements', macEntitlements);
   }
   args.push(item.file);
   execFileSync('/usr/bin/codesign', args, { stdio: 'inherit' });

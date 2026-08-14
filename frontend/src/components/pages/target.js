@@ -17,10 +17,8 @@ const { ipcRenderer } = window.require('electron');
 // entirely, at the cost of requiring the two to be named consistently — which the UI surfaces
 // per row rather than failing at checkout.
 
-// Built-in Target drop pools, decrypted in main from the shipped .enc files. Kept in sync with
-// INHOUSE_POOLS in target-engine.js — these strings ARE the proxy group names sent to the engine,
-// so the two lists must match exactly. A mismatch surfaces as "invalid group" on every rotation,
-// which the user has no way to fix from the UI.
+// Legacy built-in Target pool names are kept only to migrate saved settings/tasks to Local. Their
+// encrypted payloads are no longer shipped; all current proxy choices come from the Proxies page.
 const INHOUSE_TARGET = '727OPTARGET';
 const INHOUSE_TARGET_2 = 'TARGETDROP2';
 

@@ -17,7 +17,7 @@ const authority = read('launcher/license-authority.js');
 const worker = read('cloudflare/license/src/index.js');
 const macBuilder = read('scripts/build-zyn.sh');
 const windowsBuilder = read('scripts/build-zyn-windows.sh');
-const runtimePatcher = read('scripts/patch-zyn-runtime-brand.js');
+const runtimeMain = read('runtime-app/public/electron.js');
 
 assert.equal(contract.features.cloudBackup, true);
 for (const resource of [
@@ -54,8 +54,8 @@ assert.match(bootstrap,
   'restore does not stop live tasks and schedules before mutation');
 assert.match(bootstrap, /onStatus:[\s\S]{0,300}cloudBackupManager\?\.start\(\)/);
 assert.match(bootstrap, /onLock:[\s\S]{0,180}cloudBackupManager\?\.pause\(\)/);
-assert.match(runtimePatcher, /legacy @electron\/remote main-process initialization/);
-assert.match(runtimePatcher, /enableRemoteModule: false/);
+assert.doesNotMatch(runtimeMain, /@electron\/remote\/main/);
+assert.match(runtimeMain, /enableRemoteModule: false/);
 
 assert.match(authority, /backupAccountId:/);
 for (const method of ['listBackups', 'uploadBackup', 'downloadBackup', 'deleteBackup']) {

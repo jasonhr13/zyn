@@ -50,15 +50,47 @@ function collectManagedRefs(channel, args, dataManager) {
   return [...new Set(refs)];
 }
 
-function proxyArgs(line) {
+function parseProxyLine(line) {
   const value = String(line || '').trim();
-  if (!value) return [];
+  if (!value) return null;
+  if (value.includes('://')) {
+    try {
+      const url = new URL(value);
+      if (!['http:', 'https:', 'socks4:', 'socks5:'].includes(url.protocol)) return null;
+      const port = Number.parseInt(url.port, 10);
+      if (!url.hostname || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+      const hostname = url.hostname.startsWith('[') ? url.hostname
+        : (url.hostname.includes(':') ? `[${url.hostname}]` : url.hostname);
+      const decode = input => { try { return decodeURIComponent(input); } catch { return input; } };
+      return {
+        server: `${url.protocol}//${hostname}:${url.port}`,
+        user: decode(url.username || ''),
+        pass: decode(url.password || ''),
+      };
+    } catch { return null; }
+  }
+
+  const ipv6 = value.match(/^\[([^\]]+)\]:(\d+)(?::([^:]*)(?::(.*))?)?$/);
+  if (ipv6) {
+    const port = Number.parseInt(ipv6[2], 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    return { server: `[${ipv6[1]}]:${ipv6[2]}`, user: ipv6[3] || '', pass: ipv6[4] || '' };
+  }
+
   const parts = value.split(':');
-  if (parts.length < 2) return [];
-  const [host, port, user = '', ...passwordParts] = parts;
-  const args = [`--proxyServer=${host}:${port}`];
-  if (user) args.push(`--proxyUser=${user}`);
-  if (passwordParts.length) args.push(`--proxyPass=${passwordParts.join(':')}`);
+  const host = parts.shift() || '';
+  const portText = parts.shift() || '';
+  const port = Number.parseInt(portText, 10);
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { server: `${host}:${portText}`, user: parts.shift() || '', pass: parts.join(':') };
+}
+
+function proxyArgs(line) {
+  const parsed = parseProxyLine(line);
+  if (!parsed) return [];
+  const args = [`--proxyServer=${parsed.server}`];
+  if (parsed.user) args.push(`--proxyUser=${parsed.user}`);
+  if (parsed.pass) args.push(`--proxyPass=${parsed.pass}`);
   return args;
 }
 
@@ -125,4 +157,4 @@ function installManagedProxyIpcGuard({ ipcMain, dataManager, control, onBlocked 
   };
 }
 
-module.exports = { START_CHANNELS, MANAGED_BOT_SCRIPTS, collectManagedRefs, proxyArgs, installManagedProxyIpcGuard };
+module.exports = { START_CHANNELS, MANAGED_BOT_SCRIPTS, collectManagedRefs, parseProxyLine, proxyArgs, installManagedProxyIpcGuard };

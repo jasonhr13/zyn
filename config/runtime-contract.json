@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.25",
+  "appRelease": "R8.27",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -15,7 +15,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.1",
+    "version": "1.7.3",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -80,23 +80,19 @@
     "Contents/Resources/bot/shape-browser-pool.mjs",
     "Contents/Resources/bot/shape-harvest-health.mjs",
     "Contents/Resources/bot/shape-worker-scaler.mjs",
+    "Contents/Resources/bot/target-register.mjs",
+    "Contents/Resources/bot/shared.mjs",
+    "Contents/Resources/bot/imap-client.mjs",
+    "Contents/Resources/node_modules/imapflow/package.json",
     "Contents/Resources/node_modules/playwright-core/browsers.json",
-    "Contents/Resources/vendor/ms-playwright/chromium-1228/chrome-win64/chrome.exe",
     "Contents/Resources/vendor/ms-playwright-mac"
   ],
   "symlinks": [],
-  "windowsLaunchers": [
-    "Contents/Resources/vendor/node",
-    "Contents/Resources/vendor/node.exe"
-  ],
+  "windowsLaunchers": [],
   "remoteRuntime": {
     "manifest": "https://updates.zynbot.app/runtimes/zyn-manifest-v1.json",
     "excludedResourceRoots": [
-      "Contents/Resources/wine",
-      "Contents/Resources/vendor/ms-playwright",
-      "Contents/Resources/vendor/ms-playwright-mac",
-      "Contents/Resources/vendor/node",
-      "Contents/Resources/vendor/node.exe"
+      "Contents/Resources/vendor/ms-playwright-mac"
     ]
   }
 }

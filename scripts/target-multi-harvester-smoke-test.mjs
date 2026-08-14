@@ -99,9 +99,9 @@ let producer = null;
 let extensionBridge = null;
 try {
   fs.cpSync(path.join(root, 'native-farmer'), botDirectory, { recursive: true });
-  const dependencies = path.join(root, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'node_modules');
+  const dependencies = path.join(root, 'bot-runtime', 'node_modules');
   assert.equal(fs.existsSync(path.join(dependencies, 'playwright', 'package.json')), true,
-    'runtime base is missing Playwright dependencies');
+    'bot runtime is missing Playwright dependencies');
   fs.symlinkSync(dependencies, path.join(temporary, 'node_modules'), 'dir');
 
   const port = await freePort();

@@ -40,9 +40,8 @@ export default class Round1 extends Component {
   state = {
     profiles: [], selected: {}, editing: null, url: '',
     statuses: {}, logs: [], running: false, msg: '',
-    // Same vocabulary as the P-Bandai tab so one habit works everywhere: 'inhouse1'..'inhousemix',
-    // 'list:<name>' for a saved list, or 'none' for the home IP.
-    connection: 'inhousemix', proxyLists: [], showBrowsers: false, storeOpen: false,
+    // 'list:<name>' selects a saved list; 'none' uses the home IP.
+    connection: 'none', proxyLists: [], showBrowsers: false, storeOpen: false,
     staggerMs: 400, maxConcurrent: 8,
     // Request mode: no browser at all, Turnstile handed to a captcha service. Off by default -- the
     // submit call is the one step never verified against a live form.
@@ -102,7 +101,7 @@ export default class Round1 extends Component {
         proxyLists: px.lists || [],
         // Remembered per install: the right pool for Round1 is not the right pool for Target, and
         // re-picking it on every launch is how you end up racing a drop on the home IP by accident.
-        connection: s.round1Connection || 'inhousemix',
+        connection: String(s.round1Connection || '').startsWith('list:') ? s.round1Connection : 'none',
         showBrowsers: !!s.round1ShowBrowsers,
         staggerMs: s.round1StaggerMs == null ? 400 : s.round1StaggerMs,
         maxConcurrent: s.round1MaxConcurrent == null ? 8 : s.round1MaxConcurrent,
@@ -199,10 +198,9 @@ export default class Round1 extends Component {
 
   // Mirrors pbandai's connPayload so the same selection means the same thing in both tabs.
   connPayload = () => {
-    const c = this.state.connection || 'inhousemix';
-    if (c === 'none') return { useVpn: false, inHousePool: '1', proxyListName: '' };
+    const c = this.state.connection || 'none';
     if (c.startsWith('list:')) return { useVpn: false, inHousePool: '1', proxyListName: c.slice(5) };
-    return { useVpn: true, inHousePool: c.replace('inhouse', '') || '1', proxyListName: '' };
+    return { useVpn: false, inHousePool: '1', proxyListName: '' };
   };
 
   start = () => {
@@ -375,10 +373,6 @@ export default class Round1 extends Component {
               <label className="form-label">Proxies</label>
               <select className="form-select" value={connection}
                 onChange={(ev) => this.setState({ connection: ev.target.value })}>
-                <option value="inhouse1">In-House Proxy 1</option>
-                <option value="inhouse2">In-House Proxy 2</option>
-                <option value="inhouse3">In-House Proxy 3</option>
-                <option value="inhousemix">In-House Proxy Mix (all 3)</option>
                 {proxyLists.map((l) => (
                   <option key={proxyRef(l)} value={`list:${proxyRef(l)}`}>My Proxies: {proxyLabel(l)}</option>
                 ))}

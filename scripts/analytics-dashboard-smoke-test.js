@@ -16,7 +16,7 @@ const worker = read('cloudflare/license/src/index.js');
 const migration = read('cloudflare/license/migrations/0008_analytics.sql');
 const bootstrap = read('launcher/bootstrap.js');
 const recorder = read('launcher/analytics-recorder.js');
-const patcher = read('scripts/patch-profile-imap-engines.js');
+const targetEngine = read('runtime-app/public/helpers/target-engine.js');
 
 assert.match(routes, /path="\/dashboard"/);
 assert.match(routes, /<Dashboard email=\{license\.email \|\| ''\}/);
@@ -49,8 +49,8 @@ assert.match(recorder, /zyn-analytics:\$\{email\}/);
 assert.match(recorder, /entry\.owner === owner/);
 assert.match(bootstrap, /createAnalyticsService/);
 assert.match(bootstrap, /bridgeRecorder\.setService\(service\)/);
-assert.match(patcher, /case 'analytics-event':/);
-assert.match(patcher, /analyticsRecorder\.record\(m\)/);
+assert.match(targetEngine, /case 'analytics-event':/);
+assert.match(targetEngine, /analyticsRecorder\.record\(m\)/);
 
 console.log(JSON.stringify({
   ok: true,

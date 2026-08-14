@@ -12,11 +12,10 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-farmer-controls-'))
 process.on('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true }); } catch {} });
 for (const filename of ['target-engine.js', 'plain-log.js']) {
   fs.copyFileSync(
-    path.join(project, 'extracted', 'asar', 'public', 'helpers', filename),
+    path.join(project, 'runtime-app', 'public', 'helpers', filename),
     path.join(directory, filename),
   );
 }
-execFileSync(process.execPath, [path.join(__dirname, 'patch-profile-imap-engines.js'), directory], { stdio: 'inherit' });
 execFileSync(process.execPath, ['--check', path.join(directory, 'target-engine.js')]);
 
 const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
@@ -63,8 +62,7 @@ assert.match(engine, /function isTaskRunning\(taskId\)/,
 assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,
   'scheduled task running-state helper is not exported');
 
-// The IPC bridge is applied while staging an app, so exercise that tracked patch against the
-// recovered baseline instead of depending on ignored extracted-file edits.
+// The IPC bridge ships directly from the tracked runtime source.
 const stagedApp = path.join(directory, 'staged-app');
 fs.mkdirSync(path.join(stagedApp, 'public', 'helpers'), { recursive: true });
 for (const relative of [
@@ -79,9 +77,8 @@ for (const relative of [
 ]) {
   const destination = path.join(stagedApp, relative);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(path.join(project, 'extracted', 'asar', relative), destination);
+  fs.copyFileSync(path.join(project, 'runtime-app', relative), destination);
 }
-execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-runtime-brand.js'), stagedApp], { stdio: 'inherit' });
 const stagedElectron = fs.readFileSync(path.join(stagedApp, 'public', 'electron.js'), 'utf8');
 assert.match(stagedElectron, /ipcMain\.on\('syncTargetHarvesters'/,
   'staged main process is missing the managed harvester reconciliation channel');

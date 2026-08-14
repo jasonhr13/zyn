@@ -38,7 +38,7 @@ function checkoutWebhook() {
 }
 
 function replaceReporter(source, webhook) {
-  const assignment = /const GLOBAL_WEBHOOK\s*=\s*['"]https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+['"];/g;
+  const assignment = /const GLOBAL_WEBHOOK\s*=\s*(?:['"]https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+['"]|['"]__ZYN_GLOBAL_CHECKOUT_WEBHOOK__['"]);/g;
   const matches = source.match(assignment) || [];
   if (matches.length !== 1) throw new Error(`Expected one checkout-reporter webhook assignment, found ${matches.length}`);
   source = source.replace(assignment, `const GLOBAL_WEBHOOK =\n  ${JSON.stringify(webhook)};`);
@@ -72,7 +72,7 @@ ${collectorAnchor}`);
 }
 
 function replacePbandai(source, webhook) {
-  const literal = /https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g;
+  const literal = /(?:https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+|__ZYN_GLOBAL_CHECKOUT_WEBHOOK__)/g;
   const matches = source.match(literal) || [];
   if (matches.length !== 1) throw new Error(`Expected one P-Bandai collector webhook, found ${matches.length}`);
   source = source.replace(literal, webhook);

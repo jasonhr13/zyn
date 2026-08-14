@@ -21,7 +21,7 @@ try {
   fs.mkdirSync(botDir);
   for (const name of botFiles) {
     fs.copyFileSync(
-      path.join(project, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'bot', name),
+      path.join(project, 'bot-runtime', name),
       path.join(botDir, name),
     );
   }

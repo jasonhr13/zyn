@@ -38,10 +38,12 @@ const required = [
   'resources/app/node_modules/imapflow/package.json',
   'resources/app/node_modules/ws/package.json',
   'resources/engine/backend.exe',
-  'resources/vendor/node.exe',
   'resources/bot/shape-farmer.mjs',
   'resources/bot/shape-bank-demand.mjs',
   'resources/bot/shape-browser-pool.mjs',
+  'resources/bot/target-register.mjs',
+  'resources/bot/shared.mjs',
+  'resources/node_modules/imapflow/package.json',
   'resources/node_modules/playwright-core/browsers.json',
 ];
 for (const relative of required) {
@@ -65,7 +67,7 @@ function peMachine(file) {
   assert.equal(body.subarray(pe, pe + 4).toString('binary'), 'PE\u0000\u0000', `${path.basename(file)} has no PE header`);
   return body.readUInt16LE(pe + 4);
 }
-for (const relative of ['Zyn.exe', 'resources/engine/backend.exe', 'resources/vendor/node.exe']) {
+for (const relative of ['Zyn.exe', 'resources/engine/backend.exe']) {
   assert.equal(peMachine(path.join(appPath, relative)), 0x8664, `${relative} is not Windows x64`);
 }
 

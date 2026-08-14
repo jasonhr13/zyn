@@ -15,6 +15,7 @@ const MAX_SHAPE_CAPTURES_PER_LOAD = 10;
 const MAX_SHAPE_LOADS_PER_BROWSER = 10;
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
 const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
+const DISCORD_WEBHOOK_RE = /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\//i;
 
 const FieldHelp = ({ children, align = 'left' }) => (
   <span className={`field-help${align === 'right' ? ' field-help-right' : ''}`}>
@@ -48,6 +49,7 @@ class Settings extends Component {
     this.state = {
       discordWebhook: '',
       discordDeclineWebhook: '',
+      accountGenWebhook: '', webhookError: '',
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
@@ -71,6 +73,7 @@ class Settings extends Component {
     this.setState({
       discordWebhook: s.discordWebhook || '',
       discordDeclineWebhook: s.discordDeclineWebhook || '',
+      accountGenWebhook: s.accountGenWebhook || '', webhookError: '',
       aycdApiKey: s.aycdApiKey || g.aycdApiKey || '',
       // Blank means "use the engine default" — the placeholders show what that default is, so an empty
       // box is never ambiguous. targetAtcHarvestTcin (singular) is the legacy key for the same setting.
@@ -142,6 +145,11 @@ class Settings extends Component {
     // Preserve every legacy setting in storage while this Target-only screen manages only the
     // settings it exposes. That keeps old backups reversible without leaking retired modules here.
     const previousSettings = this.props.settings || {};
+    const accountGenWebhook = this.state.accountGenWebhook.trim();
+    if (accountGenWebhook && !DISCORD_WEBHOOK_RE.test(accountGenWebhook)) {
+      this.setState({ webhookError: 'Enter a Discord webhook URL or leave this field blank.', saved: false });
+      return;
+    }
     const previousExtensionIds = harvesterExtensionIdsFromSettings(previousSettings);
     const extensionModeEnabled = this.state.shapeMethod === 'Harvester';
     const parsedExtensionIds = parseHarvesterExtensionIds(this.state.targetHarvesterExtensionIds, {
@@ -160,6 +168,7 @@ class Settings extends Component {
       ...previousSettings,
       discordWebhook: this.state.discordWebhook,
       discordDeclineWebhook: this.state.discordDeclineWebhook,
+      accountGenWebhook,
       aycdApiKey: this.state.aycdApiKey.trim(),
       // Normalise the TCIN list to bare comma-separated numbers: the farmer accepts full product URLs
       // too, so a pasted Target link survives, but stray spaces/newlines from a paste would otherwise
@@ -188,7 +197,7 @@ class Settings extends Component {
     try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     try { ipcRenderer.invoke('targetCookieBank').catch(() => {}); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings } });
-    this.setState({ saved: true, extensionIdsError: '' });
+    this.setState({ saved: true, extensionIdsError: '', webhookError: '' });
     setTimeout(() => this.setState({ saved: false }), 2000);
   };
 
@@ -483,7 +492,7 @@ class Settings extends Component {
   }
 
   render() {
-    const { discordWebhook, discordDeclineWebhook, aycdApiKey, showAycdKey, saved,
+    const { discordWebhook, discordDeclineWebhook, accountGenWebhook, webhookError, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
@@ -594,6 +603,17 @@ class Settings extends Component {
               <div className="form-hint">
                 Receives payment declines separately. Leave blank to disable decline notifications.
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Account Generation Webhook URL (optional)</label>
+              <input
+                className="form-input monospace"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={accountGenWebhook}
+                onChange={e => this.setState({ accountGenWebhook: e.target.value, webhookError: '', saved: false })}
+              />
+              <div className="form-hint">Receives generated account credentials. It is never used for checkout notifications.</div>
+              {webhookError && <div className="form-hint" style={{ color: 'var(--danger)' }}>{webhookError}</div>}
             </div>
           </div>
 

@@ -2,7 +2,7 @@
 'use strict';
 
 const assert = require('assert/strict');
-const { START_CHANNELS, installManagedProxyIpcGuard } = require('../launcher/managed-proxy-ipc-guard');
+const { START_CHANNELS, parseProxyLine, proxyArgs, installManagedProxyIpcGuard } = require('../launcher/managed-proxy-ipc-guard');
 
 const id = '11111111-2222-4333-8444-555555555555';
 const ref = `managed:${id}`;
@@ -58,6 +58,14 @@ const makeEvent = () => {
 };
 
 (async () => {
+  assert.deepEqual(parseProxyLine('proxy.example:8000:user:pass:with:colons'), {
+    server: 'proxy.example:8000', user: 'user', pass: 'pass:with:colons',
+  });
+  assert.deepEqual(proxyArgs('socks5://user:pass%3Aword@proxy.example:1080'), [
+    '--proxyServer=socks5://proxy.example:1080', '--proxyUser=user', '--proxyPass=pass:word',
+  ]);
+  assert.deepEqual(proxyArgs('bad-line'), []);
+
   const allowedEvent = makeEvent();
   listeners.get('startPbandai')(allowedEvent, { proxyListName: ref });
   assert.equal(launches, 1);

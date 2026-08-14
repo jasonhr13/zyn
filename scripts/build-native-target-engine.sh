@@ -67,21 +67,6 @@ build_arch() {
   echo "$output"
 }
 
-install_dev_backend() {
-  local host_arch
-  case "$(uname -m)" in
-    arm64) host_arch="arm64" ;;
-    x86_64) host_arch="x64" ;;
-    *) return ;;
-  esac
-  local source="$PROJECT_DIR/native-backend/darwin-$host_arch/backend"
-  if [[ ! -x "$source" ]]; then return; fi
-  local destination="$PROJECT_DIR/extracted/asar/backend/backend"
-  mkdir -p "$(dirname "$destination")"
-  cp "$source" "$destination"
-  chmod 0755 "$destination"
-}
-
 if [[ "$REQUESTED_ARCH" == "all" ]]; then
   build_arch arm64
   build_arch x64
@@ -89,5 +74,3 @@ if [[ "$REQUESTED_ARCH" == "all" ]]; then
 else
   build_arch "$REQUESTED_ARCH"
 fi
-
-install_dev_backend

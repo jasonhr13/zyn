@@ -15,8 +15,8 @@ const reporter = path.join(temp, 'checkout-reporter.js');
 const pbandai = path.join(temp, 'pbandai-buyer.cjs');
 const example = 'https://discord.com/api/webhooks/123456789/example-token';
 
-fs.copyFileSync(path.join(project, 'extracted', 'asar', 'public', 'helpers', 'checkout-reporter.js'), reporter);
-fs.copyFileSync(path.join(project, 'dist', 'Zyn-Runtime-Base.app', 'Contents', 'Resources', 'bot', 'pbandai-buyer.cjs'), pbandai);
+fs.copyFileSync(path.join(project, 'runtime-app', 'public', 'helpers', 'checkout-reporter.js'), reporter);
+fs.copyFileSync(path.join(project, 'bot-runtime', 'pbandai-buyer.cjs'), pbandai);
 execFileSync(process.execPath, [path.join(__dirname, 'patch-zyn-checkout-webhook.cjs'), reporter, pbandai], {
   env: { ...process.env, ZYN_GLOBAL_CHECKOUT_WEBHOOK: example },
   stdio: 'inherit',

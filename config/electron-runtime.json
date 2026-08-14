@@ -1,0 +1,24 @@
+{
+  "version": "43.3.0",
+  "releaseBaseUrl": "https://github.com/electron/electron/releases/download",
+  "platforms": {
+    "arm64": {
+      "archive": "electron-v43.3.0-darwin-arm64.zip",
+      "sha256": "ee939d1564d83d61032b3b3cb23af4e46005a4900c91f0695f7ed793f0ce6e83",
+      "destination": "electron-v43.3.0-darwin-arm64",
+      "executable": "Electron.app/Contents/MacOS/Electron"
+    },
+    "x64": {
+      "archive": "electron-v43.3.0-darwin-x64.zip",
+      "sha256": "7347bbd5fb529eea64f9c2d148bb1c19222d98946ff234ffe27953a1bbcb9dae",
+      "destination": "electron-v43.3.0-darwin-x64",
+      "executable": "Electron.app/Contents/MacOS/Electron"
+    },
+    "windows-x64": {
+      "archive": "electron-v43.3.0-win32-x64.zip",
+      "sha256": "18528bedc6a9b04bdc5efb7b803cbc3cb0e5ea6415d54046e23d464d89a00da9",
+      "destination": "electron-v43.3.0-win32-x64",
+      "executable": "electron.exe"
+    }
+  }
+}

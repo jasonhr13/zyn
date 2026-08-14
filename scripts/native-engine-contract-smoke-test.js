@@ -144,7 +144,7 @@ assert.throws(() => contract.buildHyperRequest({
   payload: { headers: { 'x-api-key': 'must-not-cross' } },
 }), /must not cross/);
 
-const targetBridgePath = path.join(root, 'extracted', 'asar', 'public', 'helpers', 'target-engine.js');
+const targetBridgePath = path.join(root, 'runtime-app', 'public', 'helpers', 'target-engine.js');
 const targetBridge = fs.readFileSync(targetBridgePath, 'utf8');
 assert.match(targetBridge, /type: 'Target',[\s\S]{0,40}site: 'Target'/,
   'Target start payload no longer carries its existing type/site fields');
