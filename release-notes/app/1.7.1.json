@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.1",
+  "notes": [
+    "Target checkout statuses now use a distinct color after an item enters the cart.",
+    "Success and declined checkout notifications can now use separate Discord webhooks.",
+    "Global checkout reporting now sends confirmed orders only, reducing false failure alerts."
+  ]
+}
