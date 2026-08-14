@@ -11,8 +11,14 @@ if [[ "$APP_ARCH" != "arm64" && "$APP_ARCH" != "x64" ]]; then
   exit 1
 fi
 OUTPUT_APP="${ZYN_OUTPUT_APP:-$PROJECT_DIR/dist/Zyn-mac-$APP_ARCH.app}"
-APP_RELEASE="${ZYN_RELEASE:-R8.24}"
-APP_VERSION="${ZYN_VERSION:-1.7.0}"
+APP_RELEASE="${ZYN_RELEASE:-}"
+APP_VERSION="${ZYN_VERSION:-}"
+if [[ -z "$APP_VERSION" ]]; then
+  APP_VERSION="$(node -p "require('$PROJECT_DIR/config/runtime-contract.json').product.version")"
+fi
+if [[ -z "$APP_RELEASE" ]]; then
+  APP_RELEASE="$(node -p "require('$PROJECT_DIR/config/runtime-contract.json').appRelease")"
+fi
 NATIVE_BACKEND="$PROJECT_DIR/native-backend/darwin-$APP_ARCH/backend"
 RUNTIME_MODE="${ZYN_RUNTIME_MODE:-remote}"
 if [[ "$RUNTIME_MODE" != "remote" && "$RUNTIME_MODE" != "bundled" ]]; then
