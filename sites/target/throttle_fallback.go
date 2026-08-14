@@ -74,6 +74,7 @@ func (t *TargetTask) tryThrottleFallback() bool {
 	}
 
 	t.ProxyGroup = fallbackGroup
+	t.ProxySources = nil
 	if err := t.SwapProxy("Target"); err != nil {
 		t.ProxyGroup = previousGroup
 		t.UpdateStatus("Throttle Fallback Failed", constants.Colors.RED)

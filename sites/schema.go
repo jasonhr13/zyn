@@ -27,6 +27,7 @@ type TaskInput struct {
 	UseOtpLogin     bool   `json:"useOtpLogin"`
 
 	IgnoreLowStock bool `json:"ignoreLowStock"`
+	ProxySources   []string `json:"proxySources,omitempty"`
 }
 
 type Item struct {

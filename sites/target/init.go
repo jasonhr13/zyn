@@ -43,6 +43,7 @@ func StartTask(t sites.TaskInput) {
 			Mode:          t.Mode,
 			Running:       true,
 			ProxyGroup:    t.Proxy,
+			ProxySources:  append([]string(nil), t.ProxySources...),
 			ProfileId:     t.ProfileId,
 			ID:            t.Id,
 			MonitorDelay:  t.MonitorDelay,

@@ -27,6 +27,7 @@ func startMonitorMessageToInput(msg StartMonitorMessage) monitorhub.StartInput {
 		ProxyGroup:     msg.ProxyGroup,
 		MonitorDelay:   delay,
 		IgnoreLowStock: msg.IgnoreLowStock,
+		ProxySources:   msg.ProxySources,
 		Items:          items,
 	}
 }

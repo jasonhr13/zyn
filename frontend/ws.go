@@ -310,7 +310,10 @@ func readMessage(c *websocket.Conn) error {
 			if group == "" || strings.EqualFold(group, "Local") {
 				group = "Local"
 			}
-			if !task.EnqueueRuntimeEdit(strings.TrimSpace(incoming.ID), task.RuntimeEditPayload{ProxyGroup: &group}) {
+			if !task.EnqueueRuntimeEdit(strings.TrimSpace(incoming.ID), task.RuntimeEditPayload{
+				ProxyGroup:   &group,
+				ProxySources: incoming.ProxySources,
+			}) {
 				log.Printf("ConnectFrontend: set-task-proxy [%d] task unavailable", i)
 			}
 		}

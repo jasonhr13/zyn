@@ -6,6 +6,7 @@ type RuntimeEditPayload struct {
 	Input        sites.TaskInput
 	MonitorItems []sites.Item
 	ProxyGroup   *string
+	ProxySources []string
 }
 
 type RuntimeEditSink interface {

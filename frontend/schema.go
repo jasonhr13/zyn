@@ -23,7 +23,8 @@ type StartTaskMessage struct {
 	TaskGroup    string            `json:"taskGroup"`
 	MonitorDelay string            `json:"monitorDelay"`
 	RetryDelay   string            `json:"retryDelay"`
-	ProxyGroup   string            `json:"proxyGroup"`
+	ProxyGroup    string            `json:"proxyGroup"`
+	ProxySources  []string          `json:"proxySources,omitempty"`
 	ProfileId    string            `json:"profileId"`
 	ProfileGroup string            `json:"profileGroup"`
 	AccountId    string            `json:"accountId"`
@@ -71,6 +72,7 @@ type StartMonitorMessage struct {
 	ProxyGroup     string               `json:"proxyGroup"`
 	MonitorDelay   string               `json:"monitorDelay"`
 	IgnoreLowStock bool                 `json:"ignoreLowStock"`
+	ProxySources   []string             `json:"proxySources,omitempty"`
 	Items          []MonitorItemMessage `json:"items"`
 }
 
@@ -113,8 +115,9 @@ type StockPingMessage struct {
 }
 
 type SetTaskProxyMessage struct {
-	ID         string `json:"id"`
-	ProxyGroup string `json:"proxyGroup"`
+	ID           string   `json:"id"`
+	ProxyGroup   string   `json:"proxyGroup"`
+	ProxySources []string `json:"proxySources,omitempty"`
 }
 
 type CaptchaSolvePayload struct {

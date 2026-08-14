@@ -21,6 +21,7 @@ type StartInput struct {
 	ProxyGroup     string
 	MonitorDelay   int
 	IgnoreLowStock bool
+	ProxySources   []string
 	Items          []Item
 }
 

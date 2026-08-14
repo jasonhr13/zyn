@@ -12,7 +12,7 @@ import (
 
 func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	if p.ProxyGroup != nil {
-		t.applyRuntimeProxy(*p.ProxyGroup)
+		t.applyRuntimeProxy(*p.ProxyGroup, p.ProxySources)
 		return
 	}
 	in := p.Input
@@ -51,6 +51,7 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	}
 	if in.Proxy != "" {
 		t.ProxyGroup = in.Proxy
+		t.ProxySources = append([]string(nil), in.ProxySources...)
 	}
 	if in.MaxPrice != 0 {
 		t.MaxPrice = in.MaxPrice
@@ -79,18 +80,19 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	t.IgnoreLowStock = in.IgnoreLowStock
 }
 
-func (t *TargetTask) applyRuntimeProxy(group string) {
+func (t *TargetTask) applyRuntimeProxy(group string, sources []string) {
 	group = strings.TrimSpace(group)
 	if group == "" || strings.EqualFold(group, "Local") {
 		group = "Local"
+		sources = nil
 	}
-	if group == t.ProxyGroup {
+	if group == t.ProxyGroup && sameStringSlice(t.ProxySources, sources) {
 		return
 	}
 
-	oldGroup := t.ProxyGroup
-	proxy.ReleaseProxy(oldGroup, t.ID)
+	proxy.ReleaseProxy(t.ProxyGroup, t.ID)
 	t.ProxyGroup = group
+	t.ProxySources = append([]string(nil), sources...)
 
 	var err error
 	if group == "Local" {
@@ -103,4 +105,16 @@ func (t *TargetTask) applyRuntimeProxy(group string) {
 		return
 	}
 	t.UpdateStatus("Proxy Updated", constants.Colors.BLUE)
+}
+
+func sameStringSlice(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }

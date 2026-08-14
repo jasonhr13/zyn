@@ -62,6 +62,9 @@ func IsCloudConnected() bool {
 }
 
 func SendProductWebhook(data ProductWebhookData) {
+	if data.Success {
+		proxy.RecordProxyResult(proxyResultTaskID(data), true)
+	}
 	eventName, message := "checkout_decline", "Declined"
 	if data.Success {
 		eventName, message = "checkout_success", "Successful Checkout"
@@ -155,8 +158,16 @@ func emitAnalyticsEvent(eventType string, data ProductWebhookData) {
 }
 
 func SendCartedAnalytics(data ProductWebhookData) {
+	proxy.RecordProxyResult(proxyResultTaskID(data), true)
 	emitAnalyticsEvent("carted", data)
 	SendCartedEvent(data.TaskID)
+}
+
+func proxyResultTaskID(data ProductWebhookData) string {
+	if id := strings.TrimSpace(data.ClientTaskID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(data.TaskID)
 }
 
 func sendServerEvents(data ProductWebhookData) {
@@ -612,13 +623,18 @@ func (t *BaseTask) SwapProxy(rotator string) error {
 
 	t.UpdateStatus("Rotating Proxy", constants.Colors.BLUE)
 
+	proxy.RecordProxyResult(t.ID, false)
 	proxy.ReleaseProxy(t.ProxyGroup, t.ID)
 
 	var lastErr error
+	sources := t.ProxySources
+	if len(sources) == 0 && t.ProxyGroup != "" && !strings.EqualFold(t.ProxyGroup, "Local") {
+		sources = []string{t.ProxyGroup}
+	}
 	for attempt := 0; attempt < 5; attempt++ {
-		newProxy, err := proxy.GetProxy(t.ProxyGroup, t.ID)
+		newProxy, err := proxy.GetProxyFrom(sources, t.ID)
 		if err != nil {
-			log.Printf("[SwapProxy] Failed to get proxy from group '%s': %v", t.ProxyGroup, err)
+			log.Printf("[SwapProxy] Failed to get proxy from %v: %v", sources, err)
 			lastErr = err
 			break
 		}

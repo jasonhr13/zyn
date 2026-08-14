@@ -118,6 +118,7 @@ func startMessageToSiteInput(TaskInfo StartTaskMessage) sites.TaskInput {
 		MinPrice:        minPrice,
 		MaxPrice:        maxPrice,
 		Proxy:           TaskInfo.ProxyGroup,
+		ProxySources:    TaskInfo.ProxySources,
 		ProfileId:       TaskInfo.ProfileId,
 		SiteName:        siteName,
 		Site:            siteName,

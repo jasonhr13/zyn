@@ -8,20 +8,52 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
-type pool struct {
-	mu          sync.Mutex
-	groups      map[string][]Proxy
-	byTask      map[string]map[string]string // group -> taskID -> proxyKey
-	inUseByKey  map[string]map[string]string // group -> proxyKey -> taskID
+const (
+	exploreRate       = 0.30
+	lineQuarantine    = 30 * time.Second
+	unusedSourcePrior = 1
+)
+
+type assignment struct {
+	source string
+	key    string
 }
 
-var state = pool{
-	groups:     map[string][]Proxy{},
-	byTask:     map[string]map[string]string{},
-	inUseByKey: map[string]map[string]string{},
+type sourceScore struct {
+	successes int
+	fails     int
 }
+
+type proxyCandidate struct {
+	source string
+	line   Proxy
+	free   bool
+}
+
+type pool struct {
+	mu         sync.Mutex
+	groups     map[string][]Proxy
+	assigned   map[string]assignment          // taskID -> current line
+	inUseByKey map[string]map[string]string   // source -> proxyKey -> taskID
+	scores     map[string]sourceScore         // source -> score
+	cooldown   map[string]time.Time           // proxyKey -> until
+}
+
+var (
+	state = pool{
+		groups:     map[string][]Proxy{},
+		assigned:   map[string]assignment{},
+		inUseByKey: map[string]map[string]string{},
+		scores:     map[string]sourceScore{},
+		cooldown:   map[string]time.Time{},
+	}
+	nowFn  = time.Now
+	randN  = func(n int) int { return rand.IntN(n) }
+	randF  = func() float64 { return rand.Float64() }
+)
 
 func proxyKey(p Proxy) string {
 	return strings.ToLower(strings.TrimSpace(p.Address)) + ":" +
@@ -39,113 +71,240 @@ func normalizeProxy(p Proxy) Proxy {
 	}
 }
 
+func proxyURL(p Proxy) string {
+	p = normalizeProxy(p)
+	if p.Username != "" {
+		return fmt.Sprintf("http://%s:%s@%s:%s", p.Username, p.Password, p.Address, p.Port)
+	}
+	return fmt.Sprintf("http://%s:%s", p.Address, p.Port)
+}
+
 func AssignedProxyURL(group, taskID string) string {
-	if group == "" || group == "Local" || taskID == "" {
+	if taskID == "" {
 		return ""
 	}
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
-	byTask, ok := state.byTask[group]
+	asg, ok := state.assigned[taskID]
 	if !ok {
 		return ""
 	}
-	key, ok := byTask[taskID]
-	if !ok {
-		return ""
+	source := asg.source
+	if group != "" && group != "Local" && source == "" {
+		source = group
 	}
-
-	for _, p := range state.groups[group] {
-		if proxyKey(p) != key {
+	for _, p := range state.groups[source] {
+		if proxyKey(p) != asg.key {
 			continue
 		}
-		p = normalizeProxy(p)
-		if p.Username != "" {
-			return fmt.Sprintf("http://%s:%s@%s:%s", p.Username, p.Password, p.Address, p.Port)
-		}
-		return fmt.Sprintf("http://%s:%s", p.Address, p.Port)
+		return proxyURL(p)
 	}
 	return ""
 }
 
 func ReleaseProxy(group, taskID string) {
-	if taskID == "" || group == "" || group == "Local" {
+	if taskID == "" {
 		return
 	}
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	releaseLocked(taskID)
+}
 
-	byTask, ok := state.byTask[group]
+func releaseLocked(taskID string) {
+	asg, ok := state.assigned[taskID]
 	if !ok {
 		return
 	}
-	key, ok := byTask[taskID]
-	if !ok {
-		return
-	}
-	delete(byTask, taskID)
-	if len(byTask) == 0 {
-		delete(state.byTask, group)
-	}
-	if inUse, ok := state.inUseByKey[group]; ok {
-		delete(inUse, key)
+	delete(state.assigned, taskID)
+	if inUse, ok := state.inUseByKey[asg.source]; ok {
+		if owner, exists := inUse[asg.key]; exists && owner == taskID {
+			delete(inUse, asg.key)
+		}
 		if len(inUse) == 0 {
-			delete(state.inUseByKey, group)
+			delete(state.inUseByKey, asg.source)
 		}
 	}
 }
 
 func GetProxy(group, taskID string) (*Proxy, error) {
+	return GetProxyFrom([]string{group}, taskID)
+}
+
+func GetProxyFrom(sources []string, taskID string) (*Proxy, error) {
 	if taskID == "" {
 		return nil, errors.New("missing task ID")
+	}
+	cleaned := cleanSources(sources)
+	if len(cleaned) == 0 {
+		return nil, errors.New("invalid group")
 	}
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
-	proxyGroup, ok := state.groups[group]
-	if !ok {
-		return nil, errors.New("invalid group")
-	}
-	if len(proxyGroup) == 0 {
-		return nil, errors.New("proxy group has 0 proxies")
-	}
+	releaseLocked(taskID)
+	now := nowFn()
+	cleanCooldownsLocked(now)
 
-	inUse := state.inUseByKey[group]
-	if inUse == nil {
-		inUse = map[string]string{}
-		state.inUseByKey[group] = inUse
-	}
-
-	unique := dedupeProxies(proxyGroup)
-	available := make([]Proxy, 0, len(unique))
-	for _, p := range unique {
-		if _, taken := inUse[proxyKey(p)]; taken {
+	bySource := make(map[string][]proxyCandidate, len(cleaned))
+	for _, source := range cleaned {
+		lines, ok := state.groups[source]
+		if !ok {
 			continue
 		}
-		available = append(available, p)
+		unique := dedupeProxies(lines)
+		if len(unique) == 0 {
+			continue
+		}
+		inUse := state.inUseByKey[source]
+		for _, p := range unique {
+			key := proxyKey(p)
+			if until, cooling := state.cooldown[key]; cooling && until.After(now) {
+				continue
+			}
+			_, taken := inUse[key]
+			bySource[source] = append(bySource[source], proxyCandidate{source: source, line: p, free: !taken})
+		}
+		if _, ok := bySource[source]; !ok {
+			// Every line is cooling; still allow reuse so a task can start.
+			for _, p := range unique {
+				_, taken := inUse[proxyKey(p)]
+				bySource[source] = append(bySource[source], proxyCandidate{source: source, line: p, free: !taken})
+			}
+		}
 	}
-	if len(available) == 0 {
-		available = unique
+	if len(bySource) == 0 {
+		if len(cleaned) == 1 {
+			if _, ok := state.groups[cleaned[0]]; !ok {
+				return nil, errors.New("invalid group")
+			}
+			return nil, errors.New("proxy group has 0 proxies")
+		}
+		return nil, errors.New("invalid group")
 	}
 
-	pick := available[rand.IntN(len(available))]
+	sourceOrder := make([]string, 0, len(cleaned))
+	for _, source := range cleaned {
+		if _, ok := bySource[source]; ok {
+			sourceOrder = append(sourceOrder, source)
+		}
+	}
+	pickedSource := pickSourceLocked(sourceOrder, bySource)
+	choices := bySource[pickedSource]
+	free := make([]proxyCandidate, 0, len(choices))
+	for _, c := range choices {
+		if c.free {
+			free = append(free, c)
+		}
+	}
+	if len(free) > 0 {
+		choices = free
+	}
+	pick := choices[randN(len(choices))].line
 	key := proxyKey(pick)
-	if _, taken := inUse[key]; !taken {
-		inUse[key] = taskID
+	if state.inUseByKey[pickedSource] == nil {
+		state.inUseByKey[pickedSource] = map[string]string{}
 	}
-
-	byTask := state.byTask[group]
-	if byTask == nil {
-		byTask = map[string]string{}
-		state.byTask[group] = byTask
+	if _, taken := state.inUseByKey[pickedSource][key]; !taken {
+		state.inUseByKey[pickedSource][key] = taskID
 	}
-	byTask[taskID] = key
-
+	state.assigned[taskID] = assignment{source: pickedSource, key: key}
 	out := normalizeProxy(pick)
 	return &out, nil
+}
+
+func pickSourceLocked(order []string, bySource map[string][]proxyCandidate) string {
+	if len(order) == 1 {
+		return order[0]
+	}
+	freeSources := make([]string, 0, len(order))
+	for _, source := range order {
+		for _, c := range bySource[source] {
+			if c.free {
+				freeSources = append(freeSources, source)
+				break
+			}
+		}
+	}
+	pool := order
+	if len(freeSources) > 0 {
+		pool = freeSources
+	}
+	if randF() < exploreRate {
+		return pool[randN(len(pool))]
+	}
+	best := pool[0]
+	bestScore := sourceWeight(state.scores[best])
+	for _, source := range pool[1:] {
+		score := sourceWeight(state.scores[source])
+		if score > bestScore {
+			best = source
+			bestScore = score
+		}
+	}
+	return best
+}
+
+func sourceWeight(score sourceScore) float64 {
+	return float64(score.successes+unusedSourcePrior) / float64(score.successes+score.fails+unusedSourcePrior*2)
+}
+
+func RecordProxyResult(taskID string, success bool) {
+	if taskID == "" {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	asg, ok := state.assigned[taskID]
+	if !ok {
+		return
+	}
+	score := state.scores[asg.source]
+	if success {
+		score.successes++
+	} else {
+		score.fails++
+		state.cooldown[asg.key] = nowFn().Add(lineQuarantine)
+	}
+	state.scores[asg.source] = score
+}
+
+func AssignedSource(taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.assigned[taskID].source
+}
+
+func cleanSources(sources []string) []string {
+	out := make([]string, 0, len(sources))
+	seen := map[string]struct{}{}
+	for _, raw := range sources {
+		source := strings.TrimSpace(raw)
+		if source == "" || strings.EqualFold(source, "Local") {
+			continue
+		}
+		if _, dup := seen[source]; dup {
+			continue
+		}
+		seen[source] = struct{}{}
+		out = append(out, source)
+	}
+	return out
+}
+
+func cleanCooldownsLocked(now time.Time) {
+	for key, until := range state.cooldown {
+		if !until.After(now) {
+			delete(state.cooldown, key)
+		}
+	}
 }
 
 func dedupeProxies(proxyGroup []Proxy) []Proxy {
@@ -171,24 +330,21 @@ func SetProxies(proxiesIn map[string][]Proxy) {
 		state.groups[group] = proxyArr
 	}
 
-	for group, byTask := range state.byTask {
-		validKeys := make(map[string]struct{}, len(state.groups[group]))
-		for _, p := range state.groups[group] {
-			validKeys[proxyKey(p)] = struct{}{}
+	valid := map[string]map[string]struct{}{}
+	for group, lines := range state.groups {
+		keys := make(map[string]struct{}, len(lines))
+		for _, p := range lines {
+			keys[proxyKey(p)] = struct{}{}
 		}
-		for taskID, key := range byTask {
-			if _, ok := validKeys[key]; ok {
+		valid[group] = keys
+	}
+	for taskID, asg := range state.assigned {
+		if keys, ok := valid[asg.source]; ok {
+			if _, found := keys[asg.key]; found {
 				continue
 			}
-			delete(byTask, taskID)
-			if inUse := state.inUseByKey[group]; inUse != nil {
-				delete(inUse, key)
-			}
 		}
-		if len(byTask) == 0 {
-			delete(state.byTask, group)
-			delete(state.inUseByKey, group)
-		}
+		releaseLocked(taskID)
 	}
 }
 
@@ -199,4 +355,17 @@ func SetProxiesFromJSON(raw []byte) {
 	if proxies != nil {
 		SetProxies(proxies)
 	}
+}
+
+func ResetForTest() {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.groups = map[string][]Proxy{}
+	state.assigned = map[string]assignment{}
+	state.inUseByKey = map[string]map[string]string{}
+	state.scores = map[string]sourceScore{}
+	state.cooldown = map[string]time.Time{}
+	nowFn = time.Now
+	randN = func(n int) int { return rand.IntN(n) }
+	randF = func() float64 { return rand.Float64() }
 }

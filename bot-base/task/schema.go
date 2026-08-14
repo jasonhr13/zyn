@@ -20,6 +20,7 @@ type BaseTask struct {
 	Decline       bool             `json:"-"`
 	DeclineReason string           `json:"declineReason"`
 	ProxyGroup    string           `json:"proxyGroup"`
+	ProxySources  []string         `json:"proxySources,omitempty"`
 	Profile       ProfileStruct    `json:"profile"`
 	ProfileId     string           `json:"profileId"`
 	Account       accounts.Account `json:"account"`
