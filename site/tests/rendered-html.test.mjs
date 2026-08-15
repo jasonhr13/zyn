@@ -40,16 +40,19 @@ test("server-renders the Zyn product site", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Zyn — Target \+ Pokémon Center US Automation<\/title>/i);
-  assert.match(html, /Target \+ Pokémon Center US support/);
-  assert.match(html, /Peak checkout<br\/>performance\./);
-  assert.match(html, /Native checkout engines/);
+  assert.match(html, /<title>Zyn — Target Checkout Automation<\/title>/i);
+  assert.match(html, /Target\.com only/);
+  assert.match(html, /Built for<br\/>Target drops\./);
+  assert.match(html, /Native Target engine/);
+  assert.match(html, /Proxy folders/);
+  assert.match(html, /ATC cookie bank/);
+  assert.doesNotMatch(html, /Pokémon Center/i);
   assert.match(html, /Every beta user gets one full year free/);
   assert.match(html, /Join the free beta/);
   assert.match(html, /href="\/join"/);
   assert.doesNotMatch(html, /Request access/);
   assert.match(html, /mailto:hello@zynbot\.app/);
-  assert.match(html, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
+  assert.match(html, /https:\/\/zynbot\.app\/og-target-beta\.png/);
 });
 
 test("renders the branded waiting-list form and confirmation", async () => {
@@ -58,6 +61,8 @@ test("renders the branded waiting-list form and confirmation", async () => {
   const formHtml = await form.text();
   assert.match(formHtml, /<title>Join the free Zyn beta<\/title>/i);
   assert.match(formHtml, /Join the free beta\./);
+  assert.match(formHtml, /Target\.com only/);
+  assert.doesNotMatch(formHtml, /Pokémon Center/i);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
@@ -155,7 +160,7 @@ test("publishes the Zyn canonical identity and keeps service traffic in the visi
     const home = await render("/", {}, "https://zynbot.app");
     assert.equal(home.status, 200);
     const homeHtml = await home.text();
-    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
+    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-target-beta\.png/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/favicon\.png"/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/manifest\.webmanifest"/);
 
@@ -199,7 +204,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
-  assert.match(layout, /Zyn — Target \+ Pokémon Center US Automation/);
+  assert.match(layout, /Zyn — Target Checkout Automation/);
   assert.match(layout, /manifest\.webmanifest/);
   assert.match(css, /--zyn-orange:/);
   assert.match(css, /--zyn-rose:/);

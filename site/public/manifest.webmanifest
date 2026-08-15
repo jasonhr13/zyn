@@ -1,7 +1,7 @@
 {
   "name": "Zyn",
   "short_name": "Zyn",
-  "description": "Precision retail operations from one focused desktop workspace.",
+  "description": "Target checkout automation from one focused desktop workspace.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1012",
