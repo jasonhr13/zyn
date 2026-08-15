@@ -3,13 +3,19 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE_DIR="${POLAR_BACKEND_SOURCE:-$PROJECT_DIR/../polar-backend-source}"
+SOURCE_DIR="${ZYN_ENGINE_SOURCE:-${POLAR_BACKEND_SOURCE:-$PROJECT_DIR/engine}}"
 REQUESTED_ARCH="${1:-${ZYN_ARCH:-$(uname -m)}}"
 
 if [[ ! -f "$SOURCE_DIR/go.mod" ]]; then
-  echo "Missing polar-backend-source Go module: $SOURCE_DIR" >&2
+  echo "Missing Zyn engine Go module: $SOURCE_DIR" >&2
   exit 1
 fi
+
+(
+  cd "$SOURCE_DIR"
+  go test ./...
+  go test -tags zyn ./...
+)
 
 build_arch() {
   local zyn_arch="$1"

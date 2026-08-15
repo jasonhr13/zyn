@@ -1,8 +1,8 @@
 # Zyn native-engine protocol
 
 This document defines protocol version 1 for the single native Go engine used by Zyn. The engine
-source of truth is `/Users/jason/code/polar-backend-source`; the architecture-specific binaries are
-packaged by `/Users/jason/code/hope2`.
+source of truth is `engine/` in this repository; the architecture-specific binaries are packaged
+into `native-backend/`.
 
 Version 1 preserves the recovered backend's existing wire format. Compatibility is additive: new
 sites and message types may be introduced, but the envelope and existing Target fields must not be

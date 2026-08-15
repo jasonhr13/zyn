@@ -153,30 +153,28 @@ assert.match(targetBridge, /const ENGINE_PORT = 8727/,
 assert.equal((targetBridge.match(/function spawnEngine\(/g) || []).length, 1,
   'the bridge must own exactly one native-engine spawn path');
 
-const goRoot = process.env.POLAR_BACKEND_SOURCE
-  ? path.resolve(process.env.POLAR_BACKEND_SOURCE)
-  : path.resolve(root, '..', 'polar-backend-source');
-if (fs.existsSync(goRoot)) {
-  const schema = fs.readFileSync(path.join(goRoot, 'frontend', 'schema.go'), 'utf8');
-  const websocket = fs.readFileSync(path.join(goRoot, 'frontend', 'ws.go'), 'utf8');
-  const monitorFrontend = fs.readFileSync(path.join(goRoot, 'frontend', 'monitor.go'), 'utf8');
-  const frontendFunctions = fs.readFileSync(path.join(goRoot, 'frontend', 'functions.go'), 'utf8');
-  const captcha = fs.readFileSync(path.join(goRoot, 'bot-base', 'captcha', 'captcha.go'), 'utf8');
-  const taskSchema = fs.readFileSync(path.join(goRoot, 'bot-base', 'task', 'schema.go'), 'utf8');
-  assert.match(schema, /QueueEntryDelay string `json:"QueueEntryDelay"`/,
-    'Go queue-entry field spelling drifted from the compatibility contract');
-  for (const type of ['send-configs', 'start-tasks', 'stop-tasks', 'edit-tasks', 'received-token']) {
-    assert.match(websocket, new RegExp(`case "${type}"`), `Go frontend no longer accepts ${type}`);
-  }
-  assert.match(captcha, /"type": "solve-captcha"/);
-  assert.match(captcha, /"taskId":\s+solve\.TaskID/);
-  assert.match(taskSchema, /type AnalyticsEventMessage struct/);
-  assert.match(taskSchema, /TotalCents\s+int64\s+`json:"totalCents"`/);
-  assert.match(monitorFrontend, /"status":\s+"Cloud Disconnected",[\s\S]{0,100}"running":\s+false/,
-    'a rejected monitor start must emit terminal liveness so the launcher can retry it');
-  assert.match(frontendFunctions, /"status":\s+"Idle",[\s\S]{0,100}"running":\s+false/,
-    'an already-absent monitor stop must acknowledge terminal liveness after reconnect');
+const { engineSourceRoot } = require('./zyn-engine-source.cjs');
+const goRoot = engineSourceRoot();
+assert.ok(fs.existsSync(path.join(goRoot, 'go.mod')), `missing Zyn engine Go module: ${goRoot}`);
+const schema = fs.readFileSync(path.join(goRoot, 'frontend', 'schema.go'), 'utf8');
+const websocket = fs.readFileSync(path.join(goRoot, 'frontend', 'ws.go'), 'utf8');
+const monitorFrontend = fs.readFileSync(path.join(goRoot, 'frontend', 'monitor.go'), 'utf8');
+const frontendFunctions = fs.readFileSync(path.join(goRoot, 'frontend', 'functions.go'), 'utf8');
+const captcha = fs.readFileSync(path.join(goRoot, 'bot-base', 'captcha', 'captcha.go'), 'utf8');
+const taskSchema = fs.readFileSync(path.join(goRoot, 'bot-base', 'task', 'schema.go'), 'utf8');
+assert.match(schema, /QueueEntryDelay string `json:"QueueEntryDelay"`/,
+  'Go queue-entry field spelling drifted from the compatibility contract');
+for (const type of ['send-configs', 'start-tasks', 'stop-tasks', 'edit-tasks', 'received-token']) {
+  assert.match(websocket, new RegExp(`case "${type}"`), `Go frontend no longer accepts ${type}`);
 }
+assert.match(captcha, /"type": "solve-captcha"/);
+assert.match(captcha, /"taskId":\s+solve\.TaskID/);
+assert.match(taskSchema, /type AnalyticsEventMessage struct/);
+assert.match(taskSchema, /TotalCents\s+int64\s+`json:"totalCents"`/);
+assert.match(monitorFrontend, /"status":\s+"Cloud Disconnected",[\s\S]{0,100}"running":\s+false/,
+  'a rejected monitor start must emit terminal liveness so the launcher can retry it');
+assert.match(frontendFunctions, /"status":\s+"Idle",[\s\S]{0,100}"running":\s+false/,
+  'an already-absent monitor stop must acknowledge terminal liveness after reconnect');
 
 console.log(JSON.stringify({
   ok: true,

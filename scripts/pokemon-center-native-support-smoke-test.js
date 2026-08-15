@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const { execFileSync } = require('child_process');
+const { engineSourceRoot } = require('./zyn-engine-source.cjs');
 
 const root = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-pokemon-native-'));
@@ -26,8 +27,9 @@ const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/page
 const accounts = fs.readFileSync(path.join(root, 'frontend/src/components/pages/accounts.js'), 'utf8');
 const targetLaunch = fs.readFileSync(path.join(root, 'launcher/target-group-launch.js'), 'utf8');
 const profileImap = fs.readFileSync(path.join(root, 'launcher/profile-imap-control.js'), 'utf8');
-const pokemonCheckout = fs.readFileSync(path.join(root, '../polar-backend-source/sites/pokemonCenter/checkout.go'), 'utf8');
-const pokemonEdit = fs.readFileSync(path.join(root, '../polar-backend-source/sites/pokemonCenter/edit.go'), 'utf8');
+const engineRoot = engineSourceRoot();
+const pokemonCheckout = fs.readFileSync(path.join(engineRoot, 'sites/pokemonCenter/checkout.go'), 'utf8');
+const pokemonEdit = fs.readFileSync(path.join(engineRoot, 'sites/pokemonCenter/edit.go'), 'utf8');
 const routes = fs.readFileSync(path.join(root, 'frontend/src/components/page-handler.js'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'frontend/src/components/store.js'), 'utf8');
 

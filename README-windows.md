@@ -9,7 +9,7 @@ remain on their existing shared engine process until it drains.
 ## Build
 
 ```bash
-POLAR_BACKEND_SOURCE=../polar-backend-source ./scripts/build-native-target-engine.sh windows-x64
+./scripts/build-native-target-engine.sh windows-x64
 node ./scripts/create-zyn-windows-icon.cjs
 node ./scripts/prepare-zyn-windows-electron.cjs
 ./scripts/build-zyn-windows.sh

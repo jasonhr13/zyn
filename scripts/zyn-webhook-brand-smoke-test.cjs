@@ -7,10 +7,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const project = path.resolve(__dirname, '..');
-const goRoot = process.env.POLAR_BACKEND_SOURCE
-  ? path.resolve(process.env.POLAR_BACKEND_SOURCE)
-  : path.resolve(project, '..', 'polar-backend-source');
+const { engineSourceRoot, projectRoot: project } = require('./zyn-engine-source.cjs');
+const goRoot = engineSourceRoot();
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-webhook-brand-'));
 const goEnv = { ...process.env, GOCACHE: process.env.GOCACHE || path.join(temporary, 'go-build-cache') };
 const botFiles = ['pbandai-buyer.cjs', 'round1-register.mjs', 'secret-lair-browserless.mjs', 'shared.mjs'];

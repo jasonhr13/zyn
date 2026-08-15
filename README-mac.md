@@ -23,10 +23,10 @@ application shell and architecture-matched checkout engine in the app, while Chr
 after sign-in from an architecture-aware signed manifest. The old Windows backend, Wine,
 Chromium, and Node payloads are not needed by the native paths and are omitted entirely.
 
-Rebuild the native engines before packaging whenever `polar-backend-source` changes:
+Rebuild the native engines before packaging whenever `engine/` changes:
 
 ```bash
-POLAR_BACKEND_SOURCE=../polar-backend-source ./scripts/build-native-target-engine.sh all
+./scripts/build-native-target-engine.sh all
 ```
 
 ```bash

@@ -13,12 +13,13 @@ const {
   createTaskGroupStore,
 } = require('../launcher/task-group-store');
 const { parseWatchedItems, buildTargetGroupLaunch } = require('../launcher/target-group-launch');
+const { engineSourceRoot } = require('./zyn-engine-source.cjs');
 
 const engine = read('runtime-app/public/helpers/target-engine.js');
 const groups = read('frontend/src/components/pages/task-groups.js');
 const styles = read('frontend/src/App.css');
 const goMonitor = fs.readFileSync(
-  path.join(project, '../polar-backend-source/sites/target/monitor_sub.go'),
+  path.join(engineSourceRoot(), 'sites/target/monitor_sub.go'),
   'utf8',
 );
 
