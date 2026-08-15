@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.5",
+  "notes": [
+    "Task groups can now use a Proxies-page folder of lists instead of one list.",
+    "Harvesters rotate across that same folder and stay on the lists that are working.",
+    "Checkout prefers proxy sources that are adding to cart and completing orders.",
+    "Dead proxy lines are set aside without treating out of stock as a proxy failure."
+  ]
+}
