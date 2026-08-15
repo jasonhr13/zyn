@@ -306,10 +306,10 @@ export default class Round1 extends Component {
             if (!hits.length) return null;
             return (
               /* --panel-solid, not --panel: --panel is translucent and let the form behind
-                 the list show straight through it. */
-              <div style={{
+                 the list show straight through it. Mac adds blur through .glass-surface. */
+              <div className="glass-surface" style={{
                 position: 'absolute', zIndex: 30, left: 0, right: 0, top: '100%', marginTop: 2,
-                maxHeight: 220, overflowY: 'auto', background: 'var(--panel-solid)',
+                maxHeight: 220, overflowY: 'auto',
                 border: '1px solid var(--panel-border)', borderRadius: 6,
                 boxShadow: '0 8px 20px rgba(0,0,0,.45)',
               }}>

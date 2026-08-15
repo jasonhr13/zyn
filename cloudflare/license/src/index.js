@@ -1021,6 +1021,30 @@ function bearer(request) {
   return match ? match[1] : '';
 }
 
+function licenseRebindStatements(db, {
+  licenseId,
+  userId,
+  deviceId,
+  deviceName,
+  now,
+  expiresAt,
+}) {
+  return [
+    db.prepare(`
+      UPDATE licenses SET revoked_at = ?, revoked_reason = 'new_login'
+      WHERE user_id = ? AND device_id = ? AND revoked_at IS NULL AND id != ?
+    `).bind(now, userId, deviceId, licenseId),
+    db.prepare(`
+      UPDATE licenses SET device_id = ?, device_name = ?, last_validated_at = ?, expires_at = ?
+      WHERE id = ? AND revoked_at IS NULL
+    `).bind(deviceId, deviceName, now, expiresAt, licenseId),
+  ];
+}
+
+function canRebindLicense(row, now) {
+  return Boolean(row && row.active && !row.revoked_at && Number(row.expires_at) > now);
+}
+
 function licenseFailure(row, deviceId, now) {
   if (!row) {
     return { code: 'session_invalid', message: 'Your Zyn session is no longer valid. Sign in again to continue.' };
@@ -1081,15 +1105,27 @@ async function validateLicense(request, env) {
   const tokenHash = await sha256(token);
   const now = Date.now();
   const row = await env.DB.prepare(`
-    SELECT l.id AS license_id, l.device_id, l.expires_at, l.revoked_at, l.revoked_reason,
+    SELECT l.id AS license_id, l.device_id, l.device_name, l.expires_at, l.revoked_at, l.revoked_reason,
       u.id AS user_id, u.email, u.active, u.proxy_access
     FROM licenses l JOIN users u ON u.id = l.user_id
     WHERE l.token_hash = ?
   `).bind(tokenHash).first();
-  const failure = licenseFailure(row, deviceId, now);
+  let failure = licenseFailure(row, deviceId, now);
+  const expiresAt = now + LICENSE_TTL_MS;
+  if (failure && failure.code === 'session_device_mismatch' && canRebindLicense(row, now)) {
+    const deviceName = String(body.deviceName || row.device_name || '').slice(0, 100);
+    await env.DB.batch(licenseRebindStatements(env.DB, {
+      licenseId: row.license_id,
+      userId: row.user_id,
+      deviceId,
+      deviceName,
+      now,
+      expiresAt,
+    }));
+    failure = null;
+  }
   if (failure) return json({ ok: false, ...failure }, 401);
 
-  const expiresAt = now + LICENSE_TTL_MS;
   await env.DB.prepare('UPDATE licenses SET last_validated_at = ?, expires_at = ? WHERE id = ?')
     .bind(now, expiresAt, row.license_id).run();
   return json({
@@ -2889,6 +2925,8 @@ export const __test = Object.freeze({
   hyperCredentialInput,
   normalizePokemonQueueEvent,
   licenseFailure,
+  licenseRebindStatements,
+  canRebindLicense,
   maxActiveDevicesForUser,
   mintLicenseStatements,
   pokemonQueueCredentialInput,

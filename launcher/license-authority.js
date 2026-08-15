@@ -60,7 +60,7 @@ function createLicenseAuthority({
   logger = console,
 } = {}) {
   if (!dataDirectory) throw new Error('license authority dataDirectory is required');
-  const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE });
+  const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE, dataDirectory });
   const sessionPath = path.join(dataDirectory, SESSION_FILE);
   const observerSessionPath = path.join(dataDirectory, OBSERVER_SESSION_FILE);
   let licenseState = { ok: false, reason: 'Sign in to continue.', accountId: '', taskTypes: normalizeTaskTypes() };
@@ -110,10 +110,14 @@ function createLicenseAuthority({
       try { stored = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { continue; }
       const token = decryptToken(stored.token);
       if (!token) continue;
+      if (stored.deviceId && typeof licenseApi.setDeviceId === 'function') {
+        licenseApi.setDeviceId(stored.deviceId);
+      }
       return {
         accountId: cleanAccountId(stored.userId),
         email: cleanEmail(stored.email),
         token,
+        deviceId: String(stored.deviceId || licenseApi.deviceId || ''),
         validatedAt: Number(stored.validatedAt) || 0,
         expiresAt: Number(stored.expiresAt) || 0,
         taskTypes: normalizeTaskTypes(stored.taskTypes),
@@ -170,6 +174,7 @@ function createLicenseAuthority({
         userId: cleanAccountId(licenseState.accountId),
         email: cleanEmail(licenseState.email),
         token: encrypted,
+        deviceId: typeof licenseApi.deviceId === 'string' ? licenseApi.deviceId : '',
         validatedAt: Number(licenseValidatedAt) || now(),
         taskTypes: normalizeTaskTypes(licenseState.taskTypes),
       });
@@ -487,7 +492,7 @@ function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_
   const authority = createLicenseAuthority({
     dataDirectory: app.getPath('userData'),
     safeStorage,
-    api: createClient({ apiBase }),
+    api: createClient({ apiBase, dataDirectory: app.getPath('userData') }),
     onStatus,
     onLock,
     onEntitlementsChanged,

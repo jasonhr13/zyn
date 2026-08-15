@@ -1394,6 +1394,7 @@ class Target extends Component {
               style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, zIndex: 1400 }}
             />
             <div
+              className="glass-surface"
               style={{
                 position: 'fixed',
                 // Clamped so a right-click near the bottom or right edge does not open a menu that
@@ -1401,7 +1402,6 @@ class Target extends Component {
                 left: Math.min(menu.x, window.innerWidth - 200),
                 top: Math.min(menu.y, window.innerHeight - 132),
                 zIndex: 1401, minWidth: 186,
-                background: 'var(--panel-solid)',
                 border: '1px solid var(--panel-border)', borderRadius: 8, overflow: 'hidden',
                 boxShadow: '0 8px 26px rgba(0,0,0,.45)', fontSize: 12,
               }}

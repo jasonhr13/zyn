@@ -459,6 +459,24 @@ input[type="checkbox"]:checked::before { transform: rotate(-45deg) scale(1); }
   box-shadow: var(--shadow-modal);
   transform: translateZ(0);
 }
+.glass-surface { background: var(--panel-solid); }
+
+/* Live blur is cheap on macOS and expensive on Windows Chromium. Windows keeps the solid fallback. */
+body.platform-darwin .title-bar {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+body.platform-darwin .modal,
+body.platform-darwin .glass-surface {
+  background: var(--modal-bg);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+body.platform-darwin .target-harvester-drawer-layer {
+  background: rgba(3, 5, 8, .38);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
 .modal-sm { width: 380px; }
 .modal-lg { width: 640px; }
 

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.8",
+  "notes": [
+    "You stay signed in after an app update on the same computer.",
+    "Signing in on one computer no longer knocks another live device offline.",
+    "Mac keeps the frosted glass look; Windows stays on the smoother solid panels."
+  ]
+}

@@ -53,7 +53,7 @@ function atomicWrite(filePath, value) {
 
 function createLicenseObserver({ dataDirectory, safeStorage, api, now = () => Date.now(), logger = console } = {}) {
   if (!dataDirectory) throw new Error('license observer dataDirectory is required');
-  const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE });
+  const licenseApi = api || createClient({ apiBase: DEFAULT_API_BASE, dataDirectory });
   const sessionPath = path.join(dataDirectory, SESSION_FILE);
   let restored = false;
   let token = '';
@@ -298,7 +298,7 @@ function installLicenseObservation({ app, ipcMain, safeStorage, logger = console
   const observer = createLicenseObserver({
     dataDirectory: app.getPath('userData'),
     safeStorage,
-    api: createClient({ apiBase }),
+    api: createClient({ apiBase, dataDirectory: app.getPath('userData') }),
     logger,
   });
   ipcMain.handle(IPC.status, () => observer.status());

@@ -48,6 +48,35 @@ test('distinguishes a replacement sign-in from revoked and expired sessions', ()
   }, 'device-a', 1000).code, 'session_revoked');
   assert.equal(__test.licenseFailure({ ...active, expires_at: 999 }, 'device-a', 1000).code, 'session_expired');
   assert.equal(__test.licenseFailure(active, 'device-a', 1000), null);
+  assert.equal(__test.licenseFailure(active, 'device-b', 1000).code, 'session_device_mismatch');
+  assert.equal(__test.canRebindLicense(active, 1000), true);
+  assert.equal(__test.canRebindLicense({ ...active, revoked_at: 900 }, 1000), false);
+
+  const rebound = [];
+  const rebindDb = {
+    prepare(sql) {
+      return {
+        bind(...bindings) {
+          const statement = { sql, bindings };
+          rebound.push(statement);
+          return statement;
+        },
+      };
+    },
+  };
+  const rebind = __test.licenseRebindStatements(rebindDb, {
+    licenseId: 'license-1',
+    userId: 'user-1',
+    deviceId: 'device-b',
+    deviceName: 'Mac',
+    now: 1000,
+    expiresAt: 2000,
+  });
+  assert.equal(rebind.length, 2);
+  assert.match(rebind[0].sql, /revoked_reason = 'new_login'/);
+  assert.deepEqual(rebind[0].bindings, [1000, 'user-1', 'device-b', 'license-1']);
+  assert.match(rebind[1].sql, /SET device_id = \?/);
+  assert.deepEqual(rebind[1].bindings, ['device-b', 'Mac', 1000, 2000, 'license-1']);
 });
 
 test('validates active-device limits and builds an atomic per-device mint plan', () => {

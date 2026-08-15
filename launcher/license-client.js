@@ -2,6 +2,8 @@
 // the preload bridge; electron.js stores them with safeStorage and only returns renderer-safe
 // status objects.
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
@@ -14,6 +16,40 @@ const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_QUEUE_EVENT_BYTES = 64 * 1024;
 // Preserve the established device namespace so existing license/device bindings survive rebranding.
 const DEVICE_NAMESPACE = String.fromCharCode(104, 111, 112, 101);
+const DEVICE_ID_FILE = 'device-id.json';
+
+function validDeviceId(value) {
+  return /^[a-f0-9]{16,128}$/i.test(String(value || ''));
+}
+
+function loadPersistedDeviceId(dataDirectory) {
+  if (!dataDirectory) return '';
+  try {
+    const stored = JSON.parse(fs.readFileSync(path.join(dataDirectory, DEVICE_ID_FILE), 'utf8'));
+    return validDeviceId(stored && stored.deviceId) ? String(stored.deviceId).toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
+function savePersistedDeviceId(dataDirectory, deviceId) {
+  if (!dataDirectory || !validDeviceId(deviceId)) return false;
+  const filePath = path.join(dataDirectory, DEVICE_ID_FILE);
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(temporary, `${JSON.stringify({
+      deviceId: String(deviceId).toLowerCase(),
+      updatedAt: Date.now(),
+    }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporary, filePath);
+    fs.chmodSync(filePath, 0o600);
+    return true;
+  } catch {
+    try { fs.unlinkSync(temporary); } catch {}
+    return false;
+  }
+}
 
 function machineGuid() {
   if (process.platform !== 'win32') return '';
@@ -124,11 +160,21 @@ function analyticsQuery(pathname, query = {}) {
   return suffix ? `${pathname}?${suffix}` : pathname;
 }
 
-function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
-  const deviceId = computeHwid();
+function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId: initialDeviceId = '' } = {}) {
+  let deviceId = validDeviceId(initialDeviceId)
+    ? String(initialDeviceId).toLowerCase()
+    : (loadPersistedDeviceId(dataDirectory) || computeHwid());
+  if (dataDirectory && !loadPersistedDeviceId(dataDirectory)) savePersistedDeviceId(dataDirectory, deviceId);
   const deviceName = os.hostname().slice(0, 100);
+  const setDeviceId = (next) => {
+    if (!validDeviceId(next)) return deviceId;
+    deviceId = String(next).toLowerCase();
+    savePersistedDeviceId(dataDirectory, deviceId);
+    return deviceId;
+  };
   return {
-    deviceId,
+    get deviceId() { return deviceId; },
+    setDeviceId,
     login(email, password) {
       return post(apiBase, '/api/auth/login', { email, password, deviceId, deviceName });
     },
@@ -136,7 +182,7 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
       return post(apiBase, '/api/auth/reset-password', { resetToken, newPassword, deviceId, deviceName });
     },
     validate(token, proxyRevision = '') {
-      return post(apiBase, '/api/license/validate', { deviceId, proxyRevision }, token);
+      return post(apiBase, '/api/license/validate', { deviceId, deviceName, proxyRevision }, token);
     },
     logout(token) {
       return post(apiBase, '/api/auth/logout', {}, token);
@@ -238,4 +284,13 @@ function createClient({ apiBase = DEFAULT_API_BASE } = {}) {
   };
 }
 
-module.exports = { createClient, computeHwid, DEFAULT_API_BASE, __test: { requestApi, analyticsQuery } };
+module.exports = {
+  createClient,
+  computeHwid,
+  DEFAULT_API_BASE,
+  DEVICE_ID_FILE,
+  validDeviceId,
+  loadPersistedDeviceId,
+  savePersistedDeviceId,
+  __test: { requestApi, analyticsQuery },
+};
