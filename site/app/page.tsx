@@ -41,6 +41,51 @@ const features = [
   },
 ];
 
+const differences = [
+  {
+    usualTitle: "Every store in one app",
+    usual: "Amazon, Walmart, Best Buy, Target, and more — so setup is spread across sites you may never run.",
+    zynTitle: "Only Target",
+    zyn: "The watch list, proxies, and checkout are built for Target drops. Nothing else to configure.",
+  },
+  {
+    usualTitle: "A pile of extra tools",
+    usual: "Cookie tools, monitors, and checkout tasks you have to wire together before a restock.",
+    zynTitle: "One app, start to finish",
+    zyn: "Sign in, add to cart, and place the Target order in the same desktop app.",
+  },
+  {
+    usualTitle: "One proxy list per task",
+    usual: "You pick a list, assign it, and hope it still works when the item comes back.",
+    zynTitle: "Lists that keep working",
+    zyn: "Give a group several lists. Zyn stays on the ones that add to cart and sets the rest aside.",
+  },
+  {
+    usualTitle: "Whatever hits cart first",
+    usual: "Tasks chase the first in-stock product on a long list — even if it is not the one you wanted.",
+    zynTitle: "Star it, then switch",
+    zyn: "Mark the product you care about. Running tasks move to it before they pay.",
+  },
+  {
+    usualTitle: "Guess how the drop is going",
+    usual: "Open every account to see who carted, who is paying, and who actually checked out.",
+    zynTitle: "Carts, submits, checkouts",
+    zyn: "Live counts for the whole group, so you can watch the restock in one place.",
+  },
+  {
+    usualTitle: "Stuck on that computer",
+    usual: "Accounts and settings usually live only on the machine you set up.",
+    zynTitle: "Save your setup",
+    zyn: "Back up from Settings so you are not starting over if you switch Macs or PCs.",
+  },
+  {
+    usualTitle: "Pay before you run a drop",
+    usual: "Most bots want a license first — often hundreds or thousands of dollars.",
+    zynTitle: "Free during beta",
+    zyn: "No license fee now, and every beta user gets a full year free after paid access launches.",
+  },
+];
+
 export default function Home() {
   return (
     <main className="home-page">
@@ -51,6 +96,7 @@ export default function Home() {
         </a>
         <nav aria-label="Main navigation">
           <a href="#features">Features</a>
+          <a href="#why">Why Zyn</a>
           <a href="#beta">Free beta</a>
           <Link className="nav-cta" href="/join">Join waiting list</Link>
         </nav>
@@ -61,8 +107,8 @@ export default function Home() {
           <div className="target-chip"><i aria-hidden="true" /> Target.com only</div>
           <h1>Built for<br />Target drops.</h1>
           <p className="target-lede">
-            Zyn is a desktop app for Target restocks. Watch the products you want, keep
-            proxies that work, and check out when they come back.
+            Zyn is a desktop app for Target restocks — not an all-in-one for every store.
+            Watch the products you want, keep proxies that work, and check out when they come back.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/join">
@@ -143,6 +189,38 @@ export default function Home() {
               <h3>{feature.title}</h3>
               <span>{feature.copy}</span>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="difference-section" id="why">
+        <div className="difference-intro">
+          <p className="kicker">Unlike most bots</p>
+          <h2>Zyn only does Target.</h2>
+          <p>
+            Most all-in-one bots try to cover every store. That means extra setup, extra
+            tools, and a license you pay for before you even run a drop. Zyn is built
+            around Target restocks — and a few things those bots do not give you.
+          </p>
+        </div>
+        <div className="difference-board" aria-label="How Zyn compares with typical all-in-one bots">
+          <div className="difference-head">
+            <span>Typical all-in-one</span>
+            <span>Zyn</span>
+          </div>
+          {differences.map((row) => (
+            <div className="difference-row" key={row.zynTitle}>
+              <div>
+                <small>Typical all-in-one</small>
+                <strong>{row.usualTitle}</strong>
+                <p>{row.usual}</p>
+              </div>
+              <div>
+                <small>Zyn</small>
+                <strong>{row.zynTitle}</strong>
+                <p>{row.zyn}</p>
+              </div>
+            </div>
           ))}
         </div>
       </section>
