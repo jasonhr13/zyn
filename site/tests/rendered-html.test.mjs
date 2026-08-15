@@ -43,9 +43,12 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /<title>Zyn — Target Checkout Automation<\/title>/i);
   assert.match(html, /Target\.com only/);
   assert.match(html, /Built for<br\/>Target drops\./);
-  assert.match(html, /Native Target engine/);
-  assert.match(html, /Proxy folders/);
-  assert.match(html, /ATC cookie bank/);
+  assert.match(html, /Target checkout/);
+  assert.match(html, /Product watch lists/);
+  assert.match(html, /Working proxies/);
+  assert.doesNotMatch(html, /\bWine\b/i);
+  assert.doesNotMatch(html, /\bcompiled\b/i);
+  assert.doesNotMatch(html, /native engine/i);
   assert.doesNotMatch(html, /Pokémon Center/i);
   assert.match(html, /Every beta user gets one full year free/);
   assert.match(html, /Join the free beta/);

@@ -2,42 +2,42 @@ import Image from "next/image";
 import Link from "next/link";
 
 const checkoutFlow = [
-  ["01", "Watch list armed", "Ready"],
-  ["02", "ATC cookie taken", "Ready"],
-  ["03", "Priority SKU carted", "Running"],
+  ["01", "Products being watched", "Ready"],
+  ["02", "Ready to add to cart", "Ready"],
+  ["03", "Priority item in cart", "Running"],
   ["04", "Order confirmed", "Success"],
 ];
 
 const features = [
   {
-    kicker: "Native engine",
-    title: "Checkout stays on Target.",
-    copy: "A compiled Target engine handles login, cart, payment, and order on Mac and Windows. No Wine, no extra retailer modules.",
+    kicker: "Checkout",
+    title: "From login to order.",
+    copy: "Zyn signs in, adds the item to cart, pays, and places the Target order from one Mac or Windows app.",
   },
   {
-    kicker: "Proxy folders",
-    title: "Use the lists that work.",
-    copy: "Assign a folder of proxy lists to a group. Checkout rotates across them, stays on the ones that cart, and sets dead lines aside.",
+    kicker: "Proxies",
+    title: "Keep the lists that work.",
+    copy: "Give a group several proxy lists. Zyn keeps using the ones that add to cart and sets aside the ones that don’t.",
   },
   {
-    kicker: "Priority SKUs",
-    title: "Switch before payment.",
-    copy: "Mark the SKUs that matter. Running tasks move to a priority item before the order submits, and a removed SKU is dropped from checkout.",
+    kicker: "Priority items",
+    title: "Buy the product you care about first.",
+    copy: "Star the items that matter. Running tasks switch to them before paying, and stop chasing a product you take off the list.",
   },
   {
-    kicker: "Cookie harvesters",
-    title: "Farm ATC cookies separately.",
-    copy: "Harvesters run on their own proxy lists and bank Shape cookies. When a task carts, it uses the cookie and the harvest IP that minted it.",
+    kicker: "Ready to cart",
+    title: "Be ready when it restocks.",
+    copy: "Collect Target session cookies ahead of time so checkout is not waiting around when the item comes back.",
   },
   {
-    kicker: "Drop pulse",
-    title: "See the run as it happens.",
-    copy: "The group header shows live cart, submit, and checkout counts so you can read a drop without opening every task.",
+    kicker: "Live run",
+    title: "See the drop as it happens.",
+    copy: "Watch how many tasks carted, submitted, and checked out without opening every account.",
   },
   {
-    kicker: "Task groups",
-    title: "One watch list, many accounts.",
-    copy: "Share a Target watch list across accounts, keep OTP on the task row, and back the workspace up from Settings.",
+    kicker: "Groups",
+    title: "One product list, many accounts.",
+    copy: "Share a Target watch list across accounts, enter login codes on the task, and save your setup from Settings.",
   },
 ];
 
@@ -61,23 +61,23 @@ export default function Home() {
           <div className="target-chip"><i aria-hidden="true" /> Target.com only</div>
           <h1>Built for<br />Target drops.</h1>
           <p className="target-lede">
-            Zyn is a desktop checkout app for Target. Watch lists, cookie harvesters, proxy
-            folders, and a native engine stay pointed at one retailer.
+            Zyn is a desktop app for Target restocks. Watch the products you want, keep
+            proxies that work, and check out when they come back.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/join">
               Join the free beta <span aria-hidden="true">→</span>
             </Link>
-            <a className="button button-secondary" href="#features">See the stack</a>
+            <a className="button button-secondary" href="#features">See how it works</a>
           </div>
           <p className="beta-promise">
             <strong>Free during beta.</strong> Every beta user gets one full year free after paid access launches.
           </p>
           <div className="target-capabilities" aria-label="Core Target capabilities">
-            <span>Native Target engine</span>
-            <span>Proxy folders</span>
-            <span>ATC cookie bank</span>
-            <span>macOS + Windows</span>
+            <span>Target checkout</span>
+            <span>Product watch lists</span>
+            <span>Working proxies</span>
+            <span>Mac and Windows</span>
           </div>
         </div>
 
@@ -87,15 +87,15 @@ export default function Home() {
             <div className="console-bar">
               <div className="console-brand">
                 <Image src="/zyn-icon.png" alt="" width={26} height={26} unoptimized />
-                <div><strong>Zyn</strong><span>Target engine</span></div>
+                <div><strong>Zyn</strong><span>Target checkout</span></div>
               </div>
-              <div className="engine-status"><i /> Target online</div>
+              <div className="engine-status"><i /> Watching Target</div>
             </div>
 
             <div className="console-content">
               <div className="console-heading">
                 <div><span>Live checkout</span><strong>Target restock group</strong></div>
-                <em>Priority SKU armed</em>
+                <em>Priority item ready</em>
               </div>
 
               <div className="console-metrics">
@@ -105,7 +105,7 @@ export default function Home() {
               </div>
 
               <div className="checkout-flow">
-                <div className="flow-header"><span>Target pipeline</span><span>Live</span></div>
+                <div className="flow-header"><span>This drop</span><span>Live</span></div>
                 {checkoutFlow.map(([number, label, state], index) => (
                   <div className="flow-row" key={number}>
                     <span className="flow-number">{number}</span>
@@ -119,7 +119,7 @@ export default function Home() {
 
             <div className="console-footer">
               <span>Target.com</span>
-              <span>macOS · Apple Silicon + Intel · Windows</span>
+              <span>Mac and Windows</span>
             </div>
           </div>
           <div className="performance-tag tag-native"><span>Retailer</span><strong>Target only</strong></div>
@@ -129,11 +129,11 @@ export default function Home() {
 
       <section className="feature-section" id="features">
         <div className="feature-intro">
-          <p className="kicker">The Target stack</p>
-          <h2>What the app is actually for.</h2>
+          <p className="kicker">On a drop</p>
+          <h2>What you actually use.</h2>
           <p>
-            These are the pieces people run on a drop: a native Target engine, folders of proxies,
-            a cookie bank, and a group that can change SKUs before payment.
+            Watch the products you want, keep the proxies that work, and see carts, submits, and
+            checkouts as they happen.
           </p>
         </div>
         <div className="home-feature-grid">
@@ -161,7 +161,7 @@ export default function Home() {
           <div className="offer-topline"><span>Beta access</span><em>Limited rollout</em></div>
           <div className="offer-price"><strong>$0</strong><span>during beta</span></div>
           <ul>
-            <li><i aria-hidden="true">01</i><span><strong>Target-only desktop app</strong>Native checkout, harvesters, and proxy folders for Target.com.</span></li>
+            <li><i aria-hidden="true">01</i><span><strong>Target-only desktop app</strong>Watch lists, proxies, and checkout for Target.com on Mac and Windows.</span></li>
             <li><i aria-hidden="true">02</i><span><strong>Full beta access</strong>Use the complete beta without a subscription fee.</span></li>
             <li><i aria-hidden="true">03</i><span><strong>One-year beta promise</strong>Every beta user receives 12 months free after paid access launches.</span></li>
           </ul>

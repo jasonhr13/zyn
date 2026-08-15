@@ -6,7 +6,7 @@ export function generateMetadata(): Metadata {
 
   return {
     title: "Zyn — Target Checkout Automation",
-    description: "Desktop Target checkout with a native engine, proxy folders, cookie harvesters, and priority SKUs. Join the free beta.",
+    description: "A desktop app for Target restocks. Watch products, keep working proxies, and check out when they come back. Join the free beta.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -19,7 +19,7 @@ export function generateMetadata(): Metadata {
     },
     openGraph: {
       title: "Zyn — Target Checkout Automation",
-      description: "Desktop Target checkout with a native engine, proxy folders, and cookie harvesters. Join the free beta and get one year free after paid access launches.",
+      description: "A desktop app for Target restocks. Join the free beta and get one year free after paid access launches.",
       type: "website",
       url: origin,
       images: [{
