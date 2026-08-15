@@ -15,6 +15,11 @@ const features = [
     copy: "Zyn signs in, adds the item to cart, pays, and places the Target order from one Mac or Windows app.",
   },
   {
+    kicker: "Accounts",
+    title: "Generate Target accounts. Jig the address.",
+    copy: "Create Target accounts in the app. Each one can get a checkout profile with a slightly different shipping address, so they do not all look the same.",
+  },
+  {
     kicker: "Proxies",
     title: "Keep the lists that work.",
     copy: "Give a group several proxy lists. Zyn keeps using the ones that add to cart and sets aside the ones that don’t.",
@@ -34,11 +39,6 @@ const features = [
     title: "See the drop as it happens.",
     copy: "Watch how many tasks carted, submitted, and checked out without opening every account.",
   },
-  {
-    kicker: "Groups",
-    title: "One product list, many accounts.",
-    copy: "Share a Target watch list across accounts, enter login codes on the task, and save your setup from Settings.",
-  },
 ];
 
 const differences = [
@@ -49,10 +49,10 @@ const differences = [
     zyn: "The watch list, proxies, and checkout are built for Target drops. Nothing else to configure.",
   },
   {
-    usualTitle: "A pile of extra tools",
-    usual: "Cookie tools, monitors, and checkout tasks you have to wire together before a restock.",
-    zynTitle: "One app, start to finish",
-    zyn: "Sign in, add to cart, and place the Target order in the same desktop app.",
+    usualTitle: "Same address on every account",
+    usual: "You make Target accounts, then paste one shipping address onto every checkout profile.",
+    zynTitle: "Generate accounts, jig the address",
+    zyn: "The Target account generator can create matching profiles and give each one a slightly different shipping address.",
   },
   {
     usualTitle: "One proxy list per task",
@@ -198,9 +198,9 @@ export default function Home() {
           <p className="kicker">Unlike most bots</p>
           <h2>Zyn only does Target.</h2>
           <p>
-            Most all-in-one bots try to cover every store. That means extra setup, extra
-            tools, and a license you pay for before you even run a drop. Zyn is built
-            around Target restocks — and a few things those bots do not give you.
+            Most all-in-one bots try to cover every store, then charge for a license
+            before you even run a drop. Zyn is built around Target restocks — and a
+            few things those bots do not give you.
           </p>
         </div>
         <div className="difference-board" aria-label="How Zyn compares with typical all-in-one bots">

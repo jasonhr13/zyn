@@ -1378,11 +1378,11 @@ class Target extends Component {
         </div>
 
         {/* Right-click menu, rendered into document.body via a portal.
-            NOT because of z-index — because of containing blocks. .panel sets backdrop-filter, and
-            any transform/filter/backdrop-filter on an ancestor makes position:fixed resolve against
-            THAT element instead of the viewport. Left in the tree, the menu took its coordinates
-            from the panel's corner and opened nowhere near the pointer. The portal moves it out
-            from under every such ancestor, so clientX/clientY mean what they say. */}
+            NOT because of z-index — because of containing blocks. A transform, filter, or
+            backdrop-filter on an ancestor makes position:fixed resolve against THAT element
+            instead of the viewport. Left in the tree, the menu took its coordinates from the
+            panel's corner and opened nowhere near the pointer. The portal moves it out from
+            under every such ancestor, so clientX/clientY mean what they say. */}
         {menu && ReactDOM.createPortal(
           <React.Fragment>
             {/* Full-screen backdrop: one click anywhere dismisses, including a second right-click.
@@ -1401,7 +1401,7 @@ class Target extends Component {
                 left: Math.min(menu.x, window.innerWidth - 200),
                 top: Math.min(menu.y, window.innerHeight - 132),
                 zIndex: 1401, minWidth: 186,
-                background: 'var(--modal-bg)', backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)',
+                background: 'var(--panel-solid)',
                 border: '1px solid var(--panel-border)', borderRadius: 8, overflow: 'hidden',
                 boxShadow: '0 8px 26px rgba(0,0,0,.45)', fontSize: 12,
               }}

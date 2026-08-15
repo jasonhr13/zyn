@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.7",
+  "notes": [
+    "Cookie Harvesters opens and scrolls smoothly on Windows.",
+    "App windows no longer stall while a blur paints behind them.",
+    "Closing and reopening the harvester sidebar stays responsive on Windows PCs."
+  ]
+}

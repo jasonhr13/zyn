@@ -1595,9 +1595,8 @@ class TaskGroups extends Component {
           </button>
         )}
         {open && (
-          <div className="target-harvester-drawer-layer" onMouseDown={event => {
-            if (event.target === event.currentTarget) this.setHarvesterDrawerOpen(false);
-          }}>
+          <>
+            <div className="target-harvester-drawer-layer" onMouseDown={() => this.setHarvesterDrawerOpen(false)} />
             <aside id="target-harvester-drawer" className="target-harvester-drawer" aria-label="Cookie Harvesters">
               <header className="target-harvester-drawer-head">
                 <span className="target-harvester-drawer-icon"><Icon name="cookie" size={18} /></span>
@@ -1634,7 +1633,7 @@ class TaskGroups extends Component {
               </div>
               <div className="target-harvester-drawer-content">{list}</div>
             </aside>
-          </div>
+          </>
         )}
       </>
     );

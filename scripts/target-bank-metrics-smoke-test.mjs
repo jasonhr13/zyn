@@ -460,6 +460,8 @@ assert.doesNotMatch(styles, /\.cookie-bank-health/);
 assert.match(styles, /\.target-harvester-rail \{/);
 assert.match(styles, /\.target-harvester-drawer \{/);
 assert.match(styles, /\.target-harvester-drawer-content \{[^}]*overflow-y: auto;/);
+assert.doesNotMatch(styles, /\.target-harvester-drawer-layer \{[^}]*backdrop-filter/);
+assert.doesNotMatch(styles, /\.modal \{[^}]*backdrop-filter/);
 assert.match(styles, /\.target-harvester-bandwidth-summary \{/);
 assert.match(styles, /\.target-harvester-bandwidth \{ grid-area: bandwidth; \}/);
 assert.match(targetPage, />ATC TASK<\/span>/);

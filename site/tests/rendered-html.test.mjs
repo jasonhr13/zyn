@@ -48,6 +48,8 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /Working proxies/);
   assert.match(html, /Zyn only does Target\./);
   assert.match(html, /Typical all-in-one/);
+  assert.match(html, /Generate Target accounts\. Jig the address\./);
+  assert.match(html, /Generate accounts, jig the address/);
   assert.match(html, /Star it, then switch/);
   assert.match(html, /Lists that keep working/);
   assert.match(html, /Carts, submits, checkouts/);

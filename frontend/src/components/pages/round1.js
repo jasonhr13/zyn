@@ -266,11 +266,11 @@ export default class Round1 extends Component {
     const { storeOpen } = this.state;
     if (!e) return null;
     return (
-      // Lifted above the panels that follow it. .settings-section sets backdrop-filter, and that
-      // creates a stacking context — so the Signups card below is its own layer that paints over
-      // this one in DOM order, clipping the store list no matter how high the list's own z-index
-      // goes (that only competes INSIDE this card). Raising the card itself is what actually
-      // works. 10 clears sibling sections while staying far below the titlebar (100) and modals (1000).
+      // Lifted above the panels that follow it. Sibling settings cards paint in DOM order, so
+      // the Signups card below can cover this dropdown no matter how high the list's own
+      // z-index is (that only competes INSIDE this card). Raising the card itself is what
+      // actually works. 10 clears sibling sections while staying far below the titlebar (100)
+      // and modals (1000).
       <div className="settings-section" style={{ position: 'relative', zIndex: 10 }}>
         <div className="settings-section-title">{e.id ? 'Edit signup' : 'New signup'}</div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -305,13 +305,11 @@ export default class Round1 extends Component {
             const hits = q ? STORES.filter((s) => q.split(/\s+/).every((w) => s.toLowerCase().includes(w))) : STORES;
             if (!hits.length) return null;
             return (
-              /* --modal-bg, not --panel: --panel is 13%-opaque white, which let the form behind
-                 the list show straight through it. --modal-bg is the theme's token for surfaces
-                 that float ABOVE content, and the blur matches the rest of the glass. */
+              /* --panel-solid, not --panel: --panel is translucent and let the form behind
+                 the list show straight through it. */
               <div style={{
                 position: 'absolute', zIndex: 30, left: 0, right: 0, top: '100%', marginTop: 2,
-                maxHeight: 220, overflowY: 'auto', background: 'var(--modal-bg)',
-                backdropFilter: 'var(--blur)', WebkitBackdropFilter: 'var(--blur)',
+                maxHeight: 220, overflowY: 'auto', background: 'var(--panel-solid)',
                 border: '1px solid var(--panel-border)', borderRadius: 6,
                 boxShadow: '0 8px 20px rgba(0,0,0,.45)',
               }}>
