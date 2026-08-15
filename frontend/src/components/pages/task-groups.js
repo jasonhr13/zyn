@@ -224,7 +224,6 @@ class TaskGroups extends Component {
     showHarvesterModal: false,
     editingHarvesterId: '',
     harvesterDraft: { ...EMPTY_HARVESTER },
-    throttleFallbackGroup: 'Local',
     readinessPending: false,
     readiness: null,
     readinessIntent: '',
@@ -283,7 +282,6 @@ class TaskGroups extends Component {
     let groups = [];
     let atcCookiesPerTask = String(DEFAULT_ATC_COOKIES_PER_TASK);
     let harvesters = [];
-    let throttleFallbackGroup = 'Local';
     let migratedSettings = null;
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
     try {
@@ -299,10 +297,6 @@ class TaskGroups extends Component {
         migratedSettings = { ...settings, targetHarvesters: harvesters };
         ipcRenderer.sendSync('saveSettings', migratedSettings);
       }
-      if (typeof settings.targetThrottleFallbackGroup === 'string'
-        && settings.targetThrottleFallbackGroup.trim()) {
-        throttleFallbackGroup = settings.targetThrottleFallbackGroup;
-      }
     } catch {}
     if (migratedSettings) {
       this.props.dispatch({ type: 'update', obj: { settings: migratedSettings } });
@@ -313,7 +307,6 @@ class TaskGroups extends Component {
       loaded: true,
       atcCookiesPerTask,
       harvesters,
-      throttleFallbackGroup,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
       selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
         ? selectedTaskId : '',
@@ -352,15 +345,6 @@ class TaskGroups extends Component {
       try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
       this.pollBank();
     });
-  };
-
-  saveTargetSetting = (key, value) => {
-    let settings = this.props.settings || {};
-    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
-    const next = { ...settings, [key]: value };
-    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
-    this.props.dispatch({ type: 'update', obj: { settings: next } });
-    if (key === 'targetThrottleFallbackGroup') this.setState({ throttleFallbackGroup: value });
   };
 
   persistHarvesters = (harvesters, callback, runCommand = null) => {
@@ -1421,30 +1405,6 @@ class TaskGroups extends Component {
     );
   }
 
-  renderTargetProxyControls() {
-    const proxyLists = this.proxyLists();
-    return (
-      <section className="panel target-global-proxy-controls" aria-label="Global Target proxy routing">
-        <div className="target-global-proxy-heading">
-          <span className="target-global-proxy-icon"><Icon name="target" size={16} /></span>
-          <span><strong>Global Target routing</strong><small>Shared by every task group</small></span>
-        </div>
-        <label className="target-global-proxy-field" title="After carting, a checkout that is rate limited switches once to this route.">
-          <span><strong>FALLBACK</strong><small>Rate-limited checkout route · carted tasks</small></span>
-          <select
-            className="form-select"
-            aria-label="Target checkout fallback proxy group"
-            value={this.state.throttleFallbackGroup}
-            onChange={event => this.saveTargetSetting('targetThrottleFallbackGroup', event.target.value)}
-          >
-            <option value="Local">Local (no proxy)</option>
-            {proxyLists.map(list => <option key={proxyRef(list)} value={proxyRef(list)}>{proxyLabel(list)}</option>)}
-          </select>
-        </label>
-      </section>
-    );
-  }
-
   harvesterRuntimeFor = id => {
     const list = (this.state.bank && Array.isArray(this.state.bank.harvesters))
       ? this.state.bank.harvesters : [];
@@ -1735,7 +1695,6 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-groups-content">
-          {this.renderTargetProxyControls()}
           {this.renderCookieBank()}
           {this.renderMetrics()}
           <div className="workspace-section-heading">
@@ -1893,7 +1852,6 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-detail-content">
-          {this.renderTargetProxyControls()}
           <section className={`task-status-hero task-status-hero-${tone}`}>
             <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
@@ -2001,7 +1959,6 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-group-dashboard">
-          {this.renderTargetProxyControls()}
           {this.renderCookieBank()}
           <div className="panel group-config-strip group-config-strip-r2">
             <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>

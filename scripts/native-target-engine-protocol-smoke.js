@@ -47,7 +47,6 @@ async function main() {
             settings: JSON.stringify({
               webhooks: { checkout: '', decline: '' },
               shapeMethod: 'In Bot',
-              throttleFallbackGroup: 'Local',
             }),
             profileList: '{}',
             proxyList: '{}',

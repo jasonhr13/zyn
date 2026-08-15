@@ -243,7 +243,6 @@ func readMessage(c *websocket.Conn) error {
 		webhook.SetURLs(s.Webhooks.Checkout, s.Webhooks.Decline)
 		siteconfig.SetLucaAPIKey(s.LucaApiKey)
 		siteconfig.SetShapeMethod(s.ShapeMethod)
-		siteconfig.SetThrottleFallbackGroup(s.ThrottleFallbackGroup)
 
 		profiles.SetProfilesFromJSON([]byte(configMessage.ProfileList))
 		proxy.SetProxiesFromJSON([]byte(configMessage.ProxyListRaw))

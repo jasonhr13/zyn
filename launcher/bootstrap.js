@@ -591,7 +591,6 @@ function validateScheduledTargetProxies(config, dataManager, managedProxyControl
   const refs = [
     ...(Array.isArray(config?.tasks) ? config.tasks.map(task => task.proxyListName) : []),
     settings.targetHarvesterProxyList,
-    settings.targetThrottleFallbackGroup,
     ...(Array.isArray(settings.targetHarvesters)
       ? settings.targetHarvesters.map(harvester => harvester && harvester.proxyListName) : []),
   ].map(value => String(value || '')).filter(value => value.startsWith('managed:'));

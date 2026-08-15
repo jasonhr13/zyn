@@ -174,9 +174,6 @@ class Target extends Component {
     // { id, at } for the last live proxy edit accepted by the engine bridge. The backend may queue
     // it through a Shape-bound step, so this is intentionally not presented as final confirmation.
     proxySwitched: null,
-    // Where a carted task goes when Target throttles its checkout. Always active — the selector is
-    // the whole setting. Local (the home IP) is the default destination.
-    throttleFallbackGroup: 'Local',
     // id -> true for every ticked row. An object rather than a Set so setState comparisons stay
     // shallow and React re-renders normally.
     selected: {},
@@ -220,8 +217,6 @@ class Target extends Component {
       else if (typeof st.targetHarvesterProxyList === 'string') {
         this.setState({ harvesterProxyList: st.targetHarvesterProxyList });
       }
-      if (gone(st.targetThrottleFallbackGroup)) this.saveThrottleFallback('Local');
-      else this.setState({ throttleFallbackGroup: st.targetThrottleFallbackGroup || 'Local' });
     } catch {}
     try { this.setState({ skuTitles: ipcRenderer.sendSync('getTargetSkuTitles') || {} }); } catch {}
     try {
@@ -408,16 +403,6 @@ class Target extends Component {
     try {
       const s = ipcRenderer.sendSync('getSettings') || {};
       ipcRenderer.sendSync('saveSettings', { ...s, targetHarvesterProxyList: name });
-    } catch {}
-  };
-
-  // Only reaches the engine on the next send-configs, which start does — so changing it mid-run
-  // affects the next batch, not tasks already going.
-  saveThrottleFallback = (group) => {
-    this.setState({ throttleFallbackGroup: group });
-    try {
-      const s = ipcRenderer.sendSync('getSettings') || {};
-      ipcRenderer.sendSync('saveSettings', { ...s, targetThrottleFallbackGroup: group });
     } catch {}
   };
 
@@ -723,7 +708,7 @@ class Target extends Component {
   render() {
     const { target = {}, accounts = [], proxies = {} } = this.props;
     const { tasks = [], taskStatus = {}, proxyStatus = {}, taskLogs = {}, logs = [], monitorStatus } = target;
-    const { draft, expanded, filter, harvesterProxyList, throttleFallbackGroup, selected, skuTitles, skuHover, hoverSku, atcCookiesPerTask, cookieDrain, menu } = this.state;
+    const { draft, expanded, filter, harvesterProxyList, selected, skuTitles, skuHover, hoverSku, atcCookiesPerTask, cookieDrain, menu } = this.state;
 
     const proxyLists = (proxies && proxies.lists) || [];
     const skus = parseSkuBox(target.skus);
@@ -788,27 +773,6 @@ class Target extends Component {
                 style={{ fontSize: 11, padding: '2px 6px', maxWidth: 190 }}
               >
                 <option value="">Local (no proxy)</option>
-                {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
-              </select>
-            </div>
-            {/* Always on: a task that has carted and then hits DCO_RATE_LIMITED switches to whatever
-                is selected here. There is no off switch by design — the selector IS the setting.
-                The engine still enforces the gating: carted tasks only, once per task, and (for
-                Local only) one task at a time, so a fleet-wide throttle cannot stack every task
-                onto one address. */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 7, padding: '4px 10px',
-              border: '1px solid var(--panel-border)', borderRadius: 7, fontSize: 11,
-              background: 'var(--panel-bg-alt, rgba(0,0,0,.15))',
-            }}>
-              <span style={{ color: 'var(--muted)', fontWeight: 600, letterSpacing: .3 }}>FALLBACK</span>
-              <select
-                className="form-select"
-                value={throttleFallbackGroup}
-                onChange={e => this.saveThrottleFallback(e.target.value)}
-                style={{ fontSize: 11, padding: '2px 6px', maxWidth: 190 }}
-              >
-                <option value="Local">Local (no proxy)</option>
                 {proxyLists.map(l => <option key={proxyRef(l)} value={proxyRef(l)}>{proxyLabel(l)}</option>)}
               </select>
             </div>

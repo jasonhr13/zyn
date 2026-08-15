@@ -23,8 +23,8 @@ type StartTaskMessage struct {
 	TaskGroup    string            `json:"taskGroup"`
 	MonitorDelay string            `json:"monitorDelay"`
 	RetryDelay   string            `json:"retryDelay"`
-	ProxyGroup    string            `json:"proxyGroup"`
-	ProxySources  []string          `json:"proxySources,omitempty"`
+	ProxyGroup   string            `json:"proxyGroup"`
+	ProxySources []string          `json:"proxySources,omitempty"`
 	ProfileId    string            `json:"profileId"`
 	ProfileGroup string            `json:"profileGroup"`
 	AccountId    string            `json:"accountId"`
@@ -97,10 +97,9 @@ type WebhooksStruct struct {
 }
 
 type SettingsPayload struct {
-	Webhooks              WebhooksStruct `json:"webhooks"`
-	LucaApiKey            string         `json:"lucaApiKey"`
-	ShapeMethod           string         `json:"shapeMethod"`
-	ThrottleFallbackGroup string         `json:"throttleFallbackGroup"`
+	Webhooks    WebhooksStruct `json:"webhooks"`
+	LucaApiKey  string         `json:"lucaApiKey"`
+	ShapeMethod string         `json:"shapeMethod"`
 }
 
 type StockPingMessage struct {

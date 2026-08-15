@@ -1876,19 +1876,6 @@ function taggedHarvesterLines(ref) {
   ));
 }
 
-// Always returns a group — the fallback is not optional, the selector IS the setting. "Local" means
-// the user's own connection; anything else is one of their proxy lists. The stored value is the
-// GROUP NAME, so it travels to the engine unchanged.
-//
-// The engine still treats an EMPTY group as off. That is not dead code: an older app build sends no
-// such field at all, and off is the right reading of "this client never told us".
-function throttleFallbackSetting() {
-  try {
-    const st = dm.getSettings() || {};
-    return String(st.targetThrottleFallbackGroup || '').trim() || 'Local';
-  } catch { return 'Local'; }
-}
-
 function buildProxyMap(listName) {
   const map = {};
   for (const source of resolveAssignment(listName).sources) {
@@ -1929,19 +1916,11 @@ function sendConfigs(config = {}) {
     checkoutHook = String(webhookSettings.discordWebhook || '').trim();
     declineHook = String(webhookSettings.discordDeclineWebhook || '').trim();
   } catch {}
-  // Where a carted task should go if Target throttles its checkout (DCO_RATE_LIMITED). "" = off,
-  // "Local" = the user's own connection, anything else = one of their proxy lists. Read once here
-  // because it is needed twice: in the settings blob AND in the proxy map below.
-  const fallbackGroup = throttleFallbackSetting();
-
   const settings = JSON.stringify({
     webhooks: { checkout: checkoutHook, decline: declineHook },
     // Reported on Target's checkout webhook. Driven by the Settings value, not by whether a process
     // happens to be alive — the broker runs in both modes, so process state can't distinguish them.
     shapeMethod: shapeMethodSetting(),
-    // Empty means off. The engine enforces the rest of the gating (carted only, once per task, and
-    // one at a time when the destination is the shared home IP).
-    throttleFallbackGroup: fallbackGroup,
   });
   // Every task's account/profile/proxy group must be in ONE configs message — the engine keys off
   // these maps when it starts each task, so a task whose account is missing here silently never
@@ -1960,13 +1939,6 @@ function sendConfigs(config = {}) {
     Object.assign(sentConfigs.profiles, buildProfileMap(t.profileId, t.accountId));
     Object.assign(sentConfigs.accounts, buildAccountMap(t.accountId));
     Object.assign(sentConfigs.proxies, buildProxyMap(t.proxyListName));
-  }
-  // The fallback list must be in the map too, even though no task launched on it — that is the whole
-  // point of it. Without this the engine has no such group and SwapProxy fails with "invalid group"
-  // at the exact moment the fallback was supposed to save the order. "Local" is special-cased by the
-  // engine and has no proxies to send.
-  if (fallbackGroup && fallbackGroup !== 'Local') {
-    Object.assign(sentConfigs.proxies, buildProxyMap(fallbackGroup));
   }
   const { profiles, accounts, proxies } = sentConfigs;
   // ConfigsStruct fields are STRINGS holding inner JSON (settings/profileList/proxyList/accountList).

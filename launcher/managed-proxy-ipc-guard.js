@@ -44,7 +44,6 @@ function collectManagedRefs(channel, args, dataManager) {
     if (channel === 'startTarget' || channel === 'editTargetTasks') {
       const settings = dataManager.getSettings?.() || {};
       add(settings.targetHarvesterProxyList);
-      add(settings.targetThrottleFallbackGroup);
     }
   }
   return [...new Set(refs)];

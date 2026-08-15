@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.6",
+  "notes": [
+    "Checkout stays on the assigned proxy folder after a Target rate limit.",
+    "DCO rate limits now wait a short 400 to 900 milliseconds before retrying.",
+    "Generic 429s swap proxy and retry after 400 milliseconds instead of 3 seconds.",
+    "The checkout fallback selector is gone from Target and task groups."
+  ]
+}

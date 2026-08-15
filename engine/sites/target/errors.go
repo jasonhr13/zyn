@@ -12,6 +12,16 @@ import (
 	"zynbot.app/engine/bot-base/task/constants"
 )
 
+const (
+	dcoRateLimitSleepMinMs  = 400
+	dcoRateLimitSleepSpanMs = 501 // inclusive range 400-900
+	generic429SleepMs       = 400
+)
+
+func dcoRateLimitSleepMs() int {
+	return dcoRateLimitSleepMinMs + rand.IntN(dcoRateLimitSleepSpanMs)
+}
+
 func containsAnyText(text string, fragments ...string) bool {
 	searchText := strings.ToLower(strings.TrimSpace(text))
 	for _, fragment := range fragments {
@@ -66,9 +76,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 	case containsAnyText(errText, "dco_rate_limited"):
 		t.UpdateStatus("DCO Rate Limited", constants.Colors.YELLOW)
 		datadog.Info("DCO_Rate_Limited", map[string]interface{}{"event": "dco_rate_limited", "site": "Target", "step": step, "task_id": t.ID, "name": t.Profile.ProfileName})
-		t.tryThrottleFallback()
-		randomMs := rand.IntN(1501)
-		t.SleepTask(randomMs)
+		t.SleepTask(dcoRateLimitSleepMs())
 	case containsAnyText(errText, "shape-block-ccart", "precart"):
 		// // ignore since clear cart doesnt need shape
 	case containsAnyText(errText, "invalid_credentials"):
@@ -92,7 +100,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 	case containsAnyText(errText, "429"):
 		t.UpdateStatus("Ratelimited (429)", constants.Colors.RED)
 		t.BaseTask.SwapProxy("Target")
-		t.SleepTask(t.ErrorDelay)
+		t.SleepTask(generic429SleepMs)
 	case containsAnyText(errText, "Shape Block (Login)"):
 		t.StepAfterSolve = step
 		t.NextStep = "get-shape"

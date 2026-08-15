@@ -3,7 +3,6 @@ package target
 import (
 	"errors"
 	"testing"
-	"time"
 )
 
 func TestIsCardPaymentExistsError(t *testing.T) {
@@ -25,20 +24,11 @@ func TestPaymentInstructionID(t *testing.T) {
 	}
 }
 
-func TestThrottleFallbackLease(t *testing.T) {
-	var lease throttleFallbackLease
-	now := time.Unix(1_700_000_000, 0)
-
-	if !lease.claim("task-a", now) {
-		t.Fatal("expected first task to claim local fallback")
-	}
-	if lease.claim("task-b", now.Add(localThrottleFallbackLeaseDuration-time.Second)) {
-		t.Fatal("expected a different task to be blocked during the lease")
-	}
-	if !lease.claim("task-a", now.Add(time.Second)) {
-		t.Fatal("expected the lease owner to be allowed to reclaim")
-	}
-	if !lease.claim("task-b", now.Add(localThrottleFallbackLeaseDuration+2*time.Second)) {
-		t.Fatal("expected a different task to claim after the lease expires")
+func TestDcoRateLimitSleepMs(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		got := dcoRateLimitSleepMs()
+		if got < dcoRateLimitSleepMinMs || got > dcoRateLimitSleepMinMs+dcoRateLimitSleepSpanMs-1 {
+			t.Fatalf("dcoRateLimitSleepMs() = %d, want %d-%d", got, dcoRateLimitSleepMinMs, dcoRateLimitSleepMinMs+dcoRateLimitSleepSpanMs-1)
+		}
 	}
 }

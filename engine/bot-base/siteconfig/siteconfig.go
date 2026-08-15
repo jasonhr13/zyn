@@ -6,11 +6,10 @@ import (
 )
 
 type Config struct {
-	HyperApiKey           string `json:"hyperApiKey"`
-	LucaApiKey            string `json:"lucaApiKey"`
-	ShapeMethod           string `json:"shapeMethod"`
-	ThrottleFallbackGroup string `json:"throttleFallbackGroup"`
-	Sites                 []Site `json:"sites"`
+	HyperApiKey string `json:"hyperApiKey"`
+	LucaApiKey  string `json:"lucaApiKey"`
+	ShapeMethod string `json:"shapeMethod"`
+	Sites       []Site `json:"sites"`
 }
 
 type Site struct {
@@ -71,18 +70,6 @@ func SetLucaAPIKey(key string) {
 	mu.Lock()
 	defer mu.Unlock()
 	cfg.LucaApiKey = strings.TrimSpace(key)
-}
-
-func ThrottleFallbackGroup() string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return strings.TrimSpace(cfg.ThrottleFallbackGroup)
-}
-
-func SetThrottleFallbackGroup(group string) {
-	mu.Lock()
-	defer mu.Unlock()
-	cfg.ThrottleFallbackGroup = strings.TrimSpace(group)
 }
 
 func SetShapeMethod(method string) {

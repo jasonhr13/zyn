@@ -39,12 +39,12 @@ assert.doesNotMatch(taskGroups, /Default Harvester/,
   'fresh or legacy settings must not create an implicit harvester');
 assert.match(taskGroups, /harvesters = \[\][\s\S]*targetHarvesters: harvesters/,
   'missing harvester settings must persist an explicit empty list');
-assert.match(taskGroups, /targetThrottleFallbackGroup/,
-  'task groups must expose and persist the post-cart throttle fallback setting');
+assert.doesNotMatch(taskGroups, /targetThrottleFallbackGroup/,
+  'task groups must not keep a post-cart throttle fallback setting');
 assert.match(taskGroups, />Cookie Harvesters</,
   'task groups must render the global harvester manager summary');
-assert.match(taskGroups, />FALLBACK</,
-  'task groups must render the global fallback selector');
+assert.doesNotMatch(taskGroups, />FALLBACK</,
+  'task groups must not render a checkout fallback selector');
 assert.match(taskGroups, /targetHarvesters/,
   'task groups must persist multiple harvester configurations');
 assert.match(taskGroups, /Target Login/,
