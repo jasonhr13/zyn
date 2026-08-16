@@ -113,9 +113,11 @@ real Pokémon Center task traffic.
 The Pokémon Center queue-event license uses the same AES-256-GCM service-configuration storage and
 is exposed in admin only as a short fingerprint and update time. A single Durable Object maintains
 the upstream receive-only WebSocket while licensed Zyn clients are connected. Its upstream URL has
-only the required `key` and fixed `version` query parameters; it supplies no custom headers and sends
-no application messages, presence, task data, products, profile names, device identifiers, or
-telemetry. The Worker decrypts incoming frames, discards configuration/user/stock data, and forwards
+only the required `key` and `version` query parameters. `version` is Polar’s current app tag, read
+from the public `PolarAIO/downloads` GitHub releases feed every 15 minutes (and whenever the stored
+value is older than an hour). A last-known-good fallback is used if GitHub is unreachable. The
+connector supplies no custom headers and sends no application messages, presence, task data,
+products, profile names, device identifiers, or telemetry. The Worker decrypts incoming frames, discards configuration/user/stock data, and forwards
 only normalized Pokémon Center `queue` or `captcha` events plus connection health. Desktop bearer
 and device headers terminate at the Worker and are not forwarded into the Durable Object connector.
 The native three-second HTTPS watcher remains active whenever the push stream is configured,

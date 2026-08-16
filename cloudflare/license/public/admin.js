@@ -522,14 +522,22 @@ async function loadHyperCredential() {
   }
 }
 
+function pokemonQueueVersionLabel(config) {
+  const version = config && config.version || 'v0.0.50';
+  const source = config && config.versionSource === 'github' ? 'PolarAIO/downloads' : 'fallback';
+  const checked = config && config.versionCheckedAt ? ` · checked ${formatDate(config.versionCheckedAt)}` : '';
+  return `Polar ${version} (${source})${checked}`;
+}
+
 function renderPokemonQueueCredential(config) {
   const configured = Boolean(config && config.configured);
   const status = $('#pokemon-queue-status');
   status.textContent = configured ? 'Configured' : 'Not configured';
   status.className = `badge${configured ? ' good' : ''}`;
+  const versionLabel = pokemonQueueVersionLabel(config);
   $('#pokemon-queue-meta').textContent = configured
-    ? `Fingerprint ${config.fingerprint} · version ${config.version || 'v0.0.45'} · updated ${formatDate(config.updatedAt)}. The saved license is never returned here.`
-    : `No license is stored. Event stream version ${config && config.version || 'v0.0.45'}.`;
+    ? `Fingerprint ${config.fingerprint} · ${versionLabel} · license updated ${formatDate(config.updatedAt)}. The saved license is never returned here.`
+    : `No license is stored. ${versionLabel}.`;
   $('#clear-pokemon-queue').classList.toggle('hidden', !configured);
 }
 
@@ -924,6 +932,19 @@ $('#pokemon-queue-form').addEventListener('submit', async (event) => {
     renderPokemonQueueCredential(result);
     toast('Queue event license encrypted and saved.');
   } catch (error) { toast(error.message, true); }
+});
+
+$('#refresh-pokemon-queue-version').addEventListener('click', async () => {
+  try {
+    const result = await request('/api/admin/service-config/pokemon-queue-events/refresh-version', {
+      method: 'POST',
+    });
+    renderPokemonQueueCredential(result);
+    toast(result.message || 'Checked Polar release.');
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
 });
 
 $('#clear-pokemon-queue').addEventListener('click', async () => {

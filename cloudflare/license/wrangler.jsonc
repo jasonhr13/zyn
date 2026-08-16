@@ -47,6 +47,9 @@
       "bucket_name": "rcart-encrypted-backups"
     }
   ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "observability": {
     "enabled": true
   }

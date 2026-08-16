@@ -263,7 +263,7 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
 });
 
 test('ships the Zyn-branded admin assets and both custom domains', async () => {
-  const [html, css, javascript, wrangler, migration, analyticsIndexes, deviceLimits, workerSource] = await Promise.all([
+  const [html, css, javascript, wrangler, migration, analyticsIndexes, deviceLimits, versionState, source] = await Promise.all([
     readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.css', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.js', import.meta.url), 'utf8'),
@@ -271,6 +271,7 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
     readFile(new URL('../migrations/0007_service_config.sql', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0009_global_analytics_indexes.sql', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0010_active_device_limits.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../migrations/0011_polar_upstream_version.sql', import.meta.url), 'utf8'),
     readFile(new URL('../src/index.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /Zyn License Admin/);
@@ -288,12 +289,18 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(html, /Installed apps receive only normalized queue and captcha events/);
   assert.match(javascript, /\/api\/admin\/service-config\/hyper/);
   assert.match(javascript, /\/api\/admin\/service-config\/pokemon-queue-events/);
+  assert.match(javascript, /\/api\/admin\/service-config\/pokemon-queue-events\/refresh-version/);
   assert.match(javascript, /The saved key is never returned here/);
   assert.match(javascript, /The saved license is never returned here/);
+  assert.match(html, /PolarAIO\/downloads/);
+  assert.match(html, /id="refresh-pokemon-queue-version"/);
   assert.match(migration, /CREATE TABLE service_config/);
   assert.match(migration, /CREATE TABLE service_rate_windows/);
+  assert.match(versionState, /CREATE TABLE service_state/);
   assert.match(wrangler, /POKEMON_QUEUE_RELAY/);
   assert.match(wrangler, /PokemonQueueRelay/);
+  assert.match(wrangler, /"\*\/15 \* \* \* \*"/);
+  assert.match(source, /PolarAIO\/downloads\/releases\/latest/);
   assert.match(html, /data-admin-tab="analytics"/);
   assert.match(html, /id="admin-page-analytics"/);
   for (const page of ['accounts', 'waiting-list', 'managed-proxies', 'settings', 'analytics']) {
@@ -324,9 +331,9 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(html, /<th>Devices<\/th>/);
   assert.match(javascript, /maxActiveDevices: nextMaxActiveDevices/);
   assert.match(javascript, /value <= 10/);
-  assert.match(workerSource, /async function adminAnalyticsDashboard/);
-  assert.match(workerSource, /COUNT\(DISTINCT CASE/);
-  assert.match(workerSource, /COUNT\(DISTINCT e\.user_id\) AS active_users/);
+  assert.match(source, /async function adminAnalyticsDashboard/);
+  assert.match(source, /COUNT\(DISTINCT CASE/);
+  assert.match(source, /COUNT\(DISTINCT e\.user_id\) AS active_users/);
   await access(new URL('../public/zyn-icon.png', import.meta.url));
   await access(new URL('../public/favicon.png', import.meta.url));
   await access(new URL('../public/apple-touch-icon.png', import.meta.url));
@@ -414,6 +421,103 @@ test('builds the receive-only upstream URL with only key and version identifiers
   assert.equal(url.username, '');
   assert.equal(url.password, '');
   assert.equal(url.hash, '');
+  const pinned = new URL(__test.pokemonQueueUpstreamUrl('test-license-value', 'v0.0.50'));
+  assert.equal(pinned.searchParams.get('version'), 'v0.0.50');
+  assert.deepEqual([...pinned.searchParams.keys()].sort(), ['key', 'version']);
+});
+
+test('accepts only Polar release tags as websocket versions', () => {
+  assert.equal(__test.normalizePolarReleaseVersion('v0.0.50'), 'v0.0.50');
+  assert.equal(__test.normalizePolarReleaseVersion('0.0.50'), 'v0.0.50');
+  assert.equal(__test.normalizePolarReleaseVersion('V0.0.49'), 'v0.0.49');
+  assert.equal(__test.normalizePolarReleaseVersion('v0.0.50-m'), '');
+  assert.equal(__test.normalizePolarReleaseVersion('latest'), '');
+  assert.equal(__test.normalizePolarReleaseVersion('https://evil.example/v1.0.0'), '');
+  assert.equal(__test.parsePolarLatestRelease({ tag_name: 'v0.0.50', draft: false, prerelease: false }), 'v0.0.50');
+  assert.equal(__test.parsePolarLatestRelease({ tag_name: 'v0.0.50', prerelease: true }), '');
+  assert.equal(__test.parsePolarLatestRelease({ tag_name: 'v0.0.50', draft: true }), '');
+  assert.equal(__test.parsePolarLatestRelease({ name: '0.0.51' }), 'v0.0.51');
+});
+
+function memoryServiceStateDb() {
+  const state = new Map();
+  const audits = [];
+  return {
+    state,
+    audits,
+    prepare(sql) {
+      return {
+        bind(...bindings) {
+          return {
+            async first() {
+              if (/FROM service_state/.test(sql)) return state.get(bindings[0]) || null;
+              return null;
+            },
+            async run() {
+              if (/INSERT INTO service_state/.test(sql)) {
+                const [name, value, checkedAt, updatedAt] = bindings;
+                const previous = state.get(name);
+                state.set(name, {
+                  name,
+                  value,
+                  source: 'github',
+                  checked_at: checkedAt,
+                  updated_at: previous && previous.value === value ? previous.updated_at : updatedAt,
+                });
+              }
+              if (/INSERT INTO admin_audit/.test(sql)) audits.push({ sql, bindings });
+              return { success: true };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+test('refreshes the Polar websocket version from the public downloads repo', async () => {
+  const db = memoryServiceStateDb();
+  const env = { DB: db };
+  const fetched = [];
+  const first = await __test.refreshPolarUpstreamVersion(env, {
+    now: 1000,
+    fetch: async (url, options) => {
+      fetched.push({ url: String(url), headers: options && options.headers });
+      return jsonResponse({ tag_name: 'v0.0.51', draft: false, prerelease: false });
+    },
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.changed, true);
+  assert.equal(first.version, 'v0.0.51');
+  assert.equal(fetched[0].url, __test.POKEMON_QUEUE_RELEASES_URL);
+  assert.equal(fetched[0].headers['user-agent'], 'zyn-license-api');
+  assert.equal(db.state.get('pokemon-queue-upstream-version').value, 'v0.0.51');
+  assert.equal(db.audits.length, 1);
+
+  const same = await __test.refreshPolarUpstreamVersion(env, {
+    now: 2000,
+    fetch: async () => jsonResponse({ tag_name: 'v0.0.51' }),
+  });
+  assert.equal(same.ok, true);
+  assert.equal(same.changed, false);
+  assert.equal(db.audits.length, 1);
+  assert.equal(db.state.get('pokemon-queue-upstream-version').checked_at, 2000);
+  assert.equal(db.state.get('pokemon-queue-upstream-version').updated_at, 1000);
+
+  const rejected = await __test.refreshPolarUpstreamVersion(env, {
+    now: 3000,
+    fetch: async () => jsonResponse({ tag_name: 'v0.0.99', prerelease: true }),
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.reason, 'invalid_version');
+  assert.equal(db.state.get('pokemon-queue-upstream-version').value, 'v0.0.51');
 });
 
 test('normalizes only Pokémon Center queue and captcha messages', () => {

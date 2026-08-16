@@ -39,7 +39,11 @@ const HYPER_SERVICE_NAME = 'hyper';
 const BACKUP_UPLOAD_SERVICE_NAME = 'cloud-backup-upload';
 const POKEMON_QUEUE_SERVICE_NAME = 'pokemon-queue-events';
 const POKEMON_QUEUE_UPSTREAM = 'wss://polar-wss-production.up.railway.app';
-const POKEMON_QUEUE_UPSTREAM_VERSION = 'v0.0.45';
+const POKEMON_QUEUE_UPSTREAM_VERSION = 'v0.0.50';
+const POKEMON_QUEUE_VERSION_STATE_NAME = 'pokemon-queue-upstream-version';
+const POKEMON_QUEUE_RELEASES_URL = 'https://api.github.com/repos/PolarAIO/downloads/releases/latest';
+const POKEMON_QUEUE_VERSION_PATTERN = /^v\d+\.\d+\.\d+$/;
+const POKEMON_QUEUE_VERSION_MAX_AGE_MS = 60 * 60 * 1000;
 const POKEMON_QUEUE_WIRE_KEY_HEX = '7011fb72b65c75f8212859f17b895cc76613b093eff302f79a27eda1b51d4ebb';
 const POKEMON_QUEUE_ROTATE_MS = 10 * 60 * 1000;
 const POKEMON_QUEUE_RECONNECT_MAX_MS = 30 * 1000;
@@ -173,12 +177,134 @@ function hexToBytes(value) {
   return Uint8Array.from(String(value).match(/.{2}/g), (pair) => Number.parseInt(pair, 16));
 }
 
-function pokemonQueueUpstreamUrl(licenseKey) {
+function normalizePolarReleaseVersion(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.length > 32) return '';
+  const version = raw.startsWith('v') || raw.startsWith('V') ? `v${raw.slice(1)}` : `v${raw}`;
+  return POKEMON_QUEUE_VERSION_PATTERN.test(version) ? version : '';
+}
+
+function parsePolarLatestRelease(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+  if (payload.draft === true || payload.prerelease === true) return '';
+  return normalizePolarReleaseVersion(payload.tag_name || payload.name);
+}
+
+function defaultPolarUpstreamVersionState() {
+  return {
+    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+    stored: false,
+    source: 'default',
+    checkedAt: 0,
+    updatedAt: 0,
+  };
+}
+
+async function readStoredPolarUpstreamVersion(env) {
+  if (!env || !env.DB) return defaultPolarUpstreamVersionState();
+  try {
+    const row = await env.DB.prepare(
+      'SELECT value, source, checked_at, updated_at FROM service_state WHERE name = ?',
+    ).bind(POKEMON_QUEUE_VERSION_STATE_NAME).first();
+    const version = normalizePolarReleaseVersion(row && row.value);
+    if (!version) return defaultPolarUpstreamVersionState();
+    return {
+      version,
+      stored: true,
+      source: String(row.source || '') || 'github',
+      checkedAt: Number(row.checked_at) || 0,
+      updatedAt: Number(row.updated_at) || 0,
+    };
+  } catch {
+    return defaultPolarUpstreamVersionState();
+  }
+}
+
+async function pokemonQueueVersionJson(env) {
+  const stored = await readStoredPolarUpstreamVersion(env);
+  return {
+    version: stored.version,
+    defaultVersion: POKEMON_QUEUE_UPSTREAM_VERSION,
+    versionSource: stored.source,
+    versionCheckedAt: stored.checkedAt,
+    versionUpdatedAt: stored.updatedAt,
+  };
+}
+
+async function refreshPolarUpstreamVersion(env, dependencies = {}) {
+  const fetchImpl = dependencies.fetch || fetch;
+  const now = Number(dependencies.now) || Date.now();
+  let response;
+  try {
+    response = await fetchImpl(POKEMON_QUEUE_RELEASES_URL, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        'user-agent': 'zyn-license-api',
+        'x-github-api-version': '2022-11-28',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return { ok: false, changed: false, reason: 'upstream_unavailable' };
+  }
+  if (!response || !response.ok) {
+    return { ok: false, changed: false, reason: 'upstream_status', status: response && response.status };
+  }
+  let payload;
+  try { payload = await response.json(); } catch {
+    return { ok: false, changed: false, reason: 'invalid_payload' };
+  }
+  const version = parsePolarLatestRelease(payload);
+  if (!version) return { ok: false, changed: false, reason: 'invalid_version' };
+
+  const previous = await readStoredPolarUpstreamVersion(env);
+  const changed = previous.version !== version;
+  if (env && env.DB) {
+    await env.DB.prepare(`
+      INSERT INTO service_state (name, value, source, checked_at, updated_at)
+      VALUES (?, ?, 'github', ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        value = excluded.value,
+        source = excluded.source,
+        checked_at = excluded.checked_at,
+        updated_at = CASE
+          WHEN service_state.value = excluded.value THEN service_state.updated_at
+          ELSE excluded.updated_at
+        END
+    `).bind(POKEMON_QUEUE_VERSION_STATE_NAME, version, now, now).run();
+  }
+  if (changed) {
+    try { await audit(env, 'polar_upstream_version_updated', null, `${previous.version}:${version}`); }
+    catch {}
+    await notifyPokemonQueueRelay(env);
+  }
+  return { ok: true, changed, version, previous: previous.version };
+}
+
+async function ensureFreshPolarUpstreamVersion(env) {
+  const stored = await readStoredPolarUpstreamVersion(env);
+  if (stored.checkedAt && (Date.now() - stored.checkedAt) < POKEMON_QUEUE_VERSION_MAX_AGE_MS) {
+    return stored;
+  }
+  const refreshed = await refreshPolarUpstreamVersion(env);
+  if (refreshed.ok) {
+    return {
+      version: refreshed.version,
+      stored: true,
+      source: 'github',
+      checkedAt: Date.now(),
+      updatedAt: refreshed.changed ? Date.now() : stored.updatedAt,
+    };
+  }
+  return stored;
+}
+
+function pokemonQueueUpstreamUrl(licenseKey, version = POKEMON_QUEUE_UPSTREAM_VERSION) {
   const url = new URL(POKEMON_QUEUE_UPSTREAM);
   // Privacy boundary: the upstream protocol requires these two query parameters. Do not add
   // user, device, task, product, presence, telemetry, cookie, Origin, or custom-header data.
   url.searchParams.set('key', String(licenseKey || ''));
-  url.searchParams.set('version', POKEMON_QUEUE_UPSTREAM_VERSION);
+  url.searchParams.set('version', normalizePolarReleaseVersion(version) || POKEMON_QUEUE_UPSTREAM_VERSION);
   return url.toString();
 }
 
@@ -335,9 +461,10 @@ export class PokemonQueueRelay {
 
     let socket;
     try {
+      const versionState = await ensureFreshPolarUpstreamVersion(this.env);
       // The Web Standard constructor has no custom-header option. This connector also never calls
       // send(), making it receive-only apart from automatic WebSocket control frames.
-      socket = new WebSocket(pokemonQueueUpstreamUrl(licenseKey));
+      socket = new WebSocket(pokemonQueueUpstreamUrl(licenseKey, versionState.version));
     } catch {
       this.health.connected = false;
       this.health.connecting = false;
@@ -2697,8 +2824,32 @@ async function deleteHyperCredential(env) {
 async function adminPokemonQueueCredential(env) {
   return json({
     ok: true,
-    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+    ...await pokemonQueueVersionJson(env),
     ...serviceCredentialJson(await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME)),
+  });
+}
+
+async function refreshPokemonQueueVersion(_request, env) {
+  const result = await refreshPolarUpstreamVersion(env);
+  const version = await pokemonQueueVersionJson(env);
+  const credential = serviceCredentialJson(await serviceCredentialRow(env, POKEMON_QUEUE_SERVICE_NAME));
+  if (!result.ok) {
+    return json({
+      ok: false,
+      message: 'Could not read the latest Polar release.',
+      reason: result.reason || '',
+      ...version,
+      ...credential,
+    }, 502);
+  }
+  return json({
+    ok: true,
+    changed: result.changed === true,
+    message: result.changed
+      ? `Polar websocket version is now ${result.version}.`
+      : `Polar websocket is already ${result.version}.`,
+    ...version,
+    ...credential,
   });
 }
 
@@ -2731,7 +2882,7 @@ async function putPokemonQueueCredential(request, env) {
     configured: true,
     fingerprint: encrypted.fingerprint,
     updatedAt: now,
-    version: POKEMON_QUEUE_UPSTREAM_VERSION,
+    ...await pokemonQueueVersionJson(env),
   });
 }
 
@@ -2742,7 +2893,7 @@ async function deletePokemonQueueCredential(env) {
     await audit(env, 'service_credential_deleted', null, `${POKEMON_QUEUE_SERVICE_NAME}:${current.fingerprint}`);
   }
   await notifyPokemonQueueRelay(env);
-  return json({ ok: true, version: POKEMON_QUEUE_UPSTREAM_VERSION, ...serviceCredentialJson(null) });
+  return json({ ok: true, ...await pokemonQueueVersionJson(env), ...serviceCredentialJson(null) });
 }
 
 async function createProxyList(request, env) {
@@ -2842,7 +2993,11 @@ async function adminRoute(request, env, url) {
   if (url.pathname === '/api/admin/service-config/pokemon-queue-events' && request.method === 'DELETE') {
     return deletePokemonQueueCredential(env);
   }
-  if (url.pathname === '/api/admin/service-config/pokemon-queue-events') {
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events/refresh-version' && request.method === 'POST') {
+    return refreshPokemonQueueVersion(request, env);
+  }
+  if (url.pathname === '/api/admin/service-config/pokemon-queue-events' ||
+      url.pathname === '/api/admin/service-config/pokemon-queue-events/refresh-version') {
     return json({ ok: false, message: 'Method not allowed.' }, 405);
   }
 
@@ -2916,14 +3071,18 @@ function secureAsset(response) {
 export const __test = Object.freeze({
   activeDeviceLimitStatements,
   HYPER_UPSTREAMS,
+  POKEMON_QUEUE_RELEASES_URL,
   POKEMON_QUEUE_UPSTREAM_VERSION,
   brokerPokemonQueueEvents,
   brokerHyper,
   decodePokemonQueueMessage,
   decryptServiceCredential,
   encryptServiceCredential,
+  ensureFreshPolarUpstreamVersion,
   hyperCredentialInput,
+  normalizePolarReleaseVersion,
   normalizePokemonQueueEvent,
+  parsePolarLatestRelease,
   licenseFailure,
   licenseRebindStatements,
   canRebindLicense,
@@ -2931,6 +3090,7 @@ export const __test = Object.freeze({
   mintLicenseStatements,
   pokemonQueueCredentialInput,
   pokemonQueueUpstreamUrl,
+  refreshPolarUpstreamVersion,
   serviceCredentialJson,
   validMaxActiveDevices,
   analyticsWindow,
@@ -2951,5 +3111,9 @@ export default {
       console.error('request failed', error && error.stack || error);
       return json({ ok: false, message: 'Request failed.' }, 500);
     }
+  },
+  async scheduled(_event, env) {
+    const result = await refreshPolarUpstreamVersion(env);
+    if (!result.ok) console.error('polar version refresh failed', result.reason || result.status || '');
   },
 };
