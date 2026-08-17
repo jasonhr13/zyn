@@ -52,5 +52,10 @@
   },
   "observability": {
     "enabled": true
+  },
+  "secrets": {
+    "required": [
+      "ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK"
+    ]
   }
 }

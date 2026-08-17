@@ -531,6 +531,7 @@ function getSettings() {
     resiFactoryApiKey: '',
     evomiApiKey: '',
     ipfistApiKey: '',
+    hcaptchaAutosolve: true,
   };
   // Merge so new default fields always appear even if settings.json predates them
   return { ...defaults, ...readJSON('settings.json', {}) };

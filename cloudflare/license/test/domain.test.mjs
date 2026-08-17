@@ -533,11 +533,43 @@ test('normalizes only Pokémon Center queue and captcha messages', () => {
     type: 'zephyr-ping',
     data: { type: 'pokemon_center_queue' },
   }), { kind: 'queue' });
+  assert.deepEqual(__test.normalizePokemonQueueEvent({
+    type: 'cloud-ping',
+    data: { site: 'PokemonCenter', type: 'queueUp' },
+  }), { kind: 'queue' });
   assert.equal(__test.normalizePokemonQueueEvent({
     type: 'cloud-ping',
     data: { site: 'Target', type: 'Queue is up!' },
   }), null);
   assert.equal(__test.normalizePokemonQueueEvent({ type: 'siteConfigs', data: { secret: true } }), null);
+});
+
+test('posts only queue-up events to a valid Discord webhook', async () => {
+  const calls = [];
+  const env = {
+    ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK: 'https://discord.com/api/webhooks/123/test-token',
+  };
+  const ignored = await __test.notifyPokemonQueueDiscord(env, { kind: 'captcha' }, {
+    fetch: async () => { throw new Error('should not post captcha'); },
+  });
+  assert.equal(ignored.sent, false);
+  const missing = await __test.notifyPokemonQueueDiscord({}, { kind: 'queue' });
+  assert.equal(missing.sent, false);
+  const posted = await __test.notifyPokemonQueueDiscord(env, { kind: 'queue' }, {
+    detectedAt: 1_700_000_000_000,
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 204 };
+    },
+  });
+  assert.equal(posted.sent, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://discord.com/api/v10/webhooks/123/test-token?wait=true');
+  assert.equal(calls[0].options.method, 'POST');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.embeds[0].title, 'Pokémon Center queue is up');
+  assert.match(__test.pokemonQueueDiscordPayload().embeds[0].description, /Queue-it is live/);
+  assert.equal(__test.pokemonQueueDiscordWebhook('https://example.test/api/webhooks/1/secret'), null);
 });
 
 test('terminates device authentication before the internal queue relay', async () => {

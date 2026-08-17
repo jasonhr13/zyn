@@ -18,7 +18,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.9",
+    "version": "1.7.10",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -84,6 +84,9 @@
     "Contents/Resources/app/evomi-control.js",
     "Contents/Resources/app/ipfist-client.js",
     "Contents/Resources/app/ipfist-control.js",
+    "Contents/Resources/app/hcaptcha-autosolver.js",
+    "Contents/Resources/app/node_modules/onnxruntime-node/package.json",
+    "Contents/Resources/app/node_modules/sharp/package.json",
     "Contents/Resources/app/harvester-extension-bridge.js",
     "Contents/Resources/app/cloud-backup.js",
     "Contents/Resources/app/cloud-backup-data.js",

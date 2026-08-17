@@ -48,6 +48,8 @@ const POKEMON_QUEUE_WIRE_KEY_HEX = '7011fb72b65c75f8212859f17b895cc76613b093eff3
 const POKEMON_QUEUE_ROTATE_MS = 10 * 60 * 1000;
 const POKEMON_QUEUE_RECONNECT_MAX_MS = 30 * 1000;
 const POKEMON_QUEUE_MAX_MESSAGE_BYTES = 1024 * 1024;
+const POKEMON_QUEUE_DISCORD_SECRET = 'ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK';
+const POKEMON_QUEUE_DISCORD_COOLDOWN_MS = 60 * 1000;
 const HYPER_UPSTREAMS = Object.freeze({
   reese84: 'https://incapsula.hypersolutions.co/reese84',
   'datadome-tags': 'https://datadome.hypersolutions.co/tags',
@@ -326,14 +328,16 @@ function normalizePokemonQueueEvent(message) {
     const site = String(data.site || '').replace(/[\s_-]/g, '').toLowerCase();
     const eventType = String(data.type || '').trim().toLowerCase();
     if (site !== 'pokemoncenter') return null;
-    if (eventType === 'queue is up!') return { kind: 'queue' };
+    if (eventType === 'queue is up!' || eventType === 'queueup' || eventType === 'queue_up' || eventType === 'queue up') {
+      return { kind: 'queue' };
+    }
     if (eventType === 'hcaptcha is up (stage 2)') return { kind: 'captcha' };
     return null;
   }
 
   if (envelopeType === 'zephyr-ping') {
     const eventType = String(data.type || '').trim().toLowerCase();
-    if (eventType === 'pokemon_center_queue') return { kind: 'queue' };
+    if (eventType === 'pokemon_center_queue' || eventType === 'queueup') return { kind: 'queue' };
     if (eventType === 'pokemon_center_captcha') return { kind: 'captcha' };
   }
   return null;
@@ -368,6 +372,61 @@ function pokemonQueueReconnectDelay(attempt) {
   return Math.min(POKEMON_QUEUE_RECONNECT_MAX_MS, 1000 * (2 ** Math.min(5, Math.max(0, attempt))));
 }
 
+function pokemonQueueDiscordWebhook(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl) return null;
+  try {
+    const url = new URL(rawUrl);
+    const match = url.pathname.match(/^\/api\/(?:v10\/)?webhooks\/([0-9]+)\/([^/]+)$/);
+    if (url.protocol !== 'https:'
+        || (url.hostname !== 'discord.com' && url.hostname !== 'discordapp.com')
+        || !match
+        || url.username || url.password || url.hash || url.search) {
+      return null;
+    }
+    url.hostname = 'discord.com';
+    url.pathname = `/api/v10/webhooks/${match[1]}/${match[2]}`;
+    url.searchParams.set('wait', 'true');
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function pokemonQueueDiscordPayload(detectedAt = Date.now()) {
+  return {
+    username: 'Zyn',
+    allowed_mentions: { parse: [] },
+    embeds: [{
+      title: 'Pokémon Center queue is up',
+      description: 'Queue-it is live. Start or resume your Pokémon Center tasks.',
+      color: 14753096,
+      timestamp: new Date(Number(detectedAt) || Date.now()).toISOString(),
+      footer: { text: 'Zyn' },
+    }],
+  };
+}
+
+async function notifyPokemonQueueDiscord(env, event, options = {}) {
+  if (!event || event.kind !== 'queue') return { sent: false, reason: 'ignored' };
+  const webhook = pokemonQueueDiscordWebhook(env && env[POKEMON_QUEUE_DISCORD_SECRET]);
+  if (!webhook) return { sent: false, reason: 'unconfigured' };
+  const fetchImpl = options.fetch || fetch;
+  try {
+    const response = await fetchImpl(webhook.toString(), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': 'DiscordBot (https://zynbot.app, 1.0)',
+      },
+      body: JSON.stringify(pokemonQueueDiscordPayload(options.detectedAt)),
+      redirect: 'manual',
+    });
+    return { sent: response.ok === true, status: response.status || 0 };
+  } catch {
+    return { sent: false, reason: 'request_failed' };
+  }
+}
+
 export class PokemonQueueRelay {
   constructor(state, env) {
     this.state = state;
@@ -377,6 +436,7 @@ export class PokemonQueueRelay {
     this.endedSockets = new WeakSet();
     this.reconnectAttempt = 0;
     this.sequence = 0;
+    this.lastQueueDiscordAt = 0;
     this.health = {
       configured: false,
       connected: false,
@@ -401,6 +461,14 @@ export class PokemonQueueRelay {
 
   clients() {
     return this.state.getWebSockets().filter((socket) => socket.readyState === 1);
+  }
+
+  discordMonitorEnabled() {
+    return Boolean(pokemonQueueDiscordWebhook(this.env && this.env[POKEMON_QUEUE_DISCORD_SECRET]));
+  }
+
+  needsUpstream() {
+    return this.clients().length > 0 || this.discordMonitorEnabled();
   }
 
   broadcast(payload) {
@@ -437,7 +505,6 @@ export class PokemonQueueRelay {
   }
 
   async ensureUpstream({ replace = false } = {}) {
-    const activeClients = this.clients().length;
     let licenseKey = '';
     try { licenseKey = await serviceCredentialValue(this.env, POKEMON_QUEUE_SERVICE_NAME); }
     catch {
@@ -452,7 +519,7 @@ export class PokemonQueueRelay {
       this.broadcast(this.publicHealth());
       return;
     }
-    if (!activeClients) {
+    if (!this.needsUpstream()) {
       this.broadcast(this.publicHealth());
       return;
     }
@@ -519,10 +586,15 @@ export class PokemonQueueRelay {
       detectedAt: this.health.lastEventAt,
       sequence: this.sequence,
     });
+    if (event.kind === 'queue'
+        && this.health.lastEventAt - this.lastQueueDiscordAt >= POKEMON_QUEUE_DISCORD_COOLDOWN_MS) {
+      this.lastQueueDiscordAt = this.health.lastEventAt;
+      notifyPokemonQueueDiscord(this.env, event, { detectedAt: this.health.lastEventAt }).catch(() => {});
+    }
   }
 
   async scheduleReconnect() {
-    if (!this.clients().length || !this.health.configured) return;
+    if (!this.needsUpstream() || !this.health.configured) return;
     const delay = pokemonQueueReconnectDelay(this.reconnectAttempt);
     this.reconnectAttempt += 1;
     await this.scheduleAlarm(delay);
@@ -562,7 +634,7 @@ export class PokemonQueueRelay {
   }
 
   async alarm() {
-    if (!this.clients().length) {
+    if (!this.needsUpstream()) {
       await this.stopUpstream();
       return;
     }
@@ -579,11 +651,11 @@ export class PokemonQueueRelay {
   }
 
   async webSocketClose() {
-    if (!this.clients().length) await this.stopUpstream();
+    if (!this.needsUpstream()) await this.stopUpstream();
   }
 
   async webSocketError() {
-    if (!this.clients().length) await this.stopUpstream();
+    if (!this.needsUpstream()) await this.stopUpstream();
   }
 }
 
@@ -3082,7 +3154,10 @@ export const __test = Object.freeze({
   hyperCredentialInput,
   normalizePolarReleaseVersion,
   normalizePokemonQueueEvent,
+  notifyPokemonQueueDiscord,
   parsePolarLatestRelease,
+  pokemonQueueDiscordPayload,
+  pokemonQueueDiscordWebhook,
   licenseFailure,
   licenseRebindStatements,
   canRebindLicense,
@@ -3115,5 +3190,6 @@ export default {
   async scheduled(_event, env) {
     const result = await refreshPolarUpstreamVersion(env);
     if (!result.ok) console.error('polar version refresh failed', result.reason || result.status || '');
+    await notifyPokemonQueueRelay(env);
   },
 };

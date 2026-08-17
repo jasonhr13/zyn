@@ -117,11 +117,43 @@ function request(taskId = 'pc-1', extra = {}) {
   assert.match(escaped, /hcaptcha\.render/);
   assert.match(escaped, /hcaptcha\.execute/);
   assert.match(escaped, /window\.__zynCaptchaToken/);
-  assert.doesNotMatch(escaped, /autosolve|onnx|classifier/i);
+  assert.match(escaped, /AutoSolve/);
+  assert.doesNotMatch(buildCaptchaHtml({
+    siteKey: 'key',
+    hcapData: '',
+    autosolve: false,
+  }), /try AutoSolve first/);
 
   FakeBrowserWindow.windows = [];
   const electron = fakeElectron();
-  const manager = new ManualCaptchaManager({ electron, pollIntervalMs: 5, logger: { warn() {} } });
+  const solves = [];
+  const clicks = [];
+  const autosolver = {
+    start() {},
+    async solve(challenge) {
+      solves.push(challenge);
+      return { solvable: true, coords: [[0, 1], [1, 0]] };
+    },
+  };
+  const manager = new ManualCaptchaManager({
+    electron, pollIntervalMs: 5, logger: { warn() {} }, autosolver,
+  });
+  const originalMaybe = manager.maybeAutosolve.bind(manager);
+  manager.scrapeChallenge = async () => (solves.length ? null : {
+    prompt: 'Click the buses',
+    exampleImages: [],
+    taskImages: [
+      { url: 'https://imgs.hcaptcha.com/a.jpg', row: 0, col: 0 },
+      { url: 'https://imgs.hcaptcha.com/b.jpg', row: 0, col: 1 },
+      { url: 'https://imgs.hcaptcha.com/c.jpg', row: 1, col: 0 },
+    ],
+    cols: 3,
+  });
+  manager.clickTiles = async (_webContents, coords, cols) => {
+    clicks.push({ coords, cols });
+    return true;
+  };
+  void originalMaybe;
   const sent = [];
   const options = {
     registry: pcRegistry(),
@@ -164,9 +196,33 @@ function request(taskId = 'pc-1', extra = {}) {
   assert.equal(FakeBrowserWindow.windows.length, 1);
   assert.equal(first.focused, true);
 
+  await wait(25);
+  assert.equal(solves.length, 1);
+  assert.equal(solves[0].prompt, 'Click the buses');
+  assert.deepEqual(clicks[0], { coords: [[0, 1], [1, 0]], cols: 3 });
+
   first.webContents.token = 'manual-token';
   await wait(25);
   assert.equal(manager.pendingCount(), 0);
+
+  const disabledSolves = [];
+  const disabled = new ManualCaptchaManager({
+    electron, pollIntervalMs: 5, logger: { warn() {} },
+    autosolver: { start() {}, async solve(challenge) { disabledSolves.push(challenge); return { solvable: true, coords: [[0, 0]] }; } },
+  });
+  disabled.scrapeChallenge = async () => ({
+    prompt: 'Click the buses',
+    exampleImages: [],
+    taskImages: [{ url: 'https://imgs.hcaptcha.com/a.jpg', row: 0, col: 0 }],
+    cols: 3,
+  });
+  await disabled.handleEnvelope(request('pc-1'), {
+    ...options,
+    autosolveEnabled: () => false,
+  });
+  await wait(25);
+  assert.equal(disabledSolves.length, 0);
+  await disabled.cancelPending();
   assert.equal(first.destroyed, true);
   assert.deepEqual(sent, [{
     type: 'received-token',
@@ -185,13 +241,13 @@ function request(taskId = 'pc-1', extra = {}) {
   await manager.handleEnvelope(request('target-1'), options);
   await manager.handleEnvelope(request('pc-1', { siteUrl: 'https://example.com/' }), options);
   await manager.handleEnvelope(request('pc-1', { captchaType: 'recaptcha' }), options);
-  assert.equal(FakeBrowserWindow.windows.length, 2);
+  assert.equal(FakeBrowserWindow.windows.length, 3);
   assert.equal(manager.pendingCount(), 0);
 
   console.log(JSON.stringify({
     ok: true,
     pokemonCenterOnly: true,
-    manualHcaptchaOnly: true,
+    autosolveThenManual: true,
     isolatedSession: true,
     proxyAuth: true,
     tokenCorrelation: true,

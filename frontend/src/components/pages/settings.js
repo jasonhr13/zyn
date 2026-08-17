@@ -57,7 +57,7 @@ class Settings extends Component {
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
       targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
-      targetVerboseLogs: false, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
+      targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -87,6 +87,7 @@ class Settings extends Component {
       targetLoadsPerBrowser: String(s.targetLoadsPerBrowser || 3),
       targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!s.targetVerboseLogs,
+      hcaptchaAutosolve: s.hcaptchaAutosolve !== false,
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
       targetHarvesterExtensionIds: harvesterExtensionIdsFromSettings(s),
       extensionIdsError: '',
@@ -185,6 +186,7 @@ class Settings extends Component {
         this.state.targetLoadsPerBrowser, MAX_SHAPE_LOADS_PER_BROWSER, 3),
       targetBlockHeavyResources: this.state.targetBlockHeavyResources !== false,
       targetVerboseLogs: !!this.state.targetVerboseLogs,
+      hcaptchaAutosolve: this.state.hcaptchaAutosolve !== false,
       shapeMethod: this.state.shapeMethod,
       targetHarvesterExtensionIds,
       // Keep the first ID under the legacy singular key so older backups/builds remain reversible.
@@ -526,7 +528,7 @@ class Settings extends Component {
     const { discordWebhook, discordDeclineWebhook, accountGenWebhook, webhookError, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
-      targetVerboseLogs, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
+      targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
       licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -803,6 +805,23 @@ class Settings extends Component {
             </div>
           </div>
           </>)}
+
+          <div className="settings-section">
+            <div className="settings-section-title">Pokémon Center</div>
+            <div className="form-group" style={{ marginTop: 6, marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={hcaptchaAutosolve !== false}
+                  onChange={e => this.set('hcaptchaAutosolve', e.target.checked)}
+                />
+                AutoSolve hCaptcha
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                When a Pokémon Center task hits hCaptcha, Zyn tries the local classifier first. Turn this off to only solve by hand. Models still download at launch so you can turn it back on without waiting.
+              </div>
+            </div>
+          </div>
 
           <div className="settings-section">
             <div className="settings-section-title">Email / OTP</div>

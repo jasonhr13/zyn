@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const contract = require('./native-engine-contract');
 
 const POKEMON_CENTER_URL = 'https://www.pokemoncenter.com/';
@@ -100,6 +102,7 @@ function normalizeSolve(message, registry) {
 }
 
 function buildCaptchaHtml(solve) {
+  const autosolve = solve && solve.autosolve !== false;
   const siteKey = scriptValue(solve.siteKey);
   const rqdata = scriptValue(solve.hcapData);
   return `<!doctype html>
@@ -128,7 +131,9 @@ function buildCaptchaHtml(solve) {
   <main>
     <div class="mark">Z</div>
     <h1>Pokémon Center verification</h1>
-    <p>Complete the challenge below. Zyn will return the token to your waiting task automatically.</p>
+    <p>${autosolve
+    ? 'Zyn will try AutoSolve first. If that fails, complete the challenge below.'
+    : 'Complete the challenge below. Zyn will return the token to your waiting task automatically.'}</p>
     <section id="captcha-shell"><div id="h-captcha"></div></section>
     <div id="status"><span class="pulse"></span><span id="status-text">Loading hCaptcha…</span></div>
   </main>
@@ -159,7 +164,7 @@ function buildCaptchaHtml(solve) {
           'chalexpired-callback': expired,
         });
         if (rqdata) hcaptcha.setData({ rqdata });
-        setStatus('Complete the challenge to continue.');
+        setStatus('Waiting for challenge…');
         hcaptcha.execute(window.__zynCaptchaWidget);
       } catch (error) {
         setStatus('Could not load the challenge. Close this window to retry.');
@@ -171,6 +176,79 @@ function buildCaptchaHtml(solve) {
 </html>`;
 }
 
+const SCRAPE_CHALLENGE = `(() => {
+  const textOf = (el) => String(el && (el.innerText || el.textContent) || '').trim();
+  const urlOf = (el) => {
+    if (!el) return '';
+    const src = String(el.currentSrc || el.src || '').trim();
+    if (src && !src.startsWith('data:')) return src;
+    const bg = String((el.style && el.style.backgroundImage) || '').trim()
+      || (typeof getComputedStyle === 'function' ? String(getComputedStyle(el).backgroundImage || '') : '');
+    const match = bg.match(/url\\(["']?(https?:[^"')]+)["']?\\)/i);
+    return match ? match[1] : '';
+  };
+  const prompt = textOf(document.querySelector('.prompt-text, .challenge-prompt h2, .challenge-header .prompt-text, [class*="prompt-text"]'));
+  const exampleImages = [...document.querySelectorAll('.challenge-example img, .challenge-example .image, .crumbs-wrapper img, .example img')]
+    .map(urlOf).filter(Boolean);
+  const tiles = [...document.querySelectorAll('.task-image, .task, [class*="task-image"]')];
+  const count = tiles.length;
+  const cols = count === 9 ? 3 : count === 16 ? 4 : Math.max(1, Math.round(Math.sqrt(count)) || 3);
+  const taskImages = tiles.map((el, index) => ({
+    url: urlOf(el.querySelector('img, .image, [class*="image"]') || el),
+    row: Math.floor(index / cols),
+    col: index % cols,
+    index,
+  })).filter(tile => tile.url);
+  return { prompt, exampleImages, taskImages, cols, count };
+})()`;
+
+function clickTilesScript(coords, cols) {
+  return `(() => {
+    const coords = ${JSON.stringify(coords)};
+    const cols = ${Number(cols) || 3};
+    const tiles = [...document.querySelectorAll('.task-image, .task, [class*="task-image"]')];
+    const wanted = new Set(coords.map(([row, col]) => Number(row) * cols + Number(col)));
+    tiles.forEach((el, index) => { if (wanted.has(index)) el.click(); });
+    const submit = document.querySelector('.button-submit, .submit-button, .challenge-footer button, button[class*="submit"]');
+    if (submit) submit.click();
+    return wanted.size;
+  })()`;
+}
+
+function loadAutosolver() {
+  const candidates = [
+    process.resourcesPath && path.join(process.resourcesPath, 'app', 'hcaptcha-autosolver.js'),
+    path.join(__dirname, 'hcaptcha-autosolver.js'),
+  ].filter(Boolean);
+  for (const file of candidates) {
+    try {
+      if (fs.existsSync(file)) return require(file);
+    } catch {}
+  }
+  return null;
+}
+
+function challengeKey(challenge) {
+  if (!challenge || !challenge.prompt) return '';
+  const tiles = (challenge.taskImages || []).map(tile => tile.url).join('|');
+  return `${challenge.prompt}::${tiles}`;
+}
+
+function collectFrames(webContents) {
+  const root = webContents && webContents.mainFrame;
+  if (!root) return [];
+  if (Array.isArray(root.framesInSubtree) && root.framesInSubtree.length) return [root, ...root.framesInSubtree];
+  const frames = [root];
+  const walk = (frame) => {
+    for (const child of frame.frames || []) {
+      frames.push(child);
+      walk(child);
+    }
+  };
+  walk(root);
+  return frames;
+}
+
 function safeError(error) {
   return String(error && error.message || error || 'unknown error')
     .replace(/https?:\/\/[^\s@/]+:[^\s@/]+@[^\s/]+/gi, '<proxy>')
@@ -178,7 +256,7 @@ function safeError(error) {
 }
 
 class ManualCaptchaManager {
-  constructor({ electron = null, pollIntervalMs = DEFAULT_POLL_MS, logger = console } = {}) {
+  constructor({ electron = null, pollIntervalMs = DEFAULT_POLL_MS, logger = console, autosolver = undefined } = {}) {
     this.electron = electron;
     this.pollIntervalMs = pollIntervalMs;
     this.logger = logger;
@@ -186,6 +264,7 @@ class ManualCaptchaManager {
     this.proxyAuth = new Map();
     this.loginApp = null;
     this.loginHandler = null;
+    this.autosolver = autosolver === undefined ? loadAutosolver() : autosolver;
   }
 
   electronApi() {
@@ -222,7 +301,10 @@ class ManualCaptchaManager {
         secure: true,
       }).catch(() => {});
     }
-    const html = buildCaptchaHtml(solve);
+    const html = buildCaptchaHtml({
+      ...solve,
+      autosolve: !(marker.autosolveEnabled && marker.autosolveEnabled() === false),
+    });
     await session.protocol.handle('https', request => {
       let requested;
       try { requested = new URL(request.url); } catch { requested = null; }
@@ -249,7 +331,7 @@ class ManualCaptchaManager {
       show: false,
       parent: parent && !parent.isDestroyed?.() ? parent : undefined,
       modal: false,
-      title: 'Zyn · Manual Captcha',
+      title: 'Zyn · Captcha',
       backgroundColor: '#090b18',
       autoHideMenuBar: true,
       webPreferences: {
@@ -280,6 +362,60 @@ class ManualCaptchaManager {
     return window;
   }
 
+  async scrapeChallenge(webContents) {
+    for (const frame of collectFrames(webContents)) {
+      const url = String(frame.url || '');
+      if (url && !/hcaptcha\.com/i.test(url)) continue;
+      try {
+        const challenge = await frame.executeJavaScript(SCRAPE_CHALLENGE, true);
+        if (challenge && challenge.prompt && challenge.taskImages && challenge.taskImages.length) return challenge;
+      } catch {}
+    }
+    return null;
+  }
+
+  async clickTiles(webContents, coords, cols) {
+    for (const frame of collectFrames(webContents)) {
+      const url = String(frame.url || '');
+      if (url && !/hcaptcha\.com/i.test(url)) continue;
+      try {
+        const clicked = await frame.executeJavaScript(clickTilesScript(coords, cols), true);
+        if (clicked) return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  async maybeAutosolve(marker) {
+    if (marker.autosolveEnabled && marker.autosolveEnabled() === false) return;
+    if (!this.autosolver || marker.done || marker.autosolving || !marker.window || marker.window.isDestroyed()) return;
+    const challenge = await this.scrapeChallenge(marker.window.webContents);
+    if (!challenge) return;
+    const key = challengeKey(challenge);
+    if (!key || key === marker.lastChallenge) return;
+    marker.lastChallenge = key;
+    marker.autosolving = true;
+    try {
+      marker.window.webContents.executeJavaScript(
+        `document.getElementById('status-text') && (document.getElementById('status-text').textContent = 'AutoSolve running…')`,
+        true,
+      ).catch(() => {});
+      const result = await this.autosolver.solve(challenge);
+      if (marker.done || !result || !result.solvable || !result.coords.length) {
+        marker.window.webContents.executeJavaScript(
+          `document.getElementById('status-text') && (document.getElementById('status-text').textContent = 'Complete the challenge to continue.')`,
+          true,
+        ).catch(() => {});
+        return;
+      }
+      await this.clickTiles(marker.window.webContents, result.coords, challenge.cols || 3);
+    } catch (error) {
+      marker.logger.warn?.(`[captcha] autosolve failed for task ${marker.solve.taskId}: ${safeError(error)}`);
+    } finally {
+      marker.autosolving = false;
+    }
+  }
+
   startPolling(marker) {
     marker.pollTimer = setInterval(async () => {
       if (marker.done || marker.polling || !marker.window || marker.window.isDestroyed()) return;
@@ -296,6 +432,8 @@ class ManualCaptchaManager {
         } else if (state && state.error17 && !marker.reloadedForError17) {
           marker.reloadedForError17 = true;
           marker.window.webContents.reloadIgnoringCache();
+        } else {
+          await this.maybeAutosolve(marker);
         }
       } catch {}
       finally { marker.polling = false; }
@@ -315,11 +453,14 @@ class ManualCaptchaManager {
       solve,
       send: options.send,
       isActive: options.isActive || (() => true),
+      autosolveEnabled: options.autosolveEnabled,
       logger: options.logger || this.logger,
       window: null,
       session: null,
       pollTimer: null,
       polling: false,
+      autosolving: false,
+      lastChallenge: '',
       reloadedForError17: false,
       done: false,
     };
@@ -413,6 +554,8 @@ module.exports = {
     normalizeSolve,
     parseProxy,
     buildCaptchaHtml,
+    challengeKey,
+    loadAutosolver,
     singleton,
   },
 };

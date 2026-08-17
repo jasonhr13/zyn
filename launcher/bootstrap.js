@@ -26,6 +26,7 @@ const { createProxyGroupControl } = require('./proxy-group-control');
 const { createResiFactoryControl, installResiFactoryIpc } = require('./resifactory-control');
 const { createEvomiControl, installEvomiIpc } = require('./evomi-control');
 const { createIpfistControl, installIpfistIpc } = require('./ipfist-control');
+const hcaptchaAutosolver = require('./hcaptcha-autosolver');
 const { createAccountGroupControl } = require('./account-group-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
@@ -1006,6 +1007,14 @@ function pushIpfistStatus(status) {
   } catch {}
 }
 
+function installHcaptchaAutosolver() {
+  try {
+    hcaptchaAutosolver.start();
+  } catch (error) {
+    console.warn(`[hcaptcha] could not start model preload: ${error.message}`);
+  }
+}
+
 function installIpfist() {
   if (!FEATURES.ipfist) return null;
   try {
@@ -1399,6 +1408,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   installResiFactory();
   installEvomi();
   installIpfist();
+  installHcaptchaAutosolver();
   installTargetReadiness();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   if (!licenseAuthority) setTargetHarvestAuthorization(true);

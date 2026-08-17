@@ -61,7 +61,9 @@ assert.match(taskGroups, /icon-action-reset[\s\S]*Reset Task/,
   'Target reset is not available from both the task row and detail view');
 
 assert.match(settings, /Target workspace/);
-assert.doesNotMatch(settings, /Bandai|Walmart|Pokémon|Pokemon|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);
+assert.match(settings, /hcaptchaAutosolve/);
+assert.match(settings, /AutoSolve hCaptcha/);
+assert.doesNotMatch(settings, /Bandai|Walmart|Round1|Riot Games|Secret Lair|Auto Buy Profiles|Solver Keys/);
 
 const extensionSettings = settings.indexOf('Target — Browser Extension Harvesters');
 const operatorSettings = settings.indexOf('{operatorMode && (<>');

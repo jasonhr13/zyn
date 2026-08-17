@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.10",
+  "notes": [
+    "Pokémon Center hCaptcha can AutoSolve locally, with a Settings toggle and manual fallback.",
+    "AutoSolve models download when Zyn opens so the first challenge is ready.",
+    "The Zyn Discord gets a queue-up ping when Pokémon Center Queue-it goes live."
+  ]
+}

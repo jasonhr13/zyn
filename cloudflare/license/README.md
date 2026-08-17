@@ -18,6 +18,12 @@ the repository:
 security find-generic-password -a admin-password -s com.thwebco.hope.license-api -w
 ```
 
+The Pokémon Center Discord webhook is a Worker secret,
+`ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK`. Store it in Keychain as
+`pokemon-queue-discord-webhook` under `com.thwebco.hope.license-api`, then run
+`node scripts/configure-license-service.cjs`. Do not put the webhook URL in the
+repository.
+
 The admin page can:
 
 - review waiting-list signups and invite them with a complete ready-to-copy message;
@@ -27,6 +33,8 @@ The admin page can:
 - create and edit encrypted managed proxy lists;
 - save, replace, or remove the server-side Hyper API key without exposing it back to the browser;
 - save, replace, or remove the server-side Pokémon Center queue-event license;
+- keep the queue relay connected so a Discord webhook can announce queue-up pings even when no
+  desktop client is online;
 - grant or remove a user's access to all managed proxy lists;
 - enable optional task types globally or override Pokémon Center/Round1 access per user;
 - review global checkout analytics across all users, including range totals, charting, per-user

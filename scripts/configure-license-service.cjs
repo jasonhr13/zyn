@@ -21,6 +21,16 @@ function keychainValue(account, bytes) {
   }
 }
 
+function existingKeychainValue(account) {
+  try {
+    return execFileSync('security', [
+      'find-generic-password', '-a', account, '-s', keychainService, '-w',
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
 const secrets = {
   ADMIN_PASSWORD: keychainValue('admin-password', 18),
   ADMIN_SESSION_SECRET: keychainValue('admin-session-secret', 32),
@@ -28,6 +38,8 @@ const secrets = {
   PROXY_ENCRYPTION_KEY: keychainValue('proxy-encryption-key', 32),
   SERVICE_CONFIG_ENCRYPTION_KEY: keychainValue('service-config-encryption-key', 32),
 };
+const webhook = existingKeychainValue('pokemon-queue-discord-webhook');
+if (webhook) secrets.ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK = webhook;
 
 for (const [name, value] of Object.entries(secrets)) {
   execFileSync(process.execPath, [wrangler, 'secret', 'put', name, '--config', config], {

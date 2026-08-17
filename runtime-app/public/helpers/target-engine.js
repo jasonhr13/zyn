@@ -3102,12 +3102,16 @@ function handleEngineMessage(data, connection) {
       }
       break;
     case 'solve-captcha':
-      // Manual-only solver: Electron owns the isolated Pokemon Center window and returns the
-      // completed token over this same authenticated engine connection.
+      // Isolated Pokemon Center hCaptcha window. AutoSolve classifies tiles when a model exists;
+      // otherwise the user completes the challenge. The token returns on this engine connection.
       manualCaptchaManager.handleEnvelope(msg, {
         registry: engineTaskSites,
         send: sendToEngine,
         isActive: () => engineConn === connection,
+        autosolveEnabled: () => {
+          try { return (dm.getSettings() || {}).hcaptchaAutosolve !== false; }
+          catch { return true; }
+        },
         parent: win,
         logger: { warn: message => log(String(message)) },
       });
