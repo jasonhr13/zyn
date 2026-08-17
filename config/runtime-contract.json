@@ -10,18 +10,26 @@
     "profileImap": true,
     "managedProxies": true,
     "resiFactory": true,
+    "evomi": true,
+    "ipfist": true,
     "cloudBackup": true,
     "taskScheduling": true,
     "isolatedRenderer": false
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.8",
+    "version": "1.7.9",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
-    "supportedPlatforms": ["darwin", "win32"],
-    "supportedArchitectures": ["arm64", "x64"]
+    "supportedPlatforms": [
+      "darwin",
+      "win32"
+    ],
+    "supportedArchitectures": [
+      "arm64",
+      "x64"
+    ]
   },
   "immutableResources": [],
   "nativeEngines": {
@@ -72,6 +80,10 @@
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/resifactory-client.js",
     "Contents/Resources/app/resifactory-control.js",
+    "Contents/Resources/app/evomi-client.js",
+    "Contents/Resources/app/evomi-control.js",
+    "Contents/Resources/app/ipfist-client.js",
+    "Contents/Resources/app/ipfist-control.js",
     "Contents/Resources/app/harvester-extension-bridge.js",
     "Contents/Resources/app/cloud-backup.js",
     "Contents/Resources/app/cloud-backup-data.js",

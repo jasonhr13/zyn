@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.9",
+  "notes": [
+    "Proxies now has a Providers section for ResiFactory, Evomi, and IPFist.",
+    "Link a ResiFactory key to see remaining GB, generate lists, and add data from Zyn.",
+    "Link an Evomi key to see remaining data and generate lists from your Evomi account.",
+    "Link an IPFist residential key to see Basic and Premium remaining GB and generate lists."
+  ]
+}

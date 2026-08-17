@@ -20,7 +20,7 @@ test('explains why billing or generate is unavailable', () => {
   expect(billingHint({ connected: true, billingReady: false, canBill: true })).toMatch(/spend cap/);
   expect(generateBlockedReason({ granted: true, comingSoon: false, gb: 0 }, {
     connected: true, canGenerate: true,
-  })).toMatch(/no remaining GB/);
+  })).toMatch(/no remaining data/);
   expect(generateBlockedReason({ granted: false, comingSoon: false, gb: 4 }, {
     connected: true, canGenerate: true,
   })).toMatch(/Unlock/);

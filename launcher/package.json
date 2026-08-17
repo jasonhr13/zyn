@@ -1,7 +1,7 @@
 {
   "name": "zyn-macos-launcher",
   "productName": "Zyn",
-  "version": "1.7.8",
+  "version": "1.7.9",
   "private": true,
   "main": "bootstrap.js",
   "dependencies": {

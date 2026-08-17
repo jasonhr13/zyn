@@ -46,13 +46,14 @@ export function billingHint(status) {
   return 'This key has no monthly spend cap, so ResiFactory will refuse charges. Create a new key with Billing enabled and a cap.';
 }
 
-export function generateBlockedReason(pool, status) {
-  if (!status || !status.connected) return 'Link a ResiFactory key first.';
-  if (!status.canGenerate) return 'This key cannot generate proxies. Recreate it with the default scopes.';
+export function generateBlockedReason(pool, status, label = '') {
+  const provider = label || (status && status.providerLabel) || 'this provider';
+  if (!status || !status.connected) return `Link a ${provider} key first.`;
+  if (!status.canGenerate) return `This key cannot generate proxies on ${provider}.`;
   if (!pool) return 'Choose a pool.';
-  if (!pool.granted) return 'Unlock this pool on ResiFactory before generating.';
+  if (!pool.granted) return `Unlock this product on ${provider} before generating.`;
   if (pool.comingSoon) return 'This pool is not live yet.';
-  if (pool.gb === 0) return 'This pool has no remaining GB.';
+  if (pool.gb === 0) return 'This product has no remaining data.';
   return '';
 }
 

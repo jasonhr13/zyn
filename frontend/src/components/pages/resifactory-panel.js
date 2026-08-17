@@ -27,12 +27,55 @@ const openExternal = (event, url) => {
 
 const stickyType = value => value === 'sticky' || value === 'mobile_sticky';
 
-let lastStatus = null;
+export const RESIFACTORY_PROVIDER = {
+  id: 'resifactory',
+  label: 'ResiFactory',
+  ipcPrefix: 'resiFactory',
+  updatedEvent: 'resiFactoryUpdated',
+  dashboardUrl: DEVELOPER_URL,
+  keyPlaceholder: 'rf_live_…',
+  supportsBilling: true,
+  maxQuantity: MAX_GENERATE_QUANTITY,
+  defaultQuantity: '50',
+  connectCopy: 'Link an API key to see remaining GB, generate lists, and add data without leaving Zyn.',
+};
+
+export const EVOMI_PROVIDER = {
+  id: 'evomi',
+  label: 'Evomi',
+  ipcPrefix: 'evomi',
+  updatedEvent: 'evomiUpdated',
+  dashboardUrl: 'https://my.evomi.com',
+  keyPlaceholder: 'Evomi API key',
+  supportsBilling: false,
+  maxQuantity: 100,
+  defaultQuantity: '50',
+  connectCopy: 'Link an API key to see remaining data and generate lists. Buy bandwidth on the Evomi dashboard.',
+};
+
+export const IPFIST_PROVIDER = {
+  id: 'ipfist',
+  label: 'IPFist',
+  ipcPrefix: 'ipfist',
+  updatedEvent: 'ipfistUpdated',
+  dashboardUrl: 'https://www.ipfist.com',
+  keyPlaceholder: 'ak_…',
+  supportsBilling: false,
+  maxQuantity: 100,
+  defaultQuantity: '10',
+  connectCopy: 'Link a residential API key to see remaining data and generate lists. Buy bandwidth on the IPFist dashboard.',
+};
+
+const lastStatusById = {};
 
 class ResiFactoryPanel extends Component {
+  provider = () => this.props.provider || RESIFACTORY_PROVIDER;
+
+  channel = (name) => `${this.provider().ipcPrefix}${name}`;
+
   state = {
-    status: lastStatus || emptyResiFactoryStatus(),
-    ready: Boolean(lastStatus),
+    status: lastStatusById[(this.props.provider || RESIFACTORY_PROVIDER).id] || emptyResiFactoryStatus(),
+    ready: Boolean(lastStatusById[(this.props.provider || RESIFACTORY_PROVIDER).id]),
     keyInput: '',
     showKey: false,
     busy: '',
@@ -53,12 +96,12 @@ class ResiFactoryPanel extends Component {
   pollTimer = null;
 
   componentDidMount() {
-    ipcRenderer.on('resiFactoryUpdated', this.applyPushedStatus);
+    ipcRenderer.on(this.provider().updatedEvent, this.applyPushedStatus);
     this.hydrate();
   }
 
   componentWillUnmount() {
-    ipcRenderer.removeListener('resiFactoryUpdated', this.applyPushedStatus);
+    ipcRenderer.removeListener(this.provider().updatedEvent, this.applyPushedStatus);
     this.stopPolling();
   }
 
@@ -68,19 +111,19 @@ class ResiFactoryPanel extends Component {
 
   applyStatus = (status) => {
     const next = status && typeof status === 'object' ? status : emptyResiFactoryStatus();
-    lastStatus = next;
+    lastStatusById[this.provider().id] = next;
     this.setState({ status: next, ready: true });
-    if (next.pendingTopup) this.startPolling();
+    if (this.provider().supportsBilling && next.pendingTopup) this.startPolling();
     else this.stopPolling();
   };
 
   hydrate = async () => {
     try {
-      const cached = await ipcRenderer.invoke('resiFactoryStatus');
-      if (cached && cached.status) this.applyStatus(cached.status);
+      const cached = await ipcRenderer.invoke(this.channel('Status'));
+      if (cached && cached.status && cached.status.connected) this.applyStatus(cached.status);
     } catch {}
     try {
-      const live = await ipcRenderer.invoke('resiFactoryRefresh');
+      const live = await ipcRenderer.invoke(this.channel('Refresh'));
       if (live && live.status) this.applyStatus(live.status);
     } catch {}
     this.setState({ ready: true });
@@ -89,7 +132,7 @@ class ResiFactoryPanel extends Component {
   startPolling = () => {
     if (this.pollTimer) return;
     this.pollTimer = setInterval(() => {
-      ipcRenderer.invoke('resiFactoryPollTopup').then(result => {
+      ipcRenderer.invoke(this.channel('PollTopup')).then(result => {
         if (result && result.ok && result.status) this.applyStatus(result.status);
       }).catch(() => {});
     }, 3000);
@@ -106,30 +149,30 @@ class ResiFactoryPanel extends Component {
     try {
       const result = await ipcRenderer.invoke(channel, payload);
       if (!result || result.ok !== true) {
-        this.setState({ notice: (result && result.error) || 'ResiFactory request failed.' });
+        this.setState({ notice: (result && result.error) || `${this.provider().label} request failed.` });
         return result || { ok: false };
       }
       if (result.status) this.applyStatus(result.status);
       return result;
     } catch (error) {
-      this.setState({ notice: error.message || 'ResiFactory request failed.' });
+      this.setState({ notice: error.message || `${this.provider().label} request failed.` });
       return { ok: false, error: error.message };
     } finally {
       this.setState({ busy: '' });
     }
   };
 
-  refresh = () => this.call('resiFactoryRefresh', undefined, 'refresh');
+  refresh = () => this.call(this.channel('Refresh'), undefined, 'refresh');
 
   connect = async () => {
-    const result = await this.call('resiFactoryConnect', { apiKey: this.state.keyInput }, 'connect');
-    if (result && result.ok) this.setState({ keyInput: '', showKey: false, notice: 'ResiFactory linked.' });
+    const result = await this.call(this.channel('Connect'), { apiKey: this.state.keyInput }, 'connect');
+    if (result && result.ok) this.setState({ keyInput: '', showKey: false, notice: `${this.provider().label} linked.` });
   };
 
   disconnect = async () => {
-    if (!window.confirm('Unlink the ResiFactory key from this machine? Existing generated lists stay.')) return;
-    const result = await this.call('resiFactoryDisconnect', undefined, 'disconnect');
-    if (result && result.ok) this.setState({ notice: 'ResiFactory unlinked.' });
+    if (!window.confirm(`Unlink the ${this.provider().label} key from this machine? Existing generated lists stay.`)) return;
+    const result = await this.call(this.channel('Disconnect'), undefined, 'disconnect');
+    if (result && result.ok) this.setState({ notice: `${this.provider().label} unlinked.` });
   };
 
   poolById = (id) => (this.state.status.pools || []).find(pool => pool.id === id) || null;
@@ -147,7 +190,7 @@ class ResiFactoryPanel extends Component {
       generateState: '',
       generateType: proxyType,
       generateDuration: '30',
-      generateQuantity: '50',
+      generateQuantity: (this.props.provider || RESIFACTORY_PROVIDER).defaultQuantity,
       generateName: '',
     });
   };
@@ -155,9 +198,9 @@ class ResiFactoryPanel extends Component {
   generate = async () => {
     const { generatePool, generateCountry, generateState, generateType, generateDuration, generateQuantity, generateName } = this.state;
     const pool = this.poolById(generatePool);
-    const blocked = generateBlockedReason(pool, this.state.status);
+    const blocked = generateBlockedReason(pool, this.state.status, this.provider().label);
     if (blocked) { this.setState({ notice: blocked }); return; }
-    const result = await this.call('resiFactoryGenerate', {
+    const result = await this.call(this.channel('Generate'), {
       pool: generatePool,
       country: generateCountry,
       state: generateCountry === 'us' ? generateState : '',
@@ -192,7 +235,7 @@ class ResiFactoryPanel extends Component {
       this.setState({ notice: `Enter an amount between ${MIN_TOPUP_GB} and ${MAX_TOPUP_GB} GB.` });
       return;
     }
-    const result = await this.call('resiFactoryStartTopup', {
+    const result = await this.call(this.channel('StartTopup'), {
       pool: this.state.topupPool,
       gb,
     }, 'topup');
@@ -208,24 +251,25 @@ class ResiFactoryPanel extends Component {
   renderPending() {
     return (
       <div className="resifactory-card resifactory-pending-card">
-        <div className="resifactory-kicker">ResiFactory</div>
+        <div className="resifactory-kicker">{this.provider().label}</div>
         <h3>Checking account…</h3>
-        <p>Loading the linked key and remaining GB.</p>
+        <p>Loading the linked key and remaining data.</p>
       </div>
     );
   }
 
   renderConnect() {
     const { keyInput, showKey, busy } = this.state;
+    const provider = this.provider();
     return (
       <div className="resifactory-card">
         <div className="resifactory-head">
           <div>
             <div className="resifactory-kicker">Provider</div>
-            <h3>ResiFactory</h3>
-            <p>Link an API key to see remaining GB, generate lists, and add data without leaving Zyn.</p>
+            <h3>{provider.label}</h3>
+            <p>{provider.connectCopy}</p>
           </div>
-          <a className="resifactory-docs" href={DEVELOPER_URL} onClick={event => openExternal(event, DEVELOPER_URL)}>
+          <a className="resifactory-docs" href={provider.dashboardUrl} onClick={event => openExternal(event, provider.dashboardUrl)}>
             Dashboard
           </a>
         </div>
@@ -235,7 +279,7 @@ class ResiFactoryPanel extends Component {
             type={showKey ? 'text' : 'password'}
             autoComplete="off"
             spellCheck={false}
-            placeholder="rf_live_…"
+            placeholder={provider.keyPlaceholder}
             value={keyInput}
             onChange={event => this.setState({ keyInput: event.target.value })}
             onKeyDown={event => { if (event.key === 'Enter') this.connect(); }}
@@ -253,12 +297,13 @@ class ResiFactoryPanel extends Component {
 
   renderPools() {
     const { status, busy } = this.state;
-    const hint = billingHint(status);
+    const provider = this.provider();
+    const hint = provider.supportsBilling ? billingHint(status) : '';
     return (
       <div className="resifactory-card connected">
         <div className="resifactory-head">
           <div>
-            <div className="resifactory-kicker">ResiFactory</div>
+            <div className="resifactory-kicker">{provider.label}</div>
             <h3>{status.username || 'Connected'}</h3>
             <p>
               Key {status.keyLast4 ? `…${status.keyLast4}` : 'linked'}
@@ -273,14 +318,14 @@ class ResiFactoryPanel extends Component {
             <button type="button" className="btn btn-secondary btn-sm" disabled={!status.canGenerate} onClick={() => this.openGenerate()}>
               Generate
             </button>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!status.billingReady} onClick={() => this.openTopup()}
-              title={hint || 'Add bandwidth to a pool'}>
-              Add data
-            </button>
+            {provider.supportsBilling
+              ? <button type="button" className="btn btn-primary btn-sm" disabled={!status.billingReady} onClick={() => this.openTopup()}
+                title={hint || 'Add bandwidth to a pool'}>Add data</button>
+              : <button type="button" className="btn btn-primary btn-sm" onClick={event => openExternal(event, provider.dashboardUrl)}>Buy data</button>}
             <button type="button" className="resifactory-unlink" onClick={this.disconnect}>Unlink</button>
           </div>
         </div>
-        {hint && <div className="resifactory-hint">{hint} <a href={status.developerUrl || DEVELOPER_URL} onClick={event => openExternal(event, status.developerUrl || DEVELOPER_URL)}>Open Developer tab</a></div>}
+        {hint && <div className="resifactory-hint">{hint} <a href={status.developerUrl || provider.dashboardUrl} onClick={event => openExternal(event, status.developerUrl || provider.dashboardUrl)}>Open Developer tab</a></div>}
         {status.pendingTopup && (
           <div className="resifactory-pending">
             Waiting on checkout for {formatGb(status.pendingTopup.gb)} on {status.pendingTopup.pool}
@@ -289,7 +334,7 @@ class ResiFactoryPanel extends Component {
         )}
         <div className="resifactory-pools">
           {(status.pools || []).map(pool => {
-            const generateReason = generateBlockedReason(pool, status);
+            const generateReason = generateBlockedReason(pool, status, this.provider().label);
             return (
               <div className={`resifactory-pool${!pool.granted || pool.comingSoon ? ' locked' : ''}`} key={pool.id}>
                 <div>
@@ -308,7 +353,9 @@ class ResiFactoryPanel extends Component {
                     ? <button type="button" className="btn btn-secondary btn-sm" onClick={event => openExternal(event, pool.claimUrl)}>Unlock</button>
                     : <>
                       <button type="button" className="btn btn-secondary btn-sm" disabled={!!generateReason} title={generateReason} onClick={() => this.openGenerate(pool)}>Generate</button>
-                      <button type="button" className="btn btn-secondary btn-sm" disabled={!status.billingReady || !pool.granted} onClick={() => this.openTopup(pool)}>Add</button>
+                      {this.provider().supportsBilling
+                        ? <button type="button" className="btn btn-secondary btn-sm" disabled={!status.billingReady || !pool.granted} onClick={() => this.openTopup(pool)}>Add</button>
+                        : <button type="button" className="btn btn-secondary btn-sm" onClick={event => openExternal(event, this.provider().dashboardUrl)}>Buy</button>}
                     </>}
                 </div>
               </div>
@@ -325,12 +372,12 @@ class ResiFactoryPanel extends Component {
     const countries = (pool && pool.countries.length) ? pool.countries : ['us'];
     const types = (pool && pool.proxyTypes.length) ? pool.proxyTypes : ['rotating', 'sticky'];
     const showState = this.state.generateCountry === 'us' && pool && pool.usStates.length;
-    const blocked = generateBlockedReason(pool, this.state.status);
+    const blocked = generateBlockedReason(pool, this.state.status, this.provider().label);
     return (
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.setState({ generateOpen: false })}>
         <div className="modal proxy-editor-modal resifactory-modal" onMouseDown={event => event.stopPropagation()}>
           <div className="modal-header">
-            <div><div className="modal-title">Generate ResiFactory list</div><p>Lines are saved as a normal local proxy list you can assign to tasks.</p></div>
+            <div><div className="modal-title">Generate {this.provider().label} list</div><p>Lines are saved as a normal local proxy list you can assign to tasks.</p></div>
             <button className="modal-close" onClick={() => this.setState({ generateOpen: false })}>×</button>
           </div>
           <div className="modal-body resifactory-modal-body">
@@ -389,7 +436,7 @@ class ResiFactoryPanel extends Component {
               )}
               <div className="form-group">
                 <label className="form-label">Quantity</label>
-                <input className="form-input" type="number" min="1" max={MAX_GENERATE_QUANTITY} value={this.state.generateQuantity}
+                <input className="form-input" type="number" min="1" max={this.provider().maxQuantity} value={this.state.generateQuantity}
                   onChange={event => this.setState({ generateQuantity: event.target.value })} />
               </div>
             </div>
@@ -412,7 +459,7 @@ class ResiFactoryPanel extends Component {
   }
 
   renderTopup() {
-    if (!this.state.topupOpen) return null;
+    if (!this.provider().supportsBilling || !this.state.topupOpen) return null;
     const pool = this.poolById(this.state.topupPool);
     const estimate = estimateCost(this.state.topupGb, pool && pool.pricePerGb);
     return (

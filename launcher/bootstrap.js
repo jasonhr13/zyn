@@ -24,6 +24,8 @@ const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { createProxyGroupControl } = require('./proxy-group-control');
 const { createResiFactoryControl, installResiFactoryIpc } = require('./resifactory-control');
+const { createEvomiControl, installEvomiIpc } = require('./evomi-control');
+const { createIpfistControl, installIpfistIpc } = require('./ipfist-control');
 const { createAccountGroupControl } = require('./account-group-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
@@ -966,6 +968,62 @@ function installResiFactory() {
   }
 }
 
+function pushEvomiStatus(status) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('evomiUpdated', status);
+      }
+    }
+  } catch {}
+}
+
+function installEvomi() {
+  if (!FEATURES.evomi) return null;
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const control = createEvomiControl({
+      dataManager,
+      logger: console,
+      onStatus: pushEvomiStatus,
+    });
+    installEvomiIpc({ ipcMain, control, logger: console });
+    control.refresh().catch(error => console.warn(`[evomi] startup refresh: ${error.message}`));
+    return control;
+  } catch (error) {
+    console.error(`Could not install Evomi: ${error.message}`);
+    return null;
+  }
+}
+
+function pushIpfistStatus(status) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('ipfistUpdated', status);
+      }
+    }
+  } catch {}
+}
+
+function installIpfist() {
+  if (!FEATURES.ipfist) return null;
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const control = createIpfistControl({
+      dataManager,
+      logger: console,
+      onStatus: pushIpfistStatus,
+    });
+    installIpfistIpc({ ipcMain, control, logger: console });
+    control.refresh().catch(error => console.warn(`[ipfist] startup refresh: ${error.message}`));
+    return control;
+  } catch (error) {
+    console.error(`Could not install IPFist: ${error.message}`);
+    return null;
+  }
+}
+
 function installManagedProxies() {
   if (!FEATURES.managedProxies) return null;
   try {
@@ -1339,6 +1397,8 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const proxyGroupControl = installProxyGroups();
   const managedProxyControl = installManagedProxies();
   installResiFactory();
+  installEvomi();
+  installIpfist();
   installTargetReadiness();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   if (!licenseAuthority) setTargetHarvestAuthorization(true);

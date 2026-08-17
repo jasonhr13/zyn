@@ -529,6 +529,8 @@ function getSettings() {
     imapUser: '',
     imapPass: '',
     resiFactoryApiKey: '',
+    evomiApiKey: '',
+    ipfistApiKey: '',
   };
   // Merge so new default fields always appear even if settings.json predates them
   return { ...defaults, ...readJSON('settings.json', {}) };
@@ -547,7 +549,7 @@ function saveSettings(settings) { writeJSON('settings.json', settings); }
 // handed to someone else (to seed their profiles/proxies, or to move machines), and shipping these
 // inside it silently gives that person your Discord bot and your paid solver accounts. Stripped on
 // export; importAll merges keys, so an existing local value is simply left alone.
-const EXPORT_REDACTED = ['discordBotToken', 'licenseKey', 'aycdApiKey', 'lucaApiKey', 'hyperApiKey', 'imapPass', 'resiFactoryApiKey'];
+const EXPORT_REDACTED = ['discordBotToken', 'licenseKey', 'aycdApiKey', 'lucaApiKey', 'hyperApiKey', 'imapPass', 'resiFactoryApiKey', 'evomiApiKey', 'ipfistApiKey'];
 
 function exportAll() {
   const settings = { ...readJSON('settings.json', {}) };

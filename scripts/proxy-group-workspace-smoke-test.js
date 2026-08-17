@@ -62,6 +62,7 @@ assert.deepEqual(control.getGroups(), []);
 assert.deepEqual(dataManager.getProxies().lists.map(list => list.name).sort(), ['ISP', 'Residential']);
 assert.throws(() => control.createGroup('Managed Proxies'), /reserved by Zyn/);
 assert.throws(() => control.createGroup('ResiFactory'), /reserved by Zyn/);
+assert.throws(() => control.createGroup('Evomi'), /reserved by Zyn/);
 
 control.createGroup('Archive');
 control.addListsToGroup(['ISP'], 'Archive');
@@ -106,10 +107,13 @@ for (const channel of ['createProxyGroup', 'renameProxyGroup', 'deleteProxyGroup
   assert.match(bootstrap, new RegExp(`'${channel}'`), `proxy group IPC omits ${channel}`);
 }
 assert.match(page, /RESIFACTORY_PROXIES/, 'ResiFactory is not a dedicated Proxies subsection');
-assert.match(page, /Providers[\s\S]*RESIFACTORY_PROXIES/, 'ResiFactory is not listed under Providers');
+assert.match(page, /Providers[\s\S]*RESIFACTORY_PROXIES[\s\S]*EVOMI_PROXIES[\s\S]*IPFIST_PROXIES/, 'Providers is missing ResiFactory, Evomi, or IPFist');
 assert.match(page, /resifactory-host\$\{resiFactory \? '' : ' hidden'\}/, 'ResiFactory remounts instead of staying hidden off-section');
+assert.match(page, /resifactory-host\$\{ipfist \? '' : ' hidden'\}/, 'IPFist remounts instead of staying hidden off-section');
 assert.match(page, /ResiFactoryPanel/, 'Proxies is missing the ResiFactory panel');
+assert.match(page, /IPFIST_PROVIDER/, 'Proxies is missing the IPFist panel');
 assert.match(bootstrap, /installResiFactoryIpc/, 'bootstrap does not install ResiFactory IPC');
+assert.match(bootstrap, /installIpfistIpc/, 'bootstrap does not install IPFist IPC');
 const resiFactory = readSource('launcher/resifactory-control.js');
 for (const channel of ['resiFactoryConnect', 'resiFactoryGenerate', 'resiFactoryStartTopup']) {
   assert.match(resiFactory, new RegExp(`'${channel}'`), `ResiFactory IPC omits ${channel}`);

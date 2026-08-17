@@ -18,8 +18,8 @@ const macBuild = fs.readFileSync(path.join(root, 'scripts', 'build-zyn.sh'), 'ut
 const winBuild = fs.readFileSync(path.join(root, 'scripts', 'build-zyn-windows.sh'), 'utf8');
 assert.equal(contract.features.resiFactory, true);
 assert.match(flags, /resiFactory:\s*true/);
-assert.match(macBuild, /resifactory-client\.js resifactory-control\.js/);
-assert.match(winBuild, /resifactory-client\.js resifactory-control\.js/);
+assert.match(macBuild, /resifactory-client\.js resifactory-control\.js evomi-client\.js evomi-control\.js/);
+assert.match(winBuild, /resifactory-client\.js resifactory-control\.js evomi-client\.js evomi-control\.js/);
 assert.ok(contract.requiredResources.includes('Contents/Resources/app/resifactory-control.js'));
 
 assert.equal(uniqueListName('ResiFactory US', ['ResiFactory US', 'other']), 'ResiFactory US 2');

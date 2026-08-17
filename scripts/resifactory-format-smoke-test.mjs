@@ -18,7 +18,7 @@ assert.match(billingHint({ connected: true, billingReady: false, canBill: false 
 assert.match(billingHint({ connected: true, billingReady: false, canBill: true }), /spend cap/);
 assert.match(generateBlockedReason({ granted: true, comingSoon: false, gb: 0 }, {
   connected: true, canGenerate: true,
-}), /no remaining GB/);
+}), /no remaining data/);
 assert.match(generateBlockedReason({ granted: false, comingSoon: false, gb: 4 }, {
   connected: true, canGenerate: true,
 }), /Unlock/);
