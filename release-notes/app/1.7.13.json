@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.13",
+  "notes": [
+    "Pokémon Center setup can collapse so the task table has the rest of the window.",
+    "The collapsed setup line shows product count, queue wait, queue delay, and task count.",
+    "Settings now shows Pokémon Center as Enabled when that module is on your license."
+  ]
+}

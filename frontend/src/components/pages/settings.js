@@ -58,7 +58,7 @@ class Settings extends Component {
       targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
-      licenseEmail: '', licenseOffline: false, proxyAccess: false, managedProxyCount: 0,
+      licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, proxyAccess: false, managedProxyCount: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
@@ -100,6 +100,7 @@ class Settings extends Component {
     this.setState({
       licenseEmail: status.email || '',
       licenseOffline: status.offline === true,
+      pokemonCenterAccess: !!(status.taskTypes && status.taskTypes.pokemoncenter),
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
       ...(status.ok === true ? {} : { cloudBackups: [], cloudListLoaded: false, cloudListError: '' }),
@@ -529,7 +530,7 @@ class Settings extends Component {
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
-      licenseEmail, licenseOffline, proxyAccess, managedProxyCount, signingOut,
+      licenseEmail, licenseOffline, pokemonCenterAccess, proxyAccess, managedProxyCount, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
     // would not reach a state copy until the next settings update.
@@ -580,12 +581,16 @@ class Settings extends Component {
             </div>
             <div className="license-module-access" data-license-module-access="active">
               <span>Target workspace</span><strong>Enabled</strong>
+              <span>Pokémon Center</span>
+              <strong className={pokemonCenterAccess ? 'enabled' : 'disabled'}>
+                {pokemonCenterAccess ? 'Enabled' : 'Not included'}
+              </strong>
               <span>Managed proxies</span><strong className={proxyAccess ? 'enabled' : 'disabled'}>
                 {proxyAccess ? `${managedProxyCount} list${managedProxyCount === 1 ? '' : 's'}` : 'Not included'}
               </strong>
             </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Target and managed proxy access update automatically from your Zyn account.
+              Target, Pokémon Center, and managed proxy access update automatically from your Zyn account.
             </div>
           </div>
 

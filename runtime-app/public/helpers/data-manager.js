@@ -41,7 +41,7 @@ function deleteTask(id) {
 function getPokemonCenterTasks() {
   return readJSON('pokemon-center-tasks.json', {
     products: [{ id: 'pc_product_1', input: '', quantity: '1' }], tasks: [], monitorDelay: '3000', retryDelay: '3000',
-    loopCheckout: false, waitForQueue: false, queueEntryDelay: '0', allInstock: false,
+    loopCheckout: false, waitForQueue: false, queueEntryDelay: '0', allInstock: false, setupOpen: true,
   });
 }
 

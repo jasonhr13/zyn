@@ -82,7 +82,7 @@ class PokemonCenter extends Component {
 
   state = {
     draftProfiles: [], draftProxy: '', draftCount: '2', expanded: null, notice: '',
-    editingProductsTask: null, productDraft: [],
+    editingProductsTask: null, productDraft: [], setupOpen: true,
   };
 
   componentDidMount() {
@@ -98,6 +98,7 @@ class PokemonCenter extends Component {
         queueEntryDelay: String(saved.queueEntryDelay || '0'),
         allInstock: !!saved.allInstock,
       } });
+      this.setState({ setupOpen: saved.setupOpen !== false });
     } catch {}
   }
 
@@ -129,6 +130,7 @@ class PokemonCenter extends Component {
       monitorDelay: payload.monitorDelay, retryDelay: payload.retryDelay,
       loopCheckout: payload.loopCheckout, waitForQueue: payload.waitForQueue,
       queueEntryDelay: payload.queueEntryDelay, allInstock: payload.allInstock,
+      setupOpen: payload.setupOpen !== undefined ? payload.setupOpen !== false : this.state.setupOpen !== false,
     };
     try { ipcRenderer.sendSync('savePokemonCenterTasks', saved); } catch {}
   };
@@ -159,6 +161,26 @@ class PokemonCenter extends Component {
 
   configuredProductCount = products => (Array.isArray(products) ? products : [])
     .filter(product => String((product && product.input) || '').trim()).length;
+
+  toggleSetup = () => {
+    const setupOpen = this.state.setupOpen === false;
+    this.setState({ setupOpen });
+    this.persist({ setupOpen });
+  };
+
+  setupSummary = () => {
+    const { pokemon } = this.props;
+    const productCount = this.configuredProductCount(pokemon.products);
+    const taskCount = (pokemon.tasks || []).length;
+    const parts = [
+      `${productCount} product${productCount === 1 ? '' : 's'}`,
+      pokemon.waitForQueue ? 'Wait for queue' : 'Queue off',
+      `Queue delay ${String(pokemon.queueEntryDelay || '0')}`,
+      `${taskCount} task${taskCount === 1 ? '' : 's'}`,
+    ];
+    if (pokemon.loopCheckout) parts.push('Loop checkout');
+    return parts.join(' · ');
+  };
 
   openTaskProducts = task => {
     const source = this.productsForTask(task);
@@ -317,7 +339,7 @@ class PokemonCenter extends Component {
 
   render() {
     const { pokemon, profiles, proxies } = this.props;
-    const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft } = this.state;
+    const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft, setupOpen } = this.state;
     const list = profileList(profiles);
     const proxyLists = (proxies && proxies.lists) || [];
 
@@ -332,13 +354,34 @@ class PokemonCenter extends Component {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {notice && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{notice}</span>}
+            <button className="btn btn-secondary" onClick={this.toggleSetup}>
+              {setupOpen ? 'Hide setup' : 'Show setup'}
+            </button>
             <button className="btn btn-primary" onClick={() => this.start(pokemon.tasks)} disabled={!pokemon.tasks.length}>Start All</button>
             <button className="btn btn-secondary" onClick={() => this.stop()}>Stop All</button>
           </div>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(290px, .9fr) minmax(340px, 1.1fr)', gap: 14, marginBottom: 14 }}>
+          {!setupOpen && (
+            <button
+              type="button"
+              className="panel"
+              onClick={this.toggleSetup}
+              title="Show setup"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', margin: '0 0 14px',
+                padding: '10px 12px', textAlign: 'left', cursor: 'pointer',
+              }}
+            >
+              <strong style={{ fontSize: 12 }}>Setup</strong>
+              <span style={{ flex: 1, color: 'var(--muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {this.setupSummary()}
+              </span>
+              <span style={{ color: 'var(--muted)', fontSize: 11 }}>Show setup</span>
+            </button>
+          )}
+          {setupOpen && <div style={{ display: 'grid', gridTemplateColumns: 'minmax(290px, .9fr) minmax(340px, 1.1fr)', gap: 14, marginBottom: 14 }}>
             <div className="panel" style={{ margin: 0, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <strong style={{ fontSize: 12 }}>Products</strong>
@@ -440,7 +483,7 @@ class PokemonCenter extends Component {
                 </label>
               </div>
             </div>
-          </div>
+          </div>}
 
           <div className="panel" style={{ margin: 0, overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>

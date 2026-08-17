@@ -181,7 +181,8 @@ async function main() {
     || !report.allowedRound1Route.hash.endsWith('/modules')
     || !report.allowedPokemonRoute.hash.endsWith('/pokemoncenter')
     || !compactSettingsAccess.includes('TargetworkspaceEnabled')
-    || /Pokémon|Round1/i.test(report.settingsAccess)
+    || !compactSettingsAccess.includes('PokémonCenterEnabled')
+    || /Round1/i.test(report.settingsAccess)
     || !report.removalRedirect.endsWith('/modules')
     || report.launchBoundary.round1Accepted !== false
     || report.launchBoundary.denialPushes < 2
