@@ -818,7 +818,7 @@ class Settings extends Component {
                 AutoSolve hCaptcha
               </label>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                When a Pokémon Center task hits hCaptcha, Zyn tries the local classifier first. Turn this off to only solve by hand. Models still download at launch so you can turn it back on without waiting.
+                When a Pokémon Center task hits hCaptcha, Zyn tries the local classifier once. If that misses, you take the next challenge. Turn this off to only solve by hand. Models still download at launch so you can turn it back on without waiting.
               </div>
             </div>
           </div>

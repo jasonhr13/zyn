@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.11",
+  "notes": [
+    "AutoSolve tries the first Pokémon Center hCaptcha once, then hands the next challenge to you.",
+    "Multiple captcha windows cascade so five tasks are not stacked in one pile.",
+    "Captcha windows stay movable so you can line them up and solve them in any order."
+  ]
+}

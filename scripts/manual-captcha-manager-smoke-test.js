@@ -67,9 +67,14 @@ class FakeBrowserWindow extends EventEmitter {
 function fakeElectron() {
   const app = new EventEmitter();
   app.isPackaged = true;
+  const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
   return {
     app,
     BrowserWindow: FakeBrowserWindow,
+    screen: {
+      getPrimaryDisplay: () => ({ workArea }),
+      getDisplayMatching: () => ({ workArea }),
+    },
     net: { fetch: async request => ({ forwarded: request.url }) },
   };
 }
@@ -117,12 +122,12 @@ function request(taskId = 'pc-1', extra = {}) {
   assert.match(escaped, /hcaptcha\.render/);
   assert.match(escaped, /hcaptcha\.execute/);
   assert.match(escaped, /window\.__zynCaptchaToken/);
-  assert.match(escaped, /AutoSolve/);
+  assert.match(escaped, /try AutoSolve once/);
   assert.doesNotMatch(buildCaptchaHtml({
     siteKey: 'key',
     hcapData: '',
     autosolve: false,
-  }), /try AutoSolve first/);
+  }), /try AutoSolve once/);
 
   FakeBrowserWindow.windows = [];
   const electron = fakeElectron();
@@ -200,6 +205,21 @@ function request(taskId = 'pc-1', extra = {}) {
   assert.equal(solves.length, 1);
   assert.equal(solves[0].prompt, 'Click the buses');
   assert.deepEqual(clicks[0], { coords: [[0, 1], [1, 0]], cols: 3 });
+  assert.equal(typeof first.options.x, 'number');
+  assert.equal(typeof first.options.y, 'number');
+
+  manager.scrapeChallenge = async () => ({
+    prompt: 'Click the boats',
+    exampleImages: [],
+    taskImages: [
+      { url: 'https://imgs.hcaptcha.com/d.jpg', row: 0, col: 0 },
+      { url: 'https://imgs.hcaptcha.com/e.jpg', row: 0, col: 1 },
+    ],
+    cols: 3,
+  });
+  await wait(25);
+  assert.equal(solves.length, 1);
+  assert.equal(clicks.length, 1);
 
   first.webContents.token = 'manual-token';
   await wait(25);
@@ -230,6 +250,19 @@ function request(taskId = 'pc-1', extra = {}) {
   }]);
   assert.equal(first.webContents.session.cleared, true);
 
+  // Separate tasks open separate movable windows, cascaded so they are not a single stack.
+  manager.scrapeChallenge = async () => null;
+  await manager.handleEnvelope(request('pc-1'), options);
+  await manager.handleEnvelope(request('pc-2'), options);
+  assert.equal(manager.pendingCount(), 2);
+  const stacked = FakeBrowserWindow.windows.slice(-2);
+  assert.equal(stacked[1].options.x, stacked[0].options.x + 32);
+  assert.equal(stacked[1].options.y, stacked[0].options.y + 32);
+  assert.equal(stacked[0].options.movable, true);
+  assert.equal(stacked[0].options.modal, false);
+  await manager.cancelPending();
+  assert.equal(manager.pendingCount(), 0);
+
   // Task stop and connection teardown close the window without returning a late token.
   await manager.handleEnvelope(request('pc-2'), options);
   assert.equal(manager.pendingCount(), 1);
@@ -238,16 +271,18 @@ function request(taskId = 'pc-1', extra = {}) {
   assert.equal(sent.length, 1);
 
   // The task registry, captcha type, and URL allowlist all reject cross-site renderer requests.
+  const windowsBeforeRejects = FakeBrowserWindow.windows.length;
   await manager.handleEnvelope(request('target-1'), options);
   await manager.handleEnvelope(request('pc-1', { siteUrl: 'https://example.com/' }), options);
   await manager.handleEnvelope(request('pc-1', { captchaType: 'recaptcha' }), options);
-  assert.equal(FakeBrowserWindow.windows.length, 3);
+  assert.equal(FakeBrowserWindow.windows.length, windowsBeforeRejects);
   assert.equal(manager.pendingCount(), 0);
 
   console.log(JSON.stringify({
     ok: true,
     pokemonCenterOnly: true,
-    autosolveThenManual: true,
+    autosolveOnceThenManual: true,
+    cascadedWindows: true,
     isolatedSession: true,
     proxyAuth: true,
     tokenCorrelation: true,

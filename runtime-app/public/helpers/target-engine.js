@@ -3102,8 +3102,8 @@ function handleEngineMessage(data, connection) {
       }
       break;
     case 'solve-captcha':
-      // Isolated Pokemon Center hCaptcha window. AutoSolve classifies tiles when a model exists;
-      // otherwise the user completes the challenge. The token returns on this engine connection.
+      // Isolated Pokemon Center hCaptcha window. AutoSolve classifies the first grid when a model
+      // exists; a miss hands the next challenge to the user. The token returns on this engine connection.
       manualCaptchaManager.handleEnvelope(msg, {
         registry: engineTaskSites,
         send: sendToEngine,

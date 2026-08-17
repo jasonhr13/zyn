@@ -8,6 +8,9 @@ const POKEMON_CENTER_URL = 'https://www.pokemoncenter.com/';
 const POKEMON_CENTER_ORIGIN = new URL(POKEMON_CENTER_URL).origin;
 const POKEMON_CENTER_CAPTCHA = 'hcaptcha-PokemonCenter';
 const DEFAULT_POLL_MS = 400;
+const CAPTCHA_WINDOW_WIDTH = 530;
+const CAPTCHA_WINDOW_HEIGHT = 660;
+const CAPTCHA_WINDOW_OFFSET = 32;
 
 function requiredText(value, label, maxLength) {
   const text = String(value == null ? '' : value).trim();
@@ -132,7 +135,7 @@ function buildCaptchaHtml(solve) {
     <div class="mark">Z</div>
     <h1>Pokémon Center verification</h1>
     <p>${autosolve
-    ? 'Zyn will try AutoSolve first. If that fails, complete the challenge below.'
+    ? 'Zyn will try AutoSolve once. If that misses, complete the next challenge below.'
     : 'Complete the challenge below. Zyn will return the token to your waiting task automatically.'}</p>
     <section id="captcha-shell"><div id="h-captcha"></div></section>
     <div id="status"><span class="pulse"></span><span id="status-text">Loading hCaptcha…</span></div>
@@ -213,6 +216,43 @@ function clickTilesScript(coords, cols) {
     if (submit) submit.click();
     return wanted.size;
   })()`;
+}
+
+function workAreaFor(electron, parent) {
+  const screen = electron && electron.screen;
+  if (!screen) return null;
+  try {
+    const bounds = parent && typeof parent.getBounds === 'function' ? parent.getBounds() : null;
+    const display = (bounds && screen.getDisplayMatching)
+      ? screen.getDisplayMatching(bounds)
+      : screen.getPrimaryDisplay?.();
+    const area = display && display.workArea;
+    if (!area) return null;
+    return {
+      x: Number(area.x) || 0,
+      y: Number(area.y) || 0,
+      width: Number(area.width) || 0,
+      height: Number(area.height) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function captchaWindowBounds(electron, parent, stackIndex) {
+  const width = CAPTCHA_WINDOW_WIDTH;
+  const height = CAPTCHA_WINDOW_HEIGHT;
+  const area = workAreaFor(electron, parent);
+  const parentBounds = parent && typeof parent.getBounds === 'function' ? parent.getBounds() : null;
+  const originX = parentBounds ? parentBounds.x + 56 : (area ? area.x + 72 : 80);
+  const originY = parentBounds ? parentBounds.y + 48 : (area ? area.y + 56 : 60);
+  let x = originX + (Number(stackIndex) || 0) * CAPTCHA_WINDOW_OFFSET;
+  let y = originY + (Number(stackIndex) || 0) * CAPTCHA_WINDOW_OFFSET;
+  if (area && area.width >= width && area.height >= height) {
+    x = Math.min(Math.max(area.x, x), area.x + area.width - width);
+    y = Math.min(Math.max(area.y, y), area.y + area.height - height);
+  }
+  return { x, y, width, height };
 }
 
 function loadAutosolver() {
@@ -323,14 +363,16 @@ class ManualCaptchaManager {
 
   createWindow(marker, electron, parent) {
     const partition = `zyn-captcha-${marker.id}`;
+    const stackIndex = Math.max(0, this.pending.size - 1);
+    const bounds = captchaWindowBounds(electron, parent, stackIndex);
     const window = new electron.BrowserWindow({
-      width: 530,
-      height: 660,
+      ...bounds,
       minWidth: 440,
       minHeight: 560,
       show: false,
       parent: parent && !parent.isDestroyed?.() ? parent : undefined,
       modal: false,
+      movable: true,
       title: 'Zyn · Captcha',
       backgroundColor: '#090b18',
       autoHideMenuBar: true,
@@ -386,31 +428,48 @@ class ManualCaptchaManager {
     return false;
   }
 
+  setCaptchaStatus(webContents, text) {
+    if (!webContents) return Promise.resolve();
+    return webContents.executeJavaScript(
+      `document.getElementById('status-text') && (document.getElementById('status-text').textContent = ${JSON.stringify(String(text))})`,
+      true,
+    ).catch(() => {});
+  }
+
+  handOffAutosolve(marker, key) {
+    marker.autosolveHandedOff = true;
+    if (key) marker.lastChallenge = key;
+    return this.setCaptchaStatus(marker.window && marker.window.webContents, 'Complete the challenge to continue.');
+  }
+
   async maybeAutosolve(marker) {
     if (marker.autosolveEnabled && marker.autosolveEnabled() === false) return;
+    if (marker.autosolveHandedOff) return;
     if (!this.autosolver || marker.done || marker.autosolving || !marker.window || marker.window.isDestroyed()) return;
     const challenge = await this.scrapeChallenge(marker.window.webContents);
     if (!challenge) return;
     const key = challengeKey(challenge);
     if (!key || key === marker.lastChallenge) return;
+    if (marker.autosolveSubmitted) {
+      await this.handOffAutosolve(marker, key);
+      return;
+    }
     marker.lastChallenge = key;
     marker.autosolving = true;
     try {
-      marker.window.webContents.executeJavaScript(
-        `document.getElementById('status-text') && (document.getElementById('status-text').textContent = 'AutoSolve running…')`,
-        true,
-      ).catch(() => {});
+      await this.setCaptchaStatus(marker.window.webContents, 'AutoSolve running…');
       const result = await this.autosolver.solve(challenge);
-      if (marker.done || !result || !result.solvable || !result.coords.length) {
-        marker.window.webContents.executeJavaScript(
-          `document.getElementById('status-text') && (document.getElementById('status-text').textContent = 'Complete the challenge to continue.')`,
-          true,
-        ).catch(() => {});
+      if (marker.done) return;
+      if (!result || !result.solvable || !result.coords.length) {
+        await this.handOffAutosolve(marker, key);
         return;
       }
       await this.clickTiles(marker.window.webContents, result.coords, challenge.cols || 3);
+      marker.autosolveSubmitted = true;
+      await this.setCaptchaStatus(marker.window.webContents, 'Checking AutoSolve…');
     } catch (error) {
       marker.logger.warn?.(`[captcha] autosolve failed for task ${marker.solve.taskId}: ${safeError(error)}`);
+      await this.handOffAutosolve(marker, key);
     } finally {
       marker.autosolving = false;
     }
@@ -460,6 +519,8 @@ class ManualCaptchaManager {
       pollTimer: null,
       polling: false,
       autosolving: false,
+      autosolveSubmitted: false,
+      autosolveHandedOff: false,
       lastChallenge: '',
       reloadedForError17: false,
       done: false,
@@ -555,6 +616,7 @@ module.exports = {
     parseProxy,
     buildCaptchaHtml,
     challengeKey,
+    captchaWindowBounds,
     loadAutosolver,
     singleton,
   },
