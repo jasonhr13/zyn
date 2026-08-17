@@ -30,7 +30,7 @@ function visit(root, output = { files: [], bundles: [] }, top = root) {
     }
     else if (entry.isFile()) {
       const stat = fs.statSync(full);
-      if ((stat.mode & 0o111) || /\.(dylib|so|bundle)$/i.test(entry.name)) output.files.push(full);
+      if ((stat.mode & 0o111) || /\.(dylib|so|bundle|node)$/i.test(entry.name)) output.files.push(full);
     }
   }
   return output;
