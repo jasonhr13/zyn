@@ -142,6 +142,7 @@ node -e '
 ' "$RESOURCES/app/package.json" "$APP_VERSION"
 mkdir -p "$RESOURCES/app/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/app/node_modules/"
+node "$PROJECT_DIR/scripts/prune-zyn-native-addons.cjs" "$RESOURCES/app/node_modules" win32 x64
 
 cp "$PROJECT_DIR/assets/brand/Zyn.ico" "$RESOURCES/Zyn.ico"
 node "$PROJECT_DIR/scripts/write-windows-update-config.cjs" "$OUTPUT_APP"

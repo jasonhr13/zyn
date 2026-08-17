@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.12",
+  "notes": [
+    "Mac and Windows apps now ship only the AutoSolve natives for that computer.",
+    "Apple Silicon and Intel builds no longer include Linux or Windows classifier binaries.",
+    "Intel AutoSolve uses the matching image library instead of the Apple Silicon one."
+  ]
+}

@@ -118,6 +118,33 @@ check('native Target backend', () => {
   verifyNativeWebhookBrand(file);
 });
 
+check('architecture-matched AutoSolve natives', () => {
+  const { resolveTarget } = require('./prune-zyn-native-addons.cjs');
+  const target = resolveTarget('darwin', appArch);
+  const nodeModules = path.join(appPath, 'Contents', 'Resources', 'app', 'node_modules');
+  const onnxRoot = path.join(nodeModules, 'onnxruntime-node', 'bin', 'napi-v3');
+  assert.equal(
+    fs.existsSync(path.join(onnxRoot, target.platform, target.arch, 'onnxruntime_binding.node')),
+    true,
+    `onnxruntime_binding.node is missing for ${target.key}`,
+  );
+  assert.deepEqual(fs.readdirSync(onnxRoot).sort(), [target.platform]);
+  assert.deepEqual(fs.readdirSync(path.join(onnxRoot, target.platform)).sort(), [target.arch]);
+  for (const name of target.sharpPackages) {
+    assert.equal(
+      fs.existsSync(path.join(nodeModules, '@img', name, 'package.json')),
+      true,
+      `@img/${name} is missing`,
+    );
+  }
+  const imgRoot = path.join(nodeModules, '@img');
+  if (!fs.existsSync(imgRoot)) return;
+  for (const name of fs.readdirSync(imgRoot)) {
+    if (!name.startsWith('sharp-')) continue;
+    assert.equal(target.sharpPackages.includes(name), true, `@img/${name} should not be packaged`);
+  }
+});
+
 check('complete Zyn brand boundary', () => {
   assert.ok(nativeEngine, `no native backend contract for ${appArch}`);
   const resources = path.join(appPath, 'Contents', 'Resources');

@@ -165,6 +165,7 @@ cp "$PROJECT_DIR/launcher/runtime-manager.js" "$RESOURCES/app/runtime-manager.js
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
 mkdir -p "$RESOURCES/app/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/app/node_modules/"
+node "$PROJECT_DIR/scripts/prune-zyn-native-addons.cjs" "$RESOURCES/app/node_modules" darwin "$APP_ARCH"
 
 PLIST="$CONTENTS/Info.plist"
 CURRENT_EXECUTABLE="$(plutil -extract CFBundleExecutable raw "$PLIST")"

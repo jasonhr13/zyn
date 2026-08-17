@@ -37,6 +37,9 @@ const required = [
   'resources/app/package.json',
   'resources/app/node_modules/imapflow/package.json',
   'resources/app/node_modules/ws/package.json',
+  'resources/app/node_modules/onnxruntime-node/bin/napi-v3/win32/x64/onnxruntime_binding.node',
+  'resources/app/node_modules/@img/sharp-win32-x64/package.json',
+  'resources/app/node_modules/@img/sharp-libvips-win32-x64/package.json',
   'resources/engine/backend.exe',
   'resources/bot/shape-farmer.mjs',
   'resources/bot/shape-bank-demand.mjs',
@@ -51,6 +54,14 @@ for (const relative of required) {
 }
 assert.equal(fs.existsSync(path.join(resources, 'vendor', 'ms-playwright')), false,
   'Chromium must download after sign-in, not ship in the Windows app');
+const onnxRoot = path.join(resources, 'app', 'node_modules', 'onnxruntime-node', 'bin', 'napi-v3');
+assert.deepEqual(fs.readdirSync(onnxRoot).sort(), ['win32']);
+assert.deepEqual(fs.readdirSync(path.join(onnxRoot, 'win32')).sort(), ['x64']);
+const imgRoot = path.join(resources, 'app', 'node_modules', '@img');
+for (const name of fs.readdirSync(imgRoot)) {
+  if (!name.startsWith('sharp-')) continue;
+  assert.ok(['sharp-win32-x64', 'sharp-libvips-win32-x64'].includes(name), `@img/${name} should not be packaged`);
+}
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
