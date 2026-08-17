@@ -23,6 +23,7 @@ const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { createProxyGroupControl } = require('./proxy-group-control');
+const { createResiFactoryControl, installResiFactoryIpc } = require('./resifactory-control');
 const { createAccountGroupControl } = require('./account-group-control');
 const { installManagedProxyIpcGuard } = require('./managed-proxy-ipc-guard');
 const { installCheckoutReporting } = require('./checkout-reporting');
@@ -936,6 +937,35 @@ function guardTaskHelpers(authority) {
   }
 }
 
+function pushResiFactoryStatus(status) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('resiFactoryUpdated', status);
+      }
+    }
+  } catch {}
+}
+
+function installResiFactory() {
+  if (!FEATURES.resiFactory) return null;
+  try {
+    const { shell } = require('electron');
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const control = createResiFactoryControl({
+      dataManager,
+      logger: console,
+      onStatus: pushResiFactoryStatus,
+    });
+    installResiFactoryIpc({ ipcMain, control, shell, logger: console });
+    control.refresh().catch(error => console.warn(`[resifactory] startup refresh: ${error.message}`));
+    return control;
+  } catch (error) {
+    console.error(`Could not install ResiFactory: ${error.message}`);
+    return null;
+  }
+}
+
 function installManagedProxies() {
   if (!FEATURES.managedProxies) return null;
   try {
@@ -1308,6 +1338,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const accountGroupControl = installAccountGroups();
   const proxyGroupControl = installProxyGroups();
   const managedProxyControl = installManagedProxies();
+  installResiFactory();
   installTargetReadiness();
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   if (!licenseAuthority) setTargetHarvestAuthorization(true);

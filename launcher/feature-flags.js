@@ -11,6 +11,7 @@ const FEATURES = Object.freeze({
   apiModuleAccess: true,
   profileImap: true,
   managedProxies: true,
+  resiFactory: true,
   cloudBackup: true,
   taskScheduling: true,
   isolatedRenderer: false,

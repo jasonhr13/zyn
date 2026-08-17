@@ -1,12 +1,15 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyCount, proxyName, proxyRef } from '../proxy-options';
+import ResiFactoryPanel from './resifactory-panel';
 
 const { ipcRenderer } = window.require('electron');
 
 const ALL_PROXY_LISTS = '__all_proxy_lists__';
 const MANAGED_PROXIES = '__managed_proxies__';
 const UNGROUPED_PROXIES = '__ungrouped_proxies__';
+const RESIFACTORY_PROXIES = '__resifactory_proxies__';
+const SYSTEM_GROUPS = [ALL_PROXY_LISTS, MANAGED_PROXIES, UNGROUPED_PROXIES, RESIFACTORY_PROXIES];
 
 function listGroups(list) {
   const groups = [
@@ -68,8 +71,7 @@ class Proxies extends Component {
   lists = () => ((this.props.proxies && this.props.proxies.lists) || []);
   localLists = () => this.lists().filter(list => !list.managed);
   managedLists = () => this.lists().filter(list => list.managed);
-  isCustomGroup = (group = this.state.activeGroup) => Boolean(group
-    && group !== ALL_PROXY_LISTS && group !== MANAGED_PROXIES && group !== UNGROUPED_PROXIES);
+  isCustomGroup = (group = this.state.activeGroup) => Boolean(group && !SYSTEM_GROUPS.includes(group));
 
   refreshGroups = (preferred = '') => {
     let groups = [];
@@ -78,7 +80,7 @@ class Proxies extends Component {
     groups = uniqueGroups(groups);
     this.setState(previous => {
       let activeGroup = preferred || previous.activeGroup || ALL_PROXY_LISTS;
-      const system = [ALL_PROXY_LISTS, MANAGED_PROXIES, UNGROUPED_PROXIES].includes(activeGroup);
+      const system = SYSTEM_GROUPS.includes(activeGroup);
       if (!system && !groups.includes(activeGroup)) activeGroup = ALL_PROXY_LISTS;
       if (activeGroup === MANAGED_PROXIES && !this.managedLists().length) activeGroup = ALL_PROXY_LISTS;
       return { groups, activeGroup };
@@ -165,6 +167,10 @@ class Proxies extends Component {
   openNewList = () => {
     if (this.state.activeGroup === MANAGED_PROXIES) {
       this.setState({ msg: 'Managed proxy lists are synchronized by Zyn. Choose a local group before creating a list.' });
+      return;
+    }
+    if (this.state.activeGroup === RESIFACTORY_PROXIES) {
+      this.setState({ msg: 'Generate ResiFactory lists from the ResiFactory section, or choose a local group to paste your own.' });
       return;
     }
     this.setState({ editorOpen: true, editorRef: '', editorName: '', editorRaw: '' });
@@ -262,12 +268,13 @@ class Proxies extends Component {
     const active = this.state.activeGroup === group;
     const label = group === ALL_PROXY_LISTS ? 'All Proxy Lists'
       : group === MANAGED_PROXIES ? 'Managed Proxies'
-        : group === UNGROUPED_PROXIES ? 'Ungrouped' : group;
+        : group === UNGROUPED_PROXIES ? 'Ungrouped'
+          : group === RESIFACTORY_PROXIES ? 'ResiFactory' : group;
     return (
       <button type="button" key={group} className={`profile-group-item${active ? ' active' : ''}`} onClick={() => this.selectGroup(group)}>
         <i className={`ion-md-${icon}`} />
         <span>{label}</span>
-        <em>{count}</em>
+        {count === '' || count == null ? null : <em>{count}</em>}
       </button>
     );
   };
@@ -326,14 +333,17 @@ class Proxies extends Component {
     const selectable = shown.filter(list => !list.managed);
     const allShownSelected = selectable.length > 0 && selectable.every(list => selected.includes(proxyRef(list)));
     const ungroupedCount = localLists.filter(list => listGroups(list).length === 0).length;
+    const resiFactory = activeGroup === RESIFACTORY_PROXIES;
     const activeLabel = activeGroup === ALL_PROXY_LISTS ? 'All Proxy Lists'
       : activeGroup === MANAGED_PROXIES ? 'Managed Proxies'
-        : activeGroup === UNGROUPED_PROXIES ? 'Ungrouped' : activeGroup;
+        : activeGroup === UNGROUPED_PROXIES ? 'Ungrouped'
+          : resiFactory ? 'ResiFactory' : activeGroup;
     const description = activeGroup === MANAGED_PROXIES
       ? 'Read-only proxy lists synchronized with your Zyn account'
-      : this.isCustomGroup() ? `${scoped.length} proxy list${scoped.length === 1 ? '' : 's'} in this group`
-        : activeGroup === ALL_PROXY_LISTS ? 'Every local and managed proxy list'
-          : 'Local proxy lists waiting to be assigned to a group';
+      : resiFactory ? 'Link a key to see remaining GB, generate lists, and add data without leaving Zyn'
+        : this.isCustomGroup() ? `${scoped.length} proxy list${scoped.length === 1 ? '' : 's'} in this group`
+          : activeGroup === ALL_PROXY_LISTS ? 'Every local and managed proxy list'
+            : 'Local proxy lists waiting to be assigned to a group';
 
     return (
       <div className="profiles-workspace proxies-workspace">
@@ -373,6 +383,8 @@ class Proxies extends Component {
               {groups.length ? groups.map(group => this.renderGroupItem(group, localLists.filter(list => inListGroup(list, group)).length)) : (
                 <div className="profile-group-sidebar-empty"><i className="ion-md-folder-open" /><span>No groups yet</span><small>Create one to organize local proxy lists.</small></div>
               )}
+              <div className="profile-group-nav-label profile-group-nav-label-secondary">Providers</div>
+              {this.renderGroupItem(RESIFACTORY_PROXIES, '', 'flash')}
               {!!managedLists.length && (
                 <><div className="profile-group-nav-label profile-group-nav-label-secondary">Provided by Zyn</div>{this.renderGroupItem(MANAGED_PROXIES, managedLists.length, 'lock')}</>
               )}
@@ -396,7 +408,7 @@ class Proxies extends Component {
                     <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ renamingGroup: false, renameGroupName: '' })}>Cancel</button>
                   </div>
                 ) : (
-                  <><div className="profiles-context-title"><h2>{activeLabel}</h2><span>{scoped.length}</span></div><p>{description}</p></>
+                  <><div className="profiles-context-title"><h2>{activeLabel}</h2>{!resiFactory && <span>{scoped.length}</span>}</div><p>{description}</p></>
                 )}
               </div>
               <div className="profiles-context-actions">
@@ -404,16 +416,23 @@ class Proxies extends Component {
                   <><button className="profile-context-icon" title="Rename group" onClick={this.startRenameGroup}><i className="ion-md-create" /></button>
                     <button className="profile-context-icon danger" title="Delete group" onClick={this.deleteGroup}><i className="ion-md-trash" /></button></>
                 )}
-                <div className="profile-search-field"><i className="ion-md-search" /><input className="form-input" value={query}
-                  placeholder={`Search ${activeLabel.toLowerCase()}…`} onChange={event => this.setState({ query: event.target.value })} /></div>
-                <button className="btn btn-primary btn-sm" disabled={activeGroup === MANAGED_PROXIES} onClick={this.openNewList}
+                {!resiFactory && <div className="profile-search-field"><i className="ion-md-search" /><input className="form-input" value={query}
+                  placeholder={`Search ${activeLabel.toLowerCase()}…`} onChange={event => this.setState({ query: event.target.value })} /></div>}
+                {!resiFactory && <button className="btn btn-primary btn-sm" disabled={activeGroup === MANAGED_PROXIES} onClick={this.openNewList}
                   title={activeGroup === MANAGED_PROXIES ? 'Managed proxy lists are synchronized by Zyn' : 'Create a local proxy list'}>
                   <i className="ion-md-add" /> New Proxy List
-                </button>
+                </button>}
               </div>
             </div>
 
-            {!!selected.length && (
+            <div className={`resifactory-host${resiFactory ? '' : ' hidden'}`}>
+              <ResiFactoryPanel
+                standalone
+                activeGroup=""
+                onCatalog={proxies => this.props.dispatch({ type: 'update', obj: { proxies } })}
+              />
+            </div>
+            {!resiFactory && !!selected.length && (
               <div className="profile-bulk-toolbar">
                 <strong>{selected.length} selected</strong>
                 <select className="form-select" defaultValue="" onChange={this.addSelectedToGroup}>
@@ -425,7 +444,7 @@ class Proxies extends Component {
               </div>
             )}
 
-            <div className="profile-table-wrap proxy-table-wrap">
+            {!resiFactory && <div className="profile-table-wrap proxy-table-wrap">
               <div className="profile-table-head proxy-list-table-head">
                 <label className="profile-row-check"><input type="checkbox" checked={allShownSelected} disabled={!selectable.length} onChange={() => this.selectShown(shown)} /></label>
                 <span>Proxy list</span><span>Type</span><span>Proxies</span><span>Actions</span>
@@ -454,7 +473,7 @@ class Proxies extends Component {
                   <div className="profile-table-empty"><span><i className="ion-md-globe" /></span><h3>No proxy lists here</h3><p>{activeGroup === MANAGED_PROXIES ? 'Managed proxy access will appear here when it is available on your Zyn account.' : 'Create a local list or move an existing list into this group.'}</p>{activeGroup !== MANAGED_PROXIES && <button className="btn btn-primary btn-sm" onClick={this.openNewList}>New Proxy List</button>}</div>
                 )}
               </div>
-            </div>
+            </div>}
           </main>
         </div>
         {this.renderEditor()}

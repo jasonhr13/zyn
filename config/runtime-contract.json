@@ -9,6 +9,7 @@
     "apiModuleAccess": true,
     "profileImap": true,
     "managedProxies": true,
+    "resiFactory": true,
     "cloudBackup": true,
     "taskScheduling": true,
     "isolatedRenderer": false
@@ -69,6 +70,8 @@
     "Contents/Resources/app/proxy-group-control.js",
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
+    "Contents/Resources/app/resifactory-client.js",
+    "Contents/Resources/app/resifactory-control.js",
     "Contents/Resources/app/harvester-extension-bridge.js",
     "Contents/Resources/app/cloud-backup.js",
     "Contents/Resources/app/cloud-backup-data.js",

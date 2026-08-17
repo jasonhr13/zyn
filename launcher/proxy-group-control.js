@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROXY_FILE = 'proxies.json';
-const RESERVED_GROUPS = new Set(['all proxy lists', 'managed proxies', 'ungrouped']);
+const RESERVED_GROUPS = new Set(['all proxy lists', 'managed proxies', 'ungrouped', 'resifactory']);
 
 function normalizeGroups(values) {
   const output = [];
