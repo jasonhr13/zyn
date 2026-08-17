@@ -120,6 +120,40 @@ assert.match(css, /max-height:\s*570px/);
 assert.match(background, /It=0x316,wt=0x23a/,
   'background popup dimensions must remain 790 by 570');
 
+const atcPageSessionSource = read('src/atc-page-session.js');
+assert.match(background, /from'\.\/atc-page-session\.js'/,
+  'service worker must load the ATC page-session policy');
+assert.match(background, /noteAtcPageCapture\(atcPageSession\)/,
+  'a good ATC capture must count against the current page life');
+assert.match(background, /if\(ne\(\)&&atcPageSessionExhausted\(atcPageSession\)\)/,
+  'an exhausted ATC page life must reset before the next click');
+assert.match(background, /atcPageSession=createAtcPageSession\(\)/,
+  'a quality reset must start a fresh ATC page life');
+assert.doesNotMatch(background, /if\(ne\(\)\)try\{await ae\(d\),await b\(0x258,0x3e8\);\}/,
+  'successful ATC captures must not reload the product page every time');
+assert.match(background, /else\{try\{await et\(\);\}catch\(_0x50bd82\)\{console\['warn'\]\('Failed\\x20to\\x20rotate\\x20proxy\\x20after\\x20harvest'/,
+  'login captures must still rotate the proxy after each save');
+assert.match(background, /no\\x20headers\\x20after\\x20add-to-cart\\x20click[\s\S]{0,220}await de\(!0x1\)/,
+  'a dead Shape sensor must still trigger a full quality reset');
+
+const atcPageSession = {};
+new Function('exports', atcPageSessionSource.replace(/\bexport\s+/g, '')
+  + '\nObject.assign(exports,{ATC_PAGE_COOKIE_LIMIT,ATC_PAGE_LIFE_MS,createAtcPageSession,atcPageSessionExhausted,noteAtcPageCapture});')(atcPageSession);
+assert.equal(atcPageSession.ATC_PAGE_COOKIE_LIMIT, 6);
+assert.equal(atcPageSession.ATC_PAGE_LIFE_MS, 15_000);
+assert.equal(atcPageSession.atcPageSessionExhausted(null), false);
+assert.equal(atcPageSession.atcPageSessionExhausted({ count: 5, startedAt: 1_000 }, 1_000), false);
+assert.equal(atcPageSession.atcPageSessionExhausted({ count: 6, startedAt: 1_000 }, 1_000), true);
+assert.equal(atcPageSession.atcPageSessionExhausted({ count: 1, startedAt: 1_000 }, 16_000), true);
+let life = atcPageSession.createAtcPageSession(1_000);
+for (let n = 1; n <= 5; n += 1) {
+  const noted = atcPageSession.noteAtcPageCapture(life, 1_000 + n);
+  life = noted.session;
+  assert.equal(noted.exhausted, false, `cookie ${n} must stay on the warm page`);
+}
+assert.equal(atcPageSession.noteAtcPageCapture(life, 1_006).exhausted, true,
+  'the sixth ATC cookie on a page must exhaust the session');
+
 const visualSources = [html, css];
 for (const file of fs.readdirSync(path.join(extension, 'assets')).filter(name => name.endsWith('.svg'))) {
   const source = read(path.join('assets', file));
@@ -302,6 +336,8 @@ verifyClientIdentity().then(() => {
     localAssets: document.querySelectorAll('link[href], script[src], img[src]').length,
     stableClientIdentity: true,
     zynNightTheme: true,
+    atcPageCookieLimit: 6,
+    atcPageLifeMs: 15000,
   }, null, 2));
 }).catch(error => {
   console.error(error);
