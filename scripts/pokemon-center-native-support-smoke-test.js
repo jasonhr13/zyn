@@ -24,6 +24,7 @@ const profilesPage = fs.readFileSync(path.join(root, 'frontend/src/components/pa
 const createProfile = fs.readFileSync(path.join(root, 'frontend/src/components/pages/profiles-components/create-modal.js'), 'utf8');
 const targetPage = fs.readFileSync(path.join(root, 'frontend/src/components/pages/target.js'), 'utf8');
 const taskGroups = fs.readFileSync(path.join(root, 'frontend/src/components/pages/task-groups.js'), 'utf8');
+const taskRuntime = fs.readFileSync(path.join(root, 'frontend/src/components/target-task-runtime.js'), 'utf8');
 const accounts = fs.readFileSync(path.join(root, 'frontend/src/components/pages/accounts.js'), 'utf8');
 const targetLaunch = fs.readFileSync(path.join(root, 'launcher/target-group-launch.js'), 'utf8');
 const profileImap = fs.readFileSync(path.join(root, 'launcher/profile-imap-control.js'), 'utf8');
@@ -254,7 +255,8 @@ assert.match(createProfile, /Billing address is the same as shipping/);
 assert.match(createProfile, /!pokemonCenter && this\.state\.imapProvider/);
 assert.match(profilesPage, /pokemonCenter \? 'POKÉMON CENTER' : 'TARGET'/);
 assert.match(page, /profile\.profileType === 'pokemoncenter'/);
-for (const targetOnly of [targetPage, taskGroups, accounts, targetLaunch, profileImap]) {
+assert.match(taskGroups, /profileListFrom/);
+for (const targetOnly of [targetPage, taskRuntime, accounts, targetLaunch, profileImap]) {
   assert.match(targetOnly, /profileType !== 'pokemoncenter'/);
 }
 assert.doesNotMatch([page, profilesPage, createProfile].join('\n'), /\bPolar\b/i,

@@ -54,7 +54,8 @@ class PageHandler extends Component {
     // Target checkout engine — same page-unmount reasoning as above: the engine runs in main,
     // so its status/log events are handled here and pushed to the store, not on the page.
     // `lines` is a batch (the engine's output is coalesced in main to keep the renderer alive);
-    // `line` is still accepted for any single-line sender.
+    // `line` is still accepted for any single-line sender. Target statuses are coalesced the
+    // same way in the engine bridge (last write wins per task) before they reach this handler.
     // taskId MUST be forwarded. Target is multi-task now and the bridge stamps every log line and
     // status with the task it belongs to; destructuring only the old fields silently dropped it, so
     // every update arrived as module-level and each task card sat on "Idle" forever while its real
@@ -62,6 +63,7 @@ class PageHandler extends Component {
     ipcRenderer.on('targetLog', (e, { line, lines, taskId }) => {
       this.props.dispatch({ type: 'targetLog', line, lines, taskId, at: Date.now() });
     });
+    // Distinct statuses are already coalesced per task in the Target engine bridge.
     ipcRenderer.on('targetStatus', (e, { state, label, color, detail, taskId, taskState, running }) => {
       const receivedAt = Date.now();
       this.props.dispatch({ type: 'targetStatus', state, label, color, detail, taskId, taskState, running, receivedAt });

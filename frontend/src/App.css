@@ -1359,8 +1359,12 @@ body.theme-night .form-select {
 .task-information dd { color: var(--text2); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-log-panel { min-width: 0; }
 .task-log-view { height: 340px; overflow: auto; padding: 10px 12px; background: var(--panel-bg-alt); user-select: text; -webkit-user-select: text; }
-.task-log-view > div:not(.task-log-empty) { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; color: var(--text2); font: 9.5px/1.65 'Menlo', 'Consolas', monospace; word-break: break-word; }
-.task-log-view > div:not(.task-log-empty) > span { color: var(--dim); text-align: right; }
+.task-log-view > div:not(.task-log-empty):not(.task-log-virtual-pad) { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; color: var(--text2); font: 9.5px/1.65 'Menlo', 'Consolas', monospace; word-break: break-word; }
+.task-log-view > div:not(.task-log-empty):not(.task-log-virtual-pad) > span { color: var(--dim); text-align: right; }
+.task-log-view-virtual > div:not(.task-log-empty):not(.task-log-virtual-pad) {
+  height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal;
+}
+.task-log-virtual-pad { display: block; padding: 0; margin: 0; border: 0; background: transparent; pointer-events: none; }
 .task-log-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--dim); }
 .task-log-empty span { color: var(--muted); font-size: 10.5px; margin-top: 8px; }
 .task-log-empty small { color: var(--dim); font-size: 9px; margin-top: 3px; max-width: 360px; text-align: center; line-height: 1.45; }

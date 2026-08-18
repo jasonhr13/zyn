@@ -64,10 +64,8 @@ assert.match(engine, /module\.exports = \{[^}]*isTaskRunning/,
 assert.match(engine, /site === engineContract\.SITES\.TARGET\) log\(decoded/,
   'Target engine task-log lines must reach the Target task log');
 const plain = fs.readFileSync(path.join(project, 'runtime-app', 'public', 'helpers', 'plain-log.js'), 'utf8');
-assert.match(plain, /\^get-addresses/,
-  'packaged logs must keep get-addresses diagnostics');
-assert.match(plain, /\^set-address/,
-  'packaged logs must keep set-address diagnostics');
+assert.doesNotMatch(plain, /\^get-addresses|\^set-address|\^address match=|\^profile line1=/,
+  'Target address debug dumps must not ship in packaged logs');
 
 // The IPC bridge ships directly from the tracked runtime source.
 const stagedApp = path.join(directory, 'staged-app');

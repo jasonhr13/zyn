@@ -38,6 +38,7 @@ const {
   resolveProxyAssignment,
   displayProxyGroup,
 } = require('./proxy-resolve');
+const { createStatusCoalescer, STATUS_FLUSH_MS } = require('./status-coalesce');
 
 // IMAP belongs to the profile selected for this task. request-code normally carries taskID; email
 // matching remains a fallback for older engine messages that only identify the account address.
@@ -643,13 +644,14 @@ const log = (line, taskId = '') => {
   if (buf.length > LOG_BUF_MAX) logBufs[key] = buf.slice(-LOG_BUF_MAX);
   if (!logTimer) logTimer = setTimeout(flushLogs, LOG_FLUSH_MS);
 };
-// Status is NOT batched (it must feel instant), so it is deduped instead: an engine step loop can
-// re-emit the same status thousands of times a second, and every one of those became a Redux
-// dispatch + React re-render. That is exactly how a sleepless retry loop in the engine OOM-killed
-// the renderer. Identical consecutive statuses are dropped; a real change always gets through.
-// Deduped PER TASK — with many tasks running, one task's repeated status must not suppress a
-// different task's genuine change, which a single shared key would do.
+// Status used to cross to the renderer on every distinct engine step. Identical repeats are still
+// dropped, but a real change is coalesced per task (last write wins) so 31 checkout tasks cannot
+// each paint the Task Groups page 10 times in one burst. Stop/terminal still flushes immediately.
 let lastStatusKeys = {};
+const statusCoalescer = createStatusCoalescer({
+  intervalMs: STATUS_FLUSH_MS,
+  send: payload => toRenderer('targetStatus', payload),
+});
 // taskState is the ENGINE's own step (constants.StatusSteps: 0 idle, 1 running, 2 carted,
 // 3 checked out, 4 declined), forwarded rather than inferred. The UI groups tasks by it, and
 // guessing "carted" from the wording of a status line would be wrong the first time the engine
@@ -661,11 +663,11 @@ const status = (state, color, detail, taskId = '', taskState, running) => {
   const key = state + '|' + (color || '') + '|' + (detail || '') + '|' + taskState + '|' + running;
   if (lastStatusKeys[id] === key) return;
   lastStatusKeys[id] = key;
-  toRenderer('targetStatus', {
+  statusCoalescer.enqueue(id, {
     taskId: id, state, label: state, color: color || '', detail: detail || '',
     taskState: typeof taskState === 'number' ? taskState : undefined,
     running: typeof running === 'boolean' ? running : undefined,
-  });
+  }, { immediate: running === false });
 };
 
 // ── engine binary path (packaged sibling of app.asar, or repo dir in dev) ────────
@@ -3329,6 +3331,9 @@ function startTarget(config, mainWindow) {
   // A restarted task gets a fresh mailbox fetch, while additive starts must not cancel OTP polling
   // for sibling tasks that are already running.
   for (const t of (config.tasks || [])) cancelOtpForTask(t.id, 'Target task restarted');
+  // Only the tasks in this start. A sibling already running may have a pending status in the
+  // coalescer; dropping everyone would swallow that update on an additive Start.
+  for (const t of (config.tasks || [])) statusCoalescer.drop(t.id);
   lastStatusKeys = {};   // a fresh run must re-emit first statuses even if they repeat the last ones
   // ADDITIVE, not a replacement: starting one task must not make the bridge forget the ones already
   // running, or their Stop would no longer reach the engine and an engine crash would leave their
@@ -3406,6 +3411,7 @@ function stopTarget(taskId) {
     taskAccountById.delete(requestedId);
     cancelOtpForTask(requestedId);
     manualCaptchaManager.cancelTask(requestedId);
+    statusCoalescer.drop(requestedId);
     toRenderer('targetDone', { taskId: requestedId });
     flushLogs();
     if (runningTaskIds.size) {
@@ -3429,6 +3435,7 @@ function stopTarget(taskId) {
   }
   clearTargetMainMonitorState();
   cancelAllOtpFetches();
+  statusCoalescer.dropAll();
   flushLogs();
   for (const id of runningTaskIds) {
     engineTaskSites.remove(id);

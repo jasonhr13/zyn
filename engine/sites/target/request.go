@@ -1855,7 +1855,6 @@ func (t *TargetTask) GetAddresses() {
 			var responseBody AddressesResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
 				log.Printf("Error parsing JSON response: %v", err)
-				t.AddLog(fmt.Sprintf("get-addresses unmarshal failed: %v body=%s", err, clipLog(body, 1500)))
 				t.Error = err
 				return
 			}
@@ -1863,13 +1862,6 @@ func (t *TargetTask) GetAddresses() {
 			for i := range responseBody.Addresses {
 				t.AccountAddresses = append(t.AccountAddresses, responseBody.Addresses[i].Address)
 			}
-			first := "(empty)"
-			if len(t.AccountAddresses) > 0 {
-				row := t.AccountAddresses[0]
-				first = addressFieldLog("book[0]", row.Address1, row.City, row.FirstName, row.LastName)
-			}
-			t.AddLog(fmt.Sprintf("get-addresses 200 parsed=%d %s", len(t.AccountAddresses), first))
-			t.AddLog("get-addresses body " + clipLog(body, 1500))
 		case 401:
 			t.AddUnkownResponse(Request.Req.URL, *response, body)
 			t.Error = fmt.Errorf("bad session")
@@ -1975,10 +1967,6 @@ func (t *TargetTask) SetAddress() {
 				t.Error = fmt.Errorf("error set-address (%d)", response.StatusCode)
 			}
 		case 400:
-			t.AddLog(fmt.Sprintf("set-address 400 payload %s zip=%q state=%q country=%q phone=%q line2=%q",
-				addressFieldLog("profile", data.AddressLine1, data.City, data.FirstName, data.LastName),
-				data.ZipCode, data.State, data.Country, data.PhoneNumber, data.AddressLine2))
-			t.AddLog("set-address 400 body " + clipLog(body, 1500))
 			var responseBody TargetErrorResponse
 			if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
 				log.Printf("Error parsing JSON response: %v", err)
@@ -1989,8 +1977,6 @@ func (t *TargetTask) SetAddress() {
 				t.Error = fmt.Errorf("error set-address (%d)", response.StatusCode)
 				return
 			}
-			t.AddLog(fmt.Sprintf("set-address 400 error_message=%q errorMessage=%q error_key=%q",
-				responseBody.Errors[0].ErrorMessage, responseBody.Errors[0].ErrorMessage2, responseBody.Errors[0].ErrorKey))
 			if responseBody.Errors[0].ErrorMessage == "Invalid address format" {
 				t.Error = fmt.Errorf("Invalid address format")
 				return

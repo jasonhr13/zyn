@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.15",
+  "notes": [
+    "Target task lists stay responsive as more checkout tasks run.",
+    "Engine and task logs stay smooth even when they get long.",
+    "Target checkout no longer writes extra address debug details into the log."
+  ]
+}

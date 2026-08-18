@@ -44,10 +44,6 @@ const RULES = [
   [/code found .*submitting/i, () => 'Email code found — submitting'],
   [/mailbox fetch failed|Auth code not found|no new Target code/i, () => 'Could not find the new email code — enter it manually'],
   [/no OTP source configured|mailbox reader is missing/i, () => 'Automatic email codes are unavailable — enter it manually'],
-  [/^get-addresses .+/i, (m) => m[0]],
-  [/^set-address .+/i, (m) => m[0]],
-  [/^address match=.+/i, (m) => m[0]],
-  [/^profile line1=.+/i, (m) => m[0]],
   [/signing in|logging in|login success/i, () => 'Signing in'],
   [/verification code|otp/i, () => 'Waiting for the email code'],
 

@@ -10,6 +10,10 @@ const taskGroups = fs.readFileSync(
   path.join(project, 'frontend', 'src', 'components', 'pages', 'task-groups.js'),
   'utf8',
 );
+const taskRuntime = fs.readFileSync(
+  path.join(project, 'frontend', 'src', 'components', 'target-task-runtime.js'),
+  'utf8',
+);
 const styles = fs.readFileSync(path.join(project, 'frontend', 'src', 'App.css'), 'utf8');
 const bankMetrics = fs.readFileSync(
   path.join(project, 'frontend', 'src', 'components', 'target-bank-metrics.mjs'),
@@ -23,7 +27,7 @@ assert.match(taskGroups, /toggleSelectVisibleTasks/);
 assert.match(taskGroups, /renderGroupDropPulse/);
 assert.match(taskGroups, /renderProxySelectOptions/);
 assert.match(taskGroups, /Folders/);
-assert.match(taskGroups, /summarizeGroupDropPulse/);
+assert.match(taskRuntime, /summarizeGroupDropPulse/);
 assert.match(taskGroups, /Adding to cart/);
 assert.match(taskGroups, /Submitting order/);
 assert.match(taskGroups, /Successful checkouts this run/);
@@ -43,11 +47,15 @@ assert.match(styles, /\.target-sku-priority/);
 assert.match(styles, /\.target-sku-watch-row/);
 assert.match(styles, /\.target-sku-remove/);
 assert.match(styles, /\.group-task-bulk-bar/);
-assert.match(taskGroups, /onClick=\{\(\) => this\.setState\(\{ selectedTaskId: task\.id/);
-assert.match(taskGroups, /\(this\.props\.target \|\| \{\}\)\.taskLogs/);
+assert.match(taskGroups, /openTask = task => this\.setState\(\{ selectedTaskId: task\.id/);
+assert.match(taskGroups, /host\.openTask\(task\)/);
+assert.match(taskGroups, /this\.props\.taskLogs/);
 assert.match(taskGroups, /only this task/);
 assert.match(taskGroups, /Broker, farmer, and monitor startup remain in the shared log below/);
 assert.match(taskGroups, /this\.renderSharedEngineLog\(\)/);
+assert.match(taskGroups, /<VirtualLogView/);
+assert.match(styles, /\.task-log-view-virtual/);
+assert.match(styles, /\.task-log-virtual-pad/);
 assert.match(taskGroups, /this\.renderHarvesterDrawer\(\)/);
 assert.match(taskGroups, /aria-label="Close Cookie Harvesters"/);
 assert.match(bankMetrics, /Opening the shared cookie bank/);

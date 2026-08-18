@@ -1,4 +1,4 @@
-import React, { Component, createRef } from 'react';
+import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import Icon from '../icon';
 import { proxyFolderRef, proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
@@ -26,8 +26,19 @@ import {
   scheduleDetailLine,
   scheduleSummary,
 } from '../task-group-schedule.mjs';
-import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsRunning } from '../target-task-status';
+import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
+import VirtualLogView from '../virtual-log-view';
+import Store from '../store';
+import {
+  accountForTask,
+  mapGroupRuntimeState,
+  mapTaskDetailState,
+  mapTaskRowState,
+  profileForAccountId,
+  profileListFrom,
+  selectTargetWorkspaceRuntime,
+} from '../target-task-runtime';
 
 const { ipcRenderer, clipboard } = window.require('electron');
 
@@ -186,9 +197,305 @@ function StatusBadge({ status }) {
   );
 }
 
+function liveTarget() {
+  try { return (Store.getState().target) || {}; } catch { return {}; }
+}
+
+class TaskGroupTaskRowView extends Component {
+  proxyStatusFor(task) {
+    return this.props.proxyStatus || null;
+  }
+
+  render() {
+    const { group, task, selected, host, account, profile, status, otpRequest, checkouts, canReset } = this.props;
+    const displayStatus = this.proxyStatusFor(task) || status;
+    const running = targetTaskIsRunning(status);
+    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
+    return (
+      <div
+        className={`group-task-row group-task-row-clickable${selected ? ' selected' : ''}`}
+        key={task.id}
+        tabIndex="0"
+        aria-label={`Open task for ${host.accountLabel(task)}`}
+        onClick={() => host.openTask(task)}
+        onKeyDown={event => {
+          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            host.openTask(task);
+          }
+        }}
+      >
+        <span className="task-select-cell" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={`Select ${host.accountLabel(task)}`}
+            onChange={() => host.toggleTaskSelected(task.id)}
+          />
+        </span>
+        <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{host.accountLabel(task)}</strong><small>{task.id}</small></span></span>
+        <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
+        <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => host.updateTaskProxy(group, task, event.target.value)}>
+          {host.renderProxySelectOptions()}
+        </select>
+        <label
+          className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
+          title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
+          onClick={event => event.stopPropagation()}
+          onKeyDown={event => event.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={task.loopCheckout === true}
+            disabled={running}
+            onChange={event => host.updateTaskLoopCheckout(group, task, event.target.checked)}
+          />
+          {task.loopCheckout ? 'On' : 'Off'}
+        </label>
+        <span
+          className={`task-checkout-count${checkouts > 0 ? ' has-checkouts' : ''}`}
+          title={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+          aria-label={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+        >
+          {checkouts}
+        </span>
+        {otpRequest ? <TargetOtpInput request={otpRequest} /> : <StatusBadge status={displayStatus} />}
+        <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
+        <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          {running ? (
+            <button className="icon-action icon-action-stop" title="Stop task" onClick={() => host.stopTasks([task])}><Icon name="stop" size={12} /></button>
+          ) : (
+            <button className="icon-action icon-action-start" title="Start task" onClick={() => host.startTasks(group, [task])}><Icon name="play" size={12} /></button>
+          )}
+          <button className="icon-action icon-action-reset" disabled={!canReset || running} title={canReset && !running ? 'Reset task to Idle' : 'Task is already fresh'} onClick={() => host.resetTask(task)}><Icon name="refresh" size={12} /></button>
+          <button className="icon-action icon-action-danger" title="Delete task" onClick={() => host.deleteTask(group, task)}><Icon name="trash" size={12} /></button>
+        </span>
+      </div>
+    );
+  }
+}
+
+const TaskGroupTaskRow = connect(mapTaskRowState)(TaskGroupTaskRowView);
+
+class TaskGroupTaskDetailView extends Component {
+  proxyStatusFor(task) {
+    return this.props.proxyStatus || null;
+  }
+
+  render() {
+    const { group, task, host, account, profile, status, otpRequest, checkouts, canReset, copiedTask, readinessPending } = this.props;
+    const logs = this.props.taskLogs || [];
+    const displayStatus = this.proxyStatusFor(task) || status;
+    const tone = targetStatusTone(displayStatus);
+    const running = targetTaskIsRunning(status);
+    const accountName = host.accountLabel(task);
+    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
+    const profileName = profile
+      ? profile.name || profile.email || profile.id
+      : 'Missing matching profile';
+    const statusLabel = (displayStatus && (displayStatus.label || displayStatus.state)) || STATUS_LABELS[tone];
+    const statusDetail = (displayStatus && displayStatus.detail) || (running
+      ? 'This task is running through the existing Target checkout engine.'
+      : 'Start this task to see its checkout steps and diagnostic output here.');
+    const resetEnabled = !running && canReset;
+
+    return (
+      <div className="tasks-workspace tasks-workspace-with-harvester-dock">
+        <div className="page-header task-view-header">
+          <div>
+            <div className="task-breadcrumbs">
+              <button onClick={() => host.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}>Task Groups</button>
+              <span>/</span>
+              <button onClick={() => host.setState({ selectedTaskId: '', copiedTask: false })}>{group.name}</button>
+              <span>/</span>
+              <em>{accountName}</em>
+            </div>
+            <div className="page-title"><span className="page-title-dot" /> {accountName}</div>
+          </div>
+          <div className="page-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => host.setState({ selectedTaskId: '', copiedTask: false })}>Back to Group</button>
+            <button className="btn btn-secondary btn-sm" disabled={readinessPending} onClick={() => host.runReadiness(group, [task])}><Icon name="check" size={12} /> Check Readiness</button>
+            <button className="btn btn-secondary btn-sm" disabled={!resetEnabled} title={resetEnabled ? 'Clear this completed run and return the task to Idle' : 'Task is already fresh'} onClick={() => host.resetTask(task)}><Icon name="refresh" size={12} /> Reset Task</button>
+            {running ? (
+              <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks([task])}><Icon name="stop" size={12} /> Stop Task</button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, [task])}><Icon name="play" size={12} /> Start Task</button>
+            )}
+          </div>
+        </div>
+        <div className="page-content task-detail-content">
+          <section className={`task-status-hero task-status-hero-${tone}`}>
+            <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
+            <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
+            {otpRequest ? <TargetOtpInput request={otpRequest} large /> : <StatusBadge status={displayStatus} />}
+          </section>
+
+          {host.renderCookieBank()}
+
+          <div className="task-detail-grid">
+            <section className="panel task-information">
+              <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
+              <dl>
+                <div><dt>Account</dt><dd>{accountName}</dd></div>
+                <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
+                <div><dt>Proxy</dt><dd>{proxyLabelForRef(host.proxyLists(), task.proxyListName, 'Local')}</dd></div>
+                <div><dt>Watch list</dt><dd>{watchListSummary(group)}</dd></div>
+                <div><dt>Stock confidence</dt><dd>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any in-stock signal'}</dd></div>
+                <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
+                <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
+                <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
+                <div><dt>Task ID</dt><dd>{task.id}</dd></div>
+              </dl>
+            </section>
+            <section className="panel task-log-panel task-own-log-panel">
+              <div className="detail-panel-heading">
+                <div><h3><Icon name="activity" size={13} /> Task Log</h3><span>{logs.length} line{logs.length === 1 ? '' : 's'} · only this task</span></div>
+                <div className="page-actions">
+                  <button className="btn btn-secondary btn-sm" onClick={() => host.copyTaskLogs(task)} disabled={!logs.length}>
+                    <Icon name="copy" size={11} /> {copiedTask ? 'Copied' : 'Copy'}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => host.clearTaskLogs(task)} disabled={!logs.length}>Clear</button>
+                </div>
+              </div>
+              <VirtualLogView
+                className="task-log-view"
+                lines={logs}
+                estimatedHeight={340}
+                empty={(
+                  <div className="task-log-empty">
+                    <Icon name="activity" size={20} />
+                    <span>No output from this task yet</span>
+                    <small>Checkout steps tagged with this task ID will appear here. Broker, farmer, and monitor startup remain in the shared log below.</small>
+                  </div>
+                )}
+              />
+            </section>
+          </div>
+
+          {host.renderSharedEngineLog()}
+        </div>
+        {host.renderHarvesterDrawer()}
+        {host.renderReadinessModal()}
+        {host.renderHarvesterModal()}
+      </div>
+    );
+  }
+}
+
+const TaskGroupTaskDetail = connect(mapTaskDetailState)(TaskGroupTaskDetailView);
+
+class TaskGroupDropPulseView extends Component {
+  render() {
+    const pulse = this.props.pulse || { carting: 0, submitting: 0, checkouts: 0 };
+    const stats = [
+      { key: 'cart', icon: 'cart', count: pulse.carting, label: 'Adding to cart' },
+      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Submitting order' },
+      { key: 'success', icon: 'check', count: pulse.checkouts, label: 'Successful checkouts this run' },
+    ];
+    return (
+      <div className="group-drop-pulse" role="status" aria-live="polite" aria-label="Drop status">
+        {stats.map(stat => (
+          <span
+            className={`group-drop-stat group-drop-stat-${stat.key}${stat.count ? ' active' : ''}`}
+            key={stat.key}
+            title={stat.label}
+          >
+            <Icon name={stat.icon} size={13} />
+            <strong>{stat.count}</strong>
+            <em>{stat.label}</em>
+          </span>
+        ))}
+      </div>
+    );
+  }
+}
+
+const TaskGroupDropPulse = connect(mapGroupRuntimeState)(TaskGroupDropPulseView);
+
+class TaskGroupRunControlsView extends Component {
+  render() {
+    const { group, host, running } = this.props;
+    return running ? (
+      <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop All</button>
+    ) : (
+      <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start All</button>
+    );
+  }
+}
+
+const TaskGroupRunControls = connect(mapGroupRuntimeState)(TaskGroupRunControlsView);
+
+class TaskGroupOverviewRowView extends Component {
+  render() {
+    const { group, host, scheduleNow, total, running, error } = this.props;
+    const items = watchedItemsForGroup(group);
+    const limited = items.filter(item => item.maxPrice).length;
+    const isRunning = running > 0;
+    return (
+      <article
+        className="task-group-row task-group-r2-row"
+        key={group.id}
+        tabIndex="0"
+        onClick={() => host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
+        onKeyDown={event => event.key === 'Enter' && host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
+      >
+        <div className="task-group-row-identity">
+          <span className="site-mark"><Icon name="target" size={19} /></span>
+          <span><h3>{group.name}</h3><p>Target task group</p>{host.renderScheduleChip(group, scheduleNow)}</span>
+        </div>
+        <div className="task-group-row-stats">
+          <span><strong>{total}</strong>Tasks</span>
+          <span><strong>{running}</strong>Running</span>
+          <span><strong>{error}</strong>Attention</span>
+        </div>
+        <div className="task-group-row-runtime">
+          <div className="task-group-row-summary">
+            <span className="task-group-row-summary-icon"><Icon name="list" size={15} /></span>
+            <span><small>Watch list</small><strong>{watchListSummary(group)}{limited ? ` · ${limited} price cap${limited === 1 ? '' : 's'}` : ''}</strong></span>
+          </div>
+        </div>
+        <div className="task-group-row-actions" onClick={event => event.stopPropagation()}>
+          {isRunning ? (
+            <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop</button>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start</button>
+          )}
+          <button className="icon-action" title="Edit group" onClick={() => host.openEditGroup(group)}><Icon name="settings" size={13} /></button>
+          <button className="icon-action icon-action-danger" title="Delete group" onClick={() => host.deleteGroup(group)}><Icon name="trash" size={13} /></button>
+          <button className="btn btn-secondary btn-sm" onClick={() => host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}>Open</button>
+        </div>
+      </article>
+    );
+  }
+}
+
+const TaskGroupOverviewRow = connect(mapGroupRuntimeState)(TaskGroupOverviewRowView);
+
+class TaskGroupMetricsView extends Component {
+  render() {
+    const stats = this.props;
+    const metrics = [
+      ['layers', stats.groups, 'Task groups', ''],
+      ['list', stats.tasks, 'Configured tasks', ''],
+      ['activity', stats.running, 'Running', ' task-metric-running'],
+      ['warning', stats.attention, 'Need attention', ' task-metric-error'],
+    ];
+    return (
+      <div className="task-metrics-row">
+        {metrics.map(([icon, value, label, modifier]) => (
+          <div className={`task-metric${modifier}`} key={label}>
+            <span className="task-metric-icon"><Icon name={icon} size={18} /></span>
+            <span><strong>{value}</strong><small>{label}</small></span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+}
+
+const TaskGroupMetrics = connect((state, { groups }) => selectTargetWorkspaceRuntime(state.target, groups))(TaskGroupMetricsView);
+
 class TaskGroups extends Component {
-  engineLogBox = createRef();
-  taskLogBox = createRef();
 
   state = {
     loaded: false,
@@ -243,26 +550,6 @@ class TaskGroups extends Component {
       this.setState({ productHistory: Array.isArray(payload.items) ? payload.items : [] });
     };
     ipcRenderer.on('targetProductHistory', this.onTargetProductHistory);
-  }
-
-  componentDidUpdate(prevProps) {
-    const previous = ((prevProps.target && prevProps.target.logs) || []).length;
-    const current = ((this.props.target && this.props.target.logs) || []).length;
-    if (previous !== current && this.engineLogBox.current) {
-      const element = this.engineLogBox.current;
-      if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
-        element.scrollTop = element.scrollHeight;
-      }
-    }
-    const taskId = this.state.selectedTaskId;
-    const previousTaskLogs = ((prevProps.target && prevProps.target.taskLogs) || {})[taskId] || [];
-    const currentTaskLogs = ((this.props.target && this.props.target.taskLogs) || {})[taskId] || [];
-    if (previousTaskLogs.length !== currentTaskLogs.length && this.taskLogBox.current) {
-      const element = this.taskLogBox.current;
-      if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
-        element.scrollTop = element.scrollHeight;
-      }
-    }
   }
 
   componentWillUnmount() {
@@ -451,11 +738,7 @@ class TaskGroups extends Component {
     this.persistHarvesters(this.state.harvesters.filter(item => item.id !== harvester.id));
   };
 
-  profileList = () => {
-    const value = this.props.profiles || [];
-    return (value.list || value.profiles || (Array.isArray(value) ? value : []))
-      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
-  };
+  profileList = () => profileListFrom(this.props.profiles);
 
   targetAccounts = () => (this.props.accounts || []).filter(account => siteOf(account) === 'target');
   proxyLists = () => ((this.props.proxies && this.props.proxies.lists) || []);
@@ -509,21 +792,12 @@ class TaskGroups extends Component {
   };
   selectedGroup = () => this.state.groups.find(group => group.id === this.state.selectedGroupId);
   selectedTask = group => (group && (group.tasks || []).find(task => task.id === this.state.selectedTaskId));
-  statusFor = task => (this.props.target.taskStatus || {})[task.id];
-  outcomeFor = task => ((this.props.target.taskOutcomes || {})[task.id]) || {};
-  checkoutCountFor = task => Math.max(0, Number(this.outcomeFor(task).checkouts) || 0);
-  groupDropPulse = group => summarizeGroupDropPulse(group && group.tasks, {
-    statusFor: this.statusFor,
-    checkoutCountFor: this.checkoutCountFor,
-  });
-  proxyStatusFor = task => {
-    const status = (this.props.target.proxyStatus || {})[task.id];
-    return status && !status.hidden ? status : null;
-  };
-  accountFor = task => (this.props.accounts || []).find(account => String(account.id) === String(task.accountId));
+  statusFor = task => (liveTarget().taskStatus || {})[task.id];
+  accountFor = task => accountForTask(this.props.accounts, task);
+  openTask = task => this.setState({ selectedTaskId: task.id, copiedTask: false });
 
   taskHasResettableState = task => {
-    const target = this.props.target || {};
+    const target = liveTarget();
     const account = this.accountFor(task);
     return Boolean(
       (target.taskStatus || {})[task.id]
@@ -534,12 +808,7 @@ class TaskGroups extends Component {
     );
   };
 
-  profileForAccount = (accountId) => {
-    const account = (this.props.accounts || []).find(item => String(item.id) === String(accountId));
-    const email = String((account && account.email) || '').trim().toLowerCase();
-    if (!email) return null;
-    return this.profileList().find(profile => String(profile.email || '').trim().toLowerCase() === email) || null;
-  };
+  profileForAccount = (accountId) => profileForAccountId(this.props.profiles, this.props.accounts, accountId);
 
   persist = (groups, callback) => {
     let saved = groups;
@@ -547,23 +816,7 @@ class TaskGroups extends Component {
     this.setState({ groups: saved }, callback);
   };
 
-  groupStats = (group) => {
-    const stats = { total: (group.tasks || []).length, running: 0, error: 0 };
-    for (const task of (group.tasks || [])) {
-      const status = this.statusFor(task);
-      if (targetTaskIsRunning(status)) stats.running += 1;
-      if (targetStatusTone(status) === 'error') stats.error += 1;
-    }
-    return stats;
-  };
-
-  allStats = () => this.state.groups.reduce((sum, group) => {
-    const stats = this.groupStats(group);
-    sum.tasks += stats.total;
-    sum.running += stats.running;
-    sum.attention += stats.error;
-    return sum;
-  }, { groups: this.state.groups.length, tasks: 0, running: 0, attention: 0 });
+  allStats = () => selectTargetWorkspaceRuntime(liveTarget(), this.state.groups);
 
   openNewGroup = () => {
     this.loadProductHistory();
@@ -1108,7 +1361,7 @@ class TaskGroups extends Component {
   };
 
   copyEngineLogs = () => {
-    const logs = (this.props.target && this.props.target.logs) || [];
+    const logs = this.props.targetLogs || [];
     if (!logs.length) return;
     try { clipboard.writeText(logs.join('\n')); } catch {}
     this.setState({ copiedEngine: true }, () => {
@@ -1117,13 +1370,13 @@ class TaskGroups extends Component {
   };
 
   clearEngineLogs = () => {
-    const logs = (this.props.target && this.props.target.logs) || [];
+    const logs = this.props.targetLogs || [];
     if (!logs.length || !window.confirm('Clear the shared engine / monitor log?')) return;
     this.props.dispatch({ type: 'targetSet', obj: { logs: [] } });
   };
 
   copyTaskLogs = (task) => {
-    const logs = (((this.props.target || {}).taskLogs || {})[task.id]) || [];
+    const logs = ((liveTarget().taskLogs || {})[task.id]) || [];
     if (!logs.length) return;
     try { clipboard.writeText(logs.join('\n')); } catch {}
     this.setState({ copiedTask: true }, () => {
@@ -1132,7 +1385,7 @@ class TaskGroups extends Component {
   };
 
   clearTaskLogs = (task) => {
-    const taskLogs = (this.props.target && this.props.target.taskLogs) || {};
+    const taskLogs = liveTarget().taskLogs || {};
     const logs = taskLogs[task.id] || [];
     if (!logs.length || !window.confirm(`Clear the log for “${this.accountLabel(task)}”?`)) return;
     this.props.dispatch({ type: 'targetSet', obj: { taskLogs: { ...taskLogs, [task.id]: [] } } });
@@ -1238,7 +1491,11 @@ class TaskGroups extends Component {
   }
 
   renderSharedEngineLog() {
-    const target = this.props.target || {};
+    const target = {
+      logs: this.props.targetLogs || [],
+      monitorStatus: this.props.monitorStatus,
+      monitorBandwidth: this.props.monitorBandwidth,
+    };
     const logs = target.logs || [];
     const monitor = target.monitorStatus;
     const bandwidth = targetMonitorBandwidthSummary(target.monitorBandwidth, Date.now());
@@ -1314,17 +1571,18 @@ class TaskGroups extends Component {
             {TARGET_MONITOR_BANDWIDTH_TOOLTIP}
           </p>
         </section>
-        <div className="task-log-view engine-log-view" ref={this.engineLogBox}>
-          {!logs.length ? (
+        <VirtualLogView
+          className="task-log-view engine-log-view"
+          lines={logs}
+          estimatedHeight={260}
+          empty={(
             <div className="task-log-empty">
               <Icon name="activity" size={20} />
               <span>No shared engine output yet</span>
               <small>Shape farmer, stock monitor, Discord pings, and engine lifecycle output appear here for this Target workspace.</small>
             </div>
-          ) : logs.map((line, index) => (
-            <div key={index}><span>{String(index + 1).padStart(3, '0')}</span>{line}</div>
-          ))}
-        </div>
+          )}
+        />
       </section>
     );
   }
@@ -1386,23 +1644,7 @@ class TaskGroups extends Component {
   }
 
   renderMetrics() {
-    const stats = this.allStats();
-    const metrics = [
-      ['layers', stats.groups, 'Task groups', ''],
-      ['list', stats.tasks, 'Configured tasks', ''],
-      ['activity', stats.running, 'Running', ' task-metric-running'],
-      ['warning', stats.attention, 'Need attention', ' task-metric-error'],
-    ];
-    return (
-      <div className="task-metrics-row">
-        {metrics.map(([icon, value, label, modifier]) => (
-          <div className={`task-metric${modifier}`} key={label}>
-            <span className="task-metric-icon"><Icon name={icon} size={18} /></span>
-            <span><strong>{value}</strong><small>{label}</small></span>
-          </div>
-        ))}
-      </div>
-    );
+    return <TaskGroupMetrics groups={this.state.groups} />;
   }
 
   harvesterRuntimeFor = id => {
@@ -1640,44 +1882,13 @@ class TaskGroups extends Component {
   }
 
   renderGroupRow(group) {
-    const stats = this.groupStats(group);
-    const items = watchedItemsForGroup(group);
-    const limited = items.filter(item => item.maxPrice).length;
-    const running = stats.running > 0;
     return (
-      <article
-        className="task-group-row task-group-r2-row"
+      <TaskGroupOverviewRow
         key={group.id}
-        tabIndex="0"
-        onClick={() => this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
-        onKeyDown={event => event.key === 'Enter' && this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
-      >
-        <div className="task-group-row-identity">
-          <span className="site-mark"><Icon name="target" size={19} /></span>
-          <span><h3>{group.name}</h3><p>Target task group</p>{this.renderScheduleChip(group)}</span>
-        </div>
-        <div className="task-group-row-stats">
-          <span><strong>{stats.total}</strong>Tasks</span>
-          <span><strong>{stats.running}</strong>Running</span>
-          <span><strong>{stats.error}</strong>Attention</span>
-        </div>
-        <div className="task-group-row-runtime">
-          <div className="task-group-row-summary">
-            <span className="task-group-row-summary-icon"><Icon name="list" size={15} /></span>
-            <span><small>Watch list</small><strong>{watchListSummary(group)}{limited ? ` · ${limited} price cap${limited === 1 ? '' : 's'}` : ''}</strong></span>
-          </div>
-        </div>
-        <div className="task-group-row-actions" onClick={event => event.stopPropagation()}>
-          {running ? (
-            <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop</button>
-          ) : (
-            <button className="btn btn-primary btn-sm" onClick={() => this.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start</button>
-          )}
-          <button className="icon-action" title="Edit group" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={13} /></button>
-          <button className="icon-action icon-action-danger" title="Delete group" onClick={() => this.deleteGroup(group)}><Icon name="trash" size={13} /></button>
-          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}>Open</button>
-        </div>
-      </article>
+        host={this}
+        group={group}
+        scheduleNow={this.state.scheduleNow}
+      />
     );
   }
 
@@ -1724,215 +1935,35 @@ class TaskGroups extends Component {
   }
 
   renderTaskRow(group, task) {
-    const account = this.accountFor(task);
-    const profile = this.profileForAccount(task.accountId);
-    const status = this.statusFor(task);
-    const displayStatus = this.proxyStatusFor(task) || status;
-    const otpRequest = targetOtpForTask(
-      this.props.target.otpPending,
-      task.id,
-      account && account.email,
-    );
-    const running = targetTaskIsRunning(status);
-    const canReset = !running && this.taskHasResettableState(task);
-    const checkouts = this.checkoutCountFor(task);
-    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
-    const selected = this.state.selectedTaskIds.includes(task.id);
     return (
-      <div
-        className={`group-task-row group-task-row-clickable${selected ? ' selected' : ''}`}
+      <TaskGroupTaskRow
         key={task.id}
-        tabIndex="0"
-        aria-label={`Open task for ${this.accountLabel(task)}`}
-        onClick={() => this.setState({ selectedTaskId: task.id, copiedTask: false })}
-        onKeyDown={event => {
-          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            this.setState({ selectedTaskId: task.id, copiedTask: false });
-          }
-        }}
-      >
-        <span className="task-select-cell" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={selected}
-            aria-label={`Select ${this.accountLabel(task)}`}
-            onChange={() => this.toggleTaskSelected(task.id)}
-          />
-        </span>
-        <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{this.accountLabel(task)}</strong><small>{task.id}</small></span></span>
-        <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
-        <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => this.updateTaskProxy(group, task, event.target.value)}>
-          {this.renderProxySelectOptions()}
-        </select>
-        <label
-          className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
-          title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
-          onClick={event => event.stopPropagation()}
-          onKeyDown={event => event.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={task.loopCheckout === true}
-            disabled={running}
-            onChange={event => this.updateTaskLoopCheckout(group, task, event.target.checked)}
-          />
-          {task.loopCheckout ? 'On' : 'Off'}
-        </label>
-        <span
-          className={`task-checkout-count${checkouts > 0 ? ' has-checkouts' : ''}`}
-          title={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
-          aria-label={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
-        >
-          {checkouts}
-        </span>
-        {otpRequest ? <TargetOtpInput request={otpRequest} /> : <StatusBadge status={displayStatus} />}
-        <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
-        <span className="task-row-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-          {running ? (
-            <button className="icon-action icon-action-stop" title="Stop task" onClick={() => this.stopTasks([task])}><Icon name="stop" size={12} /></button>
-          ) : (
-            <button className="icon-action icon-action-start" title="Start task" onClick={() => this.startTasks(group, [task])}><Icon name="play" size={12} /></button>
-          )}
-          <button className="icon-action icon-action-reset" disabled={!canReset} title={canReset ? 'Reset task to Idle' : 'Task is already fresh'} onClick={() => this.resetTask(task)}><Icon name="refresh" size={12} /></button>
-          <button className="icon-action icon-action-danger" title="Delete task" onClick={() => this.deleteTask(group, task)}><Icon name="trash" size={12} /></button>
-        </span>
-      </div>
+        host={this}
+        group={group}
+        task={task}
+        selected={this.state.selectedTaskIds.includes(task.id)}
+      />
     );
   }
 
   renderTaskDetail(group, task) {
-    const account = this.accountFor(task);
-    const profile = this.profileForAccount(task.accountId);
-    const status = this.statusFor(task);
-    const displayStatus = this.proxyStatusFor(task) || status;
-    const otpRequest = targetOtpForTask(
-      this.props.target.otpPending,
-      task.id,
-      account && account.email,
-    );
-    const tone = targetStatusTone(displayStatus);
-    const running = targetTaskIsRunning(status);
-    const canReset = !running && this.taskHasResettableState(task);
-    const checkouts = this.checkoutCountFor(task);
-    const logs = ((((this.props.target || {}).taskLogs) || {})[task.id]) || [];
-    const accountName = this.accountLabel(task);
-    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
-    const profileName = profile
-      ? profile.name || profile.email || profile.id
-      : 'Missing matching profile';
-    const statusLabel = (displayStatus && (displayStatus.label || displayStatus.state)) || STATUS_LABELS[tone];
-    const statusDetail = (displayStatus && displayStatus.detail) || (running
-      ? 'This task is running through the existing Target checkout engine.'
-      : 'Start this task to see its checkout steps and diagnostic output here.');
-
     return (
-      <div className="tasks-workspace tasks-workspace-with-harvester-dock">
-        <div className="page-header task-view-header">
-          <div>
-            <div className="task-breadcrumbs">
-              <button onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}>Task Groups</button>
-              <span>/</span>
-              <button onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>{group.name}</button>
-              <span>/</span>
-              <em>{accountName}</em>
-            </div>
-            <div className="page-title"><span className="page-title-dot" /> {accountName}</div>
-          </div>
-          <div className="page-actions">
-            <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ selectedTaskId: '', copiedTask: false })}>Back to Group</button>
-            <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, [task])}><Icon name="check" size={12} /> Check Readiness</button>
-            <button className="btn btn-secondary btn-sm" disabled={!canReset} title={canReset ? 'Clear this completed run and return the task to Idle' : 'Task is already fresh'} onClick={() => this.resetTask(task)}><Icon name="refresh" size={12} /> Reset Task</button>
-            {running ? (
-              <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks([task])}><Icon name="stop" size={12} /> Stop Task</button>
-            ) : (
-              <button className="btn btn-primary btn-sm" onClick={() => this.startTasks(group, [task])}><Icon name="play" size={12} /> Start Task</button>
-            )}
-          </div>
-        </div>
-        <div className="page-content task-detail-content">
-          <section className={`task-status-hero task-status-hero-${tone}`}>
-            <span className="task-status-hero-icon"><i className="task-avatar task-avatar-lg">{initial}</i></span>
-            <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
-            {otpRequest ? <TargetOtpInput request={otpRequest} large /> : <StatusBadge status={displayStatus} />}
-          </section>
-
-          {this.renderCookieBank()}
-
-          <div className="task-detail-grid">
-            <section className="panel task-information">
-              <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
-              <dl>
-                <div><dt>Account</dt><dd>{accountName}</dd></div>
-                <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
-                <div><dt>Proxy</dt><dd>{proxyLabelForRef(this.proxyLists(), task.proxyListName, 'Local')}</dd></div>
-                <div><dt>Watch list</dt><dd>{watchListSummary(group)}</dd></div>
-                <div><dt>Stock confidence</dt><dd>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any in-stock signal'}</dd></div>
-                <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
-                <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
-                <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
-                <div><dt>Task ID</dt><dd>{task.id}</dd></div>
-              </dl>
-            </section>
-            <section className="panel task-log-panel task-own-log-panel">
-              <div className="detail-panel-heading">
-                <div><h3><Icon name="activity" size={13} /> Task Log</h3><span>{logs.length} line{logs.length === 1 ? '' : 's'} · only this task</span></div>
-                <div className="page-actions">
-                  <button className="btn btn-secondary btn-sm" onClick={() => this.copyTaskLogs(task)} disabled={!logs.length}>
-                    <Icon name="copy" size={11} /> {this.state.copiedTask ? 'Copied' : 'Copy'}
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => this.clearTaskLogs(task)} disabled={!logs.length}>Clear</button>
-                </div>
-              </div>
-              <div className="task-log-view" ref={this.taskLogBox}>
-                {!logs.length ? (
-                  <div className="task-log-empty">
-                    <Icon name="activity" size={20} />
-                    <span>No output from this task yet</span>
-                    <small>Checkout steps tagged with this task ID will appear here. Broker, farmer, and monitor startup remain in the shared log below.</small>
-                  </div>
-                ) : logs.map((line, index) => (
-                  <div key={index}><span>{String(index + 1).padStart(3, '0')}</span>{String(line)}</div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          {this.renderSharedEngineLog()}
-        </div>
-        {this.renderHarvesterDrawer()}
-        {this.renderReadinessModal()}
-        {this.renderHarvesterModal()}
-      </div>
+      <TaskGroupTaskDetail
+        host={this}
+        group={group}
+        task={task}
+        copiedTask={this.state.copiedTask}
+        readinessPending={this.state.readinessPending}
+      />
     );
   }
 
   renderGroupDropPulse(group) {
-    const pulse = this.groupDropPulse(group);
-    const stats = [
-      { key: 'cart', icon: 'cart', count: pulse.carting, label: 'Adding to cart' },
-      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Submitting order' },
-      { key: 'success', icon: 'check', count: pulse.checkouts, label: 'Successful checkouts this run' },
-    ];
-    return (
-      <div className="group-drop-pulse" role="status" aria-live="polite" aria-label="Drop status">
-        {stats.map(stat => (
-          <span
-            className={`group-drop-stat group-drop-stat-${stat.key}${stat.count ? ' active' : ''}`}
-            key={stat.key}
-            title={stat.label}
-          >
-            <Icon name={stat.icon} size={13} />
-            <strong>{stat.count}</strong>
-            <em>{stat.label}</em>
-          </span>
-        ))}
-      </div>
-    );
+    return <TaskGroupDropPulse group={group} />;
   }
 
   renderGroup(group) {
-    const stats = this.groupStats(group);
+    const stats = { total: (group.tasks || []).length };
     const filter = this.state.taskFilter.trim().toLowerCase();
     const visibleTasks = (group.tasks || []).filter(task => !filter || this.accountLabel(task).toLowerCase().includes(filter));
     const selectedIds = new Set(this.state.selectedTaskIds);
@@ -1950,11 +1981,7 @@ class TaskGroups extends Component {
             <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, group.tasks)}><Icon name="check" size={12} /> Check Readiness</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openSchedule(group)}><Icon name="activity" size={12} /> Schedule</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={12} /> Edit Group</button>
-            {stats.running ? (
-              <button className="btn btn-danger btn-sm" onClick={() => this.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop All</button>
-            ) : (
-              <button className="btn btn-primary btn-sm" onClick={() => this.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start All</button>
-            )}
+            <TaskGroupRunControls host={this} group={group} />
           </div>
         </div>
         <div className="page-content task-group-dashboard">
@@ -2452,5 +2479,7 @@ export default connect(state => ({
   profiles: state.profiles,
   proxies: state.proxies,
   settings: state.settings,
-  target: state.target,
+  targetLogs: state.target.logs,
+  monitorStatus: state.target.monitorStatus,
+  monitorBandwidth: state.target.monitorBandwidth,
 }))(TaskGroups);
