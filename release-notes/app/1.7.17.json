@@ -3,6 +3,7 @@
   "version": "1.7.17",
   "notes": [
     "Fixes the 1.7.16 launch crash on macOS.",
-    "The desktop app opens again after the last production build."
+    "The desktop app opens again after the last production build.",
+    "The checkout engine stays garbled; only bot-runtime JavaScript is obfuscated."
   ]
 }
