@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.16",
+  "notes": [
+    "You can buy Zyn on the website and see subscription status in Settings.",
+    "Target and Pokémon Center US are both included on the same license.",
+    "The checkout engine and app files are hardened in production builds."
+  ]
+}
