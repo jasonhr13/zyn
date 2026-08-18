@@ -82,8 +82,14 @@ for helper in \
 done
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
-ELECTRON_BIN="$ELECTRON_RUNTIME/electron.exe"
-node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" "$TEMP_DIR/app" --electron "$ELECTRON_BIN"
+# Compile bytecode with a host-runnable Electron of the same version and 64-bit
+# width. The Windows electron.exe cannot execute on macOS.
+BYTECODE_ELECTRON="${ZYN_BYTECODE_ELECTRON:-$PROJECT_DIR/vendor/electron-v43.3.0-darwin-x64/Electron.app/Contents/MacOS/Electron}"
+if [[ ! -x "$BYTECODE_ELECTRON" ]]; then
+  echo "Missing host Electron for bytecode compilation: $BYTECODE_ELECTRON" >&2
+  exit 1
+fi
+node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" "$TEMP_DIR/app" --electron "$BYTECODE_ELECTRON"
 
 node -e '
   const fs = require("fs");
@@ -136,7 +142,7 @@ for launcher_file in \
 done
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
 node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" \
-  "$RESOURCES/app" "$RESOURCES/bot" --electron "$ELECTRON_BIN"
+  "$RESOURCES/app" "$RESOURCES/bot" --electron "$BYTECODE_ELECTRON"
 node -e '
   const fs = require("fs");
   const file = process.argv[1];

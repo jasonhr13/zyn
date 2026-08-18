@@ -19,6 +19,8 @@ assert.match(engineBuild, /v0\.16\.0/);
 assert.match(engineBuild, / -literals -tiny /);
 assert.match(macBuild, /harden-packaged-js\.cjs/);
 assert.match(winBuild, /harden-packaged-js\.cjs/);
+assert.match(winBuild, /ZYN_BYTECODE_ELECTRON/);
+assert.match(winBuild, /electron-v43\.3\.0-darwin-x64/);
 assert.match(harden, /javascript-obfuscator/);
 assert.match(harden, /bytenode/);
 assert.match(harden, /stringArray: true/);
