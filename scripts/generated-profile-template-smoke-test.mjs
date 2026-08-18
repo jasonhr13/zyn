@@ -78,11 +78,17 @@ function hasLetterPrefix(address) {
   return /^[a-z]{3} /.test(String(address || ''));
 }
 
+function hasExtraWhitespace(value) {
+  return /^\s|\s$|\s{2,}/.test(String(value || ''));
+}
+
 const jigged = generatedProfilesFromTemplate(template, [
   'alpha@catchall.example', 'beta@catchall.example',
 ], [], { jigShipping: true, rng: seededRng(7) });
 assert.equal(jigged.length, 2);
 for (const profile of jigged) {
+  assert.equal(hasExtraWhitespace(profile.shipping.address), false, `jig added extra whitespace: ${JSON.stringify(profile.shipping.address)}`);
+  assert.equal(hasExtraWhitespace(profile.shipping.address2), false, `jig added extra whitespace on line 2: ${JSON.stringify(profile.shipping.address2)}`);
   assert.match(profile.shipping.address, /\b123\b/, 'house number was not preserved');
   assert.notEqual(profile.shipping.address, template.shipping.address, 'line 1 was left unchanged');
   assert.match(String(profile.shipping.address2), /4/, 'existing unit number was not preserved');
@@ -125,6 +131,8 @@ const unprefixed = mixed.filter(profile => !hasLetterPrefix(profile.shipping.add
 assert.ok(prefixed.length > 0, 'batch never chose the 3-letter line 1 prefix');
 assert.ok(unprefixed.length > 0, 'batch never chose a no-prefix line 1 jig');
 for (const profile of mixed) {
+  assert.equal(hasExtraWhitespace(profile.shipping.address), false, `jig added extra whitespace: ${JSON.stringify(profile.shipping.address)}`);
+  assert.equal(hasExtraWhitespace(profile.shipping.address2), false, `jig added extra whitespace on line 2: ${JSON.stringify(profile.shipping.address2)}`);
   assert.match(profile.shipping.address, /\b123\b/, 'house number was not preserved');
   assert.notEqual(profile.shipping.address, emptyTemplate.shipping.address, 'line 1 was left unchanged');
   assert.deepEqual(profile.billing, template.billing);
@@ -159,8 +167,15 @@ assert.ok(
   `Lane extra-letter forms never appeared: ${[...laneSuffixes].join(', ')}`,
 );
 for (const profile of laneBatch) {
+  assert.equal(hasExtraWhitespace(profile.shipping.address), false, `jig added extra whitespace: ${JSON.stringify(profile.shipping.address)}`);
   assert.match(profile.shipping.address, /\b100\b/);
   assert.match(profile.shipping.address, /Oak/i);
+}
+
+for (let seed = 0; seed < 80; seed += 1) {
+  const sample = jigShippingLines(template.shipping, seededRng(seed));
+  assert.equal(hasExtraWhitespace(sample.address), false, `seed ${seed} line 1 ${JSON.stringify(sample.address)}`);
+  assert.equal(hasExtraWhitespace(sample.address2), false, `seed ${seed} line 2 ${JSON.stringify(sample.address2)}`);
 }
 
 const lines = jigShippingLines(template.shipping, seededRng(3));

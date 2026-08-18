@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import TargetAccountGenerator from './target-account-generator';
+import { ACCOUNTS_WORKSPACE_KEY, readWorkspaceSelection, writeWorkspaceSelection } from '../workspace-selection';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -34,36 +35,45 @@ function inAccountGroup(account, group) {
 // Accounts hold the site login used for auto-login. Passwords remain encrypted and are never sent
 // to this renderer; group operations work only with opaque account IDs supplied by the main process.
 class Accounts extends Component {
-  state = {
-    raw: '',
-    adding: false,
-    note: '',
-    editingId: '',
-    editEmail: '',
-    editPassword: '',
-    editError: '',
-    groups: [],
-    activeGroup: ALL_ACCOUNTS,
-    selected: [],
-    query: '',
-    creatingGroup: false,
-    newGroupName: '',
-    renamingGroup: false,
-    renameGroupName: '',
-    generating: false,
-  };
+  state = (() => {
+    const saved = readWorkspaceSelection(ACCOUNTS_WORKSPACE_KEY);
+    return {
+      raw: '',
+      adding: false,
+      note: '',
+      editingId: '',
+      editEmail: '',
+      editPassword: '',
+      editError: '',
+      groups: [],
+      activeGroup: saved.activeGroup || ALL_ACCOUNTS,
+      selected: saved.selected,
+      query: saved.query,
+      creatingGroup: false,
+      newGroupName: '',
+      renamingGroup: false,
+      renameGroupName: '',
+      generating: false,
+    };
+  })();
 
   componentDidMount() {
     this.refreshGroups();
   }
 
-  componentDidUpdate(previous) {
-    if (previous.accounts === this.props.accounts) return;
-    const ids = new Set(this.targetAccounts().map(account => String(account.id)));
-    this.setState(state => {
-      const selected = state.selected.filter(id => ids.has(String(id)));
-      return selected.length === state.selected.length ? null : { selected };
-    });
+  componentDidUpdate(previousProps, previousState) {
+    if (previousProps.accounts !== this.props.accounts) {
+      const ids = new Set(this.targetAccounts().map(account => String(account.id)));
+      const selected = this.state.selected.filter(id => ids.has(String(id)));
+      if (selected.length !== this.state.selected.length) {
+        this.setState({ selected });
+        return;
+      }
+    }
+    if (previousState.activeGroup === this.state.activeGroup
+        && previousState.query === this.state.query
+        && previousState.selected === this.state.selected) return;
+    writeWorkspaceSelection(ACCOUNTS_WORKSPACE_KEY, this.state);
   }
 
   targetAccounts = () => (this.props.accounts || []).filter(isTargetAccount);

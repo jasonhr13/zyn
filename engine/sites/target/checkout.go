@@ -286,6 +286,8 @@ func (t *TargetTask) HandleTask() {
 					break
 				}
 				t.ShippingAddressID = ""
+				t.AddLog(addressFieldLog("profile", t.Profile.ShippingAddress1, t.Profile.ShippingCity,
+					t.Profile.ShippingFirstName, t.Profile.ShippingLastName))
 				for i := range t.AccountAddresses {
 					if strings.EqualFold(t.AccountAddresses[i].Address1, t.Profile.ShippingAddress1) &&
 						strings.EqualFold(t.AccountAddresses[i].City, t.Profile.ShippingCity) &&
@@ -296,9 +298,11 @@ func (t *TargetTask) HandleTask() {
 					}
 				}
 				if t.ShippingAddressID == "" {
+					t.AddLog(fmt.Sprintf("address match=false book=%d → set-address", len(t.AccountAddresses)))
 					t.NextStep = "set-address"
 					break
 				}
+				t.AddLog(fmt.Sprintf("address match=true book=%d id=%s", len(t.AccountAddresses), t.ShippingAddressID))
 				t.NextStep = "preload-atc"
 
 			case "set-address":

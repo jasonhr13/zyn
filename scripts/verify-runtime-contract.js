@@ -472,11 +472,14 @@ check('Target farmer New Headless launch contract', () => {
     assert.match(bootstrap, /setInterval\(pollRuntimeUpdates, RUNTIME_UPDATE_POLL_MS\)/,
       'runtime engine updates are not polled routinely');
   } else {
-    assert.equal(
-      fs.existsSync(path.join(resources, 'vendor', 'ms-playwright', `chromium-${chromium.revision}`, 'chrome-win64', 'chrome.exe')),
-      true,
-      'regular Chromium executable is missing',
-    );
+    const windowsChromium = path.join(resources, 'vendor', 'ms-playwright', `chromium-${chromium.revision}`, 'chrome-win64', 'chrome.exe');
+    const macApp = fs.existsSync(path.join(appPath, 'Contents', 'Info.plist'));
+    if (macApp) {
+      assert.equal(fs.existsSync(windowsChromium), false,
+        'macOS bundled runtime must not include Windows Chromium');
+    } else {
+      assert.equal(fs.existsSync(windowsChromium), true, 'regular Chromium executable is missing');
+    }
     const nativeChromium = path.join(resources, 'vendor', 'ms-playwright-mac', `chromium-${chromium.revision}`);
     assert.equal(fs.existsSync(nativeChromium), true, 'native regular Chromium revision is missing');
     const nativeFolder = appArch === 'x64' ? 'chrome-mac-x64' : 'chrome-mac-arm64';

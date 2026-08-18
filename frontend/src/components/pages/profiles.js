@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import CreateModal from './profiles-components/create-modal';
 import EditModal from './profiles-components/edit-modal';
+import { PROFILES_WORKSPACE_KEY, readWorkspaceSelection, writeWorkspaceSelection } from '../workspace-selection';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -89,23 +90,39 @@ function flatten(profile) {
 }
 
 class Profiles extends Component {
-  state = {
-    showCreate: false,
-    editProfile: null,
-    duplicateInitial: null,
-    selected: [],
-    msg: '',
-    query: '',
-    groups: [],
-    activeGroup: '',
-    creatingGroup: false,
-    newGroupName: '',
-    renamingGroup: false,
-    renameGroupName: '',
-  };
+  state = (() => {
+    const saved = readWorkspaceSelection(PROFILES_WORKSPACE_KEY);
+    return {
+      showCreate: false,
+      editProfile: null,
+      duplicateInitial: null,
+      selected: saved.selected,
+      msg: '',
+      query: saved.query,
+      groups: [],
+      activeGroup: saved.activeGroup,
+      creatingGroup: false,
+      newGroupName: '',
+      renamingGroup: false,
+      renameGroupName: '',
+    };
+  })();
 
   componentDidMount() {
     this.refreshGroups();
+  }
+
+  componentDidUpdate(previousProps, previousState) {
+    const ids = new Set((this.props.profiles || []).map(profile => String(profile && profile.id || '')));
+    const selected = this.state.selected.filter(id => ids.has(String(id)));
+    if (selected.length !== this.state.selected.length) {
+      this.setState({ selected });
+      return;
+    }
+    if (previousState.activeGroup === this.state.activeGroup
+        && previousState.query === this.state.query
+        && previousState.selected === this.state.selected) return;
+    writeWorkspaceSelection(PROFILES_WORKSPACE_KEY, this.state);
   }
 
   refreshGroups = (preferred = '') => {

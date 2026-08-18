@@ -352,6 +352,7 @@ const manager = createCloudBackupManager({
     );
     assert.equal(importedRestoreKey.activeKeyFingerprint, setup.keyFingerprint);
     assert.equal(importedRestoreKey.addedForRestore, true);
+    assert.equal(importedRestoreKey.activatedForBackup, false);
     assert.deepEqual(
       manager.status().keyFingerprints,
       [setup.keyFingerprint, restoreFingerprint].sort(),
@@ -520,6 +521,17 @@ const manager = createCloudBackupManager({
     const migratedDState = JSON.parse(fs.readFileSync(accountDStatePath, 'utf8'));
     assert.equal(migratedDState.encryptedKey, undefined);
     assert.equal(typeof migratedDState.keyring[legacyRepairFingerprint], 'string');
+
+    const secondMacAccount = '77777777-7777-4777-8777-777777777777';
+    accountId = secondMacAccount;
+    const secondMacImport = manager.importRecoveryKey(activeRecoveryKey, setup.keyFingerprint);
+    assert.equal(secondMacImport.activatedForBackup, true);
+    assert.equal(secondMacImport.activeKeyFingerprint, setup.keyFingerprint);
+    assert.equal(secondMacImport.addedForRestore, false);
+    assert.equal(manager.status().hasKey, true);
+    assert.equal(manager.status().keyConfirmed, true);
+    assert.equal(manager.status().enabled, false);
+    assert.equal(manager.status().activeKeyFingerprint, setup.keyFingerprint);
 
     accountId = '';
     assert.equal(manager.status().accountBound, false);

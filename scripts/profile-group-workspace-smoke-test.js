@@ -26,6 +26,8 @@ assert.match(profiles, /Add to group…/,
   'existing profiles cannot be assigned from the row workspace');
 assert.match(profiles, /Remove from \{activeGroup\}/,
   'profiles cannot be removed from the active group');
+assert.match(profiles, /PROFILES_WORKSPACE_KEY/,
+  'Profiles does not restore the last group and selection');
 assert.doesNotMatch(profiles, /memberships\.slice|const memberships = profileGroups\(profile\)/,
   'profile rows still repeat group memberships already shown by the sidebar');
 assert.match(styles, /\.profiles-shell\s*\{[^}]*grid-template-columns:/,
@@ -60,5 +62,17 @@ vm.runInNewContext(
 );
 assert.deepEqual(JSON.parse(JSON.stringify(activeSandbox.result)), ['profile-running'],
   'IN USE does not exclusively reflect tasks with a live running status');
+
+const workspaceSource = read('frontend/src/components/workspace-selection.js')
+  .replace(/export /g, '');
+const workspace = { window: { localStorage: { store: {}, getItem(key) { return this.store[key] || null; }, setItem(key, value) { this.store[key] = String(value); } } } };
+vm.runInNewContext(`${workspaceSource}\nresult = { readWorkspaceSelection, writeWorkspaceSelection };`, workspace);
+workspace.result.writeWorkspaceSelection('zyn.profiles.workspace', {
+  activeGroup: 'Drops', query: 'oak', selected: ['p1', 'p1', '', 'p2'],
+});
+assert.deepEqual(
+  JSON.parse(JSON.stringify(workspace.result.readWorkspaceSelection('zyn.profiles.workspace'))),
+  { activeGroup: 'Drops', query: 'oak', selected: ['p1', 'p2'] },
+);
 
 console.log('Nested profile groups and row workspace smoke test passed');

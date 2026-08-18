@@ -3069,10 +3069,16 @@ function handleEngineMessage(data, connection) {
       break;
     case 'task-log':
       for (const m of items) {
-        if (!m || engineTaskSites.resolve(m) !== POKEMON_SITE) continue;
+        if (!m) continue;
         const decoded = decodeNativeTaskLog(m.data);
-        const queueMonitorLog = decoded.startsWith('[queue-monitor]');
-        pokemonLog(devLogs() || queueMonitorLog ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
+        if (!decoded) continue;
+        const site = engineTaskSites.resolve(m);
+        if (site === POKEMON_SITE) {
+          const queueMonitorLog = decoded.startsWith('[queue-monitor]');
+          pokemonLog(devLogs() || queueMonitorLog ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
+          continue;
+        }
+        if (site === engineContract.SITES.TARGET) log(decoded, m.taskID || m.taskId || '');
       }
       break;
     case 'request-code':

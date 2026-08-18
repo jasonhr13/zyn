@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.14",
+  "notes": [
+    "A second Mac can import your existing recovery key and back up with that same key.",
+    "Accounts and Profiles remember the last group, search, and selected rows.",
+    "Generated Target shipping addresses no longer include extra spaces that Target later rejects."
+  ]
+}

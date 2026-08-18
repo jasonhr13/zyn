@@ -398,7 +398,9 @@ class Settings extends Component {
         cloudBackup: result.status,
         recoveryImport: '',
         recoveryExpectedFingerprint: '',
-        cloudMsg: '✓ Recovery key imported on this device.',
+        cloudMsg: result.activatedForBackup
+          ? '✓ Recovery key imported. This Mac can back up with that key.'
+          : '✓ Recovery key imported on this device.',
         cloudMsgColor: 'var(--ok)',
       });
     } catch (error) { this.setCloudMessage(error.message); }
@@ -545,7 +547,9 @@ class Settings extends Component {
     ].filter(Boolean));
     const missingBackupFingerprints = [...backupFingerprints].filter(fingerprint => !availableRecoveryKeys.has(fingerprint));
     const needsRecoveryImport = cloud.keyUnavailable || !!this.state.recoveryExpectedFingerprint
-      || missingBackupFingerprints.length > 0;
+      || missingBackupFingerprints.length > 0
+      || (cloud.accountBound !== false && !cloud.hasKey && !cloud.keyUnavailable
+        && this.state.cloudBackups.length > 0);
     const requestedRecoveryFingerprint = this.state.recoveryExpectedFingerprint
       || cloud.configuredActiveKeyFingerprint
       || (this.state.cloudBackups[0] && this.state.cloudBackups[0].keyFingerprint)

@@ -76,6 +76,8 @@ if (fs.existsSync(pagePath)) {
     'Accounts does not use the shared grouped workspace layout');
   assert.match(page, /addAccountsToGroup[\s\S]*removeAccountsFromGroup/,
     'Accounts does not expose group assignment controls');
+  assert.match(page, /ACCOUNTS_WORKSPACE_KEY/,
+    'Accounts does not restore the last group and selection');
   assert.match(styles, /\.account-list-table-head,[\s\S]{0,220}grid-template-columns:/,
     'Accounts does not use a structured grouped table');
 }

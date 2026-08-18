@@ -872,7 +872,8 @@ function createCloudBackupManager({
     }
     const before = readState(context);
     const previousConfiguredActive = configuredActiveFingerprint(before);
-    storeKey(context, masterKey, { activate: false });
+    const activateForBackup = !previousConfiguredActive;
+    storeKey(context, masterKey, { activate: activateForBackup });
     let after = readState(context);
     if (after.encryptedKey && !after.activeKeyFingerprint
         && configuredActiveFingerprint(after) === fingerprint) {
@@ -882,17 +883,28 @@ function createCloudBackupManager({
       after = finishLegacyKeyMigration(context, after, masterKey, importedCiphertext);
     }
     const afterConfiguredActive = configuredActiveFingerprint(after);
-    const activeFingerprint = activeKey(context, after)?.fingerprint || '';
-    if (previousConfiguredActive !== afterConfiguredActive) {
+    if (previousConfiguredActive && previousConfiguredActive !== afterConfiguredActive) {
       throw new Error('Importing a restore key attempted to change the active upload key.');
     }
+    if (activateForBackup && afterConfiguredActive === fingerprint) {
+      // This device had no upload key. Importing proves the operator already holds it, so treat
+      // it as saved and confirmed. Do not turn automatic backup on; they still choose that here.
+      after = mutate(context, {
+        recoveryHandledAt: Date.now(),
+        recoveryHandledKeyFingerprint: fingerprint,
+        confirmedKeyFingerprint: fingerprint,
+        lastError: '',
+      });
+    }
+    const activeFingerprint = activeKey(context, after)?.fingerprint || '';
     if (schedulerRunning) schedule(context);
     publish();
     return {
       ok: true,
       keyFingerprint: fingerprint,
       activeKeyFingerprint: activeFingerprint,
-      addedForRestore: fingerprint !== activeFingerprint,
+      addedForRestore: Boolean(activeFingerprint && fingerprint !== activeFingerprint),
+      activatedForBackup: activateForBackup && activeFingerprint === fingerprint,
     };
   }
 

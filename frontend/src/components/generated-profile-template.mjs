@@ -91,11 +91,15 @@ function randomLine1Prefix(rng) {
   return prefix;
 }
 
+function compactAddressLine(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
 function composeLine1(house, street, rng) {
-  const cosmetic = Math.floor(rng() * 3);
-  if (cosmetic === 0) return `${house}  ${street}`;
-  if (cosmetic === 1) return `${house}, ${street}`;
-  return `${house} ${street}`;
+  const streetPart = compactAddressLine(street);
+  if (!streetPart) return compactAddressLine(house);
+  if (rng() < 0.5) return compactAddressLine(`${house}, ${streetPart}`);
+  return compactAddressLine(`${house} ${streetPart}`);
 }
 
 function jigLine1(address, rng, usePrefix) {
@@ -108,13 +112,14 @@ function jigLine1(address, rng, usePrefix) {
       : composeLine1(match[1], rotateStreetSuffix(match[3], rng), rng))
     : original;
   if (usePrefix) {
-    const next = `${randomLine1Prefix(rng)} ${body}`;
+    const next = compactAddressLine(`${randomLine1Prefix(rng)} ${body}`);
     return { address: next, usedPrefix: true, changed: next !== original };
   }
-  if (body !== original) return { address: body, usedPrefix: false, changed: true };
+  const compacted = compactAddressLine(body);
+  if (compacted !== original) return { address: compacted, usedPrefix: false, changed: true };
   // Street could not be varied enough on its own — fall back to the 3-letter prefix
   // instead of the same line 1 plus a fake apt.
-  const next = `${randomLine1Prefix(rng)} ${original}`;
+  const next = compactAddressLine(`${randomLine1Prefix(rng)} ${original}`);
   return { address: next, usedPrefix: true, changed: true };
 }
 
@@ -165,11 +170,12 @@ function uniqueJiggedShipping(shipping, rng, used) {
     }
     last = lines;
   }
-  let address = String(last.address || shipping.address || '');
-  const address2 = last.address2 ?? shipping.address2 ?? '';
+  const address2 = compactAddressLine(last.address2 ?? shipping.address2 ?? '');
+  const baseStreet = compactAddressLine(String(last.address || shipping.address || '').replace(/^[a-z]{3} /, ''));
+  let address = compactAddressLine(last.address || shipping.address || '');
   let candidate = { ...shipping, address, address2 };
-  while (used.has(shippingAddressKey(candidate))) {
-    address = `${address} `;
+  for (let extra = 0; used.has(shippingAddressKey(candidate)); extra += 1) {
+    address = compactAddressLine(`${randomLine1Prefix(rng)} ${baseStreet}${extra ? ` #${extra}` : ''}`);
     candidate = { ...shipping, address, address2 };
   }
   used.add(shippingAddressKey(candidate));
@@ -229,12 +235,12 @@ export function jigShippingLines(shipping, rng = Math.random) {
   const originalLine2 = String((shipping && shipping.address2) || '').trim();
   const line1 = jigLine1(shipping && shipping.address, rng, rng() < 0.5);
   // Prefix path: line 1 is already unique, so do not invent a secondary.
-  // No-prefix path: line 1 was varied with suffix/spacing — add a line 2 for entropy.
+  // No-prefix path: line 1 was varied with suffix/comma — add a line 2 for entropy.
   // A real unit number is never replaced, only relabeled.
   let address2 = originalLine2;
   if (originalLine2) address2 = reformatUnit(originalLine2, rng);
   else if (!line1.usedPrefix) address2 = inventUnit(rng);
-  return { address: line1.address, address2 };
+  return { address: compactAddressLine(line1.address), address2: compactAddressLine(address2) };
 }
 
 export function generatedProfilesFromTemplate(template, emails, existingProfiles = [], options = {}) {
