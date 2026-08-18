@@ -12,7 +12,7 @@ const features = [
   {
     kicker: "Checkout",
     title: "From login to order.",
-    copy: "Zyn signs in, adds the item to cart, pays, and places the Target order from one Mac or Windows app.",
+    copy: "Zyn signs in, adds the item to cart, pays, and places the order on Target or Pokémon Center US from one Mac or Windows app.",
   },
   {
     kicker: "Accounts",
@@ -45,8 +45,8 @@ const differences = [
   {
     usualTitle: "Every store in one app",
     usual: "Amazon, Walmart, Best Buy, Target, and more — so setup is spread across sites you may never run.",
-    zynTitle: "Only Target",
-    zyn: "The watch list, proxies, and checkout are built for Target drops. Nothing else to configure.",
+    zynTitle: "Target and Pokémon Center US",
+    zyn: "The watch list, proxies, and checkout are built for Target and Pokémon Center US drops. Nothing else to configure.",
   },
   {
     usualTitle: "Same address on every account",
@@ -81,8 +81,8 @@ const differences = [
   {
     usualTitle: "Pay before you run a drop",
     usual: "Most bots want a license first — often hundreds or thousands of dollars.",
-    zynTitle: "Free during beta",
-    zyn: "No license fee now, and every beta user gets a full year free after paid access launches.",
+    zynTitle: "$100 for two months",
+    zyn: "Start at $100 for the first two months, then $40 each month. Target and Pokémon Center US are included.",
   },
 ];
 
@@ -97,32 +97,32 @@ export default function Home() {
         <nav aria-label="Main navigation">
           <a href="#features">Features</a>
           <a href="#why">Why Zyn</a>
-          <a href="#beta">Free beta</a>
-          <Link className="nav-cta" href="/join">Join waiting list</Link>
+          <a href="#pricing">Pricing</a>
+          <Link className="nav-cta" href="/buy">Buy Zyn</Link>
         </nav>
       </header>
 
       <section className="target-hero" id="top">
         <div className="target-hero-copy">
-          <div className="target-chip"><i aria-hidden="true" /> Target.com only</div>
-          <h1>Built for<br />Target drops.</h1>
+          <div className="target-chip"><i aria-hidden="true" /> Target and Pokémon Center US</div>
+          <h1>Built for<br />Target and Pokémon Center drops.</h1>
           <p className="target-lede">
-            Zyn is a desktop app for Target restocks — not an all-in-one for every store.
+            Zyn is a desktop app for Target and Pokémon Center US restocks — not an all-in-one for every store.
             Watch the products you want, keep proxies that work, and check out when they come back.
           </p>
           <div className="hero-actions">
-            <Link className="button button-primary" href="/join">
-              Join the free beta <span aria-hidden="true">→</span>
+            <Link className="button button-primary" href="/buy">
+              Buy Zyn — $100 <span aria-hidden="true">→</span>
             </Link>
             <a className="button button-secondary" href="#features">See how it works</a>
           </div>
           <p className="beta-promise">
-            <strong>Free during beta.</strong> Every beta user gets one full year free after paid access launches.
+            <strong>$100 for two months.</strong> Then $40 every month. Target and Pokémon Center US are included.
           </p>
-          <div className="target-capabilities" aria-label="Core Target capabilities">
+          <div className="target-capabilities" aria-label="Supported retailers">
             <span>Target checkout</span>
+            <span>Pokémon Center US</span>
             <span>Product watch lists</span>
-            <span>Working proxies</span>
             <span>Mac and Windows</span>
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function Home() {
             <div className="console-bar">
               <div className="console-brand">
                 <Image src="/zyn-icon.png" alt="" width={26} height={26} unoptimized />
-                <div><strong>Zyn</strong><span>Target checkout</span></div>
+                <div><strong>Zyn</strong><span>Target and Pokémon Center US</span></div>
               </div>
               <div className="engine-status"><i /> Watching Target</div>
             </div>
@@ -164,11 +164,11 @@ export default function Home() {
             </div>
 
             <div className="console-footer">
-              <span>Target.com</span>
+              <span>Target · Pokémon Center US</span>
               <span>Mac and Windows</span>
             </div>
           </div>
-          <div className="performance-tag tag-native"><span>Retailer</span><strong>Target only</strong></div>
+          <div className="performance-tag tag-native"><span>Retailers</span><strong>Target + PCUS</strong></div>
           <div className="performance-tag tag-confirmed"><span>Checkout</span><strong>Confirmed</strong></div>
         </div>
       </section>
@@ -196,11 +196,11 @@ export default function Home() {
       <section className="difference-section" id="why">
         <div className="difference-intro">
           <p className="kicker">Unlike most bots</p>
-          <h2>Zyn only does Target.</h2>
+          <h2>Zyn does Target and Pokémon Center US.</h2>
           <p>
-            Most all-in-one bots try to cover every store, then charge for a license
-            before you even run a drop. Zyn is built around Target restocks — and a
-            few things those bots do not give you.
+            Most all-in-one bots try to cover every store, then charge thousands
+            before you even run a drop. Zyn is built around Target and Pokémon Center
+            US restocks — and a few things those bots do not give you.
           </p>
         </div>
         <div className="difference-board" aria-label="How Zyn compares with typical all-in-one bots">
@@ -225,34 +225,34 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="beta-section" id="beta">
+      <section className="beta-section" id="pricing">
         <div className="beta-copy">
-          <p className="kicker">The beta deal</p>
-          <h2>Free now.<br />Free for your first year.</h2>
+          <p className="kicker">Simple pricing</p>
+          <h2>$100 to start.<br />$40 to stay on.</h2>
           <p>
-            Pricing for the full release is coming soon. Join the beta and your first 12 months of
-            full access stay free—even after paid plans roll out.
+            Pay $100 once and you get two months of Zyn. After that it renews at $40
+            every month. Target and Pokémon Center US are both included.
           </p>
         </div>
 
         <div className="beta-offer">
-          <div className="offer-topline"><span>Beta access</span><em>Limited rollout</em></div>
-          <div className="offer-price"><strong>$0</strong><span>during beta</span></div>
+          <div className="offer-topline"><span>Zyn license</span><em>Self-serve</em></div>
+          <div className="offer-price"><strong>$100</strong><span>first two months</span></div>
           <ul>
-            <li><i aria-hidden="true">01</i><span><strong>Target-only desktop app</strong>Watch lists, proxies, and checkout for Target.com on Mac and Windows.</span></li>
-            <li><i aria-hidden="true">02</i><span><strong>Full beta access</strong>Use the complete beta without a subscription fee.</span></li>
-            <li><i aria-hidden="true">03</i><span><strong>One-year beta promise</strong>Every beta user receives 12 months free after paid access launches.</span></li>
+            <li><i aria-hidden="true">01</i><span><strong>Target and Pokémon Center US</strong>Watch lists, proxies, and checkout for both retailers on Mac and Windows.</span></li>
+            <li><i aria-hidden="true">02</i><span><strong>$100 for two months</strong>Then $40 every month. Cancel from the billing email Stripe sends you.</span></li>
+            <li><i aria-hidden="true">03</i><span><strong>Same desktop app</strong>Buy on the web, then sign in on Mac or Windows with the account Zyn creates for you.</span></li>
           </ul>
-          <Link className="button button-primary offer-button" href="/join">
-            Join the waiting list <span aria-hidden="true">→</span>
+          <Link className="button button-primary offer-button" href="/buy">
+            Buy Zyn <span aria-hidden="true">→</span>
           </Link>
-          <p>No payment required to join. We’ll email you when your beta spot is ready.</p>
+          <p>Checkout is handled by Stripe. Existing invited accounts keep working.</p>
         </div>
       </section>
 
       <footer className="home-footer">
         <a className="brand" href="#top"><Image src="/zyn-icon.png" alt="" width={38} height={38} unoptimized /><span>Zyn</span></a>
-        <p>Target.com checkout automation.</p>
+        <p>Target and Pokémon Center US checkout automation.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

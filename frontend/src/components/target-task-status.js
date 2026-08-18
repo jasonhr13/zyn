@@ -15,9 +15,10 @@ export function targetTaskIsRunning(status) {
   return !!text && !/\b(?:successful|checked out|payment declined)\b/.test(text);
 }
 
-// Live drop buckets. These are current-state only: a task leaves the count as soon as it
-// returns to restock, errors, or moves to another phase. Successful checkouts are counted
-// separately from task outcomes and stay until the next start.
+// Adding-to-cart is current-state only so the pulse can show who is mid-ATC. Carted, checkout,
+// and decline counts come from task outcomes and stay until the next start. A live submitting
+// status still counts once if its carted event has not arrived yet, so the first submit is not
+// blank for a heartbeat.
 export function targetDropPhase(status) {
   if (!status) return '';
   const text = textOf(status);
@@ -26,19 +27,27 @@ export function targetDropPhase(status) {
   return '';
 }
 
-export function summarizeGroupDropPulse(tasks, { statusFor, checkoutCountFor } = {}) {
+const countOf = (reader, task) => (
+  typeof reader === 'function' ? Math.max(0, Number(reader(task)) || 0) : 0
+);
+
+export function summarizeGroupDropPulse(tasks, {
+  statusFor, checkoutCountFor, cartedCountFor, declineCountFor,
+} = {}) {
   const statusOf = typeof statusFor === 'function' ? statusFor : () => null;
-  const checkoutsOf = typeof checkoutCountFor === 'function' ? checkoutCountFor : () => 0;
   let carting = 0;
   let submitting = 0;
   let checkouts = 0;
+  let failures = 0;
   for (const task of (Array.isArray(tasks) ? tasks : [])) {
     const phase = targetDropPhase(statusOf(task));
+    const carted = countOf(cartedCountFor, task);
     if (phase === 'carting') carting += 1;
-    else if (phase === 'submitting') submitting += 1;
-    checkouts += Math.max(0, Number(checkoutsOf(task)) || 0);
+    submitting += carted || (phase === 'submitting' ? 1 : 0);
+    checkouts += countOf(checkoutCountFor, task);
+    failures += countOf(declineCountFor, task);
   }
-  return { carting, submitting, checkouts };
+  return { carting, submitting, checkouts, failures };
 }
 
 export function targetStatusTone(status) {

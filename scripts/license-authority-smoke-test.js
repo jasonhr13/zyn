@@ -51,6 +51,9 @@ const silentLogger = { warn() {} };
           email,
           expiresAt: now + 30 * 24 * 60 * 60 * 1000,
           taskTypes: { pokemoncenter: true, round1: false },
+          billingPlan: 'zyn-standard',
+          billingStatus: 'trialing',
+          accessUntil: now + 60 * 24 * 60 * 60 * 1000,
           proxyAccess: true,
           proxyListCount: 3,
           proxyRevision,
@@ -124,6 +127,9 @@ const silentLogger = { warn() {} };
     assert.equal(signedIn.userId, undefined, 'stable account identifier leaked to renderer status');
     assert.equal(authority.backupAccountId(), accountId);
     assert.deepEqual(signedIn.taskTypes, { pokemoncenter: true, round1: false });
+    assert.equal(signedIn.billingPlan, 'zyn-standard');
+    assert.equal(signedIn.billingStatus, 'trialing');
+    assert.equal(signedIn.accessUntil, now + 60 * 24 * 60 * 60 * 1000);
     const rendererJson = JSON.stringify(signedIn);
     for (const secret of ['authoritative-bearer', 'account-password', 'proxy-secret']) {
       assert.equal(rendererJson.includes(secret), false, `renderer status leaked ${secret}`);
@@ -217,6 +223,7 @@ const silentLogger = { warn() {} };
     assert.match(invalidSessionReason({ code: 'session_limit_reduced' }), /active-device limit/i);
     assert.match(invalidSessionReason({ code: 'session_revoked' }), /revoked by an administrator/i);
     assert.match(invalidSessionReason({ code: 'license_invalid' }), /sign in again/i);
+    assert.match(invalidSessionReason({ code: 'subscription_expired' }), /subscription has ended/i);
     assert.doesNotMatch(invalidSessionReason({ code: 'license_invalid' }), /revoked/i);
 
     const graceRoot = temporary();

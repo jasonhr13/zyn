@@ -66,6 +66,45 @@ seven-day single-use download link, marks the waiting-list entry invited, and sh
 invitation. New-account invitations include the one-time temporary password; existing accounts keep
 their current password. Removing a waiting-list entry does not delete its Zyn account.
 
+## Paid licenses
+
+Self-serve purchase is <https://zynbot.app/buy>. The product, intro price, and renewal price live
+in `config/billing-catalog.json`. The Worker snapshot in
+`cloudflare/license/src/billing-catalog.js` must stay in lockstep with that file.
+
+Current plan:
+
+- $100 once for the first 60 days
+- then $40 every month
+- Target is always available; Pokémon Center US is granted on purchase
+
+Set the live Stripe key and webhook signing secret from the environment (do not paste them into
+the repo or a command-line history you share):
+
+```sh
+STRIPE_SECRET_KEY=sk_live_... STRIPE_WEBHOOK_SECRET=whsec_... node scripts/set-stripe-secret.cjs
+```
+
+Provision Stripe products and prices from this Mac:
+
+```sh
+# test mode
+STRIPE_SECRET_KEY=sk_test_... node scripts/provision-stripe-catalog.cjs --sandbox
+# live mode
+STRIPE_SECRET_KEY=sk_live_... node scripts/provision-stripe-catalog.cjs --live
+```
+
+The script writes the Stripe product/price IDs back into the catalog JSON and the Worker snapshot.
+Store the matching secret in Keychain as `stripe-secret-key-sandbox` or `stripe-secret-key-live`
+under `com.thwebco.hope.license-api`, plus `stripe-webhook-secret`, then run
+`node scripts/configure-license-service.cjs`. Point the Stripe webhook at
+`https://license.zynbot.app/api/billing/webhook` for `checkout.session.completed`, `invoice.paid`,
+`invoice.payment_failed`, `customer.subscription.updated`, and `customer.subscription.deleted`.
+
+Accounts without `access_until` keep working (admin-created and invited beta users). Paid accounts
+get an expiry; login and license validation return `subscription_expired` after that time until
+Stripe renews them.
+
 ## User flow
 
 1. The admin creates the user's email and shares the generated temporary password.

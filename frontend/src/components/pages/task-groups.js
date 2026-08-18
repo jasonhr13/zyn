@@ -207,7 +207,7 @@ class TaskGroupTaskRowView extends Component {
   }
 
   render() {
-    const { group, task, selected, host, account, profile, status, otpRequest, checkouts, canReset } = this.props;
+    const { group, task, selected, host, account, profile, status, otpRequest, checkouts, declines, canReset } = this.props;
     const displayStatus = this.proxyStatusFor(task) || status;
     const running = targetTaskIsRunning(status);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
@@ -252,12 +252,21 @@ class TaskGroupTaskRowView extends Component {
           />
           {task.loopCheckout ? 'On' : 'Off'}
         </label>
-        <span
-          className={`task-checkout-count${checkouts > 0 ? ' has-checkouts' : ''}`}
-          title={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
-          aria-label={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
-        >
-          {checkouts}
+        <span className="task-run-counts">
+          <span
+            className={`task-checkout-count${checkouts > 0 ? ' has-checkouts' : ''}`}
+            title={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+            aria-label={`${checkouts} successful checkout${checkouts === 1 ? '' : 's'} this run`}
+          >
+            {checkouts}
+          </span>
+          <span
+            className={`task-failure-count${declines > 0 ? ' has-failures' : ''}`}
+            title={`${declines} failed checkout${declines === 1 ? '' : 's'} this run`}
+            aria-label={`${declines} failed checkout${declines === 1 ? '' : 's'} this run`}
+          >
+            {declines}
+          </span>
         </span>
         {otpRequest ? <TargetOtpInput request={otpRequest} /> : <StatusBadge status={displayStatus} />}
         <span>{new Date(task.createdAt || group.createdAt).toLocaleDateString()}</span>
@@ -283,7 +292,7 @@ class TaskGroupTaskDetailView extends Component {
   }
 
   render() {
-    const { group, task, host, account, profile, status, otpRequest, checkouts, canReset, copiedTask, readinessPending } = this.props;
+    const { group, task, host, account, profile, status, otpRequest, checkouts, declines, canReset, copiedTask, readinessPending } = this.props;
     const logs = this.props.taskLogs || [];
     const displayStatus = this.proxyStatusFor(task) || status;
     const tone = targetStatusTone(displayStatus);
@@ -343,6 +352,7 @@ class TaskGroupTaskDetailView extends Component {
                 <div><dt>Stock confidence</dt><dd>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any in-stock signal'}</dd></div>
                 <div><dt>Loop checkout</dt><dd>{task.loopCheckout ? 'On — up to the order cap' : 'Off — stop after one result'}</dd></div>
                 <div><dt>Checkouts this run</dt><dd className={checkouts > 0 ? 'task-checkout-detail-success' : ''}>{checkouts}</dd></div>
+                <div><dt>Failures this run</dt><dd className={declines > 0 ? 'task-checkout-detail-fail' : ''}>{declines}</dd></div>
                 <div><dt>Created</dt><dd>{new Date(task.createdAt || group.createdAt).toLocaleString()}</dd></div>
                 <div><dt>Task ID</dt><dd>{task.id}</dd></div>
               </dl>
@@ -386,11 +396,12 @@ const TaskGroupTaskDetail = connect(mapTaskDetailState)(TaskGroupTaskDetailView)
 
 class TaskGroupDropPulseView extends Component {
   render() {
-    const pulse = this.props.pulse || { carting: 0, submitting: 0, checkouts: 0 };
+    const pulse = this.props.pulse || { carting: 0, submitting: 0, checkouts: 0, failures: 0 };
     const stats = [
       { key: 'cart', icon: 'cart', count: pulse.carting, label: 'Adding to cart' },
-      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Submitting order' },
+      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Carted this run' },
       { key: 'success', icon: 'check', count: pulse.checkouts, label: 'Successful checkouts this run' },
+      { key: 'fail', icon: 'warning', count: pulse.failures, label: 'Failed this run' },
     ];
     return (
       <div className="group-drop-pulse" role="status" aria-live="polite" aria-label="Drop status">
@@ -2044,7 +2055,7 @@ class TaskGroups extends Component {
                       onChange={() => this.toggleSelectVisibleTasks(visibleTasks)}
                     />
                   </span>
-                  <span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>Checkouts</span><span>Status</span><span>Created</span><span>Actions</span>
+                  <span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>This run</span><span>Status</span><span>Created</span><span>Actions</span>
                 </div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}

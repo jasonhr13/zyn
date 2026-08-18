@@ -56,7 +56,7 @@ test.each([
   expect(targetDropPhase(input)).toBe(expected);
 });
 
-test('group drop pulse counts live cart/submit and cumulative checkouts', () => {
+test('group drop pulse counts live cart and persistent carted/checkout/fail outcomes', () => {
   const tasks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
   const statuses = {
     a: status('Adding To Cart'),
@@ -64,11 +64,25 @@ test('group drop pulse counts live cart/submit and cumulative checkouts', () => 
     c: status('Waiting For Restock'),
     d: status('Submitting Payment'),
   };
+  const carted = { a: 1, b: 0, c: 2, d: 1 };
   const checkouts = { a: 1, b: 0, c: 2, d: 0 };
+  const declines = { a: 0, b: 1, c: 0, d: 2 };
   expect(summarizeGroupDropPulse(tasks, {
     statusFor: task => statuses[task.id],
+    cartedCountFor: task => carted[task.id],
     checkoutCountFor: task => checkouts[task.id],
-  })).toEqual({ carting: 1, submitting: 2, checkouts: 3 });
+    declineCountFor: task => declines[task.id],
+  })).toEqual({ carting: 1, submitting: 5, checkouts: 3, failures: 3 });
+});
+
+test('live submitting still counts once before the carted outcome arrives', () => {
+  const tasks = [{ id: 'a' }, { id: 'b' }];
+  expect(summarizeGroupDropPulse(tasks, {
+    statusFor: task => (task.id === 'a' ? status('Submitting Order') : status('Waiting For Restock')),
+    cartedCountFor: () => 0,
+    checkoutCountFor: () => 0,
+    declineCountFor: () => 0,
+  })).toEqual({ carting: 0, submitting: 1, checkouts: 0, failures: 0 });
 });
 
 test('visual success and error tones do not change task liveness', () => {

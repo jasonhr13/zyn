@@ -125,7 +125,7 @@ const defaultState = {
     skus: '',                 // newline-separated TCINs or full Target URLs; shared by all tasks
     tasks: [],                // [{ id, accountId, proxyListName, cardId, qty }]
     taskStatus: {},           // taskId -> { state, label, color, detail }
-    taskOutcomes: {},         // taskId -> per-run checkout/decline counts + seen analytics event ids
+    taskOutcomes: {},         // taskId -> per-run carted/checkout/decline counts + seen analytics event ids
     proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
@@ -359,7 +359,7 @@ export function reducer(state = defaultState, action) {
       for (const taskId of (Array.isArray(action.taskIds) ? action.taskIds : [])) {
         if (!taskId) continue;
         taskOutcomes[taskId] = {
-          checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt, seenEventIds: [],
+          carted: 0, checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt, seenEventIds: [],
         };
       }
       return { ...state, target: { ...state.target, taskOutcomes } };
@@ -379,9 +379,9 @@ export function reducer(state = defaultState, action) {
       const taskId = String(action.taskId || '').trim();
       const eventId = String(action.eventId || '').trim();
       const eventType = String(action.eventType || '').trim().toLowerCase();
-      if (!taskId || !eventId || !['checkout', 'decline'].includes(eventType)) return state;
+      if (!taskId || !eventId || !['carted', 'checkout', 'decline'].includes(eventType)) return state;
       const previous = (state.target.taskOutcomes || {})[taskId] || {
-        checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt: 0, seenEventIds: [],
+        carted: 0, checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt: 0, seenEventIds: [],
       };
       const seenEventIds = Array.isArray(previous.seenEventIds) ? previous.seenEventIds : [];
       if (seenEventIds.includes(eventId)) return state;
@@ -389,11 +389,14 @@ export function reducer(state = defaultState, action) {
       if (previous.startedAt && occurredAt < previous.startedAt) return state;
       const next = {
         ...previous,
+        carted: Number(previous.carted) || 0,
         checkouts: Number(previous.checkouts) || 0,
         declines: Number(previous.declines) || 0,
         seenEventIds: [...seenEventIds.slice(-99), eventId],
       };
-      if (eventType === 'checkout') {
+      if (eventType === 'carted') {
+        next.carted += 1;
+      } else if (eventType === 'checkout') {
         next.checkouts += 1;
         next.lastCheckoutAt = occurredAt;
       } else {

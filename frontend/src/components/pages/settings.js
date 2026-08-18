@@ -5,7 +5,7 @@ import {
   harvesterExtensionIdsFromSettings,
   parseHarvesterExtensionIds,
 } from '../harvester-extension-ids.mjs';
-const { ipcRenderer } = window.require('electron');
+const { ipcRenderer, shell } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
 let APP_VERSION = '';
@@ -16,6 +16,73 @@ const MAX_SHAPE_LOADS_PER_BROWSER = 10;
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
 const MAX_ATC_COOKIES_PER_TASK = Number.MAX_SAFE_INTEGER;
 const DISCORD_WEBHOOK_RE = /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\//i;
+const BILLING_BUY_URL = 'https://zynbot.app/buy';
+
+function openBillingPage(event, url = BILLING_BUY_URL) {
+  if (event) event.preventDefault();
+  try { shell.openExternal(url); } catch {}
+}
+
+function formatAccessDate(value) {
+  const when = Number(value) || 0;
+  if (!when) return '';
+  try {
+    return new Date(when).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function subscriptionSummary({ billingStatus = '', accessUntil = 0 } = {}) {
+  const until = formatAccessDate(accessUntil);
+  const expired = accessUntil > 0 && accessUntil <= Date.now();
+  if (expired || billingStatus === 'unpaid') {
+    return {
+      label: 'Expired',
+      detail: 'Renew at zynbot.app/buy to keep using Zyn.',
+      tone: 'bad',
+      manage: true,
+    };
+  }
+  if (billingStatus === 'past_due') {
+    return {
+      label: 'Past due',
+      detail: until ? `Access continues through ${until} while Stripe retries the card.` : 'Update the card on the billing email from Stripe.',
+      tone: 'warn',
+      manage: true,
+    };
+  }
+  if (billingStatus === 'canceled') {
+    return {
+      label: 'Canceled',
+      detail: until ? `Paid access continues through ${until}.` : 'This subscription will not renew.',
+      tone: accessUntil > Date.now() ? 'warn' : 'bad',
+      manage: true,
+    };
+  }
+  if (billingStatus === 'trialing') {
+    return {
+      label: 'First two months',
+      detail: until ? `Included through ${until}. Then $40 every month.` : 'Included for the first two months, then $40 every month.',
+      tone: 'ok',
+      manage: true,
+    };
+  }
+  if (billingStatus === 'active' || accessUntil > 0) {
+    return {
+      label: 'Active',
+      detail: until ? `Paid access through ${until}. Then $40 every month.` : 'Paid subscription is active.',
+      tone: 'ok',
+      manage: true,
+    };
+  }
+  return {
+    label: 'Complimentary',
+    detail: 'This account is not on a paid Stripe plan.',
+    tone: 'ok',
+    manage: false,
+  };
+}
 const CLOUD_BACKUP_VISIBLE = 3;
 const CLOUD_BACKUP_LIST_CAP = 10;
 
@@ -59,6 +126,7 @@ class Settings extends Component {
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, proxyAccess: false, managedProxyCount: 0,
+      billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
       saved: false, ioMsg: '', ioColor: 'var(--muted)', importReplace: false,
@@ -103,6 +171,9 @@ class Settings extends Component {
       pokemonCenterAccess: !!(status.taskTypes && status.taskTypes.pokemoncenter),
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
+      billingPlan: String(status.billingPlan || ''),
+      billingStatus: String(status.billingStatus || ''),
+      accessUntil: Number(status.accessUntil) || 0,
       ...(status.ok === true ? {} : { cloudBackups: [], cloudListLoaded: false, cloudListError: '' }),
     });
     if (status.ok === true) this.loadCloudBackups();
@@ -532,7 +603,8 @@ class Settings extends Component {
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
-      licenseEmail, licenseOffline, pokemonCenterAccess, proxyAccess, managedProxyCount, signingOut,
+      licenseEmail, licenseOffline, pokemonCenterAccess, proxyAccess, managedProxyCount,
+      billingStatus, accessUntil, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
     // would not reach a state copy until the next settings update.
@@ -554,6 +626,7 @@ class Settings extends Component {
       || cloud.configuredActiveKeyFingerprint
       || (this.state.cloudBackups[0] && this.state.cloudBackups[0].keyFingerprint)
       || '';
+    const subscription = subscriptionSummary({ billingStatus, accessUntil });
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="page-header">
@@ -582,6 +655,18 @@ class Settings extends Component {
               <button className="btn btn-secondary btn-sm" onClick={this.signOut} disabled={signingOut}>
                 {signingOut ? 'Signing out…' : 'Sign out'}
               </button>
+            </div>
+            <div className={`license-subscription license-subscription-${subscription.tone}`} data-license-subscription="active">
+              <div>
+                <span>Subscription</span>
+                <strong>{subscription.label}</strong>
+              </div>
+              <p>{subscription.detail}</p>
+              {subscription.manage ? (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={openBillingPage}>
+                  Manage billing
+                </button>
+              ) : null}
             </div>
             <div className="license-module-access" data-license-module-access="active">
               <span>Target workspace</span><strong>Enabled</strong>

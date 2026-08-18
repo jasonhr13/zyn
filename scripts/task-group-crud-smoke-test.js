@@ -252,7 +252,7 @@ async function main() {
         pageTitle: document.querySelector('.page-title')?.textContent.trim(),
         taskRow: Boolean(row),
         taskRowText: row ? row.textContent.replace(/\\s+/g, ' ').trim() : '',
-        checkoutHeader: [...document.querySelectorAll('.group-task-table-head > span')].some(node => node.textContent.trim() === 'Checkouts'),
+        checkoutHeader: [...document.querySelectorAll('.group-task-table-head > span')].some(node => node.textContent.trim() === 'This run'),
         checkoutCount: row && row.querySelector('.task-checkout-count')?.textContent.trim(),
         checkoutCountPositive: Boolean(row && row.querySelector('.task-checkout-count.has-checkouts')),
         watchingTone: watchingToneBeforeDone,

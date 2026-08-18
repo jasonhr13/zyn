@@ -1,6 +1,7 @@
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const path = require('path');
+const { wranglerNode } = require('./wrangler-node.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const config = path.join(projectRoot, 'cloudflare', 'license', 'wrangler.jsonc');
@@ -40,9 +41,14 @@ const secrets = {
 };
 const webhook = existingKeychainValue('pokemon-queue-discord-webhook');
 if (webhook) secrets.ZYN_POKEMON_QUEUE_DISCORD_WEBHOOK = webhook;
+const stripeSecret = existingKeychainValue('stripe-secret-key-live')
+  || existingKeychainValue('stripe-secret-key-sandbox');
+if (stripeSecret) secrets.STRIPE_SECRET_KEY = stripeSecret;
+const stripeWebhook = existingKeychainValue('stripe-webhook-secret');
+if (stripeWebhook) secrets.STRIPE_WEBHOOK_SECRET = stripeWebhook;
 
 for (const [name, value] of Object.entries(secrets)) {
-  execFileSync(process.execPath, [wrangler, 'secret', 'put', name, '--config', config], {
+  execFileSync(wranglerNode(), [wrangler, 'secret', 'put', name, '--config', config], {
     cwd: projectRoot,
     input: `${value}\n`,
     stdio: ['pipe', 'inherit', 'inherit'],

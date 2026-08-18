@@ -2990,7 +2990,7 @@ function handleEngineMessage(data, connection) {
       for (const m of items) {
         if (!analyticsRecorder.record(m)) log('[analytics] event was not recorded');
         const outcomeType = String((m && m.eventType) || '').toLowerCase();
-        if (m && ['checkout', 'decline'].includes(outcomeType)
+        if (m && ['carted', 'checkout', 'decline'].includes(outcomeType)
           && engineTaskSites.resolve(m) === engineContract.SITES.TARGET) {
           toRenderer('targetOutcome', {
             eventId: m.eventId || '', eventType: outcomeType, taskId: m.taskId || '',

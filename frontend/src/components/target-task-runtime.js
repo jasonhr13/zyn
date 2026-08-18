@@ -22,6 +22,10 @@ export function profileForAccountId(profiles, accounts, accountId) {
   return profileListFrom(profiles).find(profile => String(profile.email || '').trim().toLowerCase() === email) || null;
 }
 
+function outcomeCount(outcome, key) {
+  return Math.max(0, Number(outcome && outcome[key]) || 0);
+}
+
 export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
   const id = task && task.id;
   if (!id) {
@@ -29,7 +33,9 @@ export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
       status: undefined,
       proxyStatus: null,
       outcome: EMPTY_OUTCOME,
+      carted: 0,
       checkouts: 0,
+      declines: 0,
       otpRequest: null,
       hasLogs: false,
       canReset: false,
@@ -48,7 +54,9 @@ export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
     status,
     proxyStatus,
     outcome,
-    checkouts: Math.max(0, Number(outcome.checkouts) || 0),
+    carted: outcomeCount(outcome, 'carted'),
+    checkouts: outcomeCount(outcome, 'checkouts'),
+    declines: outcomeCount(outcome, 'declines'),
     otpRequest,
     hasLogs,
     canReset: Boolean(status || hasOutcome || proxy || hasLogs || otpRequest),
@@ -67,7 +75,9 @@ export function selectTargetGroupRuntime(target = {}, tasks) {
     ...stats,
     pulse: summarizeGroupDropPulse(list, {
       statusFor: task => (target.taskStatus || {})[task.id],
-      checkoutCountFor: task => Math.max(0, Number(((target.taskOutcomes || {})[task.id] || {}).checkouts) || 0),
+      cartedCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'carted'),
+      checkoutCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'checkouts'),
+      declineCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'declines'),
     }),
   };
 }
@@ -93,6 +103,7 @@ export function mapTaskRowState(state, { task }) {
     status: runtime.status,
     proxyStatus: runtime.proxyStatus,
     checkouts: runtime.checkouts,
+    declines: runtime.declines,
     otpRequest: runtime.otpRequest,
     canReset: runtime.canReset,
   };

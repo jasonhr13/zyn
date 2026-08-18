@@ -40,13 +40,13 @@ test("server-renders the Zyn product site", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Zyn — Target Checkout Automation<\/title>/i);
-  assert.match(html, /Target\.com only/);
-  assert.match(html, /Built for<br\/>Target drops\./);
+  assert.match(html, /<title>Zyn — Target and Pokémon Center Checkout<\/title>/i);
+  assert.match(html, /Target and Pokémon Center US/);
+  assert.match(html, /Built for<br\/>Target and Pokémon Center drops\./);
   assert.match(html, /Target checkout/);
+  assert.match(html, /Pokémon Center US/);
   assert.match(html, /Product watch lists/);
-  assert.match(html, /Working proxies/);
-  assert.match(html, /Zyn only does Target\./);
+  assert.match(html, /Zyn does Target and Pokémon Center US\./);
   assert.match(html, /Typical all-in-one/);
   assert.match(html, /Generate Target accounts\. Jig the address\./);
   assert.match(html, /Generate accounts, jig the address/);
@@ -54,28 +54,62 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /Lists that keep working/);
   assert.match(html, /Carts, submits, checkouts/);
   assert.match(html, /Save your setup/);
-  assert.match(html, /Free during beta/);
+  assert.match(html, /\$100 for two months/);
+  assert.match(html, /\$40 every month/);
   assert.doesNotMatch(html, /\bWine\b/i);
   assert.doesNotMatch(html, /\bcompiled\b/i);
   assert.doesNotMatch(html, /native engine/i);
-  assert.doesNotMatch(html, /Pokémon Center/i);
+  assert.doesNotMatch(html, /Free during beta/);
   assert.doesNotMatch(html, /Refract|Stellar|HiddenAIO|NSB/i);
-  assert.match(html, /Every beta user gets one full year free/);
-  assert.match(html, /Join the free beta/);
-  assert.match(html, /href="\/join"/);
+  assert.match(html, /Buy Zyn/);
+  assert.match(html, /href="\/buy"/);
   assert.doesNotMatch(html, /Request access/);
   assert.match(html, /mailto:hello@zynbot\.app/);
-  assert.match(html, /https:\/\/zynbot\.app\/og-target-beta\.png/);
+  assert.match(html, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
+});
+
+test("renders the Stripe purchase form", async () => {
+  const response = await render("/buy");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<title>Buy Zyn<\/title>/i);
+  assert.match(html, /\$100 covers the first two months/);
+  assert.match(html, /\$40 every month/);
+  assert.match(html, /Pokémon Center US/);
+  assert.match(html, /action="\/api\/checkout"/);
+  assert.match(html, /name="email"/);
+});
+
+test("starts Stripe checkout through the license service without exposing the secret", async () => {
+  const nativeFetch = globalThis.fetch;
+  let licenseRequest;
+  globalThis.fetch = async (input, init) => {
+    licenseRequest = { input: String(input), init };
+    return Response.json({ ok: true, url: "https://checkout.stripe.com/c/pay/cs_test_123" });
+  };
+  try {
+    const response = await dispatch("/api/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ email: " Buyer@Example.com " }),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), "https://checkout.stripe.com/c/pay/cs_test_123");
+    assert.equal(licenseRequest.input, "https://license.rcart.app/api/billing/checkout");
+    assert.deepEqual(JSON.parse(licenseRequest.init.body), { email: "buyer@example.com" });
+  } finally {
+    globalThis.fetch = nativeFetch;
+  }
 });
 
 test("renders the branded waiting-list form and confirmation", async () => {
   const form = await render("/join");
   assert.equal(form.status, 200);
   const formHtml = await form.text();
-  assert.match(formHtml, /<title>Join the free Zyn beta<\/title>/i);
-  assert.match(formHtml, /Join the free beta\./);
-  assert.match(formHtml, /Target\.com only/);
-  assert.doesNotMatch(formHtml, /Pokémon Center/i);
+  assert.match(formHtml, /<title>Join the Zyn waiting list<\/title>/i);
+  assert.match(formHtml, /Join the waiting list\./);
+  assert.match(formHtml, /Target and Pokémon Center US/);
+  assert.match(formHtml, /Pokémon Center US/);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
@@ -173,7 +207,7 @@ test("publishes the Zyn canonical identity and keeps service traffic in the visi
     const home = await render("/", {}, "https://zynbot.app");
     assert.equal(home.status, 200);
     const homeHtml = await home.text();
-    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-target-beta\.png/);
+    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/favicon\.png"/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/manifest\.webmanifest"/);
 
@@ -217,7 +251,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
-  assert.match(layout, /Zyn — Target Checkout Automation/);
+  assert.match(layout, /Zyn — Target and Pokémon Center Checkout/);
   assert.match(layout, /manifest\.webmanifest/);
   assert.match(css, /--zyn-orange:/);
   assert.match(css, /--zyn-rose:/);
@@ -233,6 +267,8 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   await access(new URL("../app/api/download/redeem/route.ts", import.meta.url));
   await access(new URL("../app/join/page.tsx", import.meta.url));
   await access(new URL("../app/api/waitlist/route.ts", import.meta.url));
+  await access(new URL("../app/buy/page.tsx", import.meta.url));
+  await access(new URL("../app/api/checkout/route.ts", import.meta.url));
   await access(new URL("../public/zyn-icon.png", import.meta.url));
   await access(new URL("../public/favicon.png", import.meta.url));
   await access(new URL("../public/apple-touch-icon.png", import.meta.url));

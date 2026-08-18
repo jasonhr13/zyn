@@ -329,6 +329,10 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(deviceLimits, /licenses_user_active_device_idx/);
   assert.match(html, /Active devices/);
   assert.match(html, /<th>Devices<\/th>/);
+  assert.match(html, /<th>Billing<\/th>/);
+  assert.match(javascript, /billing_status/);
+  assert.match(source, /\/api\/billing\/checkout/);
+  assert.match(source, /\/api\/billing\/webhook/);
   assert.match(javascript, /maxActiveDevices: nextMaxActiveDevices/);
   assert.match(javascript, /value <= 10/);
   assert.match(source, /async function adminAnalyticsDashboard/);

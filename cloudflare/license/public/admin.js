@@ -184,6 +184,29 @@ function userRow(user) {
   status.textContent = user.active ? (user.must_reset_password ? 'First login pending' : 'Active') : 'Disabled';
   cell(row, status);
 
+  const billing = document.createElement('div');
+  const billingBadge = document.createElement('span');
+  const billingStatus = String(user.billing_status || '').trim();
+  const accessUntil = Number(user.access_until) || 0;
+  if (user.stripe_customer_id || billingStatus || accessUntil) {
+    const overdue = accessUntil > 0 && accessUntil <= Date.now();
+    billingBadge.className = `badge ${overdue || billingStatus === 'past_due' || billingStatus === 'canceled' ? 'bad' : 'good'}`;
+    billingBadge.textContent = overdue
+      ? 'Expired'
+      : (billingStatus || 'Paid');
+    const billingMeta = document.createElement('div');
+    billingMeta.className = 'meta';
+    billingMeta.textContent = accessUntil
+      ? `Access until ${formatDate(accessUntil)}`
+      : (user.stripe_customer_id || 'Stripe');
+    billing.append(billingBadge, billingMeta);
+  } else {
+    billingBadge.className = 'badge';
+    billingBadge.textContent = 'Admin / beta';
+    billing.append(billingBadge);
+  }
+  cell(row, billing);
+
   const taskTypeAccess = document.createElement('div');
   taskTypeAccess.className = 'user-task-types';
   taskTypeAccess.append(...taskTypes.map(type => taskTypeOverrideSelect(user, type)));

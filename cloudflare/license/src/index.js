@@ -1,3 +1,21 @@
+import {
+  SUBSCRIPTION_EXPIRED,
+  accessUntilFromIntro,
+  accessUntilFromStripeObject,
+  billingPublicFields,
+  catalogSnapshot,
+  claimBillingSession,
+  createCheckoutSession,
+  defaultPlan,
+  markStripeEventProcessed,
+  paidAccessFailure,
+  planById,
+  rememberStripeEvent,
+  storeBillingClaim,
+  upsertPaidUser,
+  verifyStripeSignature,
+} from './billing.js';
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 // Cloudflare Workers Web Crypto currently caps PBKDF2 at 100,000 iterations.
@@ -1107,6 +1125,7 @@ async function mintLicense(env, user, deviceId, deviceName) {
     userId: user.id,
     email: user.email,
     expiresAt,
+    ...billingPublicFields(user),
     ...await licenseEntitlements(env, user),
   };
 }
@@ -1137,6 +1156,8 @@ async function login(request, env) {
   }
   await rateSuccess(env, key);
   if (!user.active) return json({ ok: false, code: 'account_disabled', message: 'This account is disabled.' }, 403);
+  const accessFailure = paidAccessFailure(user, now);
+  if (accessFailure) return json({ ok: false, ...accessFailure }, 402);
 
   if (user.must_reset_password) {
     const resetToken = randomToken(32);
@@ -1305,11 +1326,13 @@ async function validateLicense(request, env) {
   const now = Date.now();
   const row = await env.DB.prepare(`
     SELECT l.id AS license_id, l.device_id, l.device_name, l.expires_at, l.revoked_at, l.revoked_reason,
-      u.id AS user_id, u.email, u.active, u.proxy_access
+      u.id AS user_id, u.email, u.active, u.proxy_access, u.access_until,
+      u.billing_plan, u.billing_status
     FROM licenses l JOIN users u ON u.id = l.user_id
     WHERE l.token_hash = ?
   `).bind(tokenHash).first();
   let failure = licenseFailure(row, deviceId, now);
+  if (!failure) failure = paidAccessFailure(row, now);
   const expiresAt = now + LICENSE_TTL_MS;
   if (failure && failure.code === 'session_device_mismatch' && canRebindLicense(row, now)) {
     const deviceName = String(body.deviceName || row.device_name || '').slice(0, 100);
@@ -1323,7 +1346,10 @@ async function validateLicense(request, env) {
     }));
     failure = null;
   }
-  if (failure) return json({ ok: false, ...failure }, 401);
+  if (failure) {
+    const status = failure.code === SUBSCRIPTION_EXPIRED.code ? 402 : 401;
+    return json({ ok: false, ...failure }, status);
+  }
 
   await env.DB.prepare('UPDATE licenses SET last_validated_at = ?, expires_at = ? WHERE id = ?')
     .bind(now, expiresAt, row.license_id).run();
@@ -1332,6 +1358,7 @@ async function validateLicense(request, env) {
     userId: row.user_id,
     email: row.email,
     expiresAt,
+    ...billingPublicFields(row),
     ...await licenseEntitlements(env, row, knownProxyRevision),
   });
 }
@@ -2338,6 +2365,7 @@ async function adminUsers(env) {
     env.DB.prepare(`
     SELECT u.id, u.email, u.active, u.proxy_access, u.must_reset_password,
       u.max_active_devices, u.created_at, u.updated_at, u.last_login_at,
+      u.stripe_customer_id, u.stripe_subscription_id, u.billing_plan, u.billing_status, u.access_until,
       COUNT(DISTINCT CASE
         WHEN l.revoked_at IS NULL AND l.expires_at > ? THEN l.device_id
       END) AS active_licenses,
@@ -3103,12 +3131,188 @@ async function adminRoute(request, env, url) {
   return json({ ok: false, message: 'Method not allowed.' }, 405);
 }
 
+async function createBillingCheckout(request, env) {
+  const body = await bodyJson(request);
+  const email = normalizeEmail(body.email);
+  if (!email) return json({ ok: false, message: 'Enter a valid email address.' }, 400);
+  const origin = downloadSiteOrigin(request, env);
+  try {
+    const session = await createCheckoutSession(env, {
+      email,
+      successUrl: `${origin}/buy/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}/buy`,
+    });
+    return json({ ok: true, url: session.url, id: session.id });
+  } catch (error) {
+    if (error && (error.code === 'STRIPE_UNCONFIGURED' || error.code === 'BILLING_UNPROVISIONED')) {
+      return json({ ok: false, message: 'Purchasing is not available yet.' }, 503);
+    }
+    console.error('stripe checkout failed', error && error.message);
+    return json({ ok: false, message: 'Could not start checkout.' }, 502);
+  }
+}
+
+async function billingSession(request, env) {
+  const body = await bodyJson(request);
+  const claim = await claimBillingSession(env, body.sessionId || body.session_id);
+  if (!claim) return json({ ok: false, message: 'Checkout session not found.' }, 404);
+  if (claim.expired) {
+    return json({ ok: false, message: 'This purchase receipt has expired. Contact hello@zynbot.app.' }, 410);
+  }
+  return json({ ok: true, ...claim });
+}
+
+async function applyStripeCheckout(request, env, session) {
+  const email = normalizeEmail(
+    (session && session.customer_details && session.customer_details.email)
+    || session.customer_email
+    || (session.metadata && session.metadata.email),
+  );
+  if (!email) throw new Error('Checkout session is missing an email.');
+  const plan = planById(session.metadata && session.metadata.plan_id) || defaultPlan();
+  const accessUntil = accessUntilFromStripeObject(session, plan) || accessUntilFromIntro(plan);
+  const result = await upsertPaidUser(env, {
+    email,
+    customerId: stripeId(session.customer),
+    subscriptionId: stripeId(session.subscription),
+    status: session.status === 'complete' ? 'trialing' : session.status,
+    accessUntil,
+    plan,
+    createUser: createUserRecord,
+  });
+  let downloadUrl = '';
+  try {
+    downloadUrl = (await mintDownloadLink(request, env, result.user)).downloadUrl;
+  } catch (error) {
+    console.error('download link after checkout failed', error && error.message);
+  }
+  await storeBillingClaim(env, {
+    checkoutSessionId: session.id,
+    userId: result.user.id,
+    createdNewUser: result.createdNewUser,
+    temporaryPassword: result.temporaryPassword,
+    downloadUrl,
+  });
+  await audit(env, 'stripe_checkout_completed', result.user, plan.id);
+}
+
+async function applyStripeInvoice(env, invoice) {
+  const customerId = String(invoice && invoice.customer || '');
+  if (!customerId) return;
+  const user = await env.DB.prepare('SELECT * FROM users WHERE stripe_customer_id = ?')
+    .bind(customerId).first();
+  if (!user) return;
+  const plan = planById(user.billing_plan) || defaultPlan();
+  const nextAccess = Math.max(
+    Number(user.access_until) || 0,
+    accessUntilFromStripeObject(invoice, plan),
+  );
+  await env.DB.prepare(`
+    UPDATE users SET billing_status = ?, access_until = ?,
+      stripe_subscription_id = COALESCE(NULLIF(?, ''), stripe_subscription_id),
+      updated_at = ?
+    WHERE id = ?
+  `).bind(
+    invoice.paid ? 'active' : normalizeInvoiceStatus(invoice),
+    nextAccess,
+    String(invoice.subscription || ''),
+    Date.now(),
+    user.id,
+  ).run();
+}
+
+function stripeId(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return String(value.id || '');
+}
+
+function normalizeInvoiceStatus(invoice) {
+  if (invoice && invoice.paid) return 'active';
+  if (invoice && invoice.status === 'open') return 'past_due';
+  return 'past_due';
+}
+
+async function applyStripeSubscription(env, subscription, deleted = false) {
+  const customerId = String(subscription && subscription.customer || '');
+  const subscriptionId = String(subscription && subscription.id || '');
+  if (!customerId && !subscriptionId) return;
+  const user = customerId
+    ? await env.DB.prepare('SELECT * FROM users WHERE stripe_customer_id = ?').bind(customerId).first()
+    : await env.DB.prepare('SELECT * FROM users WHERE stripe_subscription_id = ?').bind(subscriptionId).first();
+  if (!user) return;
+  const plan = planById(user.billing_plan) || defaultPlan();
+  const status = deleted ? 'canceled' : (subscription.status || user.billing_status);
+  const accessUntil = deleted
+    ? Number(user.access_until) || 0
+    : Math.max(Number(user.access_until) || 0, accessUntilFromStripeObject(subscription, plan));
+  await env.DB.prepare(`
+    UPDATE users SET billing_status = ?, access_until = ?,
+      stripe_subscription_id = COALESCE(NULLIF(?, ''), stripe_subscription_id),
+      updated_at = ?
+    WHERE id = ?
+  `).bind(status, accessUntil, subscriptionId, Date.now(), user.id).run();
+}
+
+async function handleStripeEvent(request, env, event) {
+  const type = String(event && event.type || '');
+  const object = event && event.data && event.data.object;
+  if (!object) return;
+  if (type === 'checkout.session.completed') return applyStripeCheckout(request, env, object);
+  if (type === 'invoice.paid') return applyStripeInvoice(env, object);
+  if (type === 'invoice.payment_failed') {
+    const user = await env.DB.prepare('SELECT id FROM users WHERE stripe_customer_id = ?')
+      .bind(String(object.customer || '')).first();
+    if (user) {
+      await env.DB.prepare('UPDATE users SET billing_status = ?, updated_at = ? WHERE id = ?')
+        .bind('past_due', Date.now(), user.id).run();
+    }
+    return;
+  }
+  if (type === 'customer.subscription.updated') return applyStripeSubscription(env, object, false);
+  if (type === 'customer.subscription.deleted') return applyStripeSubscription(env, object, true);
+}
+
+async function stripeWebhook(request, env) {
+  const raw = await request.text();
+  const valid = await verifyStripeSignature(
+    raw,
+    request.headers.get('stripe-signature'),
+    env.STRIPE_WEBHOOK_SECRET,
+  );
+  if (!valid) return json({ ok: false, message: 'Invalid Stripe signature.' }, 400);
+  let event;
+  try { event = JSON.parse(raw); }
+  catch { return json({ ok: false, message: 'Invalid Stripe payload.' }, 400); }
+  if (!await rememberStripeEvent(env, event)) return json({ ok: true, duplicate: true });
+  try {
+    await handleStripeEvent(request, env, event);
+    await markStripeEventProcessed(env, event.id);
+  } catch (error) {
+    console.error('stripe webhook failed', error && error.stack || error);
+    return json({ ok: false, message: 'Webhook handling failed.' }, 500);
+  }
+  return json({ ok: true });
+}
+
 async function api(request, env, url) {
   if (url.pathname.startsWith('/api/admin/')) return adminRoute(request, env, url);
   const hyperMatch = url.pathname.match(/^\/api\/services\/hyper\/([a-z0-9-]+)$/i);
   if (hyperMatch) return brokerHyper(request, env, hyperMatch[1].toLowerCase());
   if (url.pathname === '/api/services/pokemon-center/queue-events') {
     return brokerPokemonQueueEvents(request, env);
+  }
+  if (url.pathname === '/api/billing/catalog' && request.method === 'GET') {
+    return json({ ok: true, ...catalogSnapshot() });
+  }
+  if (url.pathname === '/api/billing/checkout' && request.method === 'POST') {
+    return createBillingCheckout(request, env);
+  }
+  if (url.pathname === '/api/billing/session' && request.method === 'POST') {
+    return billingSession(request, env);
+  }
+  if (url.pathname === '/api/billing/webhook' && request.method === 'POST') {
+    return stripeWebhook(request, env);
   }
   if (url.pathname === '/api/waitlist' && request.method === 'POST') return joinWaitlist(request, env);
   if (url.pathname === '/api/download/redeem' && request.method === 'POST') return redeemDownloadAccess(request, env);
@@ -3159,6 +3363,7 @@ export const __test = Object.freeze({
   pokemonQueueDiscordPayload,
   pokemonQueueDiscordWebhook,
   licenseFailure,
+  paidAccessFailure,
   licenseRebindStatements,
   canRebindLicense,
   maxActiveDevicesForUser,

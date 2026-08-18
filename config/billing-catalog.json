@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "defaultPlan": "zyn-standard",
+  "plans": [
+    {
+      "id": "zyn-standard",
+      "name": "Zyn",
+      "description": "Desktop checkout for Target and Pokémon Center US.",
+      "taskTypes": [
+        "pokemoncenter"
+      ],
+      "intro": {
+        "kind": "one_time",
+        "amountCents": 10000,
+        "currency": "usd",
+        "accessDays": 60,
+        "label": "First 2 months"
+      },
+      "renewal": {
+        "kind": "recurring",
+        "amountCents": 4000,
+        "currency": "usd",
+        "interval": "month",
+        "intervalCount": 1,
+        "accessDays": 31,
+        "trialDays": 60,
+        "label": "Then every month"
+      }
+    }
+  ],
+  "stripe": {
+    "sandbox": {
+      "zyn-standard": {
+        "productId": "",
+        "introPriceId": "",
+        "renewalPriceId": ""
+      }
+    },
+    "live": {
+      "zyn-standard": {
+        "productId": "prod_V66XXWSv50FmrJ",
+        "introPriceId": "price_1U5uKcAgG2EpmCLAPrmeiHMk",
+        "renewalPriceId": "price_1U5uKcAgG2EpmCLAJ4hJ8Rrm"
+      }
+    }
+  }
+}

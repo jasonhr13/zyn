@@ -82,6 +82,9 @@ function createLicenseAuthority({
     offline: licenseState.offline === true,
     proxyAccess: licenseState.proxyAccess === true,
     managedProxyCount: Math.max(0, Number.parseInt(licenseState.managedProxyCount, 10) || 0),
+    billingPlan: String(licenseState.billingPlan || ''),
+    billingStatus: String(licenseState.billingStatus || ''),
+    accessUntil: Number(licenseState.accessUntil) || 0,
     taskTypes: normalizeTaskTypes(licenseState.taskTypes),
     requiresPasswordReset: licenseState.requiresPasswordReset === true,
     storage: ['encrypted', 'memory', 'none'].includes(licenseState.storage)
@@ -123,6 +126,9 @@ function createLicenseAuthority({
         taskTypes: normalizeTaskTypes(stored.taskTypes),
         proxyAccess: stored.proxyAccess === true,
         managedProxyCount: Math.max(0, Number.parseInt(stored.managedProxyCount, 10) || 0),
+        billingPlan: String(stored.billingPlan || ''),
+        billingStatus: String(stored.billingStatus || ''),
+        accessUntil: Number(stored.accessUntil) || 0,
         migratedFromObserver: filePath === observerSessionPath,
       };
     }
@@ -144,6 +150,9 @@ function createLicenseAuthority({
         taskTypes: saved.taskTypes,
         proxyAccess: saved.proxyAccess,
         managedProxyCount: saved.managedProxyCount,
+        billingPlan: saved.billingPlan,
+        billingStatus: saved.billingStatus,
+        accessUntil: saved.accessUntil,
         storage: 'encrypted',
       };
       if (saved.migratedFromObserver && saveSession()) {
@@ -162,6 +171,9 @@ function createLicenseAuthority({
     taskTypes: normalizeTaskTypes(licenseState.taskTypes),
     proxyAccess: licenseState.proxyAccess === true,
     managedProxyCount: Math.max(0, Number.parseInt(licenseState.managedProxyCount, 10) || 0),
+    billingPlan: String(licenseState.billingPlan || ''),
+    billingStatus: String(licenseState.billingStatus || ''),
+    accessUntil: Number(licenseState.accessUntil) || 0,
   });
 
   function saveSession() {
@@ -177,6 +189,9 @@ function createLicenseAuthority({
         deviceId: typeof licenseApi.deviceId === 'string' ? licenseApi.deviceId : '',
         validatedAt: Number(licenseValidatedAt) || now(),
         taskTypes: normalizeTaskTypes(licenseState.taskTypes),
+        billingPlan: String(licenseState.billingPlan || ''),
+        billingStatus: String(licenseState.billingStatus || ''),
+        accessUntil: Number(licenseState.accessUntil) || 0,
       });
       return true;
     } catch (error) {
@@ -220,6 +235,9 @@ function createLicenseAuthority({
       offline: false,
       proxyAccess: result.proxyAccess === true,
       managedProxyCount,
+      billingPlan: String(result.billingPlan || ''),
+      billingStatus: String(result.billingStatus || ''),
+      accessUntil: Number(result.accessUntil) || 0,
       taskTypes: nextTaskTypes,
       requiresPasswordReset: false,
       storage: 'memory',
@@ -270,7 +288,7 @@ function createLicenseAuthority({
       try {
         const result = await licenseApi.validate(licenseToken, managedProxyRevision);
         if (result.ok) return acceptLicense(result, licenseToken);
-        if (result.status === 401 || result.status === 403) {
+        if (result.status === 401 || result.status === 403 || result.status === 402) {
           return lock(invalidSessionReason(result), { clear: true });
         }
         throw new Error(result.message || `license server returned ${result.status || 0}`);
@@ -284,6 +302,9 @@ function createLicenseAuthority({
             reason: 'License server temporarily unavailable; retrying.',
             offline: true,
             taskTypes: normalizeTaskTypes(saved.taskTypes),
+            billingPlan: saved.billingPlan,
+            billingStatus: saved.billingStatus,
+            accessUntil: saved.accessUntil,
           };
           logger.warn?.(`[license] validation unavailable within grace: ${error.message}`);
           return push();

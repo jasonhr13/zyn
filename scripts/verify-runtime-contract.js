@@ -242,6 +242,8 @@ check('Zyn runtime branding', () => {
     'packaged Target bridge does not forward sanitized native monitor bandwidth');
   assert.match(targetEngine, /toRenderer\('targetOutcome'/,
     'packaged Target bridge omits per-task checkout outcomes');
+  assert.match(targetEngine, /\['carted', 'checkout', 'decline'\]/,
+    'packaged Target bridge omits carted and decline outcomes');
   assert.match(targetEngine, /toRenderer\('targetRunStarted'/,
     'packaged Target bridge omits per-run checkout reset events');
   assert.match(targetEngine, /function targetCookieDemand\(\)/,

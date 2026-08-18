@@ -84,15 +84,36 @@ test('group runtime only changes counts for the group that moved', () => {
   expect(mapGroupRuntimeState(state, { group: groupA }).pulse.carting).toBe(1);
 });
 
+test('group drop pulse keeps carted and failed counts after the task leaves those statuses', () => {
+  const group = { id: 'g1', tasks: [task] };
+  let state = withAccounts(reducer(undefined, { type: '@@test/init' }));
+  state = reducer(state, { type: 'targetRunStarted', taskIds: [task.id], startedAt: 100 });
+  state = reducer(state, {
+    type: 'targetOutcome', taskId: task.id, eventId: 'cart-1', eventType: 'carted', occurredAt: 110,
+  });
+  state = reducer(state, {
+    type: 'targetOutcome', taskId: task.id, eventId: 'fail-1', eventType: 'decline', occurredAt: 120,
+  });
+  state = reducer(state, {
+    type: 'targetStatus', taskId: task.id, state: 'Waiting For Restock',
+    label: 'Waiting For Restock', running: true,
+  });
+  expect(mapGroupRuntimeState(state, { group }).pulse).toEqual({
+    carting: 0, submitting: 1, checkouts: 0, failures: 1,
+  });
+});
+
 test('selectTargetTaskRuntime hides completed proxy notices and counts this-run checkouts', () => {
   const runtime = selectTargetTaskRuntime({
     taskStatus: { 'task-1': { label: 'Waiting For Restock', running: true } },
     proxyStatus: { 'task-1': { label: 'Proxy Updated', hidden: true } },
-    taskOutcomes: { 'task-1': { checkouts: 2 } },
+    taskOutcomes: { 'task-1': { carted: 3, checkouts: 2, declines: 1 } },
     taskLogs: { 'task-1': ['ok'] },
     otpPending: [],
   }, task, 'one@example.com');
   expect(runtime.proxyStatus).toBe(null);
+  expect(runtime.carted).toBe(3);
   expect(runtime.checkouts).toBe(2);
+  expect(runtime.declines).toBe(1);
   expect(runtime.canReset).toBe(true);
 });

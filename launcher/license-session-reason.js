@@ -10,6 +10,7 @@ const SESSION_REASON_BY_CODE = Object.freeze({
   session_expired: 'Your Zyn session expired. Sign in again to continue.',
   session_device_mismatch: 'This saved session belongs to a different device. Sign in again to continue.',
   session_invalid: 'Your Zyn session is no longer valid. Sign in again to continue.',
+  subscription_expired: 'Your Zyn subscription has ended. Renew at zynbot.app/buy to keep using the app.',
   // Compatibility with license-service versions that did not expose the session-end cause.
   license_invalid: 'Your Zyn session is no longer valid. Sign in again to continue.',
 });

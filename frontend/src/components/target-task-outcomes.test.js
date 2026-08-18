@@ -15,12 +15,15 @@ test('Target checkout counts are per-run, deduplicated, and survive status rotat
   let state = reducer(undefined, { type: '@@test/init' });
   state = reducer(state, { type: 'targetRunStarted', taskIds: ['task-a', 'task-b'], startedAt: 100 });
 
+  state = reducer(state, outcome('task-a', 'event-0000000000', 'carted', 105));
   state = reducer(state, outcome('task-a', 'event-0000000001', 'checkout', 110));
   state = reducer(state, outcome('task-a', 'event-0000000001', 'checkout', 110));
   state = reducer(state, outcome('task-a', 'event-0000000002', 'decline', 120));
   state = reducer(state, outcome('task-a', 'event-0000000003', 'checkout', 130));
+  state = reducer(state, outcome('task-a', 'event-0000000004', 'carted', 140));
 
   expect(state.target.taskOutcomes['task-a']).toMatchObject({
+    carted: 2,
     checkouts: 2,
     declines: 1,
     lastCheckoutAt: 130,
@@ -38,6 +41,8 @@ test('Target checkout counts are per-run, deduplicated, and survive status rotat
   state = reducer(state, { type: 'targetRunStarted', taskIds: ['task-a'], startedAt: 200 });
   state = reducer(state, outcome('task-a', 'event-0000000004', 'checkout', 199));
   expect(state.target.taskOutcomes['task-a'].checkouts).toBe(0);
+  expect(state.target.taskOutcomes['task-a'].carted).toBe(0);
+  expect(state.target.taskOutcomes['task-a'].declines).toBe(0);
   expect(state.target.taskOutcomes['task-b'].checkouts).toBe(0);
 });
 
