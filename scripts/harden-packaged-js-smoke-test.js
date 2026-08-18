@@ -15,6 +15,7 @@ const harden = fs.readFileSync(path.join(project, 'scripts', 'harden-packaged-js
 
 assert.match(engineBuild, /USE_GARBLE="\$\{USE_GARBLE:-1\}"/);
 assert.match(engineBuild, /garble@\$\{GARBLE_VERSION\}/);
+assert.match(engineBuild, /v0\.16\.0/);
 assert.match(engineBuild, / -literals -tiny /);
 assert.match(macBuild, /harden-packaged-js\.cjs/);
 assert.match(winBuild, /harden-packaged-js\.cjs/);
