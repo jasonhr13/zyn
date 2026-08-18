@@ -24,6 +24,9 @@ const SKIP_FILES = new Set([
   'pbandai-buyer.cjs',
   'shared.mjs',
   'secret-lair-browserless.mjs',
+  // Electron 43 / V8 15 SIGTRAPs while compiling a control-flow-flattened
+  // bootstrap as the process main module. Leave the launcher entry readable.
+  'bootstrap.js',
   ...PINNED_FARMER_FILES,
 ]);
 const BYTECODE_FILES = new Set([
@@ -93,17 +96,17 @@ function obfuscateFile(file, obfuscator) {
   const ext = path.extname(file);
   const result = obfuscator.obfuscate(source, {
     compact: true,
-    controlFlowFlattening: true,
-    controlFlowFlatteningThreshold: 0.35,
+    // Flattening and split-string call transforms crash Electron 43 / V8 15
+    // with EXC_BREAKPOINT when the result is compiled as a Node module.
+    controlFlowFlattening: false,
     deadCodeInjection: false,
     identifierNamesGenerator: 'hexadecimal',
     renameGlobals: false,
     selfDefending: false,
     simplify: true,
-    splitStrings: true,
-    splitStringsChunkLength: 6,
+    splitStrings: false,
     stringArray: true,
-    stringArrayCallsTransform: true,
+    stringArrayCallsTransform: false,
     stringArrayEncoding: ['base64'],
     stringArrayThreshold: 0.75,
     target: 'node',
