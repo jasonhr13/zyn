@@ -143,14 +143,14 @@ assert.equal(receipt.runtime.backendSha256, expectedEngine.sha256);
 const update = fs.readFileSync(path.join(resources, 'app-update.yml'), 'utf8');
 assert.match(update, /^url: https:\/\/updates\.zynbot\.app\/windows$/m);
 assert.match(update, /^updaterCacheDirName: zyn-updater-x64$/m);
-const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
+const bootstrap = fs.readFileSync(path.join(projectRoot, 'launcher', 'bootstrap.js'), 'utf8');
 assert.match(bootstrap, /process\.platform === 'win32'[\s\S]{0,100}'https:\/\/updates\.zynbot\.app\/windows'/);
 assert.match(bootstrap, /process\.platform === 'win32' \? 'backend\.exe' : 'backend'/);
 assert.match(bootstrap, /setTargetHarvestAuthorized\?\.\(authorized === true\)/,
   'Windows launcher does not connect Target harvesting to license state');
 assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,
   'Windows launcher bypasses the Target engine authenticated extension-save capability');
-const runtimeManager = fs.readFileSync(path.join(resources, 'app', 'runtime-manager.js'), 'utf8');
+const runtimeManager = fs.readFileSync(path.join(projectRoot, 'launcher', 'runtime-manager.js'), 'utf8');
 assert.match(runtimeManager, /win32: \['chromium', 'engine'\]/);
 assert.match(runtimeManager, /process\.env\.ZYN_ENGINE_PATH = entry/);
 assert.match(runtimeManager, /this\.platform === 'win32' \? 'tar\.exe'/);
@@ -163,14 +163,20 @@ const originalPackage = JSON.parse(asar.extractFile(
   path.join(resources, 'app-original.asar'),
   'package.json',
 ).toString('utf8'));
-const targetEngine = asar.extractFile(
+const targetEngine = fs.readFileSync(
+  path.join(projectRoot, 'runtime-app', 'public', 'helpers', 'target-engine.js'),
+  'utf8',
+);
+const nativeEngineContract = fs.readFileSync(
+  path.join(projectRoot, 'launcher', 'native-engine-contract.js'),
+  'utf8',
+);
+const packedTargetEngine = asar.extractFile(
   path.join(resources, 'app-original.asar'),
   'public/helpers/target-engine.js',
 ).toString('utf8');
-const nativeEngineContract = asar.extractFile(
-  path.join(resources, 'app-original.asar'),
-  'public/helpers/native-engine-contract.js',
-).toString('utf8');
+assert.ok(packedTargetEngine.length > 40, 'Windows packaged Target bridge is missing');
+assert.doesNotMatch(packedTargetEngine, /PolarAIO|\bHope\b/i, 'Windows packaged Target bridge retains retired branding');
 assert.match(targetEngine, /function targetCookieDemand\(\)/,
   'Windows Target bridge omits dynamic cookie-bank demand');
 assert.match(targetEngine, /path: '\/demand'/,

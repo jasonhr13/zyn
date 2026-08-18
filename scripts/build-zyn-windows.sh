@@ -82,6 +82,8 @@ for helper in \
 done
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
+ELECTRON_BIN="$ELECTRON_RUNTIME/electron.exe"
+node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" "$TEMP_DIR/app" --electron "$ELECTRON_BIN"
 
 node -e '
   const fs = require("fs");
@@ -133,6 +135,8 @@ for launcher_file in \
   cp "$PROJECT_DIR/launcher/$launcher_file" "$RESOURCES/app/$launcher_file"
 done
 cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
+node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" \
+  "$RESOURCES/app" "$RESOURCES/bot" --electron "$ELECTRON_BIN"
 node -e '
   const fs = require("fs");
   const file = process.argv[1];

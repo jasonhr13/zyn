@@ -146,6 +146,10 @@ async function main() {
     throw new Error(`The live Windows feed does not advertise Zyn ${version}.`);
   }
   console.log(`\nZyn ${version} Windows x64 is live at ${updateOrigin}/${prefix}/latest.yml`);
+  if (process.env.ZYN_SKIP_RELEASE_NOTIFICATION === '1') {
+    console.log('Skipping the Zyn Discord release notification.');
+    return;
+  }
   const notification = await publishAppReleaseNotification({
     token,
     releaseNotes,

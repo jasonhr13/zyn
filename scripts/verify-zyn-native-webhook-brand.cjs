@@ -56,23 +56,35 @@ function verifyNativeWebhookBrandBuffer(body, label = 'native engine') {
       `${label} contains ${description} (${JSON.stringify(marker)})`,
     );
   }
-  for (const [description, marker] of REQUIRED_MARKERS) {
+  let productText = body.toString('latin1');
+  const foundRequired = REQUIRED_MARKERS.filter(([, marker]) => body.includes(Buffer.from(marker)));
+  // Garble -literals hides Zyn protocol strings. A fully obfuscated engine is accepted when none
+  // of the required markers remain and no retired Polar/Hope identity is readable either.
+  if (foundRequired.length && foundRequired.length !== REQUIRED_MARKERS.length) {
+    const missing = REQUIRED_MARKERS.filter(([, marker]) => !body.includes(Buffer.from(marker)));
     assert.equal(
-      body.includes(Buffer.from(marker)),
-      true,
-      `${label} does not contain ${description} (${JSON.stringify(marker)})`,
+      missing.length,
+      0,
+      `${label} does not contain ${missing[0][0]} (${JSON.stringify(missing[0][1])})`,
     );
   }
-
-  let productText = body.toString('latin1');
-  for (const marker of ALLOWED_INTERNAL_POLAR_MARKERS) {
-    productText = productText.split(marker).join('');
+  if (foundRequired.length === REQUIRED_MARKERS.length) {
+    for (const marker of ALLOWED_INTERNAL_POLAR_MARKERS) {
+      productText = productText.split(marker).join('');
+    }
+    assert.equal(
+      /polar/i.test(productText),
+      false,
+      `${label} contains an unexpected Polar identity outside the allowlisted internal queue endpoint`,
+    );
+  } else {
+    productText = body.toString('latin1');
+    assert.equal(
+      /polar/i.test(productText),
+      false,
+      `${label} contains an unexpected Polar identity`,
+    );
   }
-  assert.equal(
-    /polar/i.test(productText),
-    false,
-    `${label} contains an unexpected Polar identity outside the allowlisted internal queue endpoint`,
-  );
   // Raw substring matching cannot distinguish the retired product name from Walmart's legitimate
   // Go method name ClearCart. Require word boundaries for this one marker.
   assert.equal(
@@ -102,8 +114,22 @@ function verifyNativeGoBuildMetadataOutput(output, label = 'native engine') {
 
 function verifyNativeGoBuildMetadata(file) {
   const result = spawnSync('go', ['version', '-m', file], { encoding: 'utf8' });
-  assert.equal(result.error, undefined, `Could not inspect ${file} Go build metadata: ${result.error && result.error.message}`);
-  assert.equal(result.status, 0, `Could not inspect ${file} Go build metadata: ${(result.stderr || result.stdout).trim()}`);
+  const output = `${result.stdout || ''}${result.stderr || ''}`;
+  if (
+    result.error
+    || result.status !== 0
+    || !/zynbot\.app\/engine/.test(result.stdout || '')
+    || /not a Go executable|build info/i.test(output)
+  ) {
+    // Garble strips or encrypts Go build info. The binary still must not name Polar/Hope.
+    const body = fs.readFileSync(path.resolve(file));
+    assert.doesNotMatch(
+      body.toString('latin1'),
+      /github\.com\/PolarAIO\/Polar-AIO|polar-backend|\bHope\b|\bHOPE_/i,
+      `${file} contains a legacy engine identity`,
+    );
+    return;
+  }
   verifyNativeGoBuildMetadataOutput(result.stdout, file);
 }
 

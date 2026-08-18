@@ -92,6 +92,8 @@ for helper in \
 done
 node "$PROJECT_DIR/scripts/patch-zyn-checkout-webhook.cjs" \
   "$TEMP_DIR/app/public/helpers/checkout-reporter.js"
+ELECTRON_BIN="$ELECTRON_RUNTIME/Contents/MacOS/Electron"
+node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" "$TEMP_DIR/app" --electron "$ELECTRON_BIN"
 
 node -e '
   const fs = require("fs");
@@ -166,6 +168,8 @@ cp "$PROJECT_DIR/launcher/package.json" "$RESOURCES/app/package.json"
 mkdir -p "$RESOURCES/app/node_modules"
 cp -R "$PROJECT_DIR/launcher/node_modules/." "$RESOURCES/app/node_modules/"
 node "$PROJECT_DIR/scripts/prune-zyn-native-addons.cjs" "$RESOURCES/app/node_modules" darwin "$APP_ARCH"
+node "$PROJECT_DIR/scripts/harden-packaged-js.cjs" \
+  "$RESOURCES/app" "$RESOURCES/bot" --electron "$ELECTRON_BIN"
 
 PLIST="$CONTENTS/Info.plist"
 CURRENT_EXECUTABLE="$(plutil -extract CFBundleExecutable raw "$PLIST")"

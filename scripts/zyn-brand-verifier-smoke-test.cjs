@@ -173,6 +173,7 @@ async function main() {
   const cleanMetadata = `/tmp/backend: go1.test
 \tpath\tzynbot.app/engine/cmd/zyn-engine
 \tmod\tzynbot.app/engine\t(devel)\n`;
+  verifyNativeWebhookBrandBuffer(Buffer.from('garbled-engine-fixture-without-protocol-strings'), 'garbled native fixture');
   verifyNativeGoBuildMetadataOutput(cleanMetadata, 'clean metadata fixture');
   expectFailure(
     () => verifyNativeGoBuildMetadataOutput(cleanMetadata.replaceAll('zynbot.app/engine', 'github.com/PolarAIO/Polar-AIO/backend'), 'legacy metadata fixture'),

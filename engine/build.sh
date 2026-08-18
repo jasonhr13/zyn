@@ -14,7 +14,7 @@ mkdir -p "$OUT_DIR"
 if [[ "$USE_GARBLE" == "1" ]]; then
   if ! command -v garble >/dev/null 2>&1; then
     echo "garble not found. Install a Go 1.24-compatible release:"
-    echo "  go install mvdan.cc/garble@v0.14.2"
+    echo "  go install mvdan.cc/garble@v0.15.0"
     echo "Or build without obfuscation:"
     echo "  USE_GARBLE=0 $0"
     exit 1

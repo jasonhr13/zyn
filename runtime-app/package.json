@@ -6,6 +6,7 @@
   "main": "public/electron.js",
   "description": "Zyn Electron application runtime",
   "dependencies": {
+    "bytenode": "^1.5.7",
     "discord.js": "13.17.1",
     "electron-log": "4.4.8",
     "electron-updater": "6.8.9",

@@ -174,39 +174,32 @@ check('launcher package identity', () => {
 check('Zyn runtime branding', () => {
   const asar = require(path.join(projectDir, 'frontend', 'node_modules', '@electron', 'asar'));
   const archive = path.join(appPath, 'Contents', 'Resources', 'app-original.asar');
-  const electronMain = asar.extractFile(archive, 'public/electron.js').toString('utf8');
-  const discordMonitor = asar.extractFile(archive, 'public/helpers/discord-monitor.js').toString('utf8');
-  const targetEngine = asar.extractFile(archive, 'public/helpers/target-engine.js').toString('utf8');
-  const dataManager = asar.extractFile(archive, 'public/helpers/data-manager.js').toString('utf8');
-  const checkoutReporter = asar.extractFile(
-    archive,
-    'public/helpers/checkout-reporter.js',
-  ).toString('utf8');
-  const nativeEngineContract = asar.extractFile(
-    archive,
-    'public/helpers/native-engine-contract.js',
-  ).toString('utf8');
-  const nativeHyperBroker = asar.extractFile(
-    archive,
-    'public/helpers/native-hyper-broker.js',
-  ).toString('utf8');
-  const manualCaptchaManager = asar.extractFile(
-    archive,
-    'public/helpers/manual-captcha-manager.js',
-  ).toString('utf8');
-  const analyticsRecorder = asar.extractFile(
-    archive,
-    'public/helpers/analytics-recorder.js',
-  ).toString('utf8');
-  const queueEvents = fs.readFileSync(
-    path.join(appPath, 'Contents', 'Resources', 'app', 'pokemon-queue-events.js'),
-    'utf8',
-  );
-  const botDir = path.join(appPath, 'Contents', 'Resources', 'bot');
+  const source = relative => fs.readFileSync(path.join(projectDir, relative), 'utf8');
+  const electronMain = source('runtime-app/public/electron.js');
+  const discordMonitor = source('runtime-app/public/helpers/discord-monitor.js');
+  const targetEngine = source('runtime-app/public/helpers/target-engine.js');
+  const dataManager = source('runtime-app/public/helpers/data-manager.js');
+  const checkoutReporter = source('runtime-app/public/helpers/checkout-reporter.js');
+  const nativeEngineContract = source('launcher/native-engine-contract.js');
+  const nativeHyperBroker = source('launcher/native-hyper-broker.js');
+  const manualCaptchaManager = source('launcher/manual-captcha-manager.js');
+  const analyticsRecorder = source('launcher/analytics-recorder.js');
+  const queueEvents = source('launcher/pokemon-queue-events.js');
   const userWebhookBots = ['pbandai-buyer.cjs', 'shared.mjs'].map(name => ({
     name,
-    source: fs.readFileSync(path.join(botDir, name), 'utf8'),
+    source: source(path.join('bot-runtime', name)),
   }));
+  const packedHelpers = [
+    'public/electron.js',
+    'public/helpers/target-engine.js',
+    'public/helpers/data-manager.js',
+    'public/helpers/checkout-reporter.js',
+  ];
+  for (const packed of packedHelpers) {
+    const body = asar.extractFile(archive, packed).toString('utf8');
+    assert.ok(body.length > 40, `packaged ${packed} is missing`);
+    assert.doesNotMatch(body, /PolarAIO|\bHope\b|hope:\/\//i, `packaged ${packed} retains retired branding`);
+  }
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
@@ -346,8 +339,8 @@ check('build receipt', () => {
 
 check('Target farmer New Headless launch contract', () => {
   const resources = path.join(appPath, 'Contents', 'Resources');
-  const farmer = fs.readFileSync(path.join(resources, 'bot', 'shape-farmer.mjs'), 'utf8');
-  const browserPool = fs.readFileSync(path.join(resources, 'bot', 'shape-browser-pool.mjs'), 'utf8');
+  const farmer = fs.readFileSync(path.join(projectDir, 'native-farmer', 'shape-farmer.mjs'), 'utf8');
+  const browserPool = fs.readFileSync(path.join(projectDir, 'native-farmer', 'shape-browser-pool.mjs'), 'utf8');
   const upstream = JSON.parse(fs.readFileSync(path.join(projectDir, 'config', 'native-farmer-upstream.json'), 'utf8'));
   for (const [filename, entry] of Object.entries(upstream.files)) {
     if (!filename.endsWith('.mjs') && filename !== 'target-atc-v2.html') continue;
@@ -361,8 +354,8 @@ check('Target farmer New Headless launch contract', () => {
   assert.match(browserPool, /channel: 'chromium'/, 'Chromium-family browsers lack an explicit full-browser channel');
 
   const asar = require(path.join(projectDir, 'frontend', 'node_modules', '@electron', 'asar'));
-  const targetEngine = asar.extractFile(path.join(resources, 'app-original.asar'), 'public/helpers/target-engine.js').toString('utf8');
-  const runtimePaths = asar.extractFile(path.join(resources, 'app-original.asar'), 'public/helpers/runtime-paths.js').toString('utf8');
+  const targetEngine = fs.readFileSync(path.join(projectDir, 'runtime-app', 'public', 'helpers', 'target-engine.js'), 'utf8');
+  const runtimePaths = fs.readFileSync(path.join(projectDir, 'native-farmer', 'runtime-paths.js'), 'utf8');
   assert.match(targetEngine, /'--headless=true'/, 'Zyn does not request headless mode');
   assert.doesNotMatch(targetEngine, /'--headless=false'/, 'Zyn still requests headed mode');
   assert.match(targetEngine, /const findNodeExe = nodeExecutable/, 'Target farmer does not use native Node boundary');
@@ -456,7 +449,10 @@ check('Target farmer New Headless launch contract', () => {
     for (const root of remoteRoots) {
       assert.equal(fs.existsSync(path.join(appPath, root)), false, `${root} should not be in a remote-runtime build`);
     }
-    const manager = fs.readFileSync(path.join(resources, 'app', 'runtime-manager.js'), 'utf8');
+    const manager = fs.readFileSync(path.join(projectDir, 'launcher', 'runtime-manager.js'), 'utf8');
+    const packedManager = fs.readFileSync(path.join(resources, 'app', 'runtime-manager.js'), 'utf8');
+    assert.ok(packedManager.length > 40, 'packaged runtime manager is missing');
+    assert.doesNotMatch(packedManager, /PolarAIO|\bHope\b/i, 'packaged runtime manager retains retired branding');
     assert.match(manager, /zyn-manifest-v1\.json/, 'remote runtime manager uses the wrong manifest protocol');
     assert.match(manager, /verifyManifest/, 'remote runtime manager does not verify signed manifests');
     assert.match(manager, /bytes=\$\{existing\}-/, 'remote runtime manager does not resume partial downloads');
@@ -466,7 +462,7 @@ check('Target farmer New Headless launch contract', () => {
       'remote runtime does not stage a downloaded engine for the next spawn');
     assert.doesNotMatch(manager, /EXPECTED_ENGINE_SHA256|EXPECTED_WINE_VERSION/,
       'remote runtime still hard-codes the old Windows engine or Wine pins');
-    const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
+    const bootstrap = fs.readFileSync(path.join(projectDir, 'launcher', 'bootstrap.js'), 'utf8');
     assert.match(bootstrap, /waitForRuntime\(\['chromium'\]\)/,
       'Target launches do not wait for the remote Chromium component');
     assert.match(bootstrap, /status && status\.ok === true\)[\s\S]{0,120}startRuntimeUpdatePolling\(\)/,
@@ -507,7 +503,7 @@ check('Target farmer New Headless launch contract', () => {
 check('architecture-specific auto-update feed', () => {
   const resources = path.join(appPath, 'Contents', 'Resources');
   const updateConfig = fs.readFileSync(path.join(resources, 'app-update.yml'), 'utf8');
-  const bootstrap = fs.readFileSync(path.join(resources, 'app', 'bootstrap.js'), 'utf8');
+  const bootstrap = fs.readFileSync(path.join(projectDir, 'launcher', 'bootstrap.js'), 'utf8');
   assert.match(bootstrap, /setTargetHarvestAuthorized\?\.\(authorized === true\)/,
     'launcher does not connect Target harvesting to license state');
   assert.match(bootstrap, /targetEngine\.saveHarvesterCookie\(cookie\)/,

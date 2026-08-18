@@ -22,6 +22,8 @@
     "not op_mini all"
   ],
   "devDependencies": {
-    "@electron/asar": "^3.4.1"
+    "@electron/asar": "^3.4.1",
+    "bytenode": "^1.5.7",
+    "javascript-obfuscator": "^4.1.1"
   }
 }
