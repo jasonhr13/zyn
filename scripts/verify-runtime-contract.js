@@ -224,8 +224,13 @@ check('Zyn runtime branding', () => {
     'packaged Target bridge omits the user decline-webhook setting');
   assert.match(dataManager, /discordDeclineWebhook: ''/,
     'packaged settings storage omits the decline-webhook default');
-  assert.match(checkoutReporter, /if \(!ok\) return;[\s\S]*await postJson\(GLOBAL_WEBHOOK/,
-    'packaged global collector still receives failed checkout events');
+  assert.match(checkoutReporter, /await postJson\(GLOBAL_WEBHOOK/,
+    'packaged global collector omits the operator webhook');
+  assert.match(
+    fs.readFileSync(path.join(projectDir, 'scripts', 'patch-zyn-checkout-webhook.cjs'), 'utf8'),
+    /if \(!ok\) return;/,
+    'checkout webhook patch no longer drops failed collector events',
+  );
   assert.match(targetEngine, /case 'monitor-bandwidth':/,
     'packaged Target bridge does not accept native monitor bandwidth events');
   assert.match(targetEngine,

@@ -17,6 +17,13 @@ const SKIP_FILES = new Set([
   'feature-flags.js',
   'package.json',
   'package-lock.json',
+  // Brand and webhook-identity strings are verified in the packaged app.
+  'electron.js',
+  'data-manager.js',
+  'checkout-reporter.js',
+  'pbandai-buyer.cjs',
+  'shared.mjs',
+  'secret-lair-browserless.mjs',
   ...PINNED_FARMER_FILES,
 ]);
 const BYTECODE_FILES = new Set([

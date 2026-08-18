@@ -28,6 +28,8 @@ assert.equal(shouldObfuscate('/tmp/app/public/helpers/target-engine.js'), true);
 assert.equal(shouldObfuscate('/tmp/app/node_modules/ws/index.js'), false);
 assert.equal(shouldObfuscate('/tmp/app/build/static/js/main.js'), false);
 assert.equal(shouldObfuscate('/tmp/app/feature-flags.js'), false);
+assert.equal(shouldObfuscate('/tmp/app/public/electron.js'), false);
+assert.equal(shouldObfuscate('/tmp/app/public/helpers/checkout-reporter.js'), false);
 assert.equal(shouldObfuscate('/tmp/bot/shape-farmer.mjs'), false);
 assert.equal(shouldBytecode('/tmp/app/public/helpers/target-engine.js'), true);
 assert.ok(BYTECODE_FILES.has('license-authority.js'));
