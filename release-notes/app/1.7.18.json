@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.18",
+  "notes": [
+    "You can test proxy lists for working connections and latency.",
+    "Lists of about 100 proxies are tested in full; large lists use a sample of 100.",
+    "Open a proxy list to see working, failed, and speed results per line."
+  ]
+}

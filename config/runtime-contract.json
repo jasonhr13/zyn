@@ -18,7 +18,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.17",
+    "version": "1.7.18",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -76,6 +76,7 @@
     "Contents/Resources/app/profile-imap-control.js",
     "Contents/Resources/app/account-group-control.js",
     "Contents/Resources/app/proxy-group-control.js",
+    "Contents/Resources/app/proxy-test-control.js",
     "Contents/Resources/app/managed-proxy-control.js",
     "Contents/Resources/app/managed-proxy-ipc-guard.js",
     "Contents/Resources/app/resifactory-client.js",

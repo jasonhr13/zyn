@@ -23,6 +23,7 @@ const { createProfileImapControl } = require('./profile-imap-control');
 const { testImapConnection } = require('./imap-connection');
 const { createManagedProxyControl } = require('./managed-proxy-control');
 const { createProxyGroupControl } = require('./proxy-group-control');
+const { createProxyTestControl } = require('./proxy-test-control');
 const { createResiFactoryControl, installResiFactoryIpc } = require('./resifactory-control');
 const { createEvomiControl, installEvomiIpc } = require('./evomi-control');
 const { createIpfistControl, installIpfistIpc } = require('./ipfist-control');
@@ -726,6 +727,53 @@ function installAccountGroupIpc(accountGroupControl) {
   });
 }
 
+function installProxyTests() {
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    return createProxyTestControl({
+      dataDirectory: app.getPath('userData'),
+      getProxyLines: ref => dataManager.getProxyLines?.(ref) || [],
+    });
+  } catch (error) {
+    console.error(`Could not install proxy tests: ${error.message}`);
+    return null;
+  }
+}
+
+function pushProxyTestProgress(payload) {
+  try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('proxyTestProgress', payload);
+      }
+    }
+  } catch {}
+}
+
+function installProxyTestIpc(proxyTestControl) {
+  if (!proxyTestControl) return;
+  ipcMain.on('getProxyTestSummaries', event => {
+    try { event.returnValue = proxyTestControl.getSummaries(); }
+    catch { event.returnValue = {}; }
+  });
+  ipcMain.on('getProxyTestReport', (event, ref) => {
+    try { event.returnValue = proxyTestControl.getReport(ref); }
+    catch (error) { event.returnValue = { error: error.message, rows: [] }; }
+  });
+  ipcMain.on('stopProxyTest', (event, ref) => {
+    try { event.returnValue = { ok: proxyTestControl.stop(ref) }; }
+    catch (error) { event.returnValue = { ok: false, error: error.message }; }
+  });
+  ipcMain.removeHandler('startProxyTest');
+  ipcMain.handle('startProxyTest', async (_event, payload = {}) => {
+    try {
+      return await proxyTestControl.start(payload, pushProxyTestProgress);
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+}
+
 function installProxyGroupIpc(proxyGroupControl) {
   if (!proxyGroupControl) return;
   ipcMain.on('getProxyGroups', event => { event.returnValue = proxyGroupControl.getGroups(); });
@@ -1405,6 +1453,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const accountGroupControl = installAccountGroups();
   const proxyGroupControl = installProxyGroups();
   const managedProxyControl = installManagedProxies();
+  const proxyTestControl = installProxyTests();
   installResiFactory();
   installEvomi();
   installIpfist();
@@ -1419,6 +1468,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   installProfileImapIpc(licenseAuthority, profileImapControl);
   installAccountGroupIpc(accountGroupControl);
   installProxyGroupIpc(proxyGroupControl);
+  installProxyTestIpc(proxyTestControl);
   if (!FEATURES.licenseEnforce) {
     installReplacementLicensePreview();
     enableLocalDeveloperLicense();

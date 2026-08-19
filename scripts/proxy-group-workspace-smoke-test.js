@@ -103,7 +103,7 @@ assert.match(taskGroups, /Select all/,
   'the Add Tasks modal is missing a Select all control');
 assert.match(styles, /\.task-account-section-label\s*\{[^}]*margin-top:/,
   'the Add Tasks Accounts heading is still crowded against the preceding card');
-for (const channel of ['createProxyGroup', 'renameProxyGroup', 'deleteProxyGroup', 'addProxyListsToGroup', 'removeProxyListsFromGroup']) {
+for (const channel of ['createProxyGroup', 'renameProxyGroup', 'deleteProxyGroup', 'addProxyListsToGroup', 'removeProxyListsFromGroup', 'startProxyTest', 'getProxyTestReport']) {
   assert.match(bootstrap, new RegExp(`'${channel}'`), `proxy group IPC omits ${channel}`);
 }
 assert.match(page, /RESIFACTORY_PROXIES/, 'ResiFactory is not a dedicated Proxies subsection');

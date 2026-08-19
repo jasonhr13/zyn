@@ -12,6 +12,41 @@ const RESIFACTORY_PROXIES = '__resifactory_proxies__';
 const EVOMI_PROXIES = '__evomi_proxies__';
 const IPFIST_PROXIES = '__ipfist_proxies__';
 const SYSTEM_GROUPS = [ALL_PROXY_LISTS, MANAGED_PROXIES, UNGROUPED_PROXIES, RESIFACTORY_PROXIES, EVOMI_PROXIES, IPFIST_PROXIES];
+const FULL_TEST_LIMIT = 250;
+
+function emptyHealth() {
+  return {
+    ref: '', updatedAt: 0, mode: '', running: false, total: 0, sampled: 0,
+    tested: 0, working: 0, failed: 0, invalid: 0, p50: null, p95: null,
+  };
+}
+
+function healthLabel(summary) {
+  if (!summary) return 'Untested';
+  if (summary.running) {
+    const of = summary.sampled || summary.total || 0;
+    return `Testing ${summary.tested || 0}/${of}`;
+  }
+  if (!summary.tested) return 'Untested';
+  const rate = Math.round((Number(summary.working) || 0) / summary.tested * 100);
+  const latency = Number(summary.p50);
+  return Number.isFinite(latency) ? `${rate}% · ${latency}ms` : `${rate}% working`;
+}
+
+function formatLatency(ms) {
+  const value = Number(ms);
+  return Number.isFinite(value) ? `${Math.round(value)}ms` : '—';
+}
+
+function formatTestedAt(value) {
+  const at = Number(value);
+  if (!at) return '';
+  const delta = Date.now() - at;
+  if (delta < 60_000) return 'just now';
+  if (delta < 3_600_000) return `${Math.max(1, Math.round(delta / 60_000))}m ago`;
+  if (delta < 86_400_000) return `${Math.max(1, Math.round(delta / 3_600_000))}h ago`;
+  return new Date(at).toLocaleString();
+}
 
 function listGroups(list) {
   const groups = [
@@ -51,10 +86,22 @@ class Proxies extends Component {
     editorRef: '',
     editorName: '',
     editorRaw: '',
+    inspectRef: '',
+    inspectFilter: 'all',
+    inspectQuery: '',
+    summaries: {},
+    report: null,
+    testingRef: '',
   };
 
   componentDidMount() {
     this.refreshGroups();
+    this.refreshSummaries();
+    ipcRenderer.on('proxyTestProgress', this.onTestProgress);
+  }
+
+  componentWillUnmount() {
+    ipcRenderer.removeListener('proxyTestProgress', this.onTestProgress);
   }
 
   componentDidUpdate(previous) {
@@ -95,12 +142,97 @@ class Proxies extends Component {
     return proxies;
   };
 
+  refreshSummaries = () => {
+    let summaries = {};
+    try { summaries = ipcRenderer.sendSync('getProxyTestSummaries') || {}; } catch {}
+    this.setState({ summaries });
+    return summaries;
+  };
+
+  onTestProgress = (_event, payload) => {
+    const summary = payload && typeof payload === 'object' ? payload : null;
+    if (!summary || !summary.ref) return;
+    this.setState(state => {
+      const next = {
+        summaries: { ...state.summaries, [summary.ref]: summary },
+        testingRef: summary.running ? summary.ref : (state.testingRef === summary.ref ? '' : state.testingRef),
+      };
+      if (state.inspectRef === summary.ref) {
+        next.report = { ...(state.report || emptyHealth()), ...summary, rows: (state.report && state.report.rows) || [] };
+      }
+      return next;
+    });
+    if (!summary.running && this.state.inspectRef === summary.ref) this.refreshReport(summary.ref);
+  };
+
+  summaryFor = ref => this.state.summaries[ref] || emptyHealth();
+
+  refreshReport = (ref = this.state.inspectRef) => {
+    if (!ref) return null;
+    let report = null;
+    try { report = ipcRenderer.sendSync('getProxyTestReport', ref); } catch {}
+    if (!report || report.error) {
+      this.setState({ report: { ...emptyHealth(), ref, rows: [], error: report && report.error } });
+      return null;
+    }
+    this.setState({ report });
+    return report;
+  };
+
+  openList = list => {
+    if (!list) return;
+    const ref = proxyRef(list);
+    this.setState({
+      inspectRef: ref,
+      inspectFilter: 'all',
+      inspectQuery: '',
+      report: null,
+    }, () => this.refreshReport(ref));
+  };
+
+  closeList = () => this.setState({ inspectRef: '', inspectFilter: 'all', inspectQuery: '', report: null });
+
+  startTest = async (list, mode = 'auto') => {
+    if (!list) return;
+    const ref = proxyRef(list);
+    const count = proxyCount(list);
+    if (mode === 'full' && count > FULL_TEST_LIMIT
+      && !window.confirm(`Test all ${count.toLocaleString()} proxies in “${proxyName(list)}”? This can take several minutes. A sample of 100 is usually enough on large lists.`)) {
+      return;
+    }
+    this.setState(state => ({
+      testingRef: ref,
+      summaries: {
+        ...state.summaries,
+        [ref]: { ...this.summaryFor(ref), ref, running: true, total: count },
+      },
+    }));
+    try {
+      const result = await ipcRenderer.invoke('startProxyTest', { ref, mode });
+      if (result && result.error && result.ok === false) {
+        this.setState({ msg: `Could not test proxies: ${result.error}`, testingRef: '' });
+      }
+    } catch (error) {
+      this.setState({ msg: `Could not test proxies: ${error.message}`, testingRef: '' });
+    }
+    this.refreshSummaries();
+    if (this.state.inspectRef === ref) this.refreshReport(ref);
+  };
+
+  stopTest = ref => {
+    try { ipcRenderer.sendSync('stopProxyTest', ref); } catch {}
+  };
+
   selectGroup = activeGroup => this.setState({
     activeGroup,
     selected: [],
     query: '',
     renamingGroup: false,
     renameGroupName: '',
+    inspectRef: '',
+    inspectFilter: 'all',
+    inspectQuery: '',
+    report: null,
   });
 
   createGroup = () => {
@@ -283,6 +415,136 @@ class Proxies extends Component {
     );
   };
 
+  inspectList = () => this.lists().find(list => proxyRef(list) === this.state.inspectRef) || null;
+
+  renderInspector() {
+    const list = this.inspectList();
+    if (!list) return null;
+    const { inspectFilter, inspectQuery, report, testingRef } = this.state;
+    const summary = { ...this.summaryFor(proxyRef(list)), ...(report || {}) };
+    const rows = Array.isArray(report && report.rows) ? report.rows : [];
+    const terms = inspectQuery.trim().toLowerCase();
+    const shown = rows.filter(row => {
+      if (inspectFilter !== 'all' && row.status !== inspectFilter) return false;
+      if (terms && !String(row.host || '').toLowerCase().includes(terms)) return false;
+      return true;
+    });
+    const running = testingRef === proxyRef(list) || summary.running;
+    const count = proxyCount(list);
+    const sampleDefault = count > FULL_TEST_LIMIT;
+    return (
+      <div className="proxy-inspector">
+        <div className="proxy-inspector-toolbar">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={this.closeList}>
+            ← All lists
+          </button>
+          <div className="proxy-inspector-heading">
+            <h2>{proxyName(list)}</h2>
+            <p>
+              {count.toLocaleString()} prox{count === 1 ? 'y' : 'ies'}
+              {list.managed ? ' · Managed' : ''}
+              {summary.mode === 'sample' && summary.tested ? ` · last run sampled ${summary.sampled || summary.tested}` : ''}
+              {summary.updatedAt ? ` · ${formatTestedAt(summary.updatedAt)}` : ''}
+            </p>
+          </div>
+          <div className="proxy-inspector-actions">
+            {running
+              ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => this.stopTest(proxyRef(list))}>Stop</button>
+              : <>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => this.startTest(list, 'auto')}>
+                    {sampleDefault ? 'Test sample' : 'Test all'}
+                  </button>
+                  {sampleDefault && (
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => this.startTest(list, 'full')}>
+                      Test all
+                    </button>
+                  )}
+                </>}
+          </div>
+        </div>
+
+        <div className="proxy-inspector-stats">
+          <div className="proxy-stat">
+            <span>Working</span>
+            <strong className="text-success">{summary.working || 0}</strong>
+            <small>{summary.tested ? `${Math.round((summary.working || 0) / summary.tested * 100)}% of tested` : 'Run a test first'}</small>
+          </div>
+          <div className="proxy-stat">
+            <span>Failed</span>
+            <strong className="text-danger">{summary.failed || 0}</strong>
+            <small>{summary.invalid ? `${summary.invalid} invalid line${summary.invalid === 1 ? '' : 's'}` : 'Connect or timeout'}</small>
+          </div>
+          <div className="proxy-stat">
+            <span>Latency</span>
+            <strong>{formatLatency(summary.p50)}</strong>
+            <small>{summary.p95 != null ? `p95 ${formatLatency(summary.p95)}` : 'Median of working'}</small>
+          </div>
+          <div className="proxy-stat">
+            <span>Coverage</span>
+            <strong>{summary.tested || 0}/{summary.sampled || count}</strong>
+            <small>{summary.mode === 'sample' ? 'Sampled' : summary.mode === 'full' ? 'Full list' : running ? 'Testing…' : 'Not tested yet'}</small>
+          </div>
+        </div>
+
+        {running && (
+          <div className="proxy-test-progress" aria-live="polite">
+            <span>Testing {summary.tested || 0} of {summary.sampled || count}…</span>
+            <em style={{ width: `${Math.min(100, Math.round(((summary.tested || 0) / Math.max(1, summary.sampled || count)) * 100))}%` }} />
+          </div>
+        )}
+
+        <div className="proxy-inspector-filters">
+          {['all', 'working', 'failed', 'untested'].map(filter => (
+            <button type="button" key={filter}
+              className={`proxy-filter${inspectFilter === filter ? ' active' : ''}`}
+              onClick={() => this.setState({ inspectFilter: filter })}>
+              {filter === 'all' ? 'All' : filter === 'working' ? 'Working' : filter === 'failed' ? 'Failed' : 'Untested'}
+            </button>
+          ))}
+          <div className="profile-search-field proxy-inspector-search">
+            <i className="ion-md-search" />
+            <input className="form-input" value={inspectQuery} placeholder="Search hosts…"
+              onChange={event => this.setState({ inspectQuery: event.target.value })} />
+          </div>
+        </div>
+
+        <div className="profile-table-wrap proxy-table-wrap">
+          <div className="profile-table-head proxy-line-table-head">
+            <span>Proxy</span><span>Status</span><span>Latency</span><span>Speed</span>
+          </div>
+          <div className="profile-table-body proxy-line-table-body">
+            {shown.length ? shown.map(row => (
+              <div className={`profile-row proxy-line-row status-${row.status}`} key={row.key}>
+                <div className="profile-row-cell proxy-row-identity">
+                  <strong>{row.host}</strong>
+                  <small>{row.error || formatTestedAt(row.testedAt) || 'Not tested'}</small>
+                </div>
+                <div className="profile-row-cell">
+                  <strong className={row.status === 'working' ? 'text-success' : row.status === 'failed' || row.status === 'invalid' ? 'text-danger' : ''}>
+                    {row.status === 'working' ? 'Working' : row.status === 'failed' ? 'Failed' : row.status === 'invalid' ? 'Invalid' : 'Untested'}
+                  </strong>
+                </div>
+                <div className="profile-row-cell"><strong>{formatLatency(row.ms)}</strong></div>
+                <div className="profile-row-cell"><small>{row.bucket || '—'}</small></div>
+              </div>
+            )) : (
+              <div className="profile-table-empty">
+                <span><i className="ion-md-pulse" /></span>
+                <h3>{rows.length ? 'No proxies match this filter' : 'No proxy lines yet'}</h3>
+                <p>{rows.length ? 'Try All, or run a test to fill working and failed.' : 'Add lines to this list, then test them.'}</p>
+              </div>
+            )}
+          </div>
+        </div>
+        {report && report.truncated && (
+          <div className="proxy-inspector-note">
+            Showing {shown.length} of {count.toLocaleString()} lines. Large lists keep the tested sample on screen.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   renderEditor() {
     if (!this.state.editorOpen) return null;
     const editing = Boolean(this.state.editorRef);
@@ -407,7 +669,7 @@ class Proxies extends Component {
           </aside>
 
           <main className="profiles-main">
-            <div className="profiles-main-toolbar">
+            {!this.state.inspectRef && <div className="profiles-main-toolbar">
               <div className="profiles-context-copy">
                 {this.state.renamingGroup ? (
                   <div className="profile-group-rename">
@@ -429,14 +691,14 @@ class Proxies extends Component {
                   <><button className="profile-context-icon" title="Rename group" onClick={this.startRenameGroup}><i className="ion-md-create" /></button>
                     <button className="profile-context-icon danger" title="Delete group" onClick={this.deleteGroup}><i className="ion-md-trash" /></button></>
                 )}
-                {!providerSection && <div className="profile-search-field"><i className="ion-md-search" /><input className="form-input" value={query}
+                {!providerSection && !this.state.inspectRef && <div className="profile-search-field"><i className="ion-md-search" /><input className="form-input" value={query}
                   placeholder={`Search ${activeLabel.toLowerCase()}…`} onChange={event => this.setState({ query: event.target.value })} /></div>}
-                {!providerSection && <button className="btn btn-primary btn-sm" disabled={activeGroup === MANAGED_PROXIES} onClick={this.openNewList}
+                {!providerSection && !this.state.inspectRef && <button className="btn btn-primary btn-sm" disabled={activeGroup === MANAGED_PROXIES} onClick={this.openNewList}
                   title={activeGroup === MANAGED_PROXIES ? 'Managed proxy lists are synchronized by Zyn' : 'Create a local proxy list'}>
                   <i className="ion-md-add" /> New Proxy List
                 </button>}
               </div>
-            </div>
+            </div>}
 
             <div className={`resifactory-host${resiFactory ? '' : ' hidden'}`}>
               <ResiFactoryPanel
@@ -459,7 +721,7 @@ class Proxies extends Component {
                 onCatalog={proxies => this.props.dispatch({ type: 'update', obj: { proxies } })}
               />
             </div>
-            {!providerSection && !!selected.length && (
+            {!providerSection && !this.state.inspectRef && !!selected.length && (
               <div className="profile-bulk-toolbar">
                 <strong>{selected.length} selected</strong>
                 <select className="form-select" defaultValue="" onChange={this.addSelectedToGroup}>
@@ -471,28 +733,40 @@ class Proxies extends Component {
               </div>
             )}
 
-            {!providerSection && <div className="profile-table-wrap proxy-table-wrap">
+            {!providerSection && this.state.inspectRef && this.renderInspector()}
+            {!providerSection && !this.state.inspectRef && <div className="profile-table-wrap proxy-table-wrap">
               <div className="profile-table-head proxy-list-table-head">
                 <label className="profile-row-check"><input type="checkbox" checked={allShownSelected} disabled={!selectable.length} onChange={() => this.selectShown(shown)} /></label>
-                <span>Proxy list</span><span>Type</span><span>Proxies</span><span>Actions</span>
+                <span>Proxy list</span><span>Type</span><span>Proxies</span><span>Health</span><span>Actions</span>
               </div>
               <div className="profile-table-body proxy-list-table-body">
                 {shown.length ? shown.map(list => {
                   const ref = proxyRef(list);
                   const isSelected = selected.includes(ref);
+                  const health = this.summaryFor(ref);
                   return (
                     <div className={`profile-row proxy-list-row${isSelected ? ' selected' : ''}`} key={ref}
-                      onClick={() => !list.managed && this.toggleSelected(ref)} onDoubleClick={() => this.openEditList(list)}>
+                      onClick={() => this.openList(list)} onDoubleClick={() => this.openEditList(list)}>
                       <label className={`profile-row-check${list.managed ? ' proxy-managed-indicator' : ''}`} onClick={event => event.stopPropagation()}>
                         {list.managed ? <i className="ion-md-lock proxy-managed-lock" title="Managed by Zyn" />
-                          : <input type="checkbox" checked={isSelected} onChange={() => this.toggleSelected(ref)} />}
+                          : <input type="checkbox" checked={isSelected} onChange={() => { this.toggleSelected(ref); }} />}
                       </label>
                       <div className="profile-row-cell proxy-row-identity"><strong>{proxyName(list)}</strong><small>{list.managed ? 'Synchronized with your Zyn account' : listGroups(list).length ? listGroups(list).join(' · ') : 'Local · ungrouped'}</small></div>
                       <div className="profile-row-cell"><strong className={list.managed ? 'text-success' : ''}>{list.managed ? 'Managed' : 'Local'}</strong><small>{list.managed ? 'Read only' : 'Stored on this device'}</small></div>
                       <div className="profile-row-cell proxy-row-count"><strong>{proxyCount(list).toLocaleString()}</strong><small>available</small></div>
-                      <div className="profile-row-actions">
-                        {!list.managed && <><button className="profile-row-action" title="Edit proxy list" onClick={event => { event.stopPropagation(); this.openEditList(list); }}><i className="ion-md-create" /></button>
-                          <button className="profile-row-action danger" title="Delete proxy list" onClick={event => { event.stopPropagation(); this.deleteList(list); }}><i className="ion-md-trash" /></button></>}
+                      <div className="profile-row-cell proxy-row-health">
+                        <strong className={health.running ? '' : health.tested && health.failed && !health.working ? 'text-danger' : health.working ? 'text-success' : ''}>
+                          {healthLabel(health)}
+                        </strong>
+                        <small>{health.mode === 'sample' ? 'sampled' : health.tested ? 'tested' : 'open to inspect'}</small>
+                      </div>
+                      <div className="profile-row-actions" onClick={event => event.stopPropagation()}>
+                        <button className="profile-row-action" title={health.running ? 'Stop test' : 'Test proxies'}
+                          onClick={() => health.running ? this.stopTest(ref) : this.startTest(list, 'auto')}>
+                          <i className={health.running ? 'ion-md-square' : 'ion-md-pulse'} />
+                        </button>
+                        {!list.managed && <><button className="profile-row-action" title="Edit proxy list" onClick={() => this.openEditList(list)}><i className="ion-md-create" /></button>
+                          <button className="profile-row-action danger" title="Delete proxy list" onClick={() => this.deleteList(list)}><i className="ion-md-trash" /></button></>}
                       </div>
                     </div>
                   );
