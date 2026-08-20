@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.19",
+  "notes": [
+    "Pokémon Center can apply the same SKUs to every task at once.",
+    "Running tasks, including ones waiting in queue, pick up the new products.",
+    "Proxy list health tests from 1.7.18 are unchanged."
+  ]
+}

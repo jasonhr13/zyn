@@ -156,6 +156,45 @@ class PokemonCenter extends Component {
     this.setModule('products', products.length ? products : [blankProduct()]);
   };
 
+  cloneProducts = products => migrateProductRows(products)
+    .filter(product => String(product.input || '').trim())
+    .map(product => ({ ...product, id: productUid() }));
+
+  applyProductsToAllTasks = () => {
+    const validation = validateProducts(this.props.pokemon.products);
+    if (validation.invalid.length) {
+      this.flash('Use a Pokémon Center SKU, product URL, or placeholder');
+      return;
+    }
+    if (!validation.products.length) {
+      this.flash('Add at least one product SKU or placeholder');
+      return;
+    }
+    if (validation.tooMany) {
+      this.flash(`Pokémon Center supports up to ${MAX_PRODUCTS} products per task`);
+      return;
+    }
+    const tasks = this.props.pokemon.tasks || [];
+    if (!tasks.length) {
+      this.flash('Create tasks first');
+      return;
+    }
+    const count = tasks.length;
+    if (!window.confirm(`Set these products on all ${count} task${count === 1 ? '' : 's'}? Task-specific SKUs will be replaced.`)) return;
+    const next = tasks.map(task => ({ ...task, products: this.cloneProducts(this.props.pokemon.products) }));
+    this.props.dispatch({ type: 'pokemonSet', obj: { tasks: next } });
+    this.persist({ tasks: next });
+    const running = this.runningTasks().map(task => next.find(value => value.id === task.id)).filter(Boolean);
+    if (running.length) {
+      const result = ipcRenderer.sendSync('editPokemonCenter', { ...this.sharedConfig(), tasks: running });
+      this.flash(result && result.ok
+        ? `Set products on ${count} task${count === 1 ? '' : 's'} · ${result.updated} running`
+        : ((result && result.error) || 'Saved on tasks, but the running engine did not take the update'));
+      return;
+    }
+    this.flash(`Set products on ${count} task${count === 1 ? '' : 's'}`);
+  };
+
   productsForTask = task => (Array.isArray(task && task.products) && task.products.length
     ? task.products : this.props.pokemon.products);
 
@@ -383,11 +422,21 @@ class PokemonCenter extends Component {
           )}
           {setupOpen && <div style={{ display: 'grid', gridTemplateColumns: 'minmax(290px, .9fr) minmax(340px, 1.1fr)', gap: 14, marginBottom: 14 }}>
             <div className="panel" style={{ margin: 0, padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
                 <strong style={{ fontSize: 12 }}>Products</strong>
-                <button className="btn btn-secondary btn-sm" onClick={this.addProduct} disabled={pokemon.products.length >= MAX_PRODUCTS}>
-                  <i className="ion-md-add" style={{ marginRight: 5 }} />Add product
-                </button>
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={this.applyProductsToAllTasks}
+                    disabled={!pokemon.tasks.length}
+                    title="Replace every task's SKUs with these products, including running tasks"
+                  >
+                    Apply to all tasks
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={this.addProduct} disabled={pokemon.products.length >= MAX_PRODUCTS}>
+                    <i className="ion-md-add" style={{ marginRight: 5 }} />Add product
+                  </button>
+                </span>
               </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 {pokemon.products.map((product, index) => (
@@ -418,6 +467,7 @@ class PokemonCenter extends Component {
               </div>
               <div style={{ marginTop: 7, fontSize: 10.5, lineHeight: 1.45, color: 'var(--muted)' }}>
                 Add up to three SKUs, full product URLs, or <b>placeholder</b>. Each product has its own quantity; the engine reduces it to the site's purchase limit when necessary.
+                Use <b>Apply to all tasks</b> when SKUs drop so every task, including ones already waiting in queue, watches the same products.
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 12 }}>
                 <label className="form-group" style={{ margin: 0 }}>
