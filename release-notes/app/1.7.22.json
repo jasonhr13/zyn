@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.22",
+  "notes": [
+    "Target cart rate limits retry the same Shape cookie a few times before rotating.",
+    "Target no longer switches proxy in the middle of an in-progress checkout after a 429.",
+    "Successful Target and Pokémon Center checkouts can post a public Discord card without account details."
+  ]
+}
