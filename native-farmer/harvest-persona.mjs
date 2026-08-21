@@ -184,32 +184,46 @@ export function personaInitScript(p) {
       return arr;};
   }catch(e){}
 
-  // mediaDevices — a bare headless/datacenter Chromium with no audio hardware returns an EMPTY
-  // device list, which is a clear tell against a real desktop. Report a plausible mic+speaker set
-  // with the correct kinds but EMPTY labels — real browsers only populate labels after a
-  // getUserMedia permission grant, so populated labels here would be a louder signal than the empty
-  // list we are fixing. deviceId/groupId are derived from the session SEED so the set is stable
-  // within a session and differs between sessions, matching the canvas/audio perturbation model.
-  // No videoinput is reported: most desktops have no webcam, and claiming one we can never open is
-  // an inconsistency a sensor can probe via getUserMedia.
+  // mediaDevices — Chrome without a getUserMedia grant lists at most one device per kind with empty
+  // deviceId/label/groupId (the spec, and Chromium since M118). Headless/datacenter Chromium with no
+  // audio hardware returns [] instead, which is the tell. Report the common no-permission desktop
+  // shape: one mic, one speaker, no camera. Windows communications ids and hashed deviceIds only
+  // appear AFTER permission, so putting them here (or on a Mac persona) is a louder signal than [].
+  // getUserMedia is aligned with that list so a probe cannot catch devices we listed but cannot open.
   try{
-    var mkId=function(tag){var s=(SEED^tag)>>>0,o='';for(var i=0;i<16;i++){s=(s*1664525+1013904223)>>>0;o+=(s&15).toString(16);}return o;};
-    var grp=mkId(0x9e37);
-    var devs=[
-      {deviceId:'default',       kind:'audioinput',  label:'', groupId:grp},
-      {deviceId:mkId(1),         kind:'audioinput',  label:'', groupId:grp},
-      {deviceId:'default',       kind:'audiooutput', label:'', groupId:grp},
-      {deviceId:'communications',kind:'audiooutput', label:'', groupId:grp},
-      {deviceId:mkId(2),         kind:'audiooutput', label:'', groupId:grp}
-    ];
-    if(navigator.mediaDevices){
-      navigator.mediaDevices.enumerateDevices=function(){return Promise.resolve(devs.map(function(d){
-        var proto=(typeof MediaDeviceInfo!=='undefined')?MediaDeviceInfo.prototype:Object.prototype;
-        return Object.assign(Object.create(proto),d,{toJSON:function(){return d;}});
-      }));};
-      if(!navigator.mediaDevices.getSupportedConstraints){
-        navigator.mediaDevices.getSupportedConstraints=function(){return {deviceId:true,groupId:true,echoCancellation:true,noiseSuppression:true,autoGainControl:true,sampleRate:true,sampleSize:true,channelCount:true,latency:true};};
-      }
+    function gumErr(name,msg){
+      var err;try{err=new DOMException(msg,name);}catch(e){err=new Error(msg);err.name=name;}
+      return Promise.reject(err);
+    }
+    function fakeDev(kind){
+      var base=Object.prototype;
+      try{
+        if(kind!=='audiooutput'&&typeof InputDeviceInfo!=='undefined')base=InputDeviceInfo.prototype;
+        else if(typeof MediaDeviceInfo!=='undefined')base=MediaDeviceInfo.prototype;
+      }catch(e){}
+      var proto=Object.create(base);
+      Object.defineProperties(proto,{
+        deviceId:{enumerable:true,configurable:true,get:function(){return '';}},
+        kind:{enumerable:true,configurable:true,get:function(){return kind;}},
+        label:{enumerable:true,configurable:true,get:function(){return '';}},
+        groupId:{enumerable:true,configurable:true,get:function(){return '';}},
+        toJSON:{enumerable:true,configurable:true,value:function toJSON(){return {deviceId:'',kind:kind,label:'',groupId:''};}}
+      });
+      if(kind!=='audiooutput')proto.getCapabilities=function getCapabilities(){return {};};
+      return Object.create(proto);
+    }
+    var mdProto=(typeof MediaDevices!=='undefined'&&MediaDevices.prototype)
+      ||(navigator.mediaDevices&&Object.getPrototypeOf(navigator.mediaDevices));
+    if(mdProto){
+      mdProto.enumerateDevices=function enumerateDevices(){
+        return Promise.resolve([fakeDev('audioinput'),fakeDev('audiooutput')]);
+      };
+      mdProto.getUserMedia=function getUserMedia(c){
+        c=c||{};
+        if(c.video)return gumErr('NotFoundError','Requested device not found');
+        if(c.audio)return gumErr('NotAllowedError','Permission denied');
+        return gumErr('TypeError','Failed to execute getUserMedia on MediaDevices: At least one of audio and video must be requested');
+      };
     }
   }catch(e){}
 
