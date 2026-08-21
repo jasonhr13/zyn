@@ -1,7 +1,11 @@
 {
   "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
   "files": {
-    "harvest-persona.mjs": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
+    "harvest-persona.mjs": {
+      "upstreamSha256": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
+      "sha256": "5b609fd9f2baacfd9c0b7293282023e13fb4cc0a40d3df3005a9f8464b504cf4",
+      "adaptation": "Spoof navigator.mediaDevices.enumerateDevices with a stable per-session mic+speaker set so headless Chromium does not report an empty device list."
+    },
     "runtime-paths.js": "fc0535fe8243b6acdfa5497134bf481580399332663466fdd3cc628574eaf223",
     "shape-bandwidth.mjs": {
       "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
