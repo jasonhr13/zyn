@@ -520,7 +520,7 @@ function createHarvesterExtensionBridge({
     const nextWebSockets = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
     const nextServer = http.createServer((request, response) => {
       const origin = String(request.headers.origin || '').toLowerCase();
-      if (!originAllowed(origin) || !available()) {
+      if (!originAllowed(origin)) {
         respondJson(response, 403, { ok: false, error: 'forbidden' });
         return;
       }
@@ -543,6 +543,10 @@ function createHarvesterExtensionBridge({
           catch (error) { logger.warn?.(`[harvester-extension] proxy catalog: ${error.message}`); }
         }
         respondJson(response, 200, { groups: localProxyGroups(catalog) }, origin);
+        return;
+      }
+      if (!available()) {
+        respondJson(response, 403, { ok: false, error: 'forbidden' }, origin);
         return;
       }
       respondJson(response, 404, { ok: false, error: 'not found' }, origin);

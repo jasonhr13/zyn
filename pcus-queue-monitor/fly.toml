@@ -1,0 +1,46 @@
+# Pokémon Center queue monitor. Deploy from the repo root:
+#   fly deploy --config pcus-queue-monitor/fly.toml
+#
+# Secrets (same pattern as hope-tcg-monitor):
+#   fly secrets set -a hope-pcus-queue-monitor \
+#     HYPER_API_KEY=... \
+#     PROXY_URLS='http://user:pass@host:port,...' \
+#     DISCORD_WEBHOOK_URL=... \
+#     OPS_DISCORD_WEBHOOK_URL=...
+
+app = "hope-pcus-queue-monitor"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  HOLD_S = "0"
+  POLL_S = "10"
+  DUMP = "/data/snapshots"
+  HEALTH_INTERVAL_S = "1800"
+  BRAND_NAME = "Zyn"
+  BRAND_FOOTER = "Zyn Monitors"
+
+[[mounts]]
+  source = "pcus_queue_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "40s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.20",
+  "notes": [
+    "The Target harvester Import button now copies your Zyn proxy lists into the extension.",
+    "Managed provider lists stay in Zyn and are not sent to Chrome.",
+    "Pokémon Center SKU apply-all from 1.7.19 is unchanged."
+  ]
+}

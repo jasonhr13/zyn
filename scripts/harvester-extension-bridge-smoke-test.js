@@ -204,6 +204,7 @@ function httpGet(port, path, origin) {
       });
     },
     ensureBroker: () => { ensureCalls += 1; },
+    allowProxyImport: () => true,
     getProxyCatalog: () => ({
       lists: [
         { name: 'Local pool', raw: '1.2.3.4:80\r\n\n5.6.7.8:81:user:pass' },
@@ -394,7 +395,9 @@ function httpGet(port, path, origin) {
     const proxies = await httpGet(address.port, '/proxies', EXTENSION_ORIGIN);
     assert.equal(proxies.status, 200);
     assert.equal(proxies.headers['access-control-allow-origin'], EXTENSION_ORIGIN);
-    assert.deepEqual(proxies.json, { groups: {} });
+    assert.deepEqual(proxies.json, {
+      groups: { 'Local pool': ['1.2.3.4:80', '5.6.7.8:81:user:pass'] },
+    });
     assert.equal(JSON.stringify(proxies.json).includes('secret.example'), false,
       'managed proxy credentials crossed the extension bridge');
 
@@ -622,8 +625,10 @@ function httpGet(port, path, origin) {
       path.join(project, 'config', 'runtime-contract.json'), 'utf8'));
     assert.match(bootstrap, /createHarvesterExtensionBridge/,
       'Zyn bootstrap does not create the extension compatibility bridge');
-    assert.match(bootstrap, /allowProxyImport: \(\) => false/,
-      'Zyn bootstrap can expose proxy credentials through the legacy endpoint');
+    assert.match(bootstrap, /allowProxyImport: \(\) => true/,
+      'Zyn bootstrap does not export user-owned proxy lists to the extension Import button');
+    assert.match(bootstrap, /getProxyCatalog:/,
+      'Zyn bootstrap does not wire the proxy catalog into the extension bridge');
     assert.match(bootstrap, /allowedExtensionIds: configuredExtensionIds/,
       'Zyn bootstrap does not pin the configured browser extension IDs');
     assert.match(bootstrap, /saveCookie: cookie =>/,

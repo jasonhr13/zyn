@@ -45,7 +45,7 @@ through the selected list while harvesting. Local IP is the default, and saved p
 available when switching between routes. An empty or invalid selected list falls back to Local IP.
 
 Paste your own proxy lines into the extension textarea (`host:port` or `host:port:user:pass`).
-**Import** talks to Zyn’s `/proxies` endpoint, but Zyn does not export proxy credentials to the extension by design — paste them here.
+**Import** copies user-owned proxy lists from Zyn (the same lists on the Proxies page). Managed/provider lists stay in Zyn and are not exported.
 
 ## Harvest
 

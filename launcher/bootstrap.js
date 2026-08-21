@@ -322,9 +322,17 @@ function installHarvesterExtensionCompatibility(authority) {
         }
         return targetEngine.saveHarvesterCookie(cookie);
       },
-      // The downloaded protocol has no pairing token. Keep Zyn's local and managed proxy
-      // credentials on the main-process side; operators can paste a user-owned list into Chrome.
-      allowProxyImport: () => false,
+      // User-owned lists only. localProxyGroups drops managed lists so ResiFactory/Evomi
+      // credentials never leave the main process.
+      getProxyCatalog: () => {
+        try {
+          if (typeof dataManager.getProxyCatalog === 'function') return dataManager.getProxyCatalog();
+          return dataManager.getProxies?.() || { lists: [] };
+        } catch {
+          return { lists: [] };
+        }
+      },
+      allowProxyImport: () => true,
       cookieTtlMs: configuredCookieTtl,
       logger: console,
     });

@@ -10,6 +10,7 @@
 .env.*
 !.env.example
 /.local/
+/engine/cmd/pcus-session-poc/snapshots/
 
 # JavaScript dependencies and generated frontend output
 frontend/node_modules/
