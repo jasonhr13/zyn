@@ -88,6 +88,14 @@ for (const node of document.querySelectorAll('link[href], script[src], img[src]'
 assert.deepEqual([...document.querySelectorAll('script[src]')].map(node => node.getAttribute('src')),
   ['client-identity.js', 'index.js'], 'client identity must load before the popup bridge client');
 
+const popup = read('index.js');
+assert.match(popup, /function wsBotRequest/,
+  'popup must keep the Live WebSocket client used for status');
+assert.match(popup, /wsBotRequest\(\{'action':'proxies'\}\)/,
+  'Import must use the Live WebSocket instead of a localhost fetch Chrome can block');
+assert.doesNotMatch(popup, /fetch\(BOT_URL/,
+  'Import still uses fetch to /proxies, which Chrome Local Network Access can block');
+
 assert.equal(manifest.manifest_version, 3);
 const versionParts = String(manifest.version || '').split('.');
 assert.ok(versionParts.length >= 1 && versionParts.length <= 4,

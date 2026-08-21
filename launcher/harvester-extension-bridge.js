@@ -5,7 +5,10 @@
 // The extension speaks a small legacy protocol on 127.0.0.1:4312:
 //   WebSocket /ws  { action: 'status', clientId?, browser? }
 //   WebSocket /ws  { action: 'save', clientId?, browser?, type, headers, proxy, expiry }
+//   WebSocket /ws  { action: 'proxies', clientId?, browser? }
 //   HTTP GET /proxies
+// Chrome's Local Network Access (and CORS preflight for fetch cache:'no-store') can block
+// popup HTTP to 127.0.0.1 while leaving WebSocket working. Import therefore uses /ws.
 //
 // Zyn's native engine consumes a different, readable HTTP broker on :4727. Keep the opaque
 // extension outside the app and translate only its loopback protocol here. In particular, this
@@ -462,6 +465,10 @@ function createHarvesterExtensionBridge({
         send(socket, extensionStatus(status));
         return;
       }
+      if (message.action === 'proxies') {
+        send(socket, proxyGroupsResponse());
+        return;
+      }
       if (message.action === 'save') {
         let configuredTtl = DEFAULT_COOKIE_TTL_MS;
         try { configuredTtl = cookieTtlMs(); } catch {}
@@ -502,13 +509,33 @@ function createHarvesterExtensionBridge({
     catch { try { socket.destroy(); } catch {} }
   };
 
+  const proxyGroupsResponse = () => {
+    let catalog = { lists: [] };
+    let expose = false;
+    try { expose = allowProxyImport() === true; } catch {}
+    if (expose) {
+      try { catalog = getProxyCatalog() || catalog; }
+      catch (error) { logger.warn?.(`[harvester-extension] proxy catalog: ${error.message}`); }
+    }
+    return { groups: localProxyGroups(catalog) };
+  };
+
+  const corsHeaders = (origin, extra = {}) => (origin ? {
+    'access-control-allow-origin': origin,
+    'access-control-allow-methods': 'GET, OPTIONS',
+    'access-control-allow-headers': extra.allowHeaders || 'cache-control',
+    'access-control-allow-private-network': 'true',
+    vary: 'origin, access-control-request-headers, access-control-request-private-network',
+    ...Object.fromEntries(Object.entries(extra).filter(([key]) => key !== 'allowHeaders')),
+  } : extra);
+
   const respondJson = (response, code, payload, origin = '') => {
     const body = JSON.stringify(payload);
     response.writeHead(code, {
       'content-type': 'application/json',
       'content-length': Buffer.byteLength(body),
       'cache-control': 'no-store',
-      ...(origin ? { 'access-control-allow-origin': origin, vary: 'origin' } : {}),
+      ...corsHeaders(origin),
     });
     response.end(body);
   };
@@ -526,23 +553,17 @@ function createHarvesterExtensionBridge({
       }
       const url = new URL(request.url, `http://${host}:${port}`);
       if (request.method === 'OPTIONS' && url.pathname === '/proxies') {
-        response.writeHead(204, {
-          'access-control-allow-origin': origin,
-          'access-control-allow-methods': 'GET, OPTIONS',
-          vary: 'origin',
-        });
+        const requestedHeaders = String(request.headers['access-control-request-headers'] || '')
+          .trim() || 'cache-control';
+        response.writeHead(204, corsHeaders(origin, {
+          allowHeaders: requestedHeaders,
+          'access-control-max-age': '600',
+        }));
         response.end();
         return;
       }
       if (request.method === 'GET' && url.pathname === '/proxies') {
-        let catalog = { lists: [] };
-        let expose = false;
-        try { expose = allowProxyImport() === true; } catch {}
-        if (expose) {
-          try { catalog = getProxyCatalog() || catalog; }
-          catch (error) { logger.warn?.(`[harvester-extension] proxy catalog: ${error.message}`); }
-        }
-        respondJson(response, 200, { groups: localProxyGroups(catalog) }, origin);
+        respondJson(response, 200, proxyGroupsResponse(), origin);
         return;
       }
       if (!available()) {

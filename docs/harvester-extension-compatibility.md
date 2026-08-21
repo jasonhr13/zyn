@@ -38,7 +38,8 @@ Target cookie bank at `127.0.0.1:4727`.
 | --- | --- |
 | WebSocket `/ws` `{ "action": "status", "clientId", "browser" }` | Reads broker pools, targets, and waiters |
 | WebSocket `/ws` `{ "action": "save", "clientId", "browser", ... }` | Filters and posts one capture to `/saveCookies` |
-| HTTP `GET /proxies` | Returns an empty group set; credentials are never exported |
+| WebSocket `/ws` `{ "action": "proxies", "clientId", "browser" }` | Returns user-owned proxy lists; managed credentials are never exported |
+| HTTP `GET /proxies` | Same payload as the WebSocket `proxies` action (legacy HTTP path) |
 
 Only the UA/client-hint fields and `x-gyjwza5z-*` fields used by Zyn's engine cross the bridge.
 `Cookie`, `Authorization`, and unrelated captured headers are discarded. The requested expiry is
@@ -60,9 +61,11 @@ own local storage, and changes the browser profile's proxy settings. Its Stop ac
 detach the debugger or disable request interception, so close the harvested tab (or the dedicated
 browser profile) before using Target normally. Do not load it in a primary browsing profile.
 
-Zyn deliberately does not implement proxy import because the legacy protocol has no pairing secret.
-Paste only user-owned proxy lines directly into the dedicated extension profile; Zyn-managed proxy
-credentials remain main-process-only.
+Import copies user-owned proxy lists from Zyn into the extension over the same loopback WebSocket
+as Connection status. Chromium can block popup `fetch` to `127.0.0.1` (CORS preflight and Local
+Network Access) while leaving that WebSocket working. Managed/provider lists stay main-process-only
+and are never exported. The HTTP `GET /proxies` path remains for older clients and also omits
+managed credentials.
 
 This compatibility mode is best treated as ATC-focused. The legacy client understands Zyn's ATC
 deficit, but its login loop does not read a login deficit and can continue working after Zyn has

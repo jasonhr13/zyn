@@ -132,6 +132,30 @@ function httpGet(port, path, origin) {
   });
 }
 
+function httpOptions(port, path, origin, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      host: '127.0.0.1',
+      port,
+      path,
+      method: 'OPTIONS',
+      headers: {
+        ...(origin ? { origin } : {}),
+        ...extraHeaders,
+      },
+      timeout: 2000,
+    }, response => {
+      response.resume();
+      response.on('end', () => {
+        resolve({ status: response.statusCode, headers: response.headers });
+      });
+    });
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error('HTTP request timed out')));
+    request.end();
+  });
+}
+
 (async () => {
   let savedCookie = null;
   let saveRequests = 0;
@@ -395,11 +419,28 @@ function httpGet(port, path, origin) {
     const proxies = await httpGet(address.port, '/proxies', EXTENSION_ORIGIN);
     assert.equal(proxies.status, 200);
     assert.equal(proxies.headers['access-control-allow-origin'], EXTENSION_ORIGIN);
+    assert.equal(proxies.headers['access-control-allow-private-network'], 'true');
     assert.deepEqual(proxies.json, {
       groups: { 'Local pool': ['1.2.3.4:80', '5.6.7.8:81:user:pass'] },
     });
     assert.equal(JSON.stringify(proxies.json).includes('secret.example'), false,
       'managed proxy credentials crossed the extension bridge');
+
+    const preflight = await httpOptions(address.port, '/proxies', EXTENSION_ORIGIN, {
+      'access-control-request-method': 'GET',
+      'access-control-request-headers': 'cache-control',
+      'access-control-request-private-network': 'true',
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers['access-control-allow-origin'], EXTENSION_ORIGIN);
+    assert.equal(preflight.headers['access-control-allow-private-network'], 'true');
+    assert.match(String(preflight.headers['access-control-allow-headers'] || ''), /cache-control/i);
+
+    const imported = await wsRequest(wsUrl, { action: 'proxies' });
+    assert.deepEqual(imported, proxies.json,
+      'WebSocket proxy import must match GET /proxies so Chrome Local Network Access cannot block Import');
+    assert.equal(JSON.stringify(imported).includes('secret.example'), false,
+      'managed proxy credentials crossed the extension WebSocket');
 
     const browserPage = await httpGet(address.port, '/proxies', 'https://target.com');
     assert.equal(browserPage.status, 403);
@@ -679,7 +720,7 @@ function httpGet(port, path, origin) {
 
     console.log(JSON.stringify({
       ok: true,
-      websocket: ['status', 'save'],
+      websocket: ['status', 'save', 'proxies'],
       http: ['/proxies'],
       originRestricted: true,
       extensionIdPinned: true,

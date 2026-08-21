@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.21",
+  "notes": [
+    "Target harvester Import now uses the same Live connection as cookie banking.",
+    "Chrome can no longer block Import with a localhost fetch that WebSocket already allows.",
+    "Managed provider lists still stay in Zyn and are not sent to the extension."
+  ]
+}

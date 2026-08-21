@@ -45,7 +45,9 @@ through the selected list while harvesting. Local IP is the default, and saved p
 available when switching between routes. An empty or invalid selected list falls back to Local IP.
 
 Paste your own proxy lines into the extension textarea (`host:port` or `host:port:user:pass`).
-**Import** copies user-owned proxy lists from Zyn (the same lists on the Proxies page). Managed/provider lists stay in Zyn and are not exported.
+**Import** copies user-owned proxy lists from Zyn over the same Live connection as cookie banking
+(the same lists on the Proxies page). Managed/provider lists stay in Zyn and are not exported. Connection
+must show **Live** before Import can reach Zyn.
 
 ## Harvest
 
