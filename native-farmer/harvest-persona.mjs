@@ -184,6 +184,35 @@ export function personaInitScript(p) {
       return arr;};
   }catch(e){}
 
+  // mediaDevices — a bare headless/datacenter Chromium with no audio hardware returns an EMPTY
+  // device list, which is a clear tell against a real desktop. Report a plausible mic+speaker set
+  // with the correct kinds but EMPTY labels — real browsers only populate labels after a
+  // getUserMedia permission grant, so populated labels here would be a louder signal than the empty
+  // list we are fixing. deviceId/groupId are derived from the session SEED so the set is stable
+  // within a session and differs between sessions, matching the canvas/audio perturbation model.
+  // No videoinput is reported: most desktops have no webcam, and claiming one we can never open is
+  // an inconsistency a sensor can probe via getUserMedia.
+  try{
+    var mkId=function(tag){var s=(SEED^tag)>>>0,o='';for(var i=0;i<16;i++){s=(s*1664525+1013904223)>>>0;o+=(s&15).toString(16);}return o;};
+    var grp=mkId(0x9e37);
+    var devs=[
+      {deviceId:'default',       kind:'audioinput',  label:'', groupId:grp},
+      {deviceId:mkId(1),         kind:'audioinput',  label:'', groupId:grp},
+      {deviceId:'default',       kind:'audiooutput', label:'', groupId:grp},
+      {deviceId:'communications',kind:'audiooutput', label:'', groupId:grp},
+      {deviceId:mkId(2),         kind:'audiooutput', label:'', groupId:grp}
+    ];
+    if(navigator.mediaDevices){
+      navigator.mediaDevices.enumerateDevices=function(){return Promise.resolve(devs.map(function(d){
+        var proto=(typeof MediaDeviceInfo!=='undefined')?MediaDeviceInfo.prototype:Object.prototype;
+        return Object.assign(Object.create(proto),d,{toJSON:function(){return d;}});
+      }));};
+      if(!navigator.mediaDevices.getSupportedConstraints){
+        navigator.mediaDevices.getSupportedConstraints=function(){return {deviceId:true,groupId:true,echoCancellation:true,noiseSuppression:true,autoGainControl:true,sampleRate:true,sampleSize:true,channelCount:true,latency:true};};
+      }
+    }
+  }catch(e){}
+
   try{def(navigator,'connection',{effectiveType:'4g',rtt:${randInt(40, 120)},downlink:${(rand(5, 15)).toFixed(1)},saveData:false});}catch(e){}
 })();`;
 }
