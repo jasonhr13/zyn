@@ -45,8 +45,9 @@ type TargetTask struct {
 	stockWaitAfter time.Time
 	taskStartedAt  time.Time
 
-	ShapeBlockCount int
-	CartToalPrice   float64
+	ShapeBlockCount        int
+	CheckoutRateLimitCount int
+	CartToalPrice          float64
 
 	IgnoreLowStock         bool
 	PreCartShapeBlockCount int

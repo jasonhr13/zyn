@@ -412,6 +412,7 @@ func (t *TargetTask) HandleTask() {
 				t.UpdateStatus(statusLine, constants.Colors.YELLOW)
 				t.SendProductNoti(ping.Name, ping.Image)
 				t.ShapeBlockCount = 0
+				t.CheckoutRateLimitCount = 0
 				t.StepAfterSolve = "add-to-cart"
 				t.NextStep = "get-shape"
 
@@ -429,9 +430,10 @@ func (t *TargetTask) HandleTask() {
 				t.UpdateStatus("Adding To Cart", constants.Colors.BLUE)
 				t.AddToCart(t.RestockTCIN, t.RestockQty, false)
 				if t.HandleErrors("add-to-cart") {
-					if t.NextStep == "add-to-cart" {
+					if t.NextStep == "add-to-cart" && !keepShapeAfterATCError(t) {
 						t.StepAfterSolve = "add-to-cart"
 						t.NextStep = "get-shape"
+						t.CheckoutRateLimitCount = 0
 					}
 					break
 				}
@@ -480,6 +482,7 @@ func (t *TargetTask) HandleTask() {
 				t.AddLog(fmt.Sprintf("Carted %dx %s - $%.2f w shape: %s", productQty, productName, t.CartToalPrice, t.ShapeMethod))
 				datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "Target", "task_id": t.RunID, "shapeMethod": t.ShapeMethod})
 				t.PassedCartErrors = 0
+				t.CheckoutRateLimitCount = 0
 				t.NextStep = "submit-payment"
 
 			case "get-cart":

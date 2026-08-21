@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	dcoRateLimitSleepMinMs  = 400
-	dcoRateLimitSleepSpanMs = 501 // inclusive range 400-900
-	generic429SleepMs       = 400
+	dcoRateLimitSleepMinMs   = 400
+	dcoRateLimitSleepSpanMs  = 501 // inclusive range 400-900
+	generic429SleepMs        = 400
+	checkoutRateLimitRetries = 5
 )
 
 func dcoRateLimitSleepMs() int {
@@ -37,6 +38,42 @@ func isContextCanceledError(err error) bool {
 		return false
 	}
 	return containsAnyText(err.Error(), "context canceled")
+}
+
+func isDcoRateLimit(errText string) bool {
+	return containsAnyText(errText, "dco_rate_limited")
+}
+
+func isPostCartStep(step string) bool {
+	switch step {
+	case "submit-payment", "submit-order", "get-cart", "oos-check-cart", "check-order":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldSwapProxyOn429(step string) bool {
+	return !isPostCartStep(step)
+}
+
+func keepShapeAfterATCError(t *TargetTask) bool {
+	if t == nil || t.Error == nil {
+		return false
+	}
+	if !isDcoRateLimit(t.Error.Error()) {
+		return false
+	}
+	return t.CheckoutRateLimitCount <= checkoutRateLimitRetries
+}
+
+func (t *TargetTask) sleepCheckoutRateLimit(dco bool) {
+	t.CheckoutRateLimitCount++
+	if dco {
+		t.SleepTask(dcoRateLimitSleepMs())
+		return
+	}
+	t.SleepTask(generic429SleepMs)
 }
 
 func catchError(t *TargetTask) {
@@ -73,10 +110,10 @@ func (t *TargetTask) HandleErrors(step string) bool {
 	case containsAnyText(errText, "cancel-filler order not finished processing"):
 		t.UpdateStatus("Order Not Finished Processing", constants.Colors.YELLOW)
 		t.SleepTask(5000)
-	case containsAnyText(errText, "dco_rate_limited"):
+	case isDcoRateLimit(errText):
 		t.UpdateStatus("DCO Rate Limited", constants.Colors.YELLOW)
 		datadog.Info("DCO_Rate_Limited", map[string]interface{}{"event": "dco_rate_limited", "site": "Target", "step": step, "task_id": t.ID, "name": t.Profile.ProfileName})
-		t.SleepTask(dcoRateLimitSleepMs())
+		t.sleepCheckoutRateLimit(true)
 	case containsAnyText(errText, "shape-block-ccart", "precart"):
 		// // ignore since clear cart doesnt need shape
 	case containsAnyText(errText, "invalid_credentials"):
@@ -99,8 +136,12 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.NextStep = "get-session"
 	case containsAnyText(errText, "429"):
 		t.UpdateStatus("Ratelimited (429)", constants.Colors.RED)
-		t.BaseTask.SwapProxy("Target")
-		t.SleepTask(generic429SleepMs)
+		if shouldSwapProxyOn429(step) {
+			t.BaseTask.SwapProxy("Target")
+			t.SleepTask(generic429SleepMs)
+		} else {
+			t.sleepCheckoutRateLimit(false)
+		}
 	case containsAnyText(errText, "Shape Block (Login)"):
 		t.StepAfterSolve = step
 		t.NextStep = "get-shape"
