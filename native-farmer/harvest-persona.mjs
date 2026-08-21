@@ -184,49 +184,6 @@ export function personaInitScript(p) {
       return arr;};
   }catch(e){}
 
-  // mediaDevices — Chrome without a getUserMedia grant lists at most one device per kind with empty
-  // deviceId/label/groupId (the spec, and Chromium since M118). Headless/datacenter Chromium with no
-  // audio hardware returns [] instead, which is the tell. Report the common no-permission desktop
-  // shape: one mic, one speaker, no camera. Windows communications ids and hashed deviceIds only
-  // appear AFTER permission, so putting them here (or on a Mac persona) is a louder signal than [].
-  // getUserMedia is aligned with that list so a probe cannot catch devices we listed but cannot open.
-  try{
-    function gumErr(name,msg){
-      var err;try{err=new DOMException(msg,name);}catch(e){err=new Error(msg);err.name=name;}
-      return Promise.reject(err);
-    }
-    function fakeDev(kind){
-      var base=Object.prototype;
-      try{
-        if(kind!=='audiooutput'&&typeof InputDeviceInfo!=='undefined')base=InputDeviceInfo.prototype;
-        else if(typeof MediaDeviceInfo!=='undefined')base=MediaDeviceInfo.prototype;
-      }catch(e){}
-      var proto=Object.create(base);
-      Object.defineProperties(proto,{
-        deviceId:{enumerable:true,configurable:true,get:function(){return '';}},
-        kind:{enumerable:true,configurable:true,get:function(){return kind;}},
-        label:{enumerable:true,configurable:true,get:function(){return '';}},
-        groupId:{enumerable:true,configurable:true,get:function(){return '';}},
-        toJSON:{enumerable:true,configurable:true,value:function toJSON(){return {deviceId:'',kind:kind,label:'',groupId:''};}}
-      });
-      if(kind!=='audiooutput')proto.getCapabilities=function getCapabilities(){return {};};
-      return Object.create(proto);
-    }
-    var mdProto=(typeof MediaDevices!=='undefined'&&MediaDevices.prototype)
-      ||(navigator.mediaDevices&&Object.getPrototypeOf(navigator.mediaDevices));
-    if(mdProto){
-      mdProto.enumerateDevices=function enumerateDevices(){
-        return Promise.resolve([fakeDev('audioinput'),fakeDev('audiooutput')]);
-      };
-      mdProto.getUserMedia=function getUserMedia(c){
-        c=c||{};
-        if(c.video)return gumErr('NotFoundError','Requested device not found');
-        if(c.audio)return gumErr('NotAllowedError','Permission denied');
-        return gumErr('TypeError','Failed to execute getUserMedia on MediaDevices: At least one of audio and video must be requested');
-      };
-    }
-  }catch(e){}
-
   try{def(navigator,'connection',{effectiveType:'4g',rtt:${randInt(40, 120)},downlink:${(rand(5, 15)).toFixed(1)},saveData:false});}catch(e){}
 })();`;
 }

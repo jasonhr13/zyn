@@ -1,11 +1,7 @@
 {
   "commit": "423d13260bee6b6f9ba01d175c948c0afd86da9a",
   "files": {
-    "harvest-persona.mjs": {
-      "upstreamSha256": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
-      "sha256": "8075a766309edae3adba885ac34f5a0546d9ef43055ec9c32f061bf8b5a38104",
-      "adaptation": "Spoof navigator.mediaDevices as Chrome's no-permission enumerateDevices shape (one empty mic and speaker) and align getUserMedia so a probe cannot catch a device list that getUserMedia cannot open."
-    },
+    "harvest-persona.mjs": "659194d43ec4ec3d2d0c3c58f18ad16c5e2e5e27dba2571f485d46ab3647446d",
     "runtime-paths.js": "fc0535fe8243b6acdfa5497134bf481580399332663466fdd3cc628574eaf223",
     "shape-bandwidth.mjs": {
       "upstreamSha256": "6fb009a3dfa1a6ec8031facd8863bf28ca65dc5e54d0d67bf9cc85b5d2139e24",
