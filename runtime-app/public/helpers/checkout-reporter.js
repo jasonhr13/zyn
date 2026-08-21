@@ -1,6 +1,7 @@
 // Central checkout reporting — one place for BOTH sides of "who bought what":
 //   1. POST /api/checkout on the dashboard  → the user's Home page history + Spent
 //   2. the global Discord webhook           → your collector channel, tagged with Buyer
+//   3. the public Discord webhook           → Target/Pokémon success only, no buyer/account/order
 //
 // Why this lives in the Electron main process rather than in each engine: Target
 // and Walmart are a COMPILED Go binary that posts its own embeds and only accepts
@@ -20,6 +21,9 @@ const DASHBOARD = 'https://secret-lair-dashboard.vercel.app';
 // purpose so it ships in the build (same value the P-Bandai engine uses — keep
 // them in sync, and rotate BOTH if it is ever abused).
 const GLOBAL_WEBHOOK = '__ZYN_GLOBAL_CHECKOUT_WEBHOOK__';
+const PUBLIC_WEBHOOK = '__ZYN_PUBLIC_CHECKOUT_WEBHOOK__';
+const ZYN_AVATAR = 'https://zynbot.app/zyn-icon.png';
+const PUBLIC_SITES = new Set(['target', 'pokemoncenter']);
 
 // Set once the license claim resolves (electron.js → configure()).
 let ctx = { key: '', token: '', discord: '', discordId: '', log: () => {} };
@@ -73,7 +77,9 @@ function isDuplicate(sig) {
 // source    — harvester that minted the Shape cookie used ('chrome'|'msedge'|'chromium'|'extension').
 //             GLOBAL COLLECTOR ONLY: it is operator telemetry, and means nothing to the user whose
 //             own webhook this never reaches.
-async function report({ site, status, product, price, account, order, qty, sku, url, source }) {
+// image     — product image URL for the public thumbnail; omitted when missing or not https
+// size      — public Size field; Target/Pokémon often have none, so the public embed uses Default
+async function report({ site, status, product, price, account, order, qty, sku, url, source, image, size }) {
   const ok = status === 'success';
   const sig = [site, status, product, order, account].join('|');
   if (isDuplicate(sig)) return;
@@ -141,6 +147,33 @@ async function report({ site, status, product, price, account, order, qty, sku, 
         color: ok ? 0x34ca6e : 0xfb5454,
         fields,
         timestamp: new Date().toISOString(),
+      },
+    ],
+  });
+
+  // Public success board. Anyone in the server can see this, so it must not carry Buyer, account,
+  // order, cookie source, or a product URL that is otherwise unused. Target and Pokémon Center only.
+  const publicSite = String(site || '').toLowerCase();
+  if (!ok || !PUBLIC_SITES.has(publicSite)) return;
+  const siteLabel = publicSite === 'pokemoncenter' ? 'Pokémon Center' : 'Target';
+  const publicFields = [
+    { name: 'Product', value: `• ${n}x ${title}`.slice(0, 1024) },
+    { name: 'Price', value: total > 0 ? `$${total.toFixed(2)}` : '—', inline: true },
+    { name: 'Size', value: String(size || 'Default').slice(0, 60), inline: true },
+    { name: 'Site', value: siteLabel, inline: true },
+  ];
+  const thumb = String(image || '').trim();
+  await postJson(PUBLIC_WEBHOOK, {
+    username: 'Zyn',
+    avatar_url: ZYN_AVATAR,
+    embeds: [
+      {
+        title: 'Successful Checkout :tada:',
+        color: 0x34ca6e,
+        fields: publicFields,
+        footer: { text: 'Zyn', icon_url: ZYN_AVATAR },
+        timestamp: new Date().toISOString(),
+        ...( /^https:\/\//i.test(thumb) ? { thumbnail: { url: thumb.slice(0, 500) } } : {}),
       },
     ],
   });

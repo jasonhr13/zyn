@@ -226,6 +226,14 @@ check('Zyn runtime branding', () => {
     'packaged settings storage omits the decline-webhook default');
   assert.match(checkoutReporter, /await postJson\(GLOBAL_WEBHOOK/,
     'packaged global collector omits the operator webhook');
+  assert.match(checkoutReporter, /await postJson\(PUBLIC_WEBHOOK/,
+    'packaged public checkout webhook omits the success board');
+  assert.match(checkoutReporter, /__ZYN_PUBLIC_CHECKOUT_WEBHOOK__/,
+    'packaged public checkout webhook is not a build-time placeholder');
+  assert.match(checkoutReporter, /Successful Checkout :tada:/,
+    'public checkout embed dropped its Polar-style title');
+  assert.doesNotMatch(checkoutReporter.split('PUBLIC_WEBHOOK')[2] || '', /Buyer|Account|Order Number|Cookie/,
+    'public checkout embed still carries collector-only fields');
   assert.match(
     fs.readFileSync(path.join(projectDir, 'scripts', 'patch-zyn-checkout-webhook.cjs'), 'utf8'),
     /if \(!ok\) return;/,

@@ -3013,6 +3013,8 @@ function handleEngineMessage(data, connection) {
                 site: 'pokemoncenter', status: ok ? 'success' : 'failed',
                 product: String(m.productName || '').slice(0, 200), price: Number(m.price) || 0,
                 account: m.profileName || '', order: String(m.orderNumber || '').slice(0, 60), qty: 1,
+                image: String(m.productImage || ''),
+                size: String(m.size || ''),
               });
             } catch (e) { pokemonLog('[report] ' + e.message, notificationTaskId); }
           }
@@ -3042,6 +3044,8 @@ function handleEngineMessage(data, connection) {
             // the per-browser yield line says which browser BANKS the most cookies, this says which
             // one converts. They are not the same question, and only the second one is worth money.
             source: String(m.source || ''),
+            image: String(m.productImage || ''),
+            size: String(m.size || ''),
           });
         } catch (e) { log('[report] ' + e.message, tid); }
         // The 2-per-4h-per-account cap only works if confirmed orders are counted, and this is the

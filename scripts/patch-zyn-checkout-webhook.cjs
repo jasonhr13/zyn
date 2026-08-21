@@ -7,6 +7,8 @@ const path = require('path');
 
 const keychainAccount = process.env.ZYN_CHECKOUT_WEBHOOK_KEYCHAIN_ACCOUNT || 'zyn-reporter';
 const keychainService = process.env.ZYN_CHECKOUT_WEBHOOK_KEYCHAIN_SERVICE || 'com.thwebco.zyn.checkout-webhook';
+const privateKeychainService = process.env.ZYN_PRIVATE_CHECKOUT_WEBHOOK_KEYCHAIN_SERVICE
+  || 'com.thwebco.zyn.checkout-webhook-private';
 const zynAvatar = 'https://zynbot.app/zyn-icon.png';
 
 function validWebhook(value) {
@@ -25,23 +27,51 @@ function validWebhook(value) {
   }
 }
 
-function checkoutWebhook() {
-  const configured = String(process.env.ZYN_GLOBAL_CHECKOUT_WEBHOOK || '').trim();
-  if (configured) return configured;
+function keychainWebhook(service, missing) {
   try {
     return execFileSync('security', [
-      'find-generic-password', '-a', keychainAccount, '-s', keychainService, '-w',
+      'find-generic-password', '-a', keychainAccount, '-s', service, '-w',
     ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
-    throw new Error('Global checkout webhook is missing from Keychain. Run scripts/configure-zyn-checkout-webhook.cjs before building.');
+    throw new Error(missing);
   }
 }
 
-function replaceReporter(source, webhook) {
-  const assignment = /const GLOBAL_WEBHOOK\s*=\s*(?:['"]https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+['"]|['"]__ZYN_GLOBAL_CHECKOUT_WEBHOOK__['"]);/g;
+function privateCheckoutWebhook() {
+  const configured = String(process.env.ZYN_PRIVATE_CHECKOUT_WEBHOOK || '').trim();
+  if (configured) return configured;
+  return keychainWebhook(
+    privateKeychainService,
+    'Private checkout webhook is missing. Set ZYN_PRIVATE_CHECKOUT_WEBHOOK or run scripts/configure-zyn-checkout-webhook.cjs.',
+  );
+}
+
+function publicCheckoutWebhook() {
+  const configured = String(
+    process.env.ZYN_PUBLIC_CHECKOUT_WEBHOOK || process.env.ZYN_GLOBAL_CHECKOUT_WEBHOOK || '',
+  ).trim();
+  if (configured) return configured;
+  return keychainWebhook(
+    keychainService,
+    'Public checkout webhook is missing from Keychain. Run scripts/configure-zyn-checkout-webhook.cjs before building.',
+  );
+}
+
+function replaceAssignment(source, name, placeholder, webhook) {
+  const assignment = new RegExp(
+    String.raw`const ${name}\s*=\s*(?:['"]https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+['"]|['"]${placeholder}['"]);`,
+    'g',
+  );
   const matches = source.match(assignment) || [];
-  if (matches.length !== 1) throw new Error(`Expected one checkout-reporter webhook assignment, found ${matches.length}`);
-  source = source.replace(assignment, `const GLOBAL_WEBHOOK =\n  ${JSON.stringify(webhook)};`);
+  if (matches.length !== 1) {
+    throw new Error(`Expected one checkout-reporter ${name} assignment, found ${matches.length}`);
+  }
+  return source.replace(assignment, `const ${name} =\n  ${JSON.stringify(webhook)};`);
+}
+
+function replaceReporter(source, privateWebhook, publicWebhook) {
+  source = replaceAssignment(source, 'GLOBAL_WEBHOOK', '__ZYN_GLOBAL_CHECKOUT_WEBHOOK__', privateWebhook);
+  source = replaceAssignment(source, 'PUBLIC_WEBHOOK', '__ZYN_PUBLIC_CHECKOUT_WEBHOOK__', publicWebhook);
   source = source.replace(
     `//   2. the global Discord webhook           → your collector channel, tagged with Buyer`,
     `//   2. confirmed successes to the global Discord webhook → your collector channel, tagged with Buyer`,
@@ -93,16 +123,18 @@ if (!files.length) {
   console.error('Usage: patch-zyn-checkout-webhook.cjs <checkout-reporter.js|pbandai-buyer.cjs> [...]');
   process.exit(2);
 }
-const webhook = checkoutWebhook();
-if (!validWebhook(webhook)) throw new Error('Global checkout webhook is not a valid Discord webhook URL.');
+const privateWebhook = privateCheckoutWebhook();
+const publicWebhook = publicCheckoutWebhook();
+if (!validWebhook(privateWebhook)) throw new Error('Private checkout webhook is not a valid Discord webhook URL.');
+if (!validWebhook(publicWebhook)) throw new Error('Public checkout webhook is not a valid Discord webhook URL.');
 
 for (const file of files) {
   const name = path.basename(file);
   const before = fs.readFileSync(file, 'utf8');
   const after = name === 'checkout-reporter.js'
-    ? replaceReporter(before, webhook)
+    ? replaceReporter(before, privateWebhook, publicWebhook)
     : name === 'pbandai-buyer.cjs'
-      ? replacePbandai(before, webhook)
+      ? replacePbandai(before, privateWebhook)
       : (() => { throw new Error(`Unsupported checkout reporter file: ${name}`); })();
   if (after === before) throw new Error(`Checkout webhook patch made no change to ${file}`);
   fs.writeFileSync(file, after, 'utf8');

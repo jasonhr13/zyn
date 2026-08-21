@@ -42,6 +42,8 @@ assert.doesNotMatch(runtimeSources, /['"][MN][A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6
   'tracked runtime source must not contain a Discord bot token');
 assert.match(read('runtime-app/public/helpers/checkout-reporter.js'), /__ZYN_GLOBAL_CHECKOUT_WEBHOOK__/,
   'the checkout reporter keeps a build-time placeholder, not a credential');
+assert.match(read('runtime-app/public/helpers/checkout-reporter.js'), /__ZYN_PUBLIC_CHECKOUT_WEBHOOK__/,
+  'the public checkout webhook stays a build-time placeholder, not a credential');
 assert.match(read('runtime-app/public/electron.js'), /MONITOR_BOT_TOKEN = '__ZYN_MONITOR_BOT_TOKEN__'/,
   'the monitor bot token stays a build-time placeholder, not a credential');
 
