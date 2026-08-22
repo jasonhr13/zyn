@@ -54,6 +54,9 @@ export const config = {
   // aren't in Target's search catalog yet. Polled hot; alerts fire the moment
   // they go live. See launch-watch logic in fulfillment.js.
   seedTcins: list(process.env.SEED_TCINS),
+  // TCINs that must never ping Discord/webhooks. Discovery still sees them, but
+  // they are not enrolled, polled, or emitted. Ignore wins over SEED_TCINS.
+  ignoredTcins: list(process.env.IGNORED_TCINS),
   pacing: { maxRequestsPerMin: num(process.env.MAX_RPM, 600) },
   brand: {
     name: process.env.BRAND_NAME || 'Zyn',
@@ -85,3 +88,6 @@ export const config = {
   adminToken: process.env.ADMIN_TOKEN || '',
   logLevel: process.env.LOG_LEVEL || 'info',
 };
+
+export const ignoredTcinSet = new Set(config.ignoredTcins.map(String));
+export const isIgnoredTcin = (tcin) => ignoredTcinSet.has(String(tcin));

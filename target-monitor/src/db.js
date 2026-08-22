@@ -143,6 +143,18 @@ export function upsertProduct(p) {
 export const getProduct = (tcin) => stmt.getProduct.get(tcin);
 export const getEnrolled = () => stmt.enrolledProducts.all();
 
+const unenrollOne = db.prepare('UPDATE products SET enrolled = 0 WHERE tcin = ?');
+
+// Drop ignored TCINs from the polling set. They stay in the catalog so a later
+// list edit can re-enroll them via discovery, but they will not be polled.
+export function unenrollTcins(tcins) {
+  const tx = db.transaction((list) => {
+    for (const tcin of list) unenrollOne.run(String(tcin));
+  });
+  tx(tcins);
+  return tcins.length;
+}
+
 // Enroll manually-specified pre-launch TCINs. Returns the count enrolled.
 export function enrollSeeds(tcins) {
   const now = Date.now();

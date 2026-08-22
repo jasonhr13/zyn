@@ -15,6 +15,8 @@ primary_region = "iad"
   # Pre-launch TCINs discovery can't see yet (Pokémon 30th Anniversary, Aug 14).
   # Polled hot; fire the moment they go live. Add/remove TCINs here as needed.
   SEED_TCINS = "1010892065,1010892067,1010892068,1010892069,1010892070,1010892076,1010892078"
+  # TCINs that must never ping Discord. Comma-separated; add more as needed.
+  IGNORED_TCINS = "1011060493"
 
 [[mounts]]
   source = "monitor_data"

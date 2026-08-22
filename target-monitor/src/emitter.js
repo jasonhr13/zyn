@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { fetch } from 'undici';
-import { config } from './config.js';
+import { config, isIgnoredTcin } from './config.js';
 import { insertEvent, markEmitted, recordFailure } from './db.js';
 import { log } from './log.js';
 
@@ -96,6 +96,10 @@ export function makeEmitter() {
   const { http, discord } = config.sinks;
 
   return async function emit(type, product, { previous, current } = {}) {
+    if (isIgnoredTcin(product.tcin)) {
+      log.debug({ type, tcin: product.tcin }, 'ignored tcin — skip emit');
+      return;
+    }
     const observed_at = Date.now();
     const idem = idemKey(type, product.tcin, current);
     const payload = {

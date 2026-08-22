@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { log } from './log.js';
-import { enrollSeeds } from './db.js';
+import { enrollSeeds, unenrollTcins } from './db.js';
 import { makeEmitter } from './emitter.js';
 import { createScheduler } from './fulfillment.js';
 import { startDiscovery, bindScheduler } from './discovery.js';
@@ -16,6 +16,7 @@ log.info(
     sinks: Object.entries(config.sinks).filter(([, v]) => v).map(([k]) => k),
     hot_s: config.fulfillment.hotIntervalMs / 1000,
     warm_s: config.fulfillment.warmIntervalMs / 1000,
+    ignored: config.ignoredTcins.length,
   },
   'target-monitor starting',
 );
@@ -24,6 +25,13 @@ log.info(
 if (config.seedTcins.length) {
   enrollSeeds(config.seedTcins);
   log.info({ seeds: config.seedTcins.length }, 'seed TCINs enrolled for launch-watch');
+}
+
+// Ignore wins over seeds and discovery: unenroll before the scheduler boots so
+// already-catalogued TCINs stop polling and never emit another ping.
+if (config.ignoredTcins.length) {
+  unenrollTcins(config.ignoredTcins);
+  log.info({ ignored: config.ignoredTcins }, 'ignored TCINs unenrolled');
 }
 
 const emit = makeEmitter();

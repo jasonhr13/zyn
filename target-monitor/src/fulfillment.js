@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, isIgnoredTcin } from './config.js';
 import { fetchStock, SoftBlock } from './redsky.js';
 import { getEnrolled, getProduct, getState, setState, setTier, updateProductMeta } from './db.js';
 import { log } from './log.js';
@@ -12,10 +12,13 @@ export function createScheduler(emit) {
   let ticking = false;
   const stats = { polls: 0, lastPollAt: 0, softBlocks: 0, errors: 0 };
 
-  const enroll = (tcin) => { if (!due.has(tcin)) due.set(tcin, 0); }; // 0 = poll asap
+  const enroll = (tcin) => {
+    if (isIgnoredTcin(tcin)) return;
+    if (!due.has(tcin)) due.set(tcin, 0); // 0 = poll asap
+  };
   const drop = (tcin) => due.delete(tcin);
 
-  // On boot, enroll everything already in the catalog.
+  // On boot, enroll everything already in the catalog except ignored TCINs.
   for (const p of getEnrolled()) enroll(p.tcin);
 
   function intervalFor(tcin) {

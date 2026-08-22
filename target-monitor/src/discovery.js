@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, isIgnoredTcin } from './config.js';
 import { discover } from './redsky.js';
 import { upsertProduct, applyDiscoveryMisses, getState } from './db.js';
 import { log } from './log.js';
@@ -21,6 +21,7 @@ export async function runDiscovery(emit) {
 
   let discovered = 0;
   for (const p of products.values()) {
+    if (isIgnoredTcin(p.tcin)) continue;
     const { isNew } = upsertProduct(p);
     scheduler?.enroll(p.tcin);
     if (isNew) {
