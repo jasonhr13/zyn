@@ -74,12 +74,16 @@ export function createScheduler(emit) {
       alertsSent = 1;
       lastAlertAt = now;
     } else if (s.purchasable && wasPurchasable && alertsSent >= 1) {
-      // Still in stock after a restock we announced — re-ping on the interval.
-      // (First-sighting/baseline stock has alertsSent 0, so it never re-pings.)
-      const { repingIntervalMs, repingMax } = config.restock;
+      // Still in stock after a restock we announced — re-ping on the interval
+      // until the in-stock streak is older than repingMaxAgeMs. After that,
+      // stay quiet until it goes OOS and restocks. First-sighting/baseline
+      // stock has alertsSent 0, so it never re-pings.
+      const { repingIntervalMs, repingMax, repingMaxAgeMs } = config.restock;
       const due = repingIntervalMs > 0 && now - (lastAlertAt ?? 0) >= repingIntervalMs;
       const underCap = repingMax === 0 || alertsSent - 1 < repingMax;
-      if (due && underCap) {
+      const restockedAt = prev.last_change_at ?? 0;
+      const underAge = repingMaxAgeMs === 0 || (restockedAt > 0 && now - restockedAt < repingMaxAgeMs);
+      if (due && underCap && underAge) {
         alertsSent += 1;
         lastAlertAt = now;
         emit('stock.online.reping', s, {

@@ -37,6 +37,9 @@ export const config = {
     // announced (OOS -> in) re-ping — never baseline-in-stock items.
     repingIntervalMs: num(process.env.RESTOCK_REPING_INTERVAL_S, 60) * 1000,
     repingMax: num(process.env.RESTOCK_REPING_MAX, 0), // 0 = unlimited re-pings
+    // Stop re-pings after this long continuously in stock. A later OOS -> in
+    // opens a new streak. 0 = no age cap.
+    repingMaxAgeMs: num(process.env.RESTOCK_REPING_MAX_AGE_S, 5 * 60 * 60) * 1000,
   },
   tiers: {
     // High-demand formats are pinned hot; everything else defaults to warm.
