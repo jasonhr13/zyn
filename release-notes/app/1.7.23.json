@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.23",
+  "notes": [
+    "Target harvest can write browser profiles and disk cache to a RAM disk or second drive.",
+    "Each harvester gets its own folder under that path; leave it blank to keep using system temp.",
+    "A bad harvest path falls back to the default temp without stopping harvesting."
+  ]
+}

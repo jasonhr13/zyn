@@ -53,13 +53,32 @@ function spawnHarvesterProducer(config) {
     if (config.proxyListName) return;
   }
 
+  let settings = {};
+  try { settings = dm.getSettings() || {}; } catch {}
+
+  // Optional operator-set harvest data directory (e.g. a RAM disk or a second NVMe). Each managed
+  // harvester launches a non-persistent Playwright browser, so every worker's profile + Chromium
+  // disk cache lands in a fresh dir under os.tmpdir(). Point the child's os.tmpdir() at the
+  // configured path via TEMP/TMP/TMPDIR so the small-synchronous-write storm from many Chromium
+  // sessions (SQLite cookie/cache writes) never touches the OS drive. Falls back to the default
+  // temp on any error so a bad path can never stop harvesting.
+  const harvestDataRoot = String(settings.targetHarvestDataDir || '').trim();
+  const dataDirEnv = {};
+  if (harvestDataRoot) {
+    try {
+      const dir = path.join(harvestDataRoot, `zyn-harvest-${config.id}`);
+      fs.mkdirSync(dir, { recursive: true });
+      dataDirEnv.TMPDIR = dir; dataDirEnv.TEMP = dir; dataDirEnv.TMP = dir;
+    } catch (e) {
+      log(`harvester ${config.name} data dir unusable (${harvestDataRoot}): ${e.message} — using default temp`);
+    }
+  }
+
   const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid) });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ...dataDirEnv });
 
-  let settings = {};
-  try { settings = dm.getSettings() || {}; } catch {}
   const builtInTargets = String(settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '').trim();
   const defaultTargets = [
     '95081084', '95225598', '95225596', '95081083', '94982545',

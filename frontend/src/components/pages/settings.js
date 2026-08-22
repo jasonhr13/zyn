@@ -122,7 +122,7 @@ class Settings extends Component {
       aycdApiKey: '', showAycdKey: false,
       // Target: preserve the original harvest controls and the throughput/bandwidth settings ported
       // from the reviewed upstream implementation under the persisted keys used by cloud backup.
-      targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '',
+      targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '', targetHarvestDataDir: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, proxyAccess: false, managedProxyCount: 0,
@@ -151,6 +151,7 @@ class Settings extends Component {
       targetAtcCookiesPerTask: normalizeAtcCookiesPerTask(s.targetAtcCookiesPerTask),
       targetHarvestWorkers: s.targetHarvestWorkers == null ? '' : String(s.targetHarvestWorkers),
       targetCookieTtlSec: s.targetCookieTtlSec == null ? '' : String(s.targetCookieTtlSec),
+      targetHarvestDataDir: s.targetHarvestDataDir || '',
       targetCapturesPerLoad: String(s.targetCapturesPerLoad || 1),
       targetLoadsPerBrowser: String(s.targetLoadsPerBrowser || 3),
       targetBlockHeavyResources: s.targetBlockHeavyResources !== false,
@@ -252,6 +253,7 @@ class Settings extends Component {
       targetAtcCookiesPerTask: normalizeAtcCookiesPerTask(this.state.targetAtcCookiesPerTask),
       targetHarvestWorkers: this.state.targetHarvestWorkers.trim(),
       targetCookieTtlSec: this.state.targetCookieTtlSec.trim(),
+      targetHarvestDataDir: this.state.targetHarvestDataDir.trim(),
       targetCapturesPerLoad: normalizeShapeThroughput(
         this.state.targetCapturesPerLoad, MAX_SHAPE_CAPTURES_PER_LOAD, 1),
       targetLoadsPerBrowser: normalizeShapeThroughput(
@@ -601,6 +603,7 @@ class Settings extends Component {
   render() {
     const { discordWebhook, discordDeclineWebhook, accountGenWebhook, webhookError, aycdApiKey, showAycdKey, saved,
       targetAtcHarvestTcins, targetAtcCookiesPerTask, targetHarvestWorkers, targetCookieTtlSec,
+      targetHarvestDataDir,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
       licenseEmail, licenseOffline, pokemonCenterAccess, proxyAccess, managedProxyCount,
@@ -882,6 +885,19 @@ class Settings extends Component {
                 </label>
                 <FieldHelp>Stops bulk image, media, and font downloads through the harvest proxy while leaving documents, stylesheets, scripts, XHR, and Shape telemetry available.</FieldHelp>
               </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 10 }}>
+              <FieldLabel help="Folder where each harvester writes its browser profile and disk cache. Point this at a RAM disk (e.g. R:\\) or a second/dedicated NVMe to keep the many-Chromium write storm off the OS drive. Leave blank to use the system temp folder. A per-harvester subfolder is created automatically; a bad path falls back to the default without stopping harvesting.">
+                Harvest data directory
+              </FieldLabel>
+              <input
+                className="form-input monospace"
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="blank = system temp — e.g. R:\\ (RAM disk) or D:\\zyn-harvest"
+                value={targetHarvestDataDir}
+                onChange={e => this.set('targetHarvestDataDir', e.target.value)}
+              />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

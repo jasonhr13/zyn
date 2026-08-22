@@ -38,6 +38,20 @@ assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredLoads\)\)/);
 assert.match(engine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/);
 assert.match(engine, /`--loadsPerBrowser=\$\{loadsPerBrowser\}`/);
 assert.match(engine, /`--blockHeavyResources=\$\{blockHeavyResources\}`/);
+
+// A configurable harvest data directory redirects each managed harvester's browser profile + disk
+// cache (the many-Chromium small-synchronous-write storm) onto a RAM disk / dedicated NVMe by
+// pointing the child process's temp env there, keeping it off the OS drive.
+assert.match(engine, /settings\.targetHarvestDataDir/,
+  'managed harvester does not honor a configurable data directory');
+assert.match(engine, /dataDirEnv\.TMPDIR = dir; dataDirEnv\.TEMP = dir; dataDirEnv\.TMP = dir;/,
+  'harvest data directory is not applied to the harvester temp environment');
+assert.match(engine, /ZYN_OWNER_PID: String\(process\.pid\), \.\.\.dataDirEnv/,
+  'harvest data directory env is not merged into the managed producer environment');
+assert.match(settings, /targetHarvestDataDir/,
+  'Settings must persist the harvest data directory');
+assert.match(settings, /Harvest data directory/,
+  'Settings is missing the harvest data directory control');
 assert.match(engine, /`--browsers=auto`/);
 assert.match(engine, /`--sessionReady=\$\{hasSession\}`/);
 assert.match(engine, /health: j\.health \|\| null/, 'broker worker health is not forwarded to the UI');
