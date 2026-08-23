@@ -1,7 +1,7 @@
 // Central checkout reporting — one place for BOTH sides of "who bought what":
 //   1. POST /api/checkout on the dashboard  → the user's Home page history + Spent
 //   2. the global Discord webhook           → your collector channel, tagged with Buyer
-//   3. the public Discord webhook           → Target/Pokémon success only, no buyer/account/order
+//   3. the public Discord webhook           → Target/Pokémon/Walmart success only, no buyer/account/order
 //
 // Why this lives in the Electron main process rather than in each engine: Target
 // and Walmart are a COMPILED Go binary that posts its own embeds and only accepts
@@ -23,7 +23,7 @@ const DASHBOARD = 'https://secret-lair-dashboard.vercel.app';
 const GLOBAL_WEBHOOK = '__ZYN_GLOBAL_CHECKOUT_WEBHOOK__';
 const PUBLIC_WEBHOOK = '__ZYN_PUBLIC_CHECKOUT_WEBHOOK__';
 const ZYN_AVATAR = 'https://zynbot.app/zyn-icon.png';
-const PUBLIC_SITES = new Set(['target', 'pokemoncenter']);
+const PUBLIC_SITES = new Set(['target', 'pokemoncenter', 'walmart']);
 
 // Set once the license claim resolves (electron.js → configure()).
 let ctx = { key: '', token: '', discord: '', discordId: '', log: () => {} };
@@ -152,10 +152,11 @@ async function report({ site, status, product, price, account, order, qty, sku, 
   });
 
   // Public success board. Anyone in the server can see this, so it must not carry Buyer, account,
-  // order, cookie source, or a product URL that is otherwise unused. Target and Pokémon Center only.
+  // order, cookie source, or a product URL that is otherwise unused.
   const publicSite = String(site || '').toLowerCase();
   if (!ok || !PUBLIC_SITES.has(publicSite)) return;
-  const siteLabel = publicSite === 'pokemoncenter' ? 'Pokémon Center' : 'Target';
+  const siteLabel = publicSite === 'pokemoncenter' ? 'Pokémon Center'
+    : publicSite === 'walmart' ? 'Walmart' : 'Target';
   const publicFields = [
     { name: 'Product', value: `• ${n}x ${title}`.slice(0, 1024) },
     { name: 'Price', value: total > 0 ? `$${total.toFixed(2)}` : '—', inline: true },

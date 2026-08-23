@@ -1,8 +1,6 @@
 package walmart
 
 import (
-	"strings"
-
 	"zynbot.app/engine/bot-base/profiles"
 	"zynbot.app/engine/bot-base/task"
 )
@@ -42,27 +40,11 @@ func (t *WalmartTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 			t.Profile = task.ProfileFromStore(loaded)
 		}
 	}
-	if len(in.Items) > 0 {
-		item := in.Items[0]
-		raw := strings.TrimSpace(item.MonitorInput)
-
-		t.Quantity = item.Quantity
-		if t.Quantity <= 0 {
-			t.Quantity = 1
-		}
-
-		if raw != t.RawInput {
-			t.RawInput = raw
-
-			// Clear old input
-			t.InputPid = ""
-			t.OfferID = ""
-
-			if isOfferIDInput(raw) {
-				t.OfferID = raw
-			} else {
-				t.InputPid = parsePidFromInput(raw)
-			}
-		}
+	items := in.Items
+	if len(items) == 0 {
+		items = in.MonitorItems
+	}
+	if len(items) > 0 {
+		applyWatchItems(t, items)
 	}
 }

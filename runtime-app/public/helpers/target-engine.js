@@ -153,11 +153,12 @@ function deliverOtp(addr, code, source, fetchState = null) {
   if (entry) {
     entry.phase = 'submitting';
     entry.message = source === 'entered by hand'
-      ? 'Manual code received — submitting to Target…'
-      : 'Email code found — submitting to Target…';
+      ? 'Manual code received — submitting…'
+      : 'Email code found — submitting…';
     emitOtpPending();
   }
-  sendToEngine({ type: 'received-code', messages: [{ email: addr, code: String(code), site: 'Target' }] });
+  const site = (entry && entry.site) || engineContract.SITES.TARGET;
+  sendToEngine({ type: 'received-code', messages: [{ email: addr, code: String(code), site }] });
   // One code satisfies one login. Keep the prompt and waiter state for any sibling task using the
   // same account; each Target login sends its own message.
   if (entry && entry.waiters && entry.waiters.size > 1) {
@@ -222,6 +223,7 @@ async function fetchOtpAndDeliver(email, taskId = '') {
     waiters,
     phase: 'starting',
     message: 'Preparing automatic email lookup…',
+    site: engineTaskSites.resolve({ taskID: taskId }) || engineContract.SITES.TARGET,
   });
   emitOtpPending();
   const botDir = botDirPath();
@@ -505,6 +507,7 @@ function attachWindow(mainWindow) {
     rendererDead = true;
     try { if (taskActive || engineProc || farmerProc) stopTarget(); } catch {}
     try { if (pokemonTaskIds.size) stopPokemonCenter(); } catch {}
+    try { if (walmartTaskIds.size) stopWalmart(); } catch {}
   };
   try {
     mainWindow.once('closed', die);
@@ -1942,6 +1945,9 @@ function sendConfigs(config = {}) {
     // Reported on Target's checkout webhook. Driven by the Settings value, not by whether a process
     // happens to be alive — the broker runs in both modes, so process state can't distinguish them.
     shapeMethod: shapeMethodSetting(),
+    // Cloudflare captures the upstream solver key and forwards only this field. Settings.json
+    // never stores it; the upstream license never reaches this process.
+    lucaApiKey: solverLucaApiKey,
   });
   // Every task's account/profile/proxy group must be in ONE configs message — the engine keys off
   // these maps when it starts each task, so a task whose account is missing here silently never
@@ -2476,6 +2482,7 @@ const pendingPokemonStarts = [];
 let pokemonStartSeq = 0;
 let pokemonQueueStreamHealth = { configured: false, connected: false, connecting: false };
 let pokemonQueueStreamLogKey = '';
+let solverLucaApiKey = '';
 
 function pokemonStatus(state, color, detail, taskId, taskState, running) {
   state = zynBrandText(state);
@@ -2521,12 +2528,20 @@ function failNativeEngineRuns(reason, publishError = false) {
     if (publishError) pokemonStatus('Error', '#fb5454', detail, id, 0, false);
     pokemonDone(id);
   }
+  for (const id of walmartTaskIds) {
+    if (publishError) walmartStatus('Error', '#fb5454', detail, id, 0, false);
+    walmartDone(id);
+  }
   runningTaskIds.clear();
   clearTargetCookieTasks();
   clearPendingTargetStarts();
   pokemonTaskIds.clear();
   pokemonTaskConfigs.clear();
   pendingPokemonStarts.length = 0;
+  walmartTaskIds.clear();
+  walmartTaskConfigs.clear();
+  pendingWalmartStarts.length = 0;
+  walmartMonitorIds.clear();
   engineTaskSites.clear();
   taskAccountById.clear();
   taskProfileById.clear();
@@ -2559,6 +2574,13 @@ function setPokemonQueueStreamHealth(next = {}) {
   if (line === pokemonQueueStreamLogKey) return;
   pokemonQueueStreamLogKey = line;
   for (const id of pokemonTaskIds) pokemonLog(line, id);
+}
+
+function setSolverLucaKey(key = '') {
+  const next = String(key || '').trim();
+  if (next === solverLucaApiKey) return;
+  solverLucaApiKey = next;
+  if (solverLucaApiKey) sendConfigs();
 }
 
 function publishPokemonQueueProtection(event = {}) {
@@ -2733,7 +2755,7 @@ function flushPokemonStarts() {
       pokemonLog(pokemonQueueStreamLine(), message.id);
     }
   }
-  taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+  taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
   return started;
 }
 
@@ -2865,6 +2887,314 @@ function stopPokemonCenter(taskId) {
 
 function runningPokemonCenterCount() { return pokemonTaskIds.size; }
 
+const WALMART_SITE = engineContract.SITES.WALMART;
+const walmartTaskIds = new Set();
+const walmartTaskConfigs = new Map();
+const pendingWalmartStarts = [];
+const walmartMonitorIds = new Map(); // pid -> monitor task id
+let walmartStartSeq = 0;
+
+function walmartStatus(state, color, detail, taskId, taskState, running) {
+  state = zynBrandText(state);
+  detail = zynBrandText(detail);
+  toRenderer('walmartStatus', {
+    taskId: String(taskId || ''), state: String(state || ''), label: String(state || ''),
+    color: String(color || ''), detail: String(detail || ''),
+    taskState: typeof taskState === 'number' ? taskState : undefined,
+    running: typeof running === 'boolean' ? running : undefined,
+  });
+}
+
+function walmartLog(line, taskId = '') {
+  let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
+  if (!value) return;
+  if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
+  toRenderer('walmartLog', { taskId: String(taskId || ''), line: value });
+}
+
+function walmartDone(taskId = '', { idle = false } = {}) {
+  toRenderer('walmartDone', { taskId: String(taskId || ''), idle: idle === true });
+}
+
+function isWalmartOfferId(value) {
+  return /^[A-Za-z0-9]{32}$/.test(String(value || '').trim());
+}
+
+function parseWalmartPid(value) {
+  const input = String(value || '').trim();
+  if (!input || isWalmartOfferId(input) || input.toLowerCase() === 'placeholder') return '';
+  const lower = input.toLowerCase();
+  const ip = lower.indexOf('/ip/');
+  if (ip >= 0) {
+    let rest = input.slice(ip + 4);
+    const slash = rest.indexOf('/');
+    if (slash >= 0) rest = rest.slice(0, slash);
+    const query = rest.indexOf('?');
+    if (query >= 0) rest = rest.slice(0, query);
+    if (/^\d{6,}$/.test(rest.trim())) return rest.trim();
+    const trailing = rest.match(/(\d{6,})\s*$/);
+    return trailing ? trailing[1] : '';
+  }
+  const item = input.match(/\/(\d{6,})(?:[/?]|$)/);
+  if (item) return item[1];
+  return /^\d{6,}$/.test(input) ? input : '';
+}
+
+function normalizeWalmartInput(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+  if (input.toLowerCase() === 'placeholder') return 'placeholder';
+  if (isWalmartOfferId(input)) return input;
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const parsed = new URL(input);
+      if (!(parsed.hostname === 'walmart.com' || parsed.hostname.endsWith('.walmart.com'))) return '';
+      return input;
+    } catch { return ''; }
+  }
+  return /^\d{6,}$/.test(input) ? input : '';
+}
+
+function validateWalmartProducts(products, legacyInput, legacyQuantity, legacyMaxPrice) {
+  const rows = Array.isArray(products)
+    ? products
+    : (legacyInput ? [{ input: legacyInput, quantity: legacyQuantity, maxPrice: legacyMaxPrice }] : []);
+  const populated = rows.map(row => ({
+    input: String((row && (row.input || row.monitorInput || row.id)) || '').trim(),
+    quantity: String(Math.max(1, parseInt(row && row.quantity, 10) || 1)),
+    maxPrice: String((row && row.maxPrice) || '').trim(),
+  })).filter(row => row.input);
+  const normalized = populated.map(row => normalizeWalmartInput(row.input));
+  const seen = new Set();
+  const valid = [];
+  populated.forEach((row, index) => {
+    const input = normalized[index];
+    if (!input || seen.has(input)) return;
+    seen.add(input);
+    valid.push({ input, quantity: row.quantity, maxPrice: row.maxPrice });
+  });
+  if (!valid.length && !invalid.length) {
+    return { products: [{ input: 'placeholder', quantity: '1', maxPrice: '' }], invalid: [] };
+  }
+  return {
+    products: valid,
+    invalid: populated.filter((row, index) => !normalized[index]).map(row => row.input),
+  };
+}
+
+function walmartItems(products) {
+  return products.map(product => ({
+    id: product.input, monitorInput: product.input, quantity: product.quantity,
+    maxPrice: product.maxPrice || '', color: '', sizes: [],
+  }));
+}
+
+function walmartMessage(task = {}, shared = {}) {
+  const products = validateWalmartProducts(
+    task.products != null ? task.products : shared.products,
+    task.input != null ? task.input : shared.input,
+    task.quantity != null ? task.quantity : shared.quantity,
+    task.maxPrice != null ? task.maxPrice : shared.maxPrice,
+  ).products;
+  const items = walmartItems(products);
+  return engineContract.normalizeStartTask({
+    id: String(task.id || ''), type: WALMART_SITE, site: WALMART_SITE,
+    taskGroup: '',
+    monitorDelay: String(task.monitorDelay || shared.monitorDelay || '3000'),
+    retryDelay: String(task.retryDelay || shared.retryDelay || '3000'),
+    proxyGroup: String(task.proxyListName || '').trim() || 'Local',
+    profileId: String(task.profileId || ''), profileGroup: '',
+    accountId: String(task.accountId || ''),
+    item: items, monitorItems: items,
+    status: '', mode: 'Checkout', minPrice: '', maxPrice: '', statusColor: '',
+    running: true, carted: false, failed: false, successful: false,
+    loopCheckout: false, waitForQueue: false, QueueEntryDelay: '0',
+    allInstock: false, endless: task.endless != null ? !!task.endless : !!shared.endless,
+    useFillerItem: false, useOtpLogin: false,
+    startSchedule: '', stopSchedule: '', ignoreLowStock: false,
+  });
+}
+
+function rememberWalmartConfig(task, shared) {
+  const merged = {
+    ...shared, ...task,
+    products: validateWalmartProducts(
+      task.products != null ? task.products : shared.products,
+      task.input != null ? task.input : shared.input,
+      task.quantity != null ? task.quantity : shared.quantity,
+      task.maxPrice != null ? task.maxPrice : shared.maxPrice,
+    ).products,
+  };
+  walmartTaskConfigs.set(String(task.id), merged);
+  return merged;
+}
+
+function stopWalmartMonitor(pid) {
+  const id = walmartMonitorIds.get(String(pid || ''));
+  if (!id) return;
+  walmartMonitorIds.delete(String(pid));
+  if (engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id }] });
+}
+
+function walmartPidsFromConfig(config) {
+  const products = validateWalmartProducts(
+    config && config.products, config && config.input, config && config.quantity, config && config.maxPrice,
+  ).products;
+  return products.map(product => parseWalmartPid(product.input)).filter(Boolean);
+}
+
+function reconcileWalmartMonitors() {
+  const wanted = new Set();
+  for (const config of walmartTaskConfigs.values()) {
+    for (const pid of walmartPidsFromConfig(config)) wanted.add(pid);
+  }
+  for (const pid of [...walmartMonitorIds.keys()]) {
+    if (!wanted.has(pid)) stopWalmartMonitor(pid);
+  }
+  if (!engineConn || engineConn.readyState !== WebSocket.OPEN) return;
+  for (const pid of wanted) {
+    if (walmartMonitorIds.has(pid)) continue;
+    const id = `walmart-monitor-${pid}`;
+    const owner = [...walmartTaskConfigs.values()].find(config => walmartPidsFromConfig(config).includes(pid));
+    const sent = sendToEngine({ type: 'start-monitors', messages: [{
+      id, site: WALMART_SITE,
+      proxyGroup: String((owner && owner.proxyListName) || '').trim() || 'Local',
+      monitorDelay: String((owner && owner.monitorDelay) || '3000'),
+      ignoreLowStock: false,
+      items: [{ monitorInput: pid, quantity: '1', maxPrice: '' }],
+    }] });
+    if (sent) walmartMonitorIds.set(pid, id);
+  }
+}
+
+function flushWalmartStarts() {
+  if (pendingTargetEngineStop || !engineConn || engineConn.readyState !== WebSocket.OPEN) return 0;
+  let started = 0;
+  while (pendingWalmartStarts.length) {
+    const config = pendingWalmartStarts[0] || {};
+    const tasks = (config.tasks || []).filter(task => task && walmartTaskIds.has(String(task.id || '')));
+    if (!tasks.length) {
+      pendingWalmartStarts.shift();
+      continue;
+    }
+    const messages = tasks.map(task => walmartMessage(task, config));
+    const valid = messages.filter(message => message.profileId && message.accountId && message.item.length);
+    for (const message of messages) {
+      if (valid.includes(message)) continue;
+      walmartStatus('Invalid Task', '#fb5454', !message.accountId ? 'Select a Walmart account'
+        : (!message.profileId ? 'Select a checkout profile' : 'Add a product'), message.id, 0, false);
+      walmartTaskIds.delete(message.id);
+      walmartTaskConfigs.delete(message.id);
+      engineTaskSites.remove(message.id);
+      walmartDone(message.id);
+    }
+    if (!valid.length) {
+      pendingWalmartStarts.shift();
+      continue;
+    }
+    if (!sendConfigs({ tasks }) || !sendToEngine({ type: 'start-tasks', messages: valid })) break;
+    pendingWalmartStarts.shift();
+    started += valid.length;
+    for (const message of valid) walmartLog('Walmart task started', message.id);
+    reconcileWalmartMonitors();
+  }
+  taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+  return started;
+}
+
+function startWalmart(config = {}, mainWindow) {
+  attachWindow(mainWindow);
+  const requestedTasks = Array.isArray(config.tasks) ? config.tasks : [config];
+  const products = validateWalmartProducts(config.products, config.input, config.quantity, config.maxPrice).products;
+  if (!products.length) return false;
+  let validAccountIds = new Set();
+  let validProfileIds = new Set();
+  try {
+    validAccountIds = new Set((dm.getAccounts() || [])
+      .filter(account => String((account && account.site) || '').toLowerCase() === 'walmart')
+      .map(account => String(account.id)));
+    validProfileIds = new Set((dm.getProfiles() || [])
+      .filter(profile => String((profile && profile.profileType) || '').toLowerCase() === 'walmart')
+      .map(profile => String(profile.id)));
+  } catch {}
+  const tasks = requestedTasks.filter(task => task && task.id
+    && validAccountIds.has(String(task.accountId))
+    && validProfileIds.has(String(task.profileId)));
+  if (!tasks.length) return false;
+
+  const batch = { ...config, products, tasks: tasks.map(task => rememberWalmartConfig(task, { ...config, products })) };
+  pendingWalmartStarts.push(batch);
+  for (const task of batch.tasks) {
+    const id = String(task.id);
+    walmartTaskIds.add(id);
+    engineTaskSites.register(id, WALMART_SITE);
+    taskAccountById.set(id, String(task.accountId || ''));
+    taskProfileById.set(id, String(task.profileId || ''));
+    walmartStatus('Starting', '#868686', 'launching engine', id, 1, true);
+  }
+  const seq = ++walmartStartSeq;
+  ensureServer(() => {
+    if (seq !== walmartStartSeq && !batch.tasks.some(task => walmartTaskIds.has(String(task.id)))) return;
+    spawnEngine();
+    if (engineConn && engineConn.readyState === WebSocket.OPEN) flushWalmartStarts();
+  });
+  return true;
+}
+
+function editWalmart(config = {}) {
+  const requested = Array.isArray(config.tasks) ? config.tasks : [];
+  const selected = requested.length
+    ? requested.filter(task => task && walmartTaskIds.has(String(task.id || '')))
+    : [...walmartTaskIds].map(id => ({ id }));
+  if (!selected.length) return { ok: false, updated: 0, error: 'No selected Walmart tasks are running.' };
+  const tasks = selected.map(update => {
+    const id = String(update.id);
+    const previous = walmartTaskConfigs.get(id) || { id };
+    return rememberWalmartConfig({ ...previous, ...config, ...update, id }, previous);
+  });
+  sendConfigs({ tasks });
+  const messages = tasks.map(task => walmartMessage(task, task));
+  if (!messages.every(message => message.profileId && message.accountId && message.item.length)) {
+    return { ok: false, updated: 0, error: 'Every running task needs an account, profile, and product.' };
+  }
+  const ok = sendToEngine({ type: 'edit-tasks', messages });
+  if (ok) reconcileWalmartMonitors();
+  return { ok, updated: ok ? messages.length : 0, error: ok ? '' : 'The native engine is not connected.' };
+}
+
+function stopWalmart(taskId) {
+  const requestedId = String(taskId || '');
+  const ids = requestedId ? [requestedId] : [...walmartTaskIds];
+  if (engineConn && ids.length) sendToEngine({ type: 'stop-tasks', messages: ids.map(id => ({ id })) });
+  for (const id of ids) {
+    walmartTaskIds.delete(id);
+    walmartTaskConfigs.delete(id);
+    engineTaskSites.remove(id);
+    taskAccountById.delete(id);
+    taskProfileById.delete(id);
+    walmartDone(id, { idle: true });
+  }
+  if (!requestedId) {
+    walmartStartSeq += 1;
+    pendingWalmartStarts.length = 0;
+  } else {
+    for (let i = pendingWalmartStarts.length - 1; i >= 0; i -= 1) {
+      pendingWalmartStarts[i].tasks = (pendingWalmartStarts[i].tasks || []).filter(task => String(task.id) !== requestedId);
+      if (!pendingWalmartStarts[i].tasks.length) pendingWalmartStarts.splice(i, 1);
+    }
+  }
+  reconcileWalmartMonitors();
+  if (walmartTaskIds.size || pokemonTaskIds.size || runningTaskIds.size) {
+    taskActive = true;
+    return true;
+  }
+  taskActive = false;
+  nativeHyperBroker.cancelPending();
+  manualCaptchaManager.cancelPending();
+  beginTargetEngineStop(engineProc);
+  return true;
+}
+
 function decodeNativeTaskLog(value) {
   try {
     const input = Buffer.from(String(value || ''), 'base64');
@@ -2908,6 +3238,10 @@ function handleEngineMessage(data, connection) {
         // puts each line on its own card; the monitor's own updates arrive under MONITOR_ID and
         // are mapped to '' so they show as module-level rather than inventing a phantom task.
         const rawId = m.taskID || '';
+        if (String(rawId).startsWith('walmart-monitor-')) {
+          if (st) walmartLog(st, '');
+          continue;
+        }
         const id = String(rawId).startsWith(MONITOR_ID) ? '' : rawId;
         if (engineTaskSites.resolve(m) === POKEMON_SITE) {
           pokemonStatus(st, m.color, '', id, m.state, m.running);
@@ -2917,7 +3251,21 @@ function handleEngineMessage(data, connection) {
             pokemonTaskConfigs.delete(id);
             engineTaskSites.remove(id);
             manualCaptchaManager.cancelTask(id);
-            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+          }
+          continue;
+        }
+        if (engineTaskSites.resolve(m) === WALMART_SITE) {
+          walmartStatus(st, m.color, '', id, m.state, m.running);
+          walmartLog(st, id);
+          if (m.running === false && id) {
+            walmartTaskIds.delete(id);
+            walmartTaskConfigs.delete(id);
+            engineTaskSites.remove(id);
+            taskAccountById.delete(id);
+            taskProfileById.delete(id);
+            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+            reconcileWalmartMonitors();
           }
           continue;
         }
@@ -2943,7 +3291,7 @@ function handleEngineMessage(data, connection) {
           taskCheckoutConfigById.delete(id);
           taskAccountById.delete(id);
           releaseTargetCookieTask(id);
-          taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0;
+          taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
           if (targetMainMonitorRunning || !runningTaskIds.size) reconcileTargetMainMonitor();
         }
         // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
@@ -3039,6 +3387,27 @@ function handleEngineMessage(data, connection) {
           }
           continue;
         }
+        if (engineTaskSites.resolve(m) === WALMART_SITE) {
+          walmartLog('[notify] ' + String(m.type || 'event') + (m.productName ? ': ' + m.productName : ''), notificationTaskId);
+          if (m.type === 'checkout' || m.type === 'declined') {
+            const ok = m.type === 'checkout';
+            walmartStatus(ok ? 'Successful' : 'Payment Declined', ok ? '#34ca6e' : '#fb5454', m.productName || '', notificationTaskId, ok ? 3 : 4);
+            try {
+              const cfg = walmartTaskConfigs.get(notificationTaskId) || {};
+              reporter.report({
+                site: 'walmart', status: ok ? 'success' : 'failed',
+                product: String(m.productName || '').slice(0, 200), price: Number(m.price) || 0,
+                account: taskAccountById.get(notificationTaskId) || m.profileName || '',
+                order: String(m.orderNumber || '').slice(0, 60),
+                qty: Number(cfg.quantity) || 1,
+                sku: String(m.sku || ''),
+                url: String(m.productLink || ''),
+                image: String(m.productImage || ''),
+              });
+            } catch (e) { walmartLog('[report] ' + e.message, notificationTaskId); }
+          }
+          continue;
+        }
         log('[notify] ' + JSON.stringify(m));
         // THIS is where a Target checkout actually arrives. The Go engine wraps every notification
         // as an outer "task-notification" and puts the real kind in m.type, so the `case 'product'`
@@ -3101,6 +3470,10 @@ function handleEngineMessage(data, connection) {
         if (site === POKEMON_SITE) {
           const queueMonitorLog = decoded.startsWith('[queue-monitor]');
           pokemonLog(devLogs() || queueMonitorLog ? decoded : 'Pokemon Center returned an unexpected response; retrying', m.taskID || '');
+          continue;
+        }
+        if (site === WALMART_SITE) {
+          walmartLog(decoded, m.taskID || m.taskId || '');
           continue;
         }
         if (site === engineContract.SITES.TARGET) log(decoded, m.taskID || m.taskId || '');
@@ -3238,6 +3611,7 @@ function bindServer(port) {
     let flushed = false;
     if (pendingTargetStarts.length) { flushStart(); flushed = true; }
     if (pendingPokemonStarts.length) { flushPokemonStarts(); flushed = true; }
+    if (pendingWalmartStarts.length) { flushWalmartStarts(); flushed = true; }
     // An engine that reconnects — or a respawned one — comes up with empty profile/account/proxy
     // maps, because they live in that process and nothing on this side re-sent them. Any task still
     // running would fail its next rotation with "invalid group". Push what it should already have.
@@ -3331,15 +3705,15 @@ function spawnEngine() {
     const gracefulStop = finishTargetEngineStop(spawnedEngine);
     if (engineProc === spawnedEngine) engineProc = null;
     if (gracefulStop) {
-      if (!quitting && (pendingTargetStarts.length || pendingPokemonStarts.length)) {
+      if (!quitting && (pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length)) {
         setImmediate(() => {
-          if (!quitting && !engineProc && (pendingTargetStarts.length || pendingPokemonStarts.length)) spawnEngine();
+          if (!quitting && !engineProc && (pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length)) spawnEngine();
         });
       }
       return;
     }
-    if (taskActive || runningTaskIds.size || pokemonTaskIds.size || targetMainMonitorRunning
-        || activeMonitorBandwidthRuns.size || pendingTargetStarts.length || pendingPokemonStarts.length) {
+    if (taskActive || runningTaskIds.size || pokemonTaskIds.size || walmartTaskIds.size || targetMainMonitorRunning
+        || activeMonitorBandwidthRuns.size || pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length) {
       log('engine exited (code ' + code + ')');
       failNativeEngineRuns('Native engine exited', false);
     }
@@ -3481,7 +3855,7 @@ function stopTarget(taskId) {
     brokerOnly = false;
   }
   if (!quitting) ensureHarvesterBroker();
-  if (pokemonTaskIds.size) { taskActive = true; return; }
+  if (pokemonTaskIds.size || walmartTaskIds.size) { taskActive = true; return; }
 
   targetMainMonitorPendingStopIds.clear();
   taskActive = false;
@@ -3496,6 +3870,7 @@ function stopTarget(taskId) {
 // outlived every task and only died with the process.
 function shutdown() {
   quitting = true;
+  try { stopWalmart(); } catch {}
   try { stopTarget(); } catch {}
   try { stopPokemonCenter(); } catch {}
   if (targetCookieDemandRetryTimer) clearTimeout(targetCookieDemandRetryTimer);
@@ -3625,4 +4000,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, setPokemonQueueStreamHealth, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };

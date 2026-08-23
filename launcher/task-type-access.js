@@ -3,6 +3,7 @@
 // one registry entry here plus its UI/engine implementation.
 const OPTIONAL_TASK_TYPES = Object.freeze([
   { key: 'pokemoncenter', label: 'Pokémon Center' },
+  { key: 'walmart', label: 'Walmart' },
   { key: 'round1', label: 'Round1' },
 ]);
 

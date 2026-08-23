@@ -72,7 +72,7 @@ workspace.result.writeWorkspaceSelection('zyn.profiles.workspace', {
 });
 assert.deepEqual(
   JSON.parse(JSON.stringify(workspace.result.readWorkspaceSelection('zyn.profiles.workspace'))),
-  { activeGroup: 'Drops', query: 'oak', selected: ['p1', 'p2'] },
+  { activeGroup: 'Drops', query: 'oak', selected: ['p1', 'p2'], accountSite: '' },
 );
 
 console.log('Nested profile groups and row workspace smoke test passed');

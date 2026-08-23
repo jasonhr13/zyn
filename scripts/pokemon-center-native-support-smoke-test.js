@@ -90,6 +90,7 @@ assert.match(engine, /QueueEntryDelay:/);
 assert.match(engine, /manualCaptchaManager\.handleEnvelope/);
 assert.match(engine, /nativeHyperBroker\.handleEnvelope/);
 assert.match(engine, /function setPokemonQueueStreamHealth/);
+assert.match(engine, /function setSolverLucaKey/);
 assert.match(engine, /function publishPokemonQueueProtection/);
 assert.match(engine, /from: String\(p\.from \|\| 'discord-monitor'\)/);
 
@@ -255,8 +256,8 @@ assert.match(store, /products: \[\{ id: 'pc_product_1', input: '', quantity: '1'
 assert.match(createProfile, /Profile Type \*/);
 assert.match(createProfile, /billingSameShipping/);
 assert.match(createProfile, /Billing address is the same as shipping/);
-assert.match(createProfile, /!pokemonCenter && this\.state\.imapProvider/);
-assert.match(profilesPage, /pokemonCenter \? 'POKÉMON CENTER' : 'TARGET'/);
+assert.match(createProfile, /usesMailbox && this\.state\.imapProvider/);
+assert.match(profilesPage, /pokemonCenter \? 'POKÉMON CENTER' : walmart \? 'WALMART' : 'TARGET'/);
 assert.match(page, /profile\.profileType === 'pokemoncenter'/);
 assert.match(taskGroups, /profileListFrom/);
 for (const targetOnly of [targetPage, taskRuntime, accounts, targetLaunch, profileImap]) {

@@ -345,7 +345,7 @@ class Target extends Component {
   profileForAccount = (accountId) => {
     const { accounts = [], profiles = {} } = this.props;
     const list = (profiles.list || profiles.profiles || (Array.isArray(profiles) ? profiles : []))
-      .filter(profile => profile && profile.profileType !== 'pokemoncenter');
+      .filter(profile => profile && profile.profileType !== 'pokemoncenter' && profile.profileType !== 'walmart');
     const acct = accounts.find(a => String(a.id) === String(accountId));
     if (!acct) return null;
     const email = String(acct.email || '').trim().toLowerCase();

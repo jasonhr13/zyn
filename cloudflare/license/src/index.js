@@ -79,6 +79,7 @@ const HYPER_UPSTREAMS = Object.freeze({
 // into D1 on first use, so adding a future module does not require another schema redesign.
 const TASK_TYPE_REGISTRY = Object.freeze([
   { key: 'pokemoncenter', label: 'Pokémon Center' },
+  { key: 'walmart', label: 'Walmart' },
   { key: 'round1', label: 'Round1' },
 ]);
 let taskTypeRegistryEnsured = false;
@@ -361,6 +362,23 @@ function normalizePokemonQueueEvent(message) {
   return null;
 }
 
+function polarLucaApiKeyFromConfig(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return '';
+  for (const key of ['lucaApiKey', 'luca_api_key', 'lucaKey', 'luca']) {
+    const value = String(data[key] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function extractPolarSolverConfig(message) {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  const envelopeType = String(message.type || '').trim().toLowerCase();
+  if (envelopeType !== 'siteconfigs') return null;
+  const lucaApiKey = polarLucaApiKeyFromConfig(pokemonQueueMessageData(message));
+  return lucaApiKey ? { lucaApiKey } : null;
+}
+
 async function pokemonQueueMessageBytes(value) {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
@@ -455,6 +473,7 @@ export class PokemonQueueRelay {
     this.reconnectAttempt = 0;
     this.sequence = 0;
     this.lastQueueDiscordAt = 0;
+    this.lucaApiKey = '';
     this.health = {
       configured: false,
       connected: false,
@@ -496,6 +515,40 @@ export class PokemonQueueRelay {
     }
   }
 
+  solverConfigPayload() {
+    if (!this.lucaApiKey) return null;
+    return { type: 'solver-config', lucaApiKey: this.lucaApiKey };
+  }
+
+  sendSolverConfig(socket) {
+    const payload = this.solverConfigPayload();
+    if (!payload || !socket) return;
+    try { socket.send(JSON.stringify(payload)); } catch {}
+  }
+
+  broadcastSolverConfig() {
+    const payload = this.solverConfigPayload();
+    if (payload) this.broadcast(payload);
+  }
+
+  async loadSolverConfig() {
+    if (this.lucaApiKey) return;
+    try {
+      const stored = await this.state.storage.get('lucaApiKey');
+      const key = String(stored || '').trim();
+      if (key) this.lucaApiKey = key;
+    } catch {}
+  }
+
+  async applySolverConfig(solver) {
+    const next = String(solver && solver.lucaApiKey || '').trim();
+    if (!next || next === this.lucaApiKey) return false;
+    this.lucaApiKey = next;
+    try { await this.state.storage.put('lucaApiKey', next); } catch {}
+    this.broadcastSolverConfig();
+    return true;
+  }
+
   async scheduleAlarm(delay) {
     await this.state.storage.setAlarm(Date.now() + Math.max(1000, Number(delay) || 1000));
   }
@@ -509,8 +562,10 @@ export class PokemonQueueRelay {
       const [client, server] = Object.values(new WebSocketPair());
       this.state.acceptWebSocket(server);
       server.serializeAttachment({ role: 'licensed-client' });
+      await this.loadSolverConfig();
       server.send(JSON.stringify(this.publicHealth()));
-      this.ensureUpstream().catch(() => this.upstreamEnded(this.candidate));
+      this.sendSolverConfig(server);
+      this.ensureUpstream({ replace: !this.lucaApiKey }).catch(() => this.upstreamEnded(this.candidate));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (url.pathname === '/reconfigure' && request.method === 'POST') {
@@ -523,6 +578,7 @@ export class PokemonQueueRelay {
   }
 
   async ensureUpstream({ replace = false } = {}) {
+    await this.loadSolverConfig();
     let licenseKey = '';
     try { licenseKey = await serviceCredentialValue(this.env, POKEMON_QUEUE_SERVICE_NAME); }
     catch {
@@ -591,6 +647,8 @@ export class PokemonQueueRelay {
     const message = await decodePokemonQueueMessage(value);
     if (!message) return;
     this.health.lastMessageAt = Date.now();
+    await this.loadSolverConfig();
+    await this.applySolverConfig(extractPolarSolverConfig(message));
     const event = normalizePokemonQueueEvent(message);
     if (!event) {
       this.broadcast(this.publicHealth());
@@ -652,6 +710,7 @@ export class PokemonQueueRelay {
   }
 
   async alarm() {
+    await this.loadSolverConfig();
     if (!this.needsUpstream()) {
       await this.stopUpstream();
       return;
@@ -1801,8 +1860,8 @@ async function brokerPokemonQueueEvents(request, env, dependencies = {}) {
     return json({ ok: false, code: 'license_invalid', message: 'Sign in again to monitor Pokémon Center.' }, 401);
   }
   const entitlements = await entitlementsFor(env, identity);
-  if (!entitlements.pokemoncenter) {
-    return json({ ok: false, code: 'task_type_denied', message: 'Pokémon Center access is not enabled.' }, 403);
+  if (!entitlements.pokemoncenter && !entitlements.walmart) {
+    return json({ ok: false, code: 'task_type_denied', message: 'Queue event monitoring is not enabled.' }, 403);
   }
   const stub = dependencies.stub || pokemonQueueRelayStub(env);
   if (!stub) {
@@ -3358,6 +3417,7 @@ export const __test = Object.freeze({
   hyperCredentialInput,
   normalizePolarReleaseVersion,
   normalizePokemonQueueEvent,
+  extractPolarSolverConfig,
   notifyPokemonQueueDiscord,
   parsePolarLatestRelease,
   pokemonQueueDiscordPayload,

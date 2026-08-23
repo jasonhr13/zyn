@@ -1385,6 +1385,25 @@ ipcMain.on('stopPokemonCenter', (e, taskId) => {
 ipcMain.on('getPokemonCenterTasks', (e) => { e.returnValue = dm.getPokemonCenterTasks(); });
 ipcMain.on('savePokemonCenterTasks', (e, data) => { e.returnValue = dm.savePokemonCenterTasks(data || {}); });
 
+ipcMain.on('startWalmart', (e, config) => {
+  if (moduleBlocked('walmart')) { refuseModule('Walmart'); e.returnValue = false; return; }
+  if (!licensed()) { refuseUnlicensed('startWalmart'); e.returnValue = false; return; }
+  try { e.returnValue = targetEngine.startWalmart(config || {}, mainWindow) === true; }
+  catch (err) { log.warn('startWalmart:', err.message); e.returnValue = false; }
+});
+ipcMain.on('editWalmart', (e, config) => {
+  if (moduleBlocked('walmart')) { refuseModule('Walmart'); e.returnValue = { ok: false, error: 'Walmart is unavailable.' }; return; }
+  if (!licensed()) { refuseUnlicensed('editWalmart'); e.returnValue = { ok: false, error: 'Zyn is not licensed.' }; return; }
+  try { e.returnValue = targetEngine.editWalmart(config || {}); }
+  catch (err) { log.warn('editWalmart:', err.message); e.returnValue = { ok: false, error: err.message }; }
+});
+ipcMain.on('stopWalmart', (e, taskId) => {
+  try { e.returnValue = targetEngine.stopWalmart(taskId); }
+  catch (err) { log.warn('stopWalmart:', err.message); e.returnValue = false; }
+});
+ipcMain.on('getWalmartTasks', (e) => { e.returnValue = dm.getWalmartTasks(); });
+ipcMain.on('saveWalmartTasks', (e, data) => { e.returnValue = dm.saveWalmartTasks(data || {}); });
+
 // ── Target: compiled Go checkout engine (backend/backend.exe) over a loopback WS ──
 // The engine dials our WebSocket server; target-engine.js hosts it, forwards the
 // task, and relays engine status back to the renderer as targetStatus/targetLog.

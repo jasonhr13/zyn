@@ -11,6 +11,7 @@ import (
 	"zynbot.app/engine/bot-base/imapcode"
 	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/siteconfig"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
@@ -54,7 +55,11 @@ func (t *WalmartTask) HandleTask() {
 					t.NextStep = "get-cart"
 				}
 			case "solve-px":
-				t.UpdateStatus("Solving PX", constants.Colors.BLUE)
+				if siteconfig.LucaAPIKey() == "" {
+					t.UpdateStatus("Waiting for PX key", constants.Colors.BLUE)
+				} else {
+					t.UpdateStatus("Solving PX", constants.Colors.BLUE)
+				}
 				t.SolvePXInit()
 				if t.HandleErrors("solve-px") {
 					break
@@ -342,11 +347,16 @@ func (t *WalmartTask) HandleTask() {
 					t.NextStep = "add-to-cart"
 					break
 				}
+				if t.waitingForInput() {
+					t.UpdateStatus("Waiting for Input", constants.Colors.BLUE)
+					t.SleepTask(200)
+					break
+				}
 				t.AddCookiesToQueue()
 				t.UpdateStatus("Waiting for Restock/Queue", constants.Colors.BLUE)
 				if len(t.matchKeys()) == 0 {
-					t.UpdateStatus("No valid product input", constants.Colors.RED)
-					t.SleepTask(t.ErrorDelay)
+					t.UpdateStatus("Waiting for Input", constants.Colors.BLUE)
+					t.SleepTask(200)
 					break
 				}
 
@@ -358,16 +368,7 @@ func (t *WalmartTask) HandleTask() {
 					break
 				}
 				t.pingAt = ping.At
-				t.UsItemID = ping.ProductKey
-				t.OfferID = ping.OfferId
-				t.Product.Name = ping.Name
-				t.Product.ProductImage = ping.Image
-				t.Product.Price = ping.Price
-				t.Product.Sku = ping.ProductKey
-				t.Product.ProductLink = walmartProductPageURL(ping.ProductKey)
-				if ping.Quantity > 0 && t.Quantity > ping.Quantity {
-					t.Quantity = ping.Quantity
-				}
+				t.applyMatchedPing(ping)
 				t.SendProductNoti(ping.Name, ping.Image)
 				statusLine := fmt.Sprintf("Product Found: %s From: %s", ping.Name, ping.From)
 				t.UpdateStatus(statusLine, constants.Colors.YELLOW)

@@ -7,11 +7,13 @@ const PROTOCOL_VERSION = 1;
 const SITES = Object.freeze({
   TARGET: 'Target',
   POKEMON_CENTER_US: 'Pokemon Center US',
+  WALMART: 'Walmart',
 });
 
 const SITE_KEYS = Object.freeze({
   [SITES.TARGET]: 'target',
   [SITES.POKEMON_CENTER_US]: 'pokemoncenter',
+  [SITES.WALMART]: 'walmart',
 });
 
 const TO_ENGINE = Object.freeze([
@@ -43,6 +45,7 @@ const SITE_ALIASES = new Map([
   ['pokemon-center', SITES.POKEMON_CENTER_US],
   ['pokemon-center-us', SITES.POKEMON_CENTER_US],
   ['pcus', SITES.POKEMON_CENTER_US],
+  ['walmart', SITES.WALMART],
 ]);
 
 function nonEmpty(value, label) {

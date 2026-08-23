@@ -13,7 +13,8 @@ assert.equal(contract.canonicalSite('target'), 'Target');
 assert.equal(contract.canonicalSite('Pokemon Center'), 'Pokemon Center US');
 assert.equal(contract.canonicalSite('pokemon-center-us'), 'Pokemon Center US');
 assert.equal(contract.siteKey('PCUS'), 'pokemoncenter');
-assert.throws(() => contract.canonicalSite('Walmart'), /unsupported native-engine site/);
+assert.equal(contract.canonicalSite('Walmart'), 'Walmart');
+assert.equal(contract.siteKey('walmart'), 'walmart');
 
 const start = contract.normalizeStartTask({
   id: 'pc-1',

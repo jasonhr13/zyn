@@ -12,6 +12,7 @@ import Modules from './pages/modules';
 import TaskGroups from './pages/task-groups';
 import Target from './pages/target';
 import PokemonCenter from './pages/pokemoncenter';
+import Walmart from './pages/walmart';
 import Profiles from './pages/profiles';
 import Accounts from './pages/accounts';
 import Proxies from './pages/proxies';
@@ -105,6 +106,15 @@ class PageHandler extends Component {
     ipcRenderer.on('pokemonDone', (e, { taskId } = {}) => {
       this.props.dispatch({ type: 'pokemonDone', taskId });
     });
+    ipcRenderer.on('walmartLog', (e, { line, lines, taskId } = {}) => {
+      this.props.dispatch({ type: 'walmartLog', line, lines, taskId, at: Date.now() });
+    });
+    ipcRenderer.on('walmartStatus', (e, payload = {}) => {
+      this.props.dispatch({ type: 'walmartStatus', ...payload });
+    });
+    ipcRenderer.on('walmartDone', (e, { taskId, idle } = {}) => {
+      this.props.dispatch({ type: 'walmartDone', taskId, idle });
+    });
 
     // Update status → redux, so the sidebar badge and the Settings "Check for updates" button
     // read one shared source instead of each keeping their own copy.
@@ -133,6 +143,9 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('pokemonStatus');
     ipcRenderer.removeAllListeners('pokemonInput');
     ipcRenderer.removeAllListeners('pokemonDone');
+    ipcRenderer.removeAllListeners('walmartLog');
+    ipcRenderer.removeAllListeners('walmartStatus');
+    ipcRenderer.removeAllListeners('walmartDone');
     ipcRenderer.removeAllListeners('updateStatus');
   }
 
@@ -170,6 +183,8 @@ class PageHandler extends Component {
                 <Route path="/target" component={Target} />
                 <Route path="/pokemoncenter" render={() => license.taskTypes && license.taskTypes.pokemoncenter
                   ? <PokemonCenter /> : <Redirect to="/modules" />} />
+                <Route path="/walmart" render={() => license.taskTypes && license.taskTypes.walmart
+                  ? <Walmart /> : <Redirect to="/modules" />} />
                 <Route path="/profiles" component={Profiles} />
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />

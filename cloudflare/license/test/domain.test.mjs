@@ -548,6 +548,32 @@ test('normalizes only Pokémon Center queue and captcha messages', () => {
   assert.equal(__test.normalizePokemonQueueEvent({ type: 'siteConfigs', data: { secret: true } }), null);
 });
 
+test('extracts only the Polar PX solver key from siteConfigs', () => {
+  assert.deepEqual(__test.extractPolarSolverConfig({
+    type: 'siteConfigs',
+    data: { lucaApiKey: ' luca-from-polar ', hyperApiKey: 'must-not-leave-worker', sites: [{ name: 'Walmart' }] },
+  }), { lucaApiKey: 'luca-from-polar' });
+  assert.deepEqual(__test.extractPolarSolverConfig({
+    type: 'siteConfigs',
+    data: JSON.stringify({ luca_api_key: 'aliased-luca' }),
+  }), { lucaApiKey: 'aliased-luca' });
+  assert.equal(__test.extractPolarSolverConfig({
+    type: 'siteConfigs',
+    data: { hyperApiKey: 'hyper-only', sites: [] },
+  }), null);
+  assert.equal(__test.extractPolarSolverConfig({
+    type: 'cloud-ping',
+    data: { site: 'PokemonCenter', type: 'Queue is up!', lucaApiKey: 'nope' },
+  }), null);
+  const extracted = __test.extractPolarSolverConfig({
+    type: 'siteConfigs',
+    data: { lucaApiKey: 'keep', hyperApiKey: 'drop', licenseKey: 'polar-license' },
+  });
+  assert.deepEqual(Object.keys(extracted), ['lucaApiKey']);
+  assert.equal(JSON.stringify(extracted).includes('polar-license'), false);
+  assert.equal(JSON.stringify(extracted).includes('drop'), false);
+});
+
 test('posts only queue-up events to a valid Discord webhook', async () => {
   const calls = [];
   const env = {
@@ -604,6 +630,39 @@ test('terminates device authentication before the internal queue relay', async (
   assert.equal(internalRequest.headers.get('x-rcart-device-id'), null);
   assert.equal(internalRequest.headers.get('x-extra-client-header'), null);
   assert.deepEqual([...internalRequest.headers.keys()], ['upgrade']);
+});
+
+test('allows Walmart-entitled sessions onto the Polar relay without Pokémon Center', async () => {
+  let called = false;
+  const response = await __test.brokerPokemonQueueEvents(new Request(
+    'https://license.zynbot.app/api/services/pokemon-center/queue-events',
+    { headers: { Upgrade: 'websocket', Authorization: 'Bearer desktop-license' } },
+  ), {}, {
+    authenticate: async () => ({ user_id: 'user-1' }),
+    entitlements: async () => ({ pokemoncenter: false, walmart: true }),
+    stub: {
+      fetch: async () => {
+        called = true;
+        return new Response('upgraded-for-test');
+      },
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(called, true);
+
+  const denied = await __test.brokerPokemonQueueEvents(new Request(
+    'https://license.zynbot.app/api/services/pokemon-center/queue-events',
+    { headers: { Upgrade: 'websocket', Authorization: 'Bearer desktop-license' } },
+  ), {}, {
+    authenticate: async () => ({ user_id: 'user-1' }),
+    entitlements: async () => ({ pokemoncenter: false, walmart: false }),
+    stub: {
+      fetch: async () => { throw new Error('denied clients must not reach the relay'); },
+    },
+  });
+  assert.equal(denied.status, 403);
+  const body = await denied.json();
+  assert.equal(body.code, 'task_type_denied');
 });
 
 function hyperRequest(operation = 'reese84') {

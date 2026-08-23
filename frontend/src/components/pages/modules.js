@@ -16,6 +16,13 @@ const MODULES = [
     description: 'Run profile-based US guest checkout tasks with queue handling and manual captcha solving.',
     taskType: 'pokemoncenter',
   },
+  {
+    path: '/walmart',
+    name: 'Walmart',
+    icon: 'cart',
+    description: 'Account checkout with PX solving, restock waits, and per-SKU queues.',
+    taskType: 'walmart',
+  },
 ];
 
 export default function Modules({ taskTypes = {} }) {

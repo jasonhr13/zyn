@@ -2,7 +2,6 @@ package walmart
 
 import (
 	"log"
-	"strings"
 
 	"zynbot.app/engine/bot-base/accounts"
 	"zynbot.app/engine/bot-base/profiles"
@@ -48,20 +47,11 @@ func StartTask(t sites.TaskInput) {
 	newTask.Account = account
 	newTask.Profile = task.ProfileFromStore(p)
 
-	if len(t.Items) > 0 {
-		item := t.Items[0]
-		raw := strings.TrimSpace(item.MonitorInput)
-		newTask.Quantity = item.Quantity
-		if newTask.Quantity <= 0 {
-			newTask.Quantity = 1
-		}
-		newTask.RawInput = raw
-		if isOfferIDInput(raw) {
-			newTask.OfferID = raw
-		} else {
-			newTask.InputPid = parsePidFromInput(raw)
-		}
+	items := t.Items
+	if len(items) == 0 {
+		items = t.MonitorItems
 	}
+	applyWatchItems(newTask, items)
 
 	task.UserTasks.Set(newTask.BaseTask.ID, newTask, newTask.BaseTask)
 	if !newTask.BaseTask.InitTask("Walmart") {

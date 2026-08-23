@@ -45,7 +45,7 @@ function parseWatchedItems(group) {
 function profileList(profiles) {
   const value = profiles || {};
   return (value.list || value.profiles || (Array.isArray(value) ? value : []))
-    .filter(profile => profile && profile.profileType !== 'pokemoncenter');
+    .filter(profile => profile && profile.profileType !== 'pokemoncenter' && profile.profileType !== 'walmart');
 }
 
 function resolveProfileForTask(task, accounts, profiles) {

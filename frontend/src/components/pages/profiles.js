@@ -393,13 +393,14 @@ class Profiles extends Component {
   };
 
   render() {
-    const { profiles, targetTasks, targetTaskStatus, pokemonTaskStatus } = this.props;
+    const { profiles, targetTasks, targetTaskStatus, pokemonTaskStatus, walmartTasks, walmartTaskStatus } = this.props;
     const {
       showCreate, editProfile, duplicateInitial, selected, query, groups, activeGroup,
     } = this.state;
     const usedProfileIds = new Set([
       ...activeTaskProfileIds(targetTasks, targetTaskStatus),
       ...activeTaskProfileIds(this.props.pokemonTasks, pokemonTaskStatus),
+      ...activeTaskProfileIds(walmartTasks, walmartTaskStatus),
     ]);
 
     const scopedProfiles = activeGroup === ALL_PROFILES
@@ -620,6 +621,7 @@ class Profiles extends Component {
                   const cardNumber = profile.payment?.cardNumber || profile.cardNumber || '';
                   const isSelected = selected.includes(profile.id);
                   const pokemonCenter = profile.profileType === 'pokemoncenter';
+                  const walmart = profile.profileType === 'walmart';
                   return (
                     <div
                       className={`profile-row${isSelected ? ' selected' : ''}`}
@@ -633,8 +635,8 @@ class Profiles extends Component {
                       <div className="profile-row-cell profile-row-identity">
                         <div>
                           <strong>{profile.profileName || `${name} ${last}` || '(unnamed)'}</strong>
-                          <span className={`profile-site-badge${pokemonCenter ? ' pokemon' : ''}`}>
-                            {pokemonCenter ? 'POKÉMON CENTER' : 'TARGET'}
+                          <span className={`profile-site-badge${pokemonCenter ? ' pokemon' : walmart ? ' walmart' : ''}`}>
+                            {pokemonCenter ? 'POKÉMON CENTER' : walmart ? 'WALMART' : 'TARGET'}
                           </span>
                           {usedProfileIds.has(String(profile.id)) && <span className="profile-use-badge">IN USE</span>}
                         </div>
@@ -710,4 +712,6 @@ export default connect(state => ({
   targetTaskStatus: (state.target && state.target.taskStatus) || {},
   pokemonTasks: (state.pokemon && state.pokemon.tasks) || [],
   pokemonTaskStatus: (state.pokemon && state.pokemon.taskStatus) || {},
+  walmartTasks: (state.walmart && state.walmart.tasks) || [],
+  walmartTaskStatus: (state.walmart && state.walmart.taskStatus) || {},
 }))(Profiles);

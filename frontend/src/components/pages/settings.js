@@ -125,7 +125,7 @@ class Settings extends Component {
       targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '', targetHarvestDataDir: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
-      licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, proxyAccess: false, managedProxyCount: 0,
+      licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -170,6 +170,7 @@ class Settings extends Component {
       licenseEmail: status.email || '',
       licenseOffline: status.offline === true,
       pokemonCenterAccess: !!(status.taskTypes && status.taskTypes.pokemoncenter),
+      walmartAccess: !!(status.taskTypes && status.taskTypes.walmart),
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
       billingPlan: String(status.billingPlan || ''),
@@ -606,7 +607,7 @@ class Settings extends Component {
       targetHarvestDataDir,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
-      licenseEmail, licenseOffline, pokemonCenterAccess, proxyAccess, managedProxyCount,
+      licenseEmail, licenseOffline, pokemonCenterAccess, walmartAccess, proxyAccess, managedProxyCount,
       billingStatus, accessUntil, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -676,6 +677,10 @@ class Settings extends Component {
               <span>Pokémon Center</span>
               <strong className={pokemonCenterAccess ? 'enabled' : 'disabled'}>
                 {pokemonCenterAccess ? 'Enabled' : 'Not included'}
+              </strong>
+              <span>Walmart</span>
+              <strong className={walmartAccess ? 'enabled' : 'disabled'}>
+                {walmartAccess ? 'Enabled' : 'Not included'}
               </strong>
               <span>Managed proxies</span><strong className={proxyAccess ? 'enabled' : 'disabled'}>
                 {proxyAccess ? `${managedProxyCount} list${managedProxyCount === 1 ? '' : 's'}` : 'Not included'}

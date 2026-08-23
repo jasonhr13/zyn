@@ -57,6 +57,25 @@ function savePokemonCenterTasks(data) {
   return next;
 }
 
+function getWalmartTasks() {
+  return readJSON('walmart-tasks.json', {
+    products: [{ id: 'wm_product_1', input: '', quantity: '1', maxPrice: '' }], tasks: [],
+    monitorDelay: '3000', retryDelay: '3000', endless: false, setupOpen: true,
+  });
+}
+
+function saveWalmartTasks(data) {
+  const current = getWalmartTasks();
+  const next = {
+    ...current,
+    ...(data && typeof data === 'object' ? data : {}),
+    products: Array.isArray(data && data.products) ? data.products : current.products,
+    tasks: Array.isArray(data && data.tasks) ? data.tasks : current.tasks,
+  };
+  writeJSON('walmart-tasks.json', next);
+  return next;
+}
+
 // ── Target tasks ───────────────────────────────────────────────────────────────
 // Kept in their OWN file rather than sharing tasks.json: Secret Lair tasks carry a productUrl and
 // profileIds, Target tasks carry an accountId and resolve their profile by email at launch. Mixing
@@ -112,11 +131,52 @@ function recordTargetOrder(accountId, tcin, ts = Date.now()) {
 // ── Profiles ───────────────────────────────────────────────────────────────────
 function getProfiles() { return readJSON('profiles.json', []); }
 
+function accountSiteOf(account) {
+  return String((account && account.site) || '').trim().toLowerCase() || 'target';
+}
+
+function profileTypeOf(profile) {
+  return String((profile && profile.profileType) || 'target').trim().toLowerCase() || 'target';
+}
+
+function profileTypeForAccountSite(site) {
+  const tag = String(site || '').trim().toLowerCase();
+  if (tag === 'walmart' || tag === 'pokemoncenter') return tag;
+  return 'target';
+}
+
+function matchingProfileForAccount(profiles, email, site) {
+  const want = String(email || '').trim().toLowerCase();
+  if (!want || !Array.isArray(profiles)) return null;
+  const type = profileTypeForAccountSite(site);
+  const sameEmail = profiles.filter(profile => String(profile && profile.email || '').trim().toLowerCase() === want);
+  return sameEmail.find(profile => profileTypeOf(profile) === type)
+    || (type === 'walmart' ? sameEmail.find(profile => profileTypeOf(profile) === 'target') : null)
+    || null;
+}
+
+function linkAccountsToProfile(profile) {
+  const email = String((profile && profile.email) || '').trim().toLowerCase();
+  const type = profileTypeOf(profile);
+  if (!email || type === 'pokemoncenter') return;
+  const accounts = getAccountsRaw();
+  let changed = false;
+  for (const account of accounts) {
+    if (account.profileId) continue;
+    if (String(account.email || '').trim().toLowerCase() !== email) continue;
+    if (accountSiteOf(account) !== type) continue;
+    account.profileId = profile.id;
+    changed = true;
+  }
+  if (changed) writeJSON('accounts.json', accounts);
+}
+
 function createProfile(data) {
   const profiles = getProfiles();
   const profile = { id: uuidv4(), ...data };
   profiles.push(profile);
   writeJSON('profiles.json', profiles);
+  linkAccountsToProfile(profile);
   return profile;
 }
 
@@ -132,7 +192,10 @@ function createProfilesBulk(list) {
     profiles.push(profile);
     created.push(profile);
   }
-  if (created.length) writeJSON('profiles.json', profiles);
+  if (created.length) {
+    writeJSON('profiles.json', profiles);
+    created.forEach(linkAccountsToProfile);
+  }
   return created;
 }
 
@@ -392,9 +455,7 @@ function addAccountsBulk(raw, site = '') {
     const existing = accounts.find(a =>
       (a.email || '').toLowerCase() === wantEmail && (site ? (a.site || '') === site : true));
     if (existing) { existing.password = encryptSecret(pw); updated++; continue; }
-    const profileSite = site === 'target' ? site : '';
-    const match = profiles.find(p => (p.email || '').toLowerCase() === email.toLowerCase()
-      && (!profileSite || String(p.profileType || 'target').toLowerCase() === profileSite));
+    const match = matchingProfileForAccount(profiles, email, site);
     accounts.push({ id: uuidv4(), email, password: encryptSecret(pw), profileId: match ? match.id : null, createdAt: now, source: 'manual', site });
     added++;
   }
@@ -442,9 +503,7 @@ function addGeneratedAccount({ email, password, site = '' }) {
     return existing;
   }
   const profiles = getProfiles();
-  const profileSite = site === 'target' ? site : '';
-  const match = profiles.find(p => (p.email || '').toLowerCase() === (email || '').toLowerCase()
-    && (!profileSite || String(p.profileType || 'target').toLowerCase() === profileSite));
+  const match = matchingProfileForAccount(profiles, email, site);
   const acct = { id: uuidv4(), email, password: encryptSecret(password), profileId: match ? match.id : null, createdAt: Date.now(), source: 'generated', site };
   accounts.push(acct);
   writeJSON('accounts.json', accounts);
@@ -648,6 +707,7 @@ function importAll(bundle, mode = 'merge') {
 module.exports = {
   getTasks, createTask, updateTask, deleteTask,
   getPokemonCenterTasks, savePokemonCenterTasks,
+  getWalmartTasks, saveWalmartTasks,
   getTargetTasks, saveTargetTasks,
   targetOrderLimitReached, recordTargetOrder, recentTargetOrders,
   ORDER_LIMIT_WINDOW_MS, ORDER_LIMIT_MAX,

@@ -7,7 +7,7 @@ export const EMPTY_OUTCOME = Object.freeze({});
 export function profileListFrom(profiles) {
   const value = profiles || [];
   return (value.list || value.profiles || (Array.isArray(value) ? value : []))
-    .filter(profile => profile && profile.profileType !== 'pokemoncenter');
+    .filter(profile => profile && profile.profileType !== 'pokemoncenter' && profile.profileType !== 'walmart');
 }
 
 export function accountForTask(accounts, task) {

@@ -9,13 +9,20 @@ import (
 )
 
 func (t *WalmartTask) matchKeys() []string {
+	seen := make(map[string]bool)
 	var keys []string
-	if t.InputPid != "" {
-		keys = append(keys, t.InputPid)
+	add := func(key string) {
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		keys = append(keys, key)
 	}
-	if t.UsItemID != "" && t.UsItemID != t.InputPid {
-		keys = append(keys, t.UsItemID)
+	for _, item := range t.WatchItems {
+		add(item.Pid)
 	}
+	add(t.InputPid)
+	add(t.UsItemID)
 	return keys
 }
 
@@ -32,6 +39,14 @@ func (t *WalmartTask) waitForStockPing() (monitorhub.StockPing, bool) {
 		})
 		keys := t.matchKeys()
 		if len(keys) == 0 {
+			if t.waitingForInput() {
+				select {
+				case <-poll.C:
+					continue
+				case <-t.TaskContext.CTX.Done():
+					return monitorhub.StockPing{}, false
+				}
+			}
 			return monitorhub.StockPing{}, false
 		}
 		if ping, ok := monitorhub.Default.Match("Walmart", keys, since); ok && acceptsWalmartPing(ping, keys, since) {

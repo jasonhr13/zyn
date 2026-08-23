@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.24",
+  "notes": [
+    "Walmart tasks use one task per account with a Target-style layout.",
+    "Placeholder SKUs let Walmart tasks log in and wait until you apply real SKUs.",
+    "Apply SKUs to every waiting Walmart task at once from the task screen.",
+    "Walmart profiles and accounts stay linked, including IMAP for one-time codes.",
+    "Stopping a Walmart task returns its status to Idle."
+  ]
+}

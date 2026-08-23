@@ -126,7 +126,7 @@ const silentLogger = { warn() {} };
     assert.equal(signedIn.managedProxyCount, 3);
     assert.equal(signedIn.userId, undefined, 'stable account identifier leaked to renderer status');
     assert.equal(authority.backupAccountId(), accountId);
-    assert.deepEqual(signedIn.taskTypes, { pokemoncenter: true, round1: false });
+    assert.deepEqual(signedIn.taskTypes, { pokemoncenter: true, walmart: false, round1: false });
     assert.equal(signedIn.billingPlan, 'zyn-standard');
     assert.equal(signedIn.billingStatus, 'trialing');
     assert.equal(signedIn.accessUntil, now + 60 * 24 * 60 * 60 * 1000);
@@ -171,11 +171,11 @@ const silentLogger = { warn() {} };
     const refreshed = await authority.validate();
     assert.equal(calls.find(call => call.method === 'validate').revision, proxyRevision);
     assert.equal(managedEvents.some(result => JSON.stringify(result.managedProxyLists || []).includes('proxy-secret')), true);
-    assert.deepEqual(refreshed.taskTypes, { pokemoncenter: false, round1: true });
+    assert.deepEqual(refreshed.taskTypes, { pokemoncenter: false, walmart: false, round1: true });
     assert.deepEqual(entitlementChanges, [{
       removed: ['pokemoncenter'],
-      previous: { pokemoncenter: true, round1: false },
-      next: { pokemoncenter: false, round1: true },
+      previous: { pokemoncenter: true, walmart: false, round1: false },
+      next: { pokemoncenter: false, walmart: false, round1: true },
     }]);
     const deniedHyper = await authority.hyper('reese84', {});
     assert.equal(deniedHyper.status, 403);

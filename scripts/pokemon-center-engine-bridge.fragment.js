@@ -6,6 +6,7 @@ const pendingPokemonStarts = [];
 let pokemonStartSeq = 0;
 let pokemonQueueStreamHealth = { configured: false, connected: false, connecting: false };
 let pokemonQueueStreamLogKey = '';
+let solverLucaApiKey = '';
 
 function pokemonStatus(state, color, detail, taskId, taskState, running) {
   state = zynBrandText(state);
@@ -89,6 +90,13 @@ function setPokemonQueueStreamHealth(next = {}) {
   if (line === pokemonQueueStreamLogKey) return;
   pokemonQueueStreamLogKey = line;
   for (const id of pokemonTaskIds) pokemonLog(line, id);
+}
+
+function setSolverLucaKey(key = '') {
+  const next = String(key || '').trim();
+  if (next === solverLucaApiKey) return;
+  solverLucaApiKey = next;
+  if (solverLucaApiKey) sendConfigs();
 }
 
 function publishPokemonQueueProtection(event = {}) {

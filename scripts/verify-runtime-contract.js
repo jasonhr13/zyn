@@ -290,6 +290,12 @@ check('Zyn runtime branding', () => {
     'packaged Pokémon Center bridge omits normalized push events');
   assert.match(targetEngine, /function setPokemonQueueStreamHealth/,
     'packaged Pokémon Center bridge omits push-stream health logs');
+  assert.match(targetEngine, /function setSolverLucaKey/,
+    'packaged engine bridge omits Cloudflare solver-key delivery');
+  assert.match(targetEngine, /lucaApiKey: solverLucaApiKey/,
+    'packaged engine bridge does not inject the Cloudflare Luca key');
+  assert.doesNotMatch(targetEngine, /polar-wss-production/,
+    'packaged engine bridge dials Polar instead of using the Cloudflare relay');
   assert.match(targetEngine, /loopCheckout: \(t\.loopCheckout != null/,
     'packaged Target bridge drops the loop-checkout contract flag');
   assert.match(targetEngine, /endless: \(t\.loopCheckout != null/,
@@ -322,6 +328,10 @@ check('Zyn runtime branding', () => {
     'packaged native-engine contract omits Pokemon Center US');
   assert.match(queueEvents, /authority\.openPokemonQueueEvents/,
     'packaged queue event client bypasses the license authority');
+  assert.match(queueEvents, /onSolverConfig/,
+    'packaged queue event client drops Cloudflare solver-config');
+  assert.match(queueEvents, /taskTypes\.walmart === true/,
+    'packaged queue event client ignores Walmart entitlement');
   assert.doesNotMatch(queueEvents, /polar-wss-production|licenseKey|siteConfigs/,
     'packaged queue event client contains upstream secrets or unrelated cloud handling');
   for (const { name, source } of userWebhookBots) {

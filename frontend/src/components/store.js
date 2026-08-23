@@ -108,6 +108,16 @@ const defaultState = {
     queueEntryDelay: '0',
     allInstock: false,
   },
+  walmart: {
+    products: [{ id: 'wm_product_1', input: 'placeholder', quantity: '1', maxPrice: '' }],
+    tasks: [],
+    taskStatus: {},
+    taskLogs: {},
+    logs: [],
+    monitorDelay: '3000',
+    retryDelay: '3000',
+    endless: false,
+  },
   // Target: one compiled Go engine instance driving MANY checkout tasks plus a single shared
   // monitor. Lives in the store (not page state) for the same reason as pokemon above — the page
   // unmounts on a tab switch, but the engine keeps running and its status/log events must survive
@@ -298,6 +308,60 @@ export function reducer(state = defaultState, action) {
       if (!action.taskId) return state;
       const taskStatus = { ...state.pokemon.taskStatus }; delete taskStatus[action.taskId];
       return { ...state, pokemon: { ...state.pokemon, taskStatus } };
+    }
+
+    case 'walmartSet':
+      return { ...state, walmart: { ...state.walmart, ...action.obj } };
+
+    case 'walmartTasksAdd':
+      return { ...state, walmart: { ...state.walmart,
+        tasks: [...state.walmart.tasks, ...(action.tasks || [])] } };
+
+    case 'walmartTaskDelete': {
+      const taskStatus = { ...state.walmart.taskStatus }; delete taskStatus[action.id];
+      const taskLogs = { ...state.walmart.taskLogs }; delete taskLogs[action.id];
+      return { ...state, walmart: { ...state.walmart,
+        tasks: state.walmart.tasks.filter(task => task.id !== action.id), taskStatus, taskLogs } };
+    }
+
+    case 'walmartLaunch': {
+      const ids = action.taskIds || [];
+      const taskStatus = { ...state.walmart.taskStatus };
+      for (const id of ids) taskStatus[id] = { state: 'Starting', label: 'Starting', color: '#868686', detail: '', running: true };
+      return { ...state, walmart: { ...state.walmart, taskStatus } };
+    }
+
+    case 'walmartLog': {
+      const incoming = Array.isArray(action.lines) ? action.lines : (action.line != null ? [action.line] : []);
+      if (!incoming.length) return state;
+      const timestamped = timestampLogLines(incoming, action.at);
+      const logs = [...(state.walmart.logs || []), ...timestamped].slice(-800);
+      if (!action.taskId) return { ...state, walmart: { ...state.walmart, logs } };
+      const previous = state.walmart.taskLogs[action.taskId] || [];
+      return { ...state, walmart: { ...state.walmart, logs, taskLogs: { ...state.walmart.taskLogs,
+        [action.taskId]: [...previous, ...timestamped].slice(-400) } } };
+    }
+
+    case 'walmartStatus': {
+      if (!action.taskId) return state;
+      const previous = state.walmart.taskStatus[action.taskId] || {};
+      return { ...state, walmart: { ...state.walmart, taskStatus: { ...state.walmart.taskStatus,
+        [action.taskId]: {
+          ...previous, state: action.state, label: action.label || action.state,
+          color: action.color || '#6DACFF', detail: action.detail || '',
+          taskState: action.taskState === undefined ? previous.taskState : action.taskState,
+          running: action.running === undefined ? previous.running : action.running,
+        } } } };
+    }
+
+    case 'walmartDone': {
+      if (!action.taskId) return state;
+      const previous = state.walmart.taskStatus[action.taskId] || {};
+      const next = action.idle
+        ? { state: 'Idle', label: 'Idle', color: '#6b7280', detail: '', running: false }
+        : { ...previous, running: false };
+      return { ...state, walmart: { ...state.walmart, taskStatus: { ...state.walmart.taskStatus,
+        [action.taskId]: next } } };
     }
 
     // ── Target ────────────────────────────────────────────────────────────────

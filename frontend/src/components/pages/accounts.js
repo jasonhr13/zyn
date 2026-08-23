@@ -8,6 +8,11 @@ const { ipcRenderer } = window.require('electron');
 const ALL_ACCOUNTS = '__all_accounts__';
 const UNGROUPED_ACCOUNTS = '__ungrouped_accounts__';
 const isTargetAccount = account => String((account && account.site) || '').trim().toLowerCase() === 'target';
+const accountSiteOf = account => String((account && account.site) || '').trim().toLowerCase() || 'target';
+const SITE_TABS = [
+  { id: 'target', label: 'Target' },
+  { id: 'walmart', label: 'Walmart' },
+];
 
 function accountGroups(account) {
   const groups = [
@@ -54,16 +59,28 @@ class Accounts extends Component {
       renamingGroup: false,
       renameGroupName: '',
       generating: false,
+      accountSite: saved.accountSite === 'walmart' ? 'walmart' : 'target',
+      walmartAccess: false,
     };
   })();
 
   componentDidMount() {
+    this.refresh();
     this.refreshGroups();
+    try {
+      ipcRenderer.invoke('licenseStatus').then(status => {
+        const walmartAccess = !!(status && status.taskTypes && status.taskTypes.walmart);
+        this.setState(previous => ({
+          walmartAccess,
+          accountSite: walmartAccess ? previous.accountSite : 'target',
+        }), () => this.refreshGroups());
+      }).catch(() => {});
+    } catch {}
   }
 
   componentDidUpdate(previousProps, previousState) {
     if (previousProps.accounts !== this.props.accounts) {
-      const ids = new Set(this.targetAccounts().map(account => String(account.id)));
+      const ids = new Set(this.visibleAccounts().map(account => String(account.id)));
       const selected = this.state.selected.filter(id => ids.has(String(id)));
       if (selected.length !== this.state.selected.length) {
         this.setState({ selected });
@@ -72,11 +89,14 @@ class Accounts extends Component {
     }
     if (previousState.activeGroup === this.state.activeGroup
         && previousState.query === this.state.query
-        && previousState.selected === this.state.selected) return;
+        && previousState.selected === this.state.selected
+        && previousState.accountSite === this.state.accountSite) return;
     writeWorkspaceSelection(ACCOUNTS_WORKSPACE_KEY, this.state);
   }
 
   targetAccounts = () => (this.props.accounts || []).filter(isTargetAccount);
+  visibleAccounts = () => (this.props.accounts || []).filter(account => accountSiteOf(account) === this.state.accountSite);
+  siteLabel = () => (this.state.accountSite === 'walmart' ? 'Walmart' : 'Target');
   isCustomGroup = (group = this.state.activeGroup) => Boolean(group
     && group !== ALL_ACCOUNTS && group !== UNGROUPED_ACCOUNTS);
 
@@ -89,7 +109,7 @@ class Accounts extends Component {
   refreshGroups = (preferred = '') => {
     let groups = [];
     try { groups = ipcRenderer.sendSync('getAccountGroups') || []; } catch {}
-    if (!groups.length) groups = this.targetAccounts().flatMap(accountGroups);
+    if (!groups.length) groups = this.visibleAccounts().flatMap(accountGroups);
     groups = uniqueGroups(groups);
     this.setState(previous => {
       let activeGroup = preferred || previous.activeGroup || ALL_ACCOUNTS;
@@ -142,11 +162,11 @@ class Accounts extends Component {
   add = () => {
     const { raw } = this.state;
     if (!raw.trim()) return;
-    const result = ipcRenderer.sendSync('addAccountsBulk', { raw, site: 'target' }) || {};
+    const result = ipcRenderer.sendSync('addAccountsBulk', { raw, site: this.state.accountSite || 'target' }) || {};
     let accounts = this.refresh();
     if (this.isCustomGroup()) {
       const emails = new Set(raw.split('\n').map(line => String(line || '').trim().split(':')[0].trim().toLowerCase()).filter(Boolean));
-      const ids = accounts.filter(account => isTargetAccount(account)
+      const ids = accounts.filter(account => accountSiteOf(account) === this.state.accountSite
         && emails.has(String(account.email || '').trim().toLowerCase())).map(account => account.id);
       if (ids.length) ipcRenderer.sendSync('addAccountsToGroup', { ids, group: this.state.activeGroup });
       accounts = this.refresh();
@@ -168,7 +188,7 @@ class Accounts extends Component {
 
   deleteSelected = () => {
     const ids = this.state.selected;
-    if (!ids.length || !window.confirm(`Delete ${ids.length} selected Target account${ids.length === 1 ? '' : 's'}? Tasks using them will need another account.`)) return;
+    if (!ids.length || !window.confirm(`Delete ${ids.length} selected ${this.siteLabel()} account${ids.length === 1 ? '' : 's'}? Tasks using them will need another account.`)) return;
     ids.forEach(id => ipcRenderer.sendSync('deleteAccount', id));
     this.refresh();
     this.setState({ selected: [], note: `Deleted ${ids.length} account${ids.length === 1 ? '' : 's'}.` },
@@ -189,7 +209,7 @@ class Accounts extends Component {
   saveEdit = () => {
     const { editingId, editPassword } = this.state;
     const email = String(this.state.editEmail || '').trim();
-    const accounts = this.targetAccounts();
+    const accounts = this.visibleAccounts();
     const current = accounts.find(account => account.id === editingId);
     if (!current || !email || !email.includes('@')) {
       this.setState({ editError: 'Enter a valid email address.' });
@@ -197,7 +217,7 @@ class Accounts extends Component {
     }
     if (accounts.some(account => account.id !== editingId
       && String(account.email || '').trim().toLowerCase() === email.toLowerCase())) {
-      this.setState({ editError: 'That Target account already exists.' });
+      this.setState({ editError: `That ${this.siteLabel()} account already exists.` });
       return;
     }
 
@@ -207,7 +227,9 @@ class Accounts extends Component {
     if (passwordChanged) data.password = editPassword;
     if (emailChanged) {
       const matchingProfile = (this.props.profiles || [])
-        .filter(profile => profile && profile.profileType !== 'pokemoncenter')
+        .filter(profile => profile && profile.profileType !== 'pokemoncenter'
+          && (this.state.accountSite === 'walmart' ? profile.profileType === 'walmart' || profile.profileType === 'target' || !profile.profileType
+            : profile.profileType !== 'walmart'))
         .find(profile => String(profile.email || '').trim().toLowerCase() === email.toLowerCase());
       data.profileId = matchingProfile ? matchingProfile.id : null;
     }
@@ -221,7 +243,7 @@ class Accounts extends Component {
   };
 
   copyAll = () => {
-    const accounts = this.targetAccounts();
+    const accounts = this.visibleAccounts();
     if (!accounts.length) return;
     navigator.clipboard.writeText(accounts.map(account => account.email).join('\n'))
       .then(() => this.setState({ note: `Copied ${accounts.length} email${accounts.length === 1 ? '' : 's'}.` }))
@@ -268,9 +290,17 @@ class Accounts extends Component {
   };
 
   matchedProfile = account => {
-    const profiles = (this.props.profiles || []).filter(profile => profile && profile.profileType !== 'pokemoncenter');
-    if (account.profileId) return profiles.find(profile => profile.id === account.profileId) || null;
-    return profiles.find(profile => String(profile.email || '').toLowerCase() === String(account.email || '').toLowerCase()) || null;
+    const profiles = this.props.profiles || [];
+    if (account.profileId) {
+      const linked = profiles.find(profile => profile && profile.id === account.profileId);
+      if (linked) return linked;
+    }
+    const site = accountSiteOf(account);
+    return profiles.find(profile => profile
+      && String(profile.email || '').trim().toLowerCase() === String(account.email || '').trim().toLowerCase()
+      && (site === 'walmart'
+        ? profile.profileType === 'walmart' || profile.profileType === 'target' || !profile.profileType
+        : profile.profileType !== 'pokemoncenter' && profile.profileType !== 'walmart')) || null;
   };
 
   renderGroupItem = (group, count, icon = 'folder') => {
@@ -291,13 +321,17 @@ class Accounts extends Component {
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.setState({ adding: false, raw: '' })}>
         <div className="modal account-add-modal" onMouseDown={event => event.stopPropagation()}>
           <div className="modal-header">
-            <div><div className="modal-title">Add Target Accounts</div><p>Paste one email and password per line. Saved credentials are encrypted immediately.</p></div>
+            <div><div className="modal-title">Add {this.siteLabel()} Accounts</div><p>Paste one email and password per line. Saved credentials are encrypted immediately.</p></div>
             <button className="modal-close" onClick={() => this.setState({ adding: false, raw: '' })}>×</button>
           </div>
           <div className="modal-body account-add-modal-body">
             <div className="form-group">
               <label className="form-label">Site</label>
-              <select className="form-select" value="target" disabled aria-label="Account site"><option value="target">Target</option></select>
+              <select className="form-select" value={this.state.accountSite} aria-label="Account site"
+                onChange={event => this.setState({ accountSite: event.target.value })}>
+                <option value="target">Target</option>
+                {this.state.walmartAccess && <option value="walmart">Walmart</option>}
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">Accounts</label>
@@ -325,7 +359,7 @@ class Accounts extends Component {
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeEdit()}>
         <div className="modal" style={{ maxWidth: 480 }} onMouseDown={event => event.stopPropagation()}>
           <div className="modal-header">
-            <div><div className="modal-title">Edit Target Account</div><p>Update the login without deleting tasks that use this account.</p></div>
+            <div><div className="modal-title">Edit {this.siteLabel()} Account</div><p>Update the login without deleting tasks that use this account.</p></div>
             <button className="modal-close" onClick={this.closeEdit}>×</button>
           </div>
           <div className="modal-body">
@@ -355,7 +389,7 @@ class Accounts extends Component {
 
   render() {
     const { groups, activeGroup, selected, query } = this.state;
-    const accounts = this.targetAccounts();
+    const accounts = this.visibleAccounts();
     const scoped = activeGroup === ALL_ACCOUNTS
       ? accounts
       : activeGroup === UNGROUPED_ACCOUNTS
@@ -373,13 +407,35 @@ class Accounts extends Component {
     const ungroupedCount = accounts.filter(account => accountGroups(account).length === 0).length;
     const activeLabel = activeGroup === ALL_ACCOUNTS ? 'All Accounts'
       : activeGroup === UNGROUPED_ACCOUNTS ? 'Ungrouped' : activeGroup;
-    const description = this.isCustomGroup() ? `${scoped.length} Target account${scoped.length === 1 ? '' : 's'} in this group`
-      : activeGroup === ALL_ACCOUNTS ? 'Every saved Target login' : 'Target accounts waiting to be organized';
+    const description = this.isCustomGroup() ? `${scoped.length} ${this.siteLabel()} account${scoped.length === 1 ? '' : 's'} in this group`
+      : activeGroup === ALL_ACCOUNTS ? `Every saved ${this.siteLabel()} login` : `${this.siteLabel()} accounts waiting to be organized`;
 
     return (
       <div className="profiles-workspace accounts-workspace">
         <div className="page-header profiles-page-header">
           <div className="page-title"><span className="page-title-dot" /> Accounts <span className="profiles-total-count">— {accounts.length}</span></div>
+          {this.state.walmartAccess && (
+            <div className="account-site-picker" role="tablist" aria-label="Account site">
+              {SITE_TABS.map(tab => {
+                const count = (this.props.accounts || []).filter(account => accountSiteOf(account) === tab.id).length;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    className={this.state.accountSite === tab.id ? 'selected' : ''}
+                    aria-selected={this.state.accountSite === tab.id}
+                    onClick={() => this.setState({ accountSite: tab.id, selected: [], query: '' }, () => this.refreshGroups())}
+                  >
+                    <span>
+                      <strong>{tab.label}</strong>
+                      <small>{count} account{count === 1 ? '' : 's'}</small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {this.state.note && (
@@ -412,7 +468,7 @@ class Accounts extends Component {
               {this.renderGroupItem(ALL_ACCOUNTS, accounts.length, 'people')}
               <div className="profile-group-nav-label">Groups</div>
               {groups.length ? groups.map(group => this.renderGroupItem(group, accounts.filter(account => inAccountGroup(account, group)).length)) : (
-                <div className="profile-group-sidebar-empty"><i className="ion-md-folder-open" /><span>No groups yet</span><small>Create one to organize Target logins.</small></div>
+                <div className="profile-group-sidebar-empty"><i className="ion-md-folder-open" /><span>No groups yet</span><small>Create one to organize {this.siteLabel()} logins.</small></div>
               )}
               <div className="profile-group-nav-label profile-group-nav-label-secondary">Needs organization</div>
               {this.renderGroupItem(UNGROUPED_ACCOUNTS, ungroupedCount, 'person')}
@@ -444,7 +500,7 @@ class Accounts extends Component {
                 )}
                 <div className="profile-search-field"><i className="ion-md-search" /><input className="form-input" value={query}
                   placeholder={`Search ${activeLabel.toLowerCase()}…`} onChange={event => this.setState({ query: event.target.value })} /></div>
-                <button className="btn btn-secondary btn-sm" disabled={!accounts.length} title="Copy every Target email" onClick={this.copyAll}>
+                <button className="btn btn-secondary btn-sm" disabled={!accounts.length} title={`Copy every ${this.siteLabel()} email`} onClick={this.copyAll}>
                   <i className="ion-md-copy" /> Copy All
                 </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ generating: true, note: '' })}>
@@ -509,12 +565,12 @@ class Accounts extends Component {
                   );
                 }) : (
                   <div className="profile-table-empty"><span><i className={terms.length ? 'ion-md-search' : 'ion-md-person'} /></span>
-                    <h3>{terms.length ? 'No matching accounts' : this.isCustomGroup() ? `${activeGroup} is empty` : 'No Target accounts here'}</h3>
+                    <h3>{terms.length ? 'No matching accounts' : this.isCustomGroup() ? `${activeGroup} is empty` : `No ${this.siteLabel()} accounts here`}</h3>
                     <p>{terms.length ? 'Try a different email, profile, or group.' : this.isCustomGroup()
                       ? 'Add accounts here or select saved accounts and assign them to this group.'
-                      : 'Paste email:password accounts to add Target logins.'}</p>
+                      : `Paste email:password accounts to add ${this.siteLabel()} logins.`}</p>
                     {!terms.length && <div className="account-empty-actions">
-                      <button className="btn btn-primary btn-sm" onClick={() => this.setState({ generating: true })}><i className="ion-md-flash" /> Generate Accounts</button>
+                      {this.state.accountSite === 'target' && <button className="btn btn-primary btn-sm" onClick={() => this.setState({ generating: true })}><i className="ion-md-flash" /> Generate Accounts</button>}
                       <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ adding: true })}><i className="ion-md-add" /> Add Existing</button>
                     </div>}
                   </div>
@@ -526,7 +582,7 @@ class Accounts extends Component {
 
         {this.renderAddModal()}
         {this.renderEditModal()}
-        {this.state.generating && <TargetAccountGenerator
+        {this.state.generating && this.state.accountSite === 'target' && <TargetAccountGenerator
           accountGroup={this.isCustomGroup() ? activeGroup : ''}
           onClose={() => this.setState({ generating: false })}
           onAccountsChanged={() => { this.refresh(); this.refreshGroups(activeGroup); }}

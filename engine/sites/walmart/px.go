@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	parallaxsdk "github.com/ParallaxAPIs/parallaxapis-sdk-go"
 	"zynbot.app/engine/bot-base/proxy"
@@ -59,7 +60,7 @@ func (t *WalmartTask) SolvePXInit() {
 		return
 	}
 
-	key := siteconfig.LucaAPIKey()
+	key := siteconfig.WaitForLucaAPIKey(15 * time.Second)
 	if key == "" {
 		t.Error = fmt.Errorf("px solver key not configured")
 		return
@@ -103,7 +104,7 @@ func (t *WalmartTask) SolvePXHoldCaptcha() {
 		return
 	}
 
-	key := siteconfig.LucaAPIKey()
+	key := siteconfig.WaitForLucaAPIKey(15 * time.Second)
 	if key == "" {
 		t.Error = fmt.Errorf("px solver key not configured")
 		return

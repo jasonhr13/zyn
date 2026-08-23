@@ -43,15 +43,25 @@ type WalmartTask struct {
 	QueuePassed       bool
 	pingAt            time.Time
 
-	InputPid string
-	RawInput string
-	Quantity int
+	InputPid   string
+	RawInput   string
+	Quantity   int
+	WatchItems []WatchItem
 
 	NoSMSLinked     bool
 	NeedsStepUp     bool
 	SetCardAttempts int
 	emailCodeWaiter *imapcode.Waiter
 	SkipPx          bool
+}
+
+type WatchItem struct {
+	Raw         string
+	Pid         string
+	OfferID     string
+	Placeholder bool
+	Quantity    int
+	MaxPrice    float64
 }
 
 type WalmartMonitorTask struct {

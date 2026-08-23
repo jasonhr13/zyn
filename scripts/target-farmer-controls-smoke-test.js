@@ -101,8 +101,10 @@ for (const relative of [
 const stagedElectron = fs.readFileSync(path.join(stagedApp, 'public', 'electron.js'), 'utf8');
 assert.match(stagedElectron, /ipcMain\.on\('syncTargetHarvesters'/,
   'staged main process is missing the managed harvester reconciliation channel');
-assert.doesNotMatch(stagedElectron, /walmartEngine|startWalmart|stopWalmart/,
-  'staged main process still exposes the removed Walmart bridge');
+assert.match(stagedElectron, /ipcMain\.on\('startWalmart'/,
+  'staged main process is missing the Walmart start channel');
+assert.match(stagedElectron, /moduleBlocked\('walmart'\)/,
+  'Walmart start is not fleet-gated');
 execFileSync(process.execPath, ['--check', path.join(stagedApp, 'public', 'electron.js')]);
 
 // The native farmer is the pinned GitHub implementation, not a parallel rewrite.

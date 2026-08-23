@@ -1967,7 +1967,8 @@ body.theme-night .form-select {
 .profile-row-identity > div > strong { min-width: 0; overflow: hidden; color: var(--text); font-size: 10.5px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
 .profile-site-badge,
 .profile-use-badge { flex: 0 0 auto; padding: 1px 5px; border: 1px solid var(--field-border); border-radius: 999px; color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .3px; }
-.profile-site-badge.pokemon { color: var(--accent); border-color: var(--accent-border); }
+.profile-site-badge.pokemon,
+.profile-site-badge.walmart { color: var(--accent); border-color: var(--accent-border); }
 .profile-use-badge { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .profile-row-payment > strong { color: var(--accent); font-family: 'Menlo', 'Consolas', monospace; letter-spacing: .2px; }
 .profile-row-mailbox > strong i { width: 12px; margin-right: 3px; color: var(--muted); text-align: center; }

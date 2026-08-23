@@ -878,6 +878,12 @@ function stopRemovedTaskTypes({ removed = [] } = {}) {
         require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopPokemonCenter?.();
       } catch {}
     }
+    if (taskType === 'walmart') {
+      console.warn('[license] Walmart access removed; stopping its running tasks');
+      try {
+        require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopWalmart?.();
+      } catch {}
+    }
   }
 }
 
@@ -931,7 +937,9 @@ async function launchTargetAfterRuntime(original, args, authority) {
 
 function guardTaskHelpers(authority) {
   const allowed = () => authority.cached().ok === true;
-  const TASK_TYPE_METHODS = Object.freeze({ startRound1: 'round1', startPokemonCenter: 'pokemoncenter' });
+  const TASK_TYPE_METHODS = Object.freeze({
+    startRound1: 'round1', startPokemonCenter: 'pokemoncenter', startWalmart: 'walmart',
+  });
   const entitled = taskType => authority.cached().taskTypes?.[taskType] === true;
   const blocked = (name, taskType = '') => {
     const status = authority.cached();
@@ -970,6 +978,7 @@ function guardTaskHelpers(authority) {
   for (const [file, method, taskType] of [
     ['target-engine.js', 'startTarget', ''],
     ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
+    ['target-engine.js', 'startWalmart', 'walmart'],
   ]) {
     try {
       const engine = require(path.join(originalAsar, 'public', 'helpers', file));
@@ -1322,6 +1331,7 @@ function installPokemonQueueEventStream(authority) {
       authority,
       setHealth: health => engine.setPokemonQueueStreamHealth?.(health),
       publish: event => engine.publishPokemonQueueProtection?.(event) === true,
+      onSolverConfig: key => engine.setSolverLucaKey?.(key),
     });
     monitor.update(authority.cached());
     return monitor;

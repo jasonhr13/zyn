@@ -486,8 +486,9 @@ function createLicenseAuthority({
     openPokemonQueueEvents(handlers = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');
-      if (!normalizeTaskTypes(licenseState.taskTypes).pokemoncenter) {
-        throw new Error('Pokémon Center access is not enabled.');
+      const taskTypes = normalizeTaskTypes(licenseState.taskTypes);
+      if (!taskTypes.pokemoncenter && !taskTypes.walmart) {
+        throw new Error('Queue event monitoring is not enabled.');
       }
       return licenseApi.queueEvents(licenseToken, handlers);
     },

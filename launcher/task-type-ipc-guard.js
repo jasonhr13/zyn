@@ -4,6 +4,7 @@
 // Intercept registration so a renderer cannot bypass a hidden route and reach the old handler.
 const OPTIONAL_START_CHANNELS = Object.freeze({
   startPokemonCenter: 'pokemoncenter',
+  startWalmart: 'walmart',
   startRound1: 'round1',
 });
 

@@ -16,6 +16,7 @@ import (
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
+	"zynbot.app/engine/sites"
 	"zynbot.app/engine/sites/walmart/pie"
 )
 
@@ -67,9 +68,13 @@ func (t *WalmartTask) restartTask() {
 	t.NextStep = "get-session"
 }
 
+func isPlaceholderInput(input string) bool {
+	return strings.EqualFold(strings.TrimSpace(input), "placeholder")
+}
+
 func parsePidFromInput(input string) string {
 	input = strings.TrimSpace(input)
-	if input == "" || isOfferIDInput(input) {
+	if input == "" || isOfferIDInput(input) || isPlaceholderInput(input) {
 		return ""
 	}
 	lower := strings.ToLower(input)
@@ -90,8 +95,91 @@ func isOfferIDInput(input string) bool {
 	return len(strings.TrimSpace(input)) == 32
 }
 
+func applyWatchItems(t *WalmartTask, items []sites.Item) {
+	t.WatchItems = t.WatchItems[:0]
+	for _, item := range items {
+		raw := strings.TrimSpace(item.MonitorInput)
+		if raw == "" {
+			continue
+		}
+		qty := item.Quantity
+		if qty <= 0 {
+			qty = 1
+		}
+		watch := WatchItem{Raw: raw, Quantity: qty, MaxPrice: item.MaxPrice}
+		if isPlaceholderInput(raw) {
+			watch.Placeholder = true
+		} else if isOfferIDInput(raw) {
+			watch.OfferID = raw
+		} else if pid := parsePidFromInput(raw); pid != "" {
+			watch.Pid = pid
+		} else {
+			continue
+		}
+		t.WatchItems = append(t.WatchItems, watch)
+	}
+	t.InputPid = ""
+	t.OfferID = ""
+	t.RawInput = ""
+	if len(t.WatchItems) == 0 {
+		return
+	}
+	first := t.WatchItems[0]
+	t.RawInput = first.Raw
+	t.InputPid = first.Pid
+	t.OfferID = first.OfferID
+	t.Quantity = first.Quantity
+	if first.MaxPrice > 0 {
+		t.MaxPrice = first.MaxPrice
+	}
+}
+
+func (t *WalmartTask) waitingForInput() bool {
+	if t.hasDirectOfferInput() {
+		return false
+	}
+	return len(t.matchKeys()) == 0
+}
+
 func (t *WalmartTask) hasDirectOfferInput() bool {
-	return t.OfferID != "" && t.InputPid == ""
+	if len(t.WatchItems) == 0 {
+		return t.OfferID != "" && t.InputPid == ""
+	}
+	hasOffer := false
+	for _, item := range t.WatchItems {
+		if item.Placeholder || item.Pid != "" {
+			return false
+		}
+		if item.OfferID != "" {
+			hasOffer = true
+		}
+	}
+	return hasOffer
+}
+
+func (t *WalmartTask) applyMatchedPing(ping monitorhub.StockPing) {
+	t.UsItemID = ping.ProductKey
+	t.OfferID = ping.OfferId
+	t.Product.Name = ping.Name
+	t.Product.ProductImage = ping.Image
+	t.Product.Price = ping.Price
+	t.Product.Sku = ping.ProductKey
+	t.Product.ProductLink = walmartProductPageURL(ping.ProductKey)
+	if ping.Quantity > 0 && t.Quantity > ping.Quantity {
+		t.Quantity = ping.Quantity
+	}
+	for _, item := range t.WatchItems {
+		if item.Pid != "" && item.Pid == ping.ProductKey {
+			t.Quantity = item.Quantity
+			if item.MaxPrice > 0 {
+				t.MaxPrice = item.MaxPrice
+			}
+			if ping.Quantity > 0 && t.Quantity > ping.Quantity {
+				t.Quantity = ping.Quantity
+			}
+			break
+		}
+	}
 }
 
 func (t *WalmartTask) pingWithinPriceRange(ping monitorhub.StockPing) bool {

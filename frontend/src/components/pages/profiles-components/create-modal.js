@@ -149,6 +149,7 @@ class CreateProfileModal extends Component {
       cardNumber, cardMonth, cardYear, cardCvv,
     } = this.state;
     const pokemonCenter = profileType === 'pokemoncenter';
+    const usesMailbox = !pokemonCenter;
     if (!profileName || !email || !firstName || !lastName || !address || !city || !state || !zipcode
       || !cardNumber || !cardMonth || !cardYear || !cardCvv) {
       window.alert('Complete every required profile, shipping, and payment field.');
@@ -165,7 +166,7 @@ class CreateProfileModal extends Component {
     }
 
     const imapHost = this.resolvedImapHost();
-    if (!pokemonCenter && this.state.imapProvider && (!imapHost || !this.state.imapUser.trim() || !this.state.imapPass)) {
+    if (usesMailbox && this.state.imapProvider && (!imapHost || !this.state.imapUser.trim() || !this.state.imapPass)) {
       window.alert('Complete the IMAP host, mailbox user, and app password, or select “No automatic mailbox”.');
       return;
     }
@@ -196,7 +197,7 @@ class CreateProfileModal extends Component {
       profileName: this.state.profileName,
       email: this.state.email,
       phone: this.state.phone,
-      imap: !pokemonCenter && this.state.imapProvider ? {
+      imap: usesMailbox && this.state.imapProvider ? {
         host: imapHost,
         port: 993,
         user: this.state.imapUser.trim(),
@@ -248,11 +249,14 @@ class CreateProfileModal extends Component {
               <select className="form-select" value={this.state.profileType} onChange={e => this.set('profileType', e.target.value)}>
                 <option value="target">Target</option>
                 <option value="pokemoncenter">Pokémon Center</option>
+                <option value="walmart">Walmart</option>
               </select>
               <span className="form-hint">
                 {this.state.profileType === 'pokemoncenter'
                   ? 'Guest checkout profile with shipping and billing addresses. No mailbox configuration is needed.'
-                  : 'Target account profile with optional email OTP mailbox configuration.'}
+                  : this.state.profileType === 'walmart'
+                    ? 'Walmart checkout profile with shipping, payment, and optional email OTP mailbox configuration.'
+                    : 'Target account profile with optional email OTP mailbox configuration.'}
               </span>
             </div>
             <div className="form-row">
@@ -270,13 +274,13 @@ class CreateProfileModal extends Component {
               {this.input('phone', '5551234567')}
             </div>
 
-            {this.state.profileType === 'target' && <>
+            {this.state.profileType !== 'pokemoncenter' && <>
               <hr className="form-divider" />
 
             {/* Profile-owned IMAP configuration. */}
             <div className="form-section-title">Email OTP Mailbox</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
-              Optional. Target uses this profile’s mailbox when its matching account requests a login code.
+              Optional. Target and Walmart use this profile’s mailbox when the matching account requests a login code.
             </div>
             {!!mailboxPresets.length && (
               <div className="form-group">

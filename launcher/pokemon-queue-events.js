@@ -5,10 +5,16 @@ const { normalizeTaskTypeAccess } = require('./task-type-access');
 const MAX_RECONNECT_MS = 30000;
 const HEARTBEAT_MS = 30000;
 
+function wantsQueueRelay(status = {}) {
+  const taskTypes = normalizeTaskTypeAccess(status.taskTypes);
+  return status.ok === true && (taskTypes.pokemoncenter === true || taskTypes.walmart === true);
+}
+
 function createPokemonQueueEvents({
   authority,
   setHealth = () => {},
   publish = () => false,
+  onSolverConfig = () => {},
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
   scheduleInterval = setInterval,
@@ -69,9 +75,17 @@ function createPokemonQueueEvents({
     }, delay);
   };
 
+  const clearSolverConfig = () => {
+    try { onSolverConfig(''); } catch {}
+  };
+
   const handleMessage = (message) => {
     if (message.type === 'pokemon-center-queue-health') {
       emitHealth(message);
+      return;
+    }
+    if (message.type === 'solver-config') {
+      try { onSolverConfig(String(message.lucaApiKey || '').trim()); } catch {}
       return;
     }
     if (message.type !== 'pokemon-center-protection') return;
@@ -135,8 +149,7 @@ function createPokemonQueueEvents({
 
   return Object.freeze({
     update(status = {}) {
-      const taskTypes = normalizeTaskTypeAccess(status.taskTypes);
-      const shouldEnable = status.ok === true && taskTypes.pokemoncenter === true;
+      const shouldEnable = wantsQueueRelay(status);
       if (enabled === shouldEnable) {
         if (enabled && !socket && !reconnectTimer) connect();
         return;
@@ -146,6 +159,7 @@ function createPokemonQueueEvents({
         detach();
         reconnectAttempt = 0;
         emitHealth({ configured: false, connected: false, connecting: false });
+        clearSolverConfig();
         return;
       }
       connect();
@@ -155,9 +169,10 @@ function createPokemonQueueEvents({
       detach();
       reconnectAttempt = 0;
       emitHealth({ configured: false, connected: false, connecting: false });
+      clearSolverConfig();
     },
     cached: () => ({ ...health }),
   });
 }
 
-module.exports = { createPokemonQueueEvents, HEARTBEAT_MS, MAX_RECONNECT_MS };
+module.exports = { createPokemonQueueEvents, wantsQueueRelay, HEARTBEAT_MS, MAX_RECONNECT_MS };

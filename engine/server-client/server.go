@@ -298,6 +298,8 @@ func readMessage(conn *websocket.Conn) {
 				continue
 			}
 			siteconfig.Set(cfg)
+			log.Printf("ws: siteConfigs applied luca=%v hyper=%v sites=%d",
+				siteconfig.LucaAPIKey() != "", siteconfig.HyperAPIKey() != "", len(cfg.Sites))
 		case "cloud-ping":
 			monitorhub.HandleCloudPing(msg.Data)
 		case "zephyr-ping":
