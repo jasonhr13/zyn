@@ -17,7 +17,7 @@
   height: 42px;
   background: var(--titlebar);
   border-bottom: 1px solid var(--panel-border);
-  box-shadow: inset 0 -2px 0 var(--hairline);
+  box-shadow: inset 0 -1px 0 var(--hairline);
   -webkit-app-region: drag;
   flex-shrink: 0;
   padding: 0 6px 0 12px;
@@ -657,13 +657,13 @@ body.theme-night .form-select {
 
 .virtual-list { overflow-x: hidden; overflow-y: auto; min-height: 0; }
 .virtual-list-pad { display: block; padding: 0; margin: 0; border: 0; pointer-events: none; }
-.group-task-virtual { height: min(560px, calc(100vh - 290px)); }
+.group-task-virtual { max-height: calc(100vh - 280px); }
 .site-task-panel { margin: 0; overflow: hidden; }
 .site-task-head {
   padding: 9px 12px; border-bottom: 1px solid var(--panel-border);
   color: var(--muted); font-size: 10.5px; font-weight: 650;
 }
-.site-task-virtual { height: min(480px, calc(100vh - 260px)); }
+.site-task-virtual { max-height: calc(100vh - 260px); }
 .site-task-row {
   min-height: 46px; padding: 6px 12px; align-items: center; font-size: 11px;
   border-bottom: 1px solid var(--panel-border); box-sizing: border-box;
@@ -1430,6 +1430,14 @@ body.theme-night .form-select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.group-ops-monitor-watching strong { color: var(--target-status-watch); }
+.group-ops-monitor-carting strong { color: var(--target-status-cart); }
+.group-ops-monitor-checkout strong { color: var(--target-status-checkout); }
+.group-ops-monitor-submitting strong { color: var(--target-status-submit); }
+.group-ops-monitor-success strong { color: var(--target-status-success); }
+.group-ops-monitor-error strong { color: var(--target-status-error); }
+.group-ops-monitor-idle strong { color: var(--muted); }
+.task-detail-grid-solo { grid-template-columns: minmax(240px, 520px); }
 .cookie-bank-compact { gap: 8px; padding: 9px 10px; margin: 13px 0; border-radius: var(--radius); box-shadow: none; }
 .cookie-bank-compact .cookie-bank-icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: var(--radius); }
 .cookie-bank-compact .cookie-bank-copy { display: none; }
@@ -1622,8 +1630,8 @@ body.theme-night .form-select {
 .group-status-success { color: var(--ok); background: var(--ok-soft); }
 .group-status-error { color: var(--danger); background: var(--danger-soft); }
 .target-task-status { font-size: 10px; }
-.target-task-status-idle,
-.target-task-status-watching { color: var(--target-status-neutral); background: var(--target-status-neutral-bg); }
+.target-task-status-idle { color: var(--target-status-neutral); background: var(--target-status-neutral-bg); }
+.target-task-status-watching { color: var(--target-status-watch); background: var(--target-status-watch-bg); }
 .target-task-status-carting { color: var(--target-status-cart); background: var(--target-status-cart-bg); }
 .target-task-status-checkout { color: var(--target-status-checkout); background: var(--target-status-checkout-bg); }
 .target-task-status-submitting { color: var(--target-status-submit); background: var(--target-status-submit-bg); }
@@ -1663,8 +1671,9 @@ body.theme-night .form-select {
 .task-status-hero-success .task-status-hero-icon { color: var(--target-status-success); background: var(--target-status-success-bg); }
 .task-status-hero-error { border-color: rgba(255,123,131,.18); }
 .task-status-hero-error .task-status-hero-icon { color: var(--target-status-error); background: var(--target-status-error-bg); }
-.task-status-hero-watching .task-status-hero-icon,
 .task-status-hero-idle .task-status-hero-icon { color: var(--target-status-neutral); background: var(--target-status-neutral-bg); }
+.task-status-hero-watching { border-color: color-mix(in srgb, var(--target-status-watch) 24%, transparent); }
+.task-status-hero-watching .task-status-hero-icon { color: var(--target-status-watch); background: var(--target-status-watch-bg); }
 .task-status-hero-carting { border-color: color-mix(in srgb, var(--target-status-cart) 24%, transparent); }
 .task-status-hero-carting .task-status-hero-icon { color: var(--target-status-cart); background: var(--target-status-cart-bg); }
 .task-status-hero-checkout { border-color: color-mix(in srgb, var(--target-status-checkout) 24%, transparent); }

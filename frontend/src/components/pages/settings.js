@@ -5,6 +5,7 @@ import {
   harvesterExtensionIdsFromSettings,
   parseHarvesterExtensionIds,
 } from '../harvester-extension-ids.mjs';
+import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer, shell } = window.require('electron');
 
 // The packaged app's real version — the same value electron-updater compares against.
@@ -214,6 +215,15 @@ class Settings extends Component {
     if (++this._taps < 5) return;
     this._taps = 0;
     const next = { ...(this.props.settings || {}), operatorMode: !(this.props.settings || {}).operatorMode };
+    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+    this.props.dispatch({ type: 'update', obj: { settings: next } });
+  };
+
+  toggleOperatorLogs = () => {
+    const next = {
+      ...(this.props.settings || {}),
+      showOperatorLogs: !showOperatorLogs(this.props.settings),
+    };
     try { ipcRenderer.sendSync('saveSettings', next); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings: next } });
   };
@@ -613,6 +623,7 @@ class Settings extends Component {
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
     // would not reach a state copy until the next settings update.
     const operatorMode = !!(this.props.settings || {}).operatorMode;
+    const operatorLogs = showOperatorLogs(this.props.settings);
     const u = this.props.update;
     const line = this.updateLine();
     const cloud = this.state.cloudBackup || {};
@@ -802,6 +813,23 @@ class Settings extends Component {
           {/* Operator-only advanced Target harvest settings. Hidden by default because wrong TCINs
               can starve the cookie bank and surface much later as unexplained checkout failures. */}
           {operatorMode && (<>
+          <div className="settings-section">
+            <div className="settings-section-title">Diagnostics</div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={operatorLogs}
+                  onChange={this.toggleOperatorLogs}
+                />
+                Show task and engine logs
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                Off by default. Most people cannot act on engine output, so logs stay hidden until you
+                turn them on here. Monitor status still appears on Target task groups.
+              </div>
+            </div>
+          </div>
           {/* These settings are applied on the next farmer spawn. Throughput and bandwidth controls
               use the existing persisted keys so backups remain compatible. */}
           <div className="settings-section">

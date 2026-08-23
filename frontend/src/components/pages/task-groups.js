@@ -27,6 +27,7 @@ import {
   scheduleSummary,
 } from '../task-group-schedule.mjs';
 import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
+import { showOperatorLogs } from '../operator-logs';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 import VirtualLogView from '../virtual-log-view';
 import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
@@ -304,7 +305,8 @@ class TaskGroupTaskDetailView extends Component {
 
   render() {
     const { group, task, host, account, profile, status, otpRequest, checkouts, declines, canReset, copiedTask, readinessPending } = this.props;
-    const logs = this.props.taskLogs || [];
+    const showLogs = this.props.showOperatorLogs === true;
+    const logs = showLogs ? (this.props.taskLogs || []) : [];
     const displayStatus = this.proxyStatusFor(task) || status;
     const tone = targetStatusTone(displayStatus);
     const running = targetTaskIsRunning(status);
@@ -331,6 +333,7 @@ class TaskGroupTaskDetailView extends Component {
               <em>{accountName}</em>
             </div>
             <div className="page-title"><span className="page-title-dot" /> {accountName}</div>
+            <div className="group-ops-facts" aria-label="Monitor status"><GroupMonitorStatus /></div>
           </div>
           <div className="page-actions">
             <button className="btn btn-secondary btn-sm" onClick={() => host.setState({ selectedTaskId: '', copiedTask: false })}>Back to Group</button>
@@ -350,7 +353,7 @@ class TaskGroupTaskDetailView extends Component {
             {otpRequest ? <TargetOtpInput request={otpRequest} large /> : <StatusBadge status={displayStatus} />}
           </section>
 
-          <div className="task-detail-grid">
+          <div className={`task-detail-grid${showLogs ? '' : ' task-detail-grid-solo'}`}>
             <section className="panel task-information">
               <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
               <dl>
@@ -366,6 +369,7 @@ class TaskGroupTaskDetailView extends Component {
                 <div><dt>Task ID</dt><dd>{task.id}</dd></div>
               </dl>
             </section>
+            {showLogs && (
             <section className="panel task-log-panel task-own-log-panel">
               <div className="detail-panel-heading">
                 <div><h3><Icon name="activity" size={13} /> Task Log</h3><span>{logs.length} line{logs.length === 1 ? '' : 's'} · only this task</span></div>
@@ -389,9 +393,10 @@ class TaskGroupTaskDetailView extends Component {
                 )}
               />
             </section>
+            )}
           </div>
 
-          {<SharedEngineLog host={host} />}
+          {showLogs ? <SharedEngineLog host={host} /> : null}
         </div>
         {host.renderHarvesterDrawer()}
         {host.renderReadinessModal()}
@@ -1536,7 +1541,6 @@ class TaskGroups extends Component {
       monitorBandwidth: source.monitorBandwidth,
     };
     const logs = target.logs || [];
-    const monitor = target.monitorStatus;
     const bandwidth = targetMonitorBandwidthSummary(target.monitorBandwidth, Date.now());
     const monitorCount = bandwidth.available ? bandwidth.runCount : 0;
     return (
@@ -1548,11 +1552,6 @@ class TaskGroups extends Component {
               <span className="engine-log-line-count">
                 {logs.length} line{logs.length === 1 ? '' : 's'}
               </span>
-              {monitor && (
-                <em className="engine-monitor-chip" style={{ color: monitor.color || 'var(--muted)' }}>
-                  monitor: {monitor.label || monitor.state || 'idle'}
-                </em>
-              )}
             </span>
           </div>
           <div className="page-actions">
@@ -1637,6 +1636,7 @@ class TaskGroups extends Component {
         <span title={proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}><small>Proxy</small><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></span>
         <span><small>Loop</small><strong>{tasks.length ? `${loopOn}/${tasks.length}` : group.loopCheckout ? 'On' : 'Off'}</strong></span>
         <span title={group.useFillerItem ? 'On · SKU 84704409' : 'Off'}><small>Filler</small><strong>{group.useFillerItem ? 'On' : 'Off'}</strong></span>
+        <GroupMonitorStatus />
       </div>
     );
   }
@@ -2079,7 +2079,7 @@ class TaskGroups extends Component {
               </div>
             )}
           </div>
-          {<SharedEngineLog host={this} />}
+          {showOperatorLogs(this.props.settings) ? <SharedEngineLog host={this} /> : null}
         </div>
         {this.renderHarvesterDrawer()}
         {this.renderReadinessModal()}
@@ -2501,6 +2501,25 @@ class TaskGroups extends Component {
     return task ? this.renderTaskDetail(group, task) : this.renderGroup(group);
   }
 }
+
+class GroupMonitorStatusView extends Component {
+  render() {
+    const monitor = this.props.monitorStatus;
+    if (!monitor) return null;
+    const tone = targetStatusTone(monitor);
+    const label = monitor.label || monitor.state || 'Idle';
+    return (
+      <span className={`group-ops-monitor group-ops-monitor-${tone}`} title={`Monitor: ${label}`}>
+        <small>Monitor</small>
+        <strong>{label}</strong>
+      </span>
+    );
+  }
+}
+
+const GroupMonitorStatus = connect(state => ({
+  monitorStatus: state.target.monitorStatus,
+}))(GroupMonitorStatusView);
 
 class SharedEngineLogView extends Component {
   render() {

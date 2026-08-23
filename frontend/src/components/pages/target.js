@@ -5,6 +5,7 @@ import { proxyLabel, proxyRef } from '../proxy-options';
 import { targetBankMetrics } from '../target-bank-metrics.mjs';
 import { targetStatusTone } from '../target-task-status';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
+import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer } = window.require('electron');
 
 // Target runs ONE shared monitor over a list of SKUs plus many checkout tasks. Every task watches
@@ -706,7 +707,8 @@ class Target extends Component {
   };
 
   render() {
-    const { target = {}, accounts = [], proxies = {} } = this.props;
+    const { target = {}, accounts = [], proxies = {}, settings } = this.props;
+    const showLogs = showOperatorLogs(settings);
     const { tasks = [], taskStatus = {}, proxyStatus = {}, taskLogs = {}, logs = [], monitorStatus } = target;
     const { draft, expanded, filter, harvesterProxyList, selected, skuTitles, skuHover, hoverSku, atcCookiesPerTask, cookieDrain, menu } = this.state;
 
@@ -1092,11 +1094,9 @@ class Target extends Component {
               </div>
 
             {/* ── Module log (engine / monitor / farmer) ───────────────────────
-                THIRD COLUMN of this row, beside the watch list. It used to live in a block below
-                the row at full width, which is why it sat at the very bottom of the page while
-                the space next to the watch list stayed empty no matter how long the run got.
-                Its body scrolls at a fixed height, so a long run does not stretch the row. */}
-            <div className="panel" style={{ flex: '1 1 0', minWidth: 0, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
+                THIRD COLUMN of this row, beside the watch list. Hidden unless operator logs
+                are enabled in Settings. */}
+            {showLogs && <div className="panel" style={{ flex: '1 1 0', minWidth: 0, marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={HEAD}>
                 <span style={HEAD_TITLE}>
                   Engine Log <span style={HEAD_META}>({logs.length})</span>
@@ -1130,7 +1130,7 @@ class Target extends Component {
                   ? <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>Nothing yet.</span>
                   : logs.map((l, i) => <div key={i}>{l}</div>)}
               </div>
-            </div>
+            </div>}
 
           </div>
 
@@ -1272,7 +1272,7 @@ class Target extends Component {
                     {/* The log expander. It used to be decoration on a row that toggled as a whole;
                         now the row selects, so this is the only way in and needs a real hit area
                         rather than a 10px glyph. */}
-                    <span
+                    {showLogs && <span
                       onClick={e => { e.stopPropagation(); this.toggleExpanded(t.id); }}
                       title={open ? 'Hide this task’s log' : 'Show this task’s log'}
                       style={{
@@ -1285,7 +1285,7 @@ class Target extends Component {
                       onMouseLeave={e => { e.currentTarget.style.background = open ? 'rgba(255,255,255,.10)' : 'transparent'; }}
                     >
                       {open ? '▾' : '▸'}
-                    </span>
+                    </span>}
                     <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {accountEmail || <span style={{ color: '#ff5a5a' }}>account missing</span>}
@@ -1343,7 +1343,7 @@ class Target extends Component {
                       Delete
                     </button>
                   </div>
-                  {open && (
+                  {showLogs && open && (
                     <div style={{ background: 'var(--panel-bg-alt, rgba(0,0,0,.18))' }}>
                       <div style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -1443,4 +1443,5 @@ export default connect(s => ({
   accounts: s.accounts,
   profiles: s.profiles,
   proxies: s.proxies,
+  settings: s.settings,
 }))(Target);

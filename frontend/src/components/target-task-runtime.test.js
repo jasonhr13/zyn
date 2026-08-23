@@ -67,6 +67,8 @@ test('task logs are not part of the list-row slice, so a log line does not dirty
   const next = mapTaskRowState(state, { task });
   expect(next).toEqual(previous);
   expect(next.status).toBe(previous.status);
+  expect(mapTaskDetailState(state, { task }).taskLogs).toEqual([]);
+  state = reducer(state, { type: 'update', obj: { settings: { showOperatorLogs: true } } });
   expect(mapTaskDetailState(state, { task }).taskLogs.some(line => String(line).includes('Getting session'))).toBe(true);
 });
 

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.25",
+  "notes": [
+    "The app chrome is a denser pit-wall console while keeping the crimson and gold palette.",
+    "Target, Walmart, and Pokémon Center keep thousands of tasks on screen without stalling.",
+    "Waiting for Restock is orange so it no longer looks like Idle or a successful checkout.",
+    "Engine and task logs stay off by default; turn them on in operator Settings when debugging.",
+    "Target monitor status now lives in the group header instead of the engine log."
+  ]
+}

@@ -35,6 +35,8 @@ assert.match(taskGroups, /Failed this run/);
 assert.match(styles, /\.group-drop-pulse/);
 assert.match(styles, /\.group-drop-stat-submit\.active/);
 assert.match(styles, /\.group-drop-stat-fail\.active/);
+assert.match(styles, /\.target-task-status-watching \{ color: var\(--target-status-watch\)/);
+assert.doesNotMatch(styles, /\.target-task-status-idle,\s*\.target-task-status-watching/);
 assert.match(taskGroups, /updateTasksProxy/);
 assert.match(taskGroups, /Set proxy/);
 assert.match(taskGroups, /Select all visible tasks/);
@@ -57,6 +59,9 @@ assert.match(taskGroups, /Broker, farmer, and monitor startup remain in the shar
 assert.match(taskGroups, /<SharedEngineLog/);
 assert.match(taskGroups, /renderSharedEngineLog\(source = this\.props\)/);
 assert.match(taskGroups, /<VirtualLogView/);
+assert.match(taskGroups, /showOperatorLogs/);
+assert.match(taskGroups, /<GroupMonitorStatus/);
+assert.match(styles, /\.group-ops-monitor-watching/);
 assert.match(styles, /\.task-log-view-virtual/);
 assert.match(styles, /\.task-log-virtual-pad/);
 assert.match(taskGroups, /this\.renderHarvesterDrawer\(\)/);

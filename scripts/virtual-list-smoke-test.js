@@ -60,8 +60,10 @@ assert.doesNotMatch(pokemon, /pokemon: state\.pokemon/);
 
 const styles = fs.readFileSync(path.join(root, 'frontend/src/App.css'), 'utf8');
 assert.match(styles, /\.virtual-list \{ overflow-x: hidden; overflow-y: auto/);
-assert.match(styles, /\.group-task-virtual/);
-assert.match(styles, /\.site-task-virtual/);
+assert.match(styles, /\.group-task-virtual \{ max-height:/);
+assert.match(styles, /\.site-task-virtual \{ max-height:/);
+assert.doesNotMatch(styles, /\.group-task-virtual \{ height:/);
+assert.doesNotMatch(styles, /\.site-task-virtual \{ height:/);
 assert.match(styles, /\.inline-select-menu/);
 
 const store = fs.readFileSync(path.join(root, 'launcher/task-group-store.js'), 'utf8');

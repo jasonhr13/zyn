@@ -86,6 +86,7 @@ assert.match(taskGroups, /mapTaskRowState/);
 assert.match(taskGroups, /connect\(mapTaskRowState\)/);
 assert.match(taskGroups, /connect\(mapTaskDetailState\)/);
 assert.match(taskGroups, /<VirtualLogView/);
+assert.match(taskGroups, /showOperatorLogs/);
 assert.doesNotMatch(taskGroups, /target:\s*s\.target|target:\s*state\.target/,
   'Task Groups must not subscribe to the whole Target runtime object');
 

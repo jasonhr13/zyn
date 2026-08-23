@@ -1,5 +1,6 @@
 import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsRunning } from './target-task-status';
 import { targetOtpForTask } from './target-otp';
+import { showOperatorLogs } from './operator-logs';
 
 export const EMPTY_TARGET_LOGS = Object.freeze([]);
 export const EMPTY_OUTCOME = Object.freeze({});
@@ -142,8 +143,14 @@ export function mapTaskRowState(state, { task }) {
 
 export function mapTaskDetailState(state, { task }) {
   const row = mapTaskRowState(state, { task });
-  const logs = ((state.target && state.target.taskLogs) || {})[task && task.id] || EMPTY_TARGET_LOGS;
-  return { ...row, taskLogs: logs };
+  const showLogs = showOperatorLogs(state.settings);
+  return {
+    ...row,
+    showOperatorLogs: showLogs,
+    taskLogs: showLogs
+      ? (((state.target && state.target.taskLogs) || {})[task && task.id] || EMPTY_TARGET_LOGS)
+      : EMPTY_TARGET_LOGS,
+  };
 }
 
 export function mapGroupRuntimeState(state, { group, tasks }) {

@@ -5,6 +5,7 @@ import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
 import InlineSelect from '../inline-select';
 import { connectEngineLog, connectTaskLog, indexByEmail, indexById, pickTableState } from '../module-table-state';
+import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer } = window.require('electron');
 
 const WALMART_TABLE_KEYS = Object.freeze([
@@ -370,7 +371,9 @@ class Walmart extends Component {
           {active
             ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
             : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!account || !profile}>Start</button>}
-          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })}>Log</button>
+          {showOperatorLogs(this.props.settings) && (
+            <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })}>Log</button>
+          )}
           <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
         </span>
       </div>
@@ -554,7 +557,7 @@ class Walmart extends Component {
                 })}
               />
             )}
-            {expanded && (
+            {showOperatorLogs(this.props.settings) && expanded && (
               <div className="site-task-log-dock">
                 <WalmartTaskLog
                   className="task-log-view"
@@ -566,6 +569,7 @@ class Walmart extends Component {
             )}
           </div>
 
+          {showOperatorLogs(this.props.settings) && (
           <div className="panel" style={{ marginTop: 14, padding: 12 }}>
             <strong style={{ fontSize: 11 }}>Engine log</strong>
             <WalmartEngineLog
@@ -574,6 +578,7 @@ class Walmart extends Component {
               empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>Task and monitor output will appear here.</span>}
             />
           </div>
+          )}
         </div>
       </div>
     );
@@ -584,4 +589,5 @@ export default connect(state => ({
   walmart: pickTableState(state.walmart, WALMART_TABLE_KEYS),
   profiles: state.profiles, proxies: state.proxies,
   accounts: state.accounts, otpPending: state.target.otpPending,
+  settings: state.settings,
 }))(Walmart);

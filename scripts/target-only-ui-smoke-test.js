@@ -99,5 +99,7 @@ assert.match(settings, /ipcRenderer\.send\('resetHarvesterExtensionActivity'\)/,
 const advancedHarvesterSettings = settings.slice(operatorSettings, settings.indexOf('Email / OTP', operatorSettings));
 assert.doesNotMatch(advancedHarvesterSettings, /value=\{shapeMethod\}|value=\{targetHarvesterExtensionIds\}/,
   'Chrome extension controls must not remain operator-only');
+assert.match(advancedHarvesterSettings, /Show task and engine logs/);
+assert.match(advancedHarvesterSettings, /toggleOperatorLogs/);
 
 console.log('Target and Pokemon Center UI smoke test passed');

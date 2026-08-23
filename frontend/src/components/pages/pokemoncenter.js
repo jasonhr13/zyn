@@ -4,6 +4,7 @@ import { proxyLabel, proxyRef } from '../proxy-options';
 import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
 import InlineSelect from '../inline-select';
 import { connectEngineLog, connectTaskLog, indexById, pickTableState } from '../module-table-state';
+import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer } = window.require('electron');
 
 const POKEMON_TABLE_KEYS = Object.freeze([
@@ -415,7 +416,9 @@ class PokemonCenter extends Component {
             ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
             : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!profile}>Start</button>}
           <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.openTaskProducts(task)} title="Edit task products"><i className="ion-md-create" /></button>
-          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
+          {showOperatorLogs(this.props.settings) && (
+            <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
+          )}
           <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
         </span>
       </div>
@@ -605,7 +608,7 @@ class PokemonCenter extends Component {
                 })}
               />
             )}
-            {expanded && (
+            {showOperatorLogs(this.props.settings) && expanded && (
               <div className="site-task-log-dock">
                 <PokemonTaskLog
                   className="task-log-view"
@@ -617,6 +620,7 @@ class PokemonCenter extends Component {
             )}
           </div>
 
+          {showOperatorLogs(this.props.settings) && (
           <div className="panel" style={{ marginTop: 14, padding: 12 }}>
             <strong style={{ fontSize: 11 }}>Engine log</strong>
             <PokemonEngineLog
@@ -625,6 +629,7 @@ class PokemonCenter extends Component {
               empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>Task and monitor output will appear here.</span>}
             />
           </div>
+          )}
         </div>
 
         {editingProductsTask && <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeTaskProducts()}>
@@ -688,4 +693,5 @@ class PokemonCenter extends Component {
 export default connect(state => ({
   pokemon: pickTableState(state.pokemon, POKEMON_TABLE_KEYS),
   profiles: state.profiles, proxies: state.proxies,
+  settings: state.settings,
 }))(PokemonCenter);
