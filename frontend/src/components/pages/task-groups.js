@@ -233,8 +233,10 @@ class TaskGroupTaskRowView extends Component {
             onChange={() => host.toggleTaskSelected(task.id)}
           />
         </span>
-        <span className="task-primary"><i className="task-avatar">{initial}</i><span><strong>{host.accountLabel(task)}</strong><small>{task.id}</small></span></span>
-        <span className={profile ? 'text-success' : 'text-danger'}>{profile ? 'Ready' : 'Missing profile'}</span>
+        <span className={`task-primary${profile ? '' : ' task-primary-missing'}`} title={profile ? '' : 'No matching checkout profile'}>
+          <i className="task-avatar">{initial}</i>
+          <strong>{host.accountLabel(task)}</strong>
+        </span>
         <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => host.updateTaskProxy(group, task, event.target.value)}>
           {host.renderProxySelectOptions()}
         </select>
@@ -338,8 +340,6 @@ class TaskGroupTaskDetailView extends Component {
             <div><small>Current task status</small><h2>{statusLabel}</h2><p>{statusDetail}</p></div>
             {otpRequest ? <TargetOtpInput request={otpRequest} large /> : <StatusBadge status={displayStatus} />}
           </section>
-
-          {host.renderCookieBank()}
 
           <div className="task-detail-grid">
             <section className="panel task-information">
@@ -1598,59 +1598,18 @@ class TaskGroups extends Component {
     );
   }
 
-  renderCookieBank() {
-    const bank = this.state.bank;
-    const availableHarvesters = this.state.harvesters.map(harvester =>
-      this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
-    const presentation = targetBankPresentation(bank, availableHarvesters, {
-      now: this.state.bankCheckedAt || Date.now(),
-      brokerStartRequestedAt: this.state.brokerStartRequestedAt,
-      checkoutRunning: this.allStats().running > 0,
-      atcPerTask: this.state.atcCookiesPerTask,
-      externalAtcHarvesterEnabled: this.extensionHarvesterConfigured(),
-    });
-
+  renderGroupFacts(group) {
+    const tasks = group.tasks || [];
+    const loopOn = tasks.filter(task => task.loopCheckout).length;
     return (
-      <section className={`cookie-bank cookie-bank-prominent cookie-bank-${presentation.state}`} title={presentation.description} aria-label="Shared Target cookie bank">
-        <span className="cookie-bank-icon"><Icon name="cookie" size={18} /></span>
-        <span className="cookie-bank-copy">
-          <small>Shared Cookie Bank</small>
-          <strong>{presentation.label}</strong>
-          <em>{presentation.description}</em>
-        </span>
-        <span className="cookie-bank-counts">
-          <span><strong>{presentation.login}</strong><small>Login</small></span>
-          <span title={presentation.demandLabel}>
-            <strong>{presentation.atc}/{presentation.demandReported ? presentation.atcTargetLabel : '—'}</strong>
-            <small>ATC</small>
-          </span>
-        </span>
-        <label
-          className="cookie-bank-limit"
-          title="Ready ATC cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit."
-        >
-          <span>ATC per task</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min="0"
-            value={this.state.atcCookiesPerTask}
-            aria-label="Target ATC cookies per task"
-            aria-describedby="target-atc-demand-formula"
-            onChange={event => this.setState({ atcCookiesPerTask: normalizeAtcCookiesPerTaskInput(event.target.value) })}
-            onBlur={this.saveAtcCookiesPerTask}
-            onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-          />
-          <small id="target-atc-demand-formula">{presentation.demandLabel}</small>
-        </label>
-        <span className="cookie-bank-broker" title={presentation.extensionConnectionLabel
-          ? `${presentation.brokerLabel} · ${presentation.extensionConnectionLabel}`
-          : presentation.brokerLabel}>
-          <i /><span>{presentation.brokerLabel}
-            {presentation.extensionConnectionCompactLabel
-              ? ` · ${presentation.extensionConnectionCompactLabel}` : ''}</span>
-        </span>
-      </section>
+      <div className="group-ops-facts" aria-label="Group settings">
+        <span><small>Tasks</small><strong>{tasks.length}</strong></span>
+        <span title={watchListSummary(group)}><small>Watch</small><strong>{watchListSummary(group)}</strong></span>
+        <span><small>Stock</small><strong>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any stock'}</strong></span>
+        <span title={proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}><small>Proxy</small><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></span>
+        <span><small>Loop</small><strong>{tasks.length ? `${loopOn}/${tasks.length}` : group.loopCheckout ? 'On' : 'Off'}</strong></span>
+        <span title={group.useFillerItem ? 'On · SKU 84704409' : 'Off'}><small>Filler</small><strong>{group.useFillerItem ? 'On' : 'Off'}</strong></span>
+      </div>
     );
   }
 
@@ -1797,22 +1756,29 @@ class TaskGroups extends Component {
             <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
               <div className="target-harvester-identity">
                 <span className="target-harvester-state-dot" />
-                <span><strong>{harvester.name}</strong><small>{typeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')}</small></span>
+                <span>
+                  <strong>{harvester.name}</strong>
+                  <small>{typeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')} · {schedule}</small>
+                </span>
               </div>
-              <div className="target-harvester-card-stat target-harvester-workers"><small>Workers</small><strong>{workerValue}</strong></div>
-              <div className="target-harvester-card-stat target-harvester-produced"><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></div>
-              <div className="target-harvester-card-stat target-harvester-bandwidth">
-                <small>{proxyRouteMismatch ? 'Direct bandwidth · proxy unavailable' : `${usesProxy ? 'Proxy' : 'Direct'} bandwidth · this run`}</small>
-                <strong title={bandwidthValue}>{bandwidthValue}</strong>
-                {bandwidth.attempts > 0 && <><em>{transferDetail}</em><em>{requestDetail}</em></>}
-              </div>
-              <div className="target-harvester-card-stat target-harvester-browser">
-                <small>Browser policy / Last success</small>
-                <strong>{browserPolicy} · {this.harvesterLastSuccess(runtime)}</strong>
-                {!!browserDetail && <em title={browserDetail}>{browserDetail}</em>}
-              </div>
-              <div className="target-harvester-card-stat target-harvester-schedule"><small>Schedule</small><strong title={schedule}>{schedule}</strong></div>
               <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
+              <div className="target-harvester-meta">
+                <span><small>Workers</small><strong>{workerValue}</strong></span>
+                <span><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></span>
+              </div>
+              {bandwidth.attempts > 0 && (
+                <div className="target-harvester-notes">
+                  <span title={transferDetail}>
+                    {proxyRouteMismatch ? 'Direct · proxy unavailable' : usesProxy ? 'Proxy' : 'Direct'} · {bandwidthValue}
+                  </span>
+                  {bandwidth.attempts > 0 && <em>{requestDetail}</em>}
+                </div>
+              )}
+              {(state.kind === 'running' || !!browserDetail) && (
+                <div className="target-harvester-notes" title={browserDetail || undefined}>
+                  <span>{browserPolicy} · {this.harvesterLastSuccess(runtime)}</span>
+                </div>
+              )}
               <div className="target-harvester-actions">
                 <button className={harvester.enabled ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'} onClick={() => this.toggleHarvester(harvester)}>
                   <Icon name={harvester.enabled ? 'stop' : 'play'} size={11} /> {harvester.enabled ? 'Stop' : 'Start'}
@@ -1859,9 +1825,39 @@ class TaskGroups extends Component {
               <div className="target-harvester-drawer-summary" aria-label="Harvester progress">
                 <span><strong>{bank.activeHarvesters}/{total}</strong><small>Running</small></span>
                 <span><strong>{bank.activeWorkers}</strong><small>Active workers</small></span>
-                <span><strong>{bank.login}</strong><small>Login banked</small></span>
-                <span><strong>{bank.atc}</strong><small>ATC banked</small></span>
               </div>
+              <section className={`cookie-bank cookie-bank-prominent cookie-bank-${bank.state}`} title={bank.description} aria-label="Shared Target cookie bank">
+                <span className="cookie-bank-copy">
+                  <small>Shared Cookie Bank</small>
+                  <strong>{bank.label}</strong>
+                  <em>{bank.description}</em>
+                </span>
+                <span className="cookie-bank-counts">
+                  <span><strong>{bank.login}</strong><small>Login</small></span>
+                  <span title={bank.demandLabel}>
+                    <strong>{bank.atc}/{bank.demandReported ? bank.atcTargetLabel : '—'}</strong>
+                    <small>ATC</small>
+                  </span>
+                </span>
+                <label
+                  className="cookie-bank-limit"
+                  title="Ready ATC cookies to keep for every active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit."
+                >
+                  <span>ATC per task</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={this.state.atcCookiesPerTask}
+                    aria-label="Target ATC cookies per task"
+                    aria-describedby="target-atc-demand-formula"
+                    onChange={event => this.setState({ atcCookiesPerTask: normalizeAtcCookiesPerTaskInput(event.target.value) })}
+                    onBlur={this.saveAtcCookiesPerTask}
+                    onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+                  />
+                  <small id="target-atc-demand-formula">{bank.demandLabel}</small>
+                </label>
+              </section>
               <section className="target-harvester-bandwidth-summary" aria-label="Proxy bandwidth telemetry"
                 title="Browser-level transfer. Your proxy provider may report slightly more for tunnel and TLS overhead.">
                 <header>
@@ -1879,9 +1875,6 @@ class TaskGroups extends Component {
                   {bandwidthSummary.directBytes > 0 ? ` · ${formatBandwidth(bandwidthSummary.directBytes)} direct traffic excluded` : ''}</p>
               </section>
               <div className="target-harvester-drawer-toolbar">
-                <span className={`group-status group-status-${bank.state === 'ready' ? 'success' : bank.state === 'working' ? 'running' : bank.state === 'error' ? 'error' : 'idle'}`}>
-                  <span className="group-status-dot" />{bank.label}
-                </span>
                 <button className="btn btn-primary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={12} /> New Harvester</button>
               </div>
               <div className="target-harvester-drawer-content">{list}</div>
@@ -1916,7 +1909,6 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-groups-content">
-          {this.renderCookieBank()}
           {this.renderMetrics()}
           <div className="workspace-section-heading">
             <div><h2>Target task groups</h2><p>Organize shared watch lists and account tasks without changing the checkout engine.</p></div>
@@ -1974,7 +1966,6 @@ class TaskGroups extends Component {
   }
 
   renderGroup(group) {
-    const stats = { total: (group.tasks || []).length };
     const filter = this.state.taskFilter.trim().toLowerCase();
     const visibleTasks = (group.tasks || []).filter(task => !filter || this.accountLabel(task).toLowerCase().includes(filter));
     const selectedIds = new Set(this.state.selectedTaskIds);
@@ -1987,6 +1978,7 @@ class TaskGroups extends Component {
           <div>
             <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
             <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
+            {this.renderGroupFacts(group)}
           </div>
           <div className="page-actions">
             <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, group.tasks)}><Icon name="check" size={12} /> Check Readiness</button>
@@ -1996,19 +1988,9 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-group-dashboard">
-          {this.renderCookieBank()}
-          <div className="panel group-config-strip group-config-strip-r2">
-            <div><span>Site</span><strong><Icon name="target" size={12} /> Target</strong></div>
-            <div><span>Tasks</span><strong>{stats.total}</strong></div>
-            <div><span>Watch list</span><strong>{watchListSummary(group)}</strong></div>
-            <div><span>Stock confidence</span><strong>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any stock'}</strong></div>
-            <div><span>Default proxy</span><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></div>
-            <div><span>Loop checkout</span><strong>{(group.tasks || []).length ? `${(group.tasks || []).filter(task => task.loopCheckout).length} of ${(group.tasks || []).length} tasks` : group.loopCheckout ? 'Default on' : 'Default off'}</strong></div>
-            <div><span>Filler item</span><strong>{group.useFillerItem ? 'On · SKU 84704409' : 'Off'}</strong></div>
-          </div>
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
-              <div><h2>Account tasks</h2><p>A matching checkout profile is required for each Target account.</p></div>
+              <div><h2>Account tasks</h2></div>
               {this.renderGroupDropPulse(group)}
               <div className="page-actions">
                 {(group.tasks || []).length > 0 && <input className="form-input task-filter" placeholder="Filter tasks…" value={this.state.taskFilter} onChange={event => this.setState({ taskFilter: event.target.value })} />}
@@ -2055,7 +2037,7 @@ class TaskGroups extends Component {
                       onChange={() => this.toggleSelectVisibleTasks(visibleTasks)}
                     />
                   </span>
-                  <span>Account</span><span>Profile</span><span>Proxy</span><span>Loop</span><span>This run</span><span>Status</span><span>Created</span><span>Actions</span>
+                  <span>Account</span><span>Proxy</span><span>Loop</span><span>This run</span><span>Status</span><span>Created</span><span>Actions</span>
                 </div>
                 {visibleTasks.map(task => this.renderTaskRow(group, task))}
                 {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}

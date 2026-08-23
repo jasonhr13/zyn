@@ -16,8 +16,8 @@ const target = read('frontend/src/components/pages/target.js');
 const taskGroups = read('frontend/src/components/pages/task-groups.js');
 const inlineOtp = read('frontend/src/components/target-otp-input.js');
 
-assert.match(accounts, /SITE_TABS/);
-assert.match(accounts, /account-site-picker/);
+assert.doesNotMatch(accounts, /SITE_TABS/);
+assert.doesNotMatch(accounts, /account-site-picker/);
 assert.match(accounts, /addAccountsBulk'[\s\S]*site: this.state.accountSite \|\| 'target'/);
 assert.match(accounts, /<option value="target">Target<\/option>/);
 assert.match(accounts, /walmartAccess && <option value="walmart">Walmart<\/option>/);

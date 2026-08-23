@@ -307,7 +307,6 @@ async function main() {
     || report.tasks !== 1
     || report.taskAccountId !== cleanup.accountId
     || !report.taskRow
-    || !report.taskRowText.includes('Ready')
     || !report.checkoutHeader
     || report.checkoutCount !== '1'
     || !report.checkoutCountPositive

@@ -332,7 +332,7 @@ class Walmart extends Component {
       <div className="page" style={{ padding: '16px 20px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="page-header" style={{ marginBottom: 14 }}>
           <div>
-            <h1 className="page-title" style={{ margin: 0 }}>Walmart</h1>
+            <h1 className="page-title" style={{ margin: 0 }}><span className="page-title-dot" /> Walmart</h1>
             <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
               One task per account. Start on placeholder to log in, then apply SKUs before the drop.
             </div>

@@ -74,6 +74,9 @@ const getJson = url => new Promise((resolve, reject) => {
       ipc.emit('targetLog', {}, { taskId: task.id, lines: ['TASK-SMOKE: task-only diagnostic'] });
       ipc.emit('targetLog', {}, { lines: ['ENGINE-SMOKE: shared farmer lifecycle'] });
       await wait(5500);
+      const rail = document.querySelector('.target-harvester-rail');
+      if (rail) rail.click();
+      await wait(200);
       const bank = document.querySelector('.cookie-bank');
       const row = document.querySelector('.group-task-row-clickable');
       if (!row) throw new Error('Clickable Target task row was not rendered');
@@ -100,7 +103,6 @@ const getJson = url => new Promise((resolve, reject) => {
   }
   const report = { ...evaluated.result.value, rendererErrors, rendererExceptions };
   assert.match(report.bankText, /Shared Cookie Bank/i);
-  assert.match(report.bankText, /Broker (?:online|offline|starting)/i);
   assert.doesNotMatch(report.bankText, /Workers|Run output|Recent errors|Cooling routes|Top failure/i,
     'shared bank should not repeat per-harvester workers or legacy health diagnostics');
   assert.equal(report.staleR2Banner, false);

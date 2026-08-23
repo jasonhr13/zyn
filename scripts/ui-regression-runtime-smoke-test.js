@@ -176,6 +176,11 @@ async function main() {
         .find(element => element.textContent.includes('Target Log Verification'));
       groupRow?.click();
       await wait(250);
+      const harvesterRail = document.querySelector('.target-harvester-rail');
+      if (!harvesterRail) throw new Error('Collapsed harvester rail was not rendered');
+      const harvesterRailText = harvesterRail.textContent.replace(/\\s+/g, ' ').trim();
+      harvesterRail.click();
+      await wait(180);
       const atcPerTaskInput = document.querySelector('[aria-label="Target ATC cookies per task"]');
       if (!atcPerTaskInput) throw new Error('ATC cookies-per-task control was not found');
       const nativeInputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -201,11 +206,6 @@ async function main() {
       await wait(200);
       const panel = document.querySelector('.engine-log-panel');
       const cookieBank = document.querySelector('.cookie-bank-prominent');
-      const harvesterRail = document.querySelector('.target-harvester-rail');
-      if (!harvesterRail) throw new Error('Collapsed harvester rail was not rendered');
-      const harvesterRailText = harvesterRail.textContent.replace(/\\s+/g, ' ').trim();
-      harvesterRail.click();
-      await wait(180);
       const harvesterDrawer = document.querySelector('.target-harvester-drawer');
       const harvesterCard = harvesterDrawer?.querySelector('.target-harvester-card');
       const result = {
@@ -229,8 +229,7 @@ async function main() {
         savedAtcCookiesPerTask: savedSettings && savedSettings.targetAtcCookiesPerTask,
         atcDemandFormula: document.querySelector('#target-atc-demand-formula')?.textContent.trim() || '',
         harvesterSyncs,
-        cookieBankAboveTasks: Boolean(cookieBank && document.querySelector('.group-task-panel')
-          && (cookieBank.compareDocumentPosition(document.querySelector('.group-task-panel')) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        cookieBankInDrawer: Boolean(cookieBank && harvesterDrawer && harvesterDrawer.contains(cookieBank)),
       };
       ipc.invoke = originalInvoke;
       ipc.sendSync = originalSendSync;
@@ -277,7 +276,6 @@ async function main() {
   assert.match(report.cookieBankText, /ATC per task/);
   assert.match(report.cookieBankText, /4 per task\s*·\s*1 standby/);
   assert.doesNotMatch(report.cookieBankText, /Per-type limit/);
-  assert.match(report.cookieBankText, /Broker online/);
   assert.doesNotMatch(report.cookieBankText, /Workers|Run output|Cooling routes|Top failure/);
   assert.equal(report.harvesterDrawerOpen, true);
   assert.match(report.harvesterRailText, /0\/1/);
@@ -297,7 +295,7 @@ async function main() {
   assert.equal(report.savedAtcCookiesPerTask, '4');
   assert.equal(report.atcDemandFormula, '4 per task · 1 standby');
   assert.ok(report.harvesterSyncs >= 1, 'saving ATC cookies per task must sync the harvesters');
-  assert.equal(report.cookieBankAboveTasks, true);
+  assert.equal(report.cookieBankInDrawer, true);
   assert.equal(rendererExceptions, 0);
   assert.equal(rendererErrors, 0);
 }

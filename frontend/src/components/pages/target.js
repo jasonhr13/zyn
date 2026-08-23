@@ -755,7 +755,7 @@ class Target extends Component {
         padding: '16px 20px 16px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
       }}>
         <div className="page-header" style={{ marginBottom: 14 }}>
-          <h1 className="page-title" style={{ margin: 0 }}>Target</h1>
+          <h1 className="page-title" style={{ margin: 0 }}><span className="page-title-dot" /> Target</h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* Harvester pool sits with the cookie bank because they are the same subject: this is
                 the pool that FILLS that bank. It was buried inside Create Tasks, a panel you stop
