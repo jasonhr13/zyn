@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.26",
+  "notes": [
+    "The desktop app now shows ZynAIO in the title bar, sign-in screen, and sidebar.",
+    "ZynAIO is Target, Pokémon Center US, and Walmart in one Mac and Windows workspace.",
+    "The public site matches that naming; auto-update feeds stay on the existing Zyn channels."
+  ]
+}

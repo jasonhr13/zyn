@@ -53,6 +53,14 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+.aio-mark {
+  margin-left: .22em;
+  color: var(--run);
+  font-size: .62em;
+  font-weight: 700;
+  letter-spacing: .12em;
+  vertical-align: .42em;
+}
 .title-bar-dev {
   padding: 2px 6px;
   border: 1px solid var(--run);

@@ -78,7 +78,7 @@ class Sidebar extends Component {
         </nav>
         <div className="sidebar-bottom">
           {this.renderUpdate()}
-          <div className="sidebar-version">{APP_VERSION ? `Zyn v${APP_VERSION}` : 'Zyn'}</div>
+          <div className="sidebar-version">{APP_VERSION ? `ZynAIO v${APP_VERSION}` : 'ZynAIO'}</div>
         </div>
       </div>
     );

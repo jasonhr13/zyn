@@ -47,7 +47,7 @@ class TitleBar extends Component {
           <span className="title-bar-mark" aria-hidden="true">
             <img className="title-bar-logo" src={`${process.env.PUBLIC_URL}/zyn-icon.png`} alt="" />
           </span>
-          <span className="title-bar-name">Zyn</span>
+          <span className="title-bar-name" aria-label="ZynAIO">Zyn<span className="aio-mark">AIO</span></span>
           {IS_DEV && <span className="title-bar-dev">DEV DATA</span>}
         </div>
         <div className="title-bar-controls">

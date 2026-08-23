@@ -132,7 +132,7 @@ async function main() {
   const sensitiveStatus = report.license.rendererKeys.some(key => /token|password|device|hwid|reset|key/i.test(key));
   if (report.license.ok !== false
     || !report.gate.present
-    || report.gate.badge !== 'ZYN'
+    || report.gate.badge !== 'ZYNAIO'
     || report.gate.title !== 'Sign in to Zyn'
     || report.gate.acknowledgementPresent
     || report.gate.legacyKeyCopyPresent

@@ -40,15 +40,15 @@ test("server-renders the Zyn product site", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Zyn — Target and Pokémon Center Checkout<\/title>/i);
-  assert.match(html, /Target and Pokémon Center US/);
-  assert.match(html, /Built for<br\/>Target and Pokémon Center drops\./);
-  assert.match(html, /Target checkout/);
+  assert.match(html, /<title>ZynAIO — Target, Pokémon Center, and Walmart<\/title>/i);
+  assert.match(html, /ZynAIO/);
+  assert.match(html, /One app for Target, Pokémon Center, and Walmart\./);
+  assert.match(html, /Target/);
   assert.match(html, /Pokémon Center US/);
-  assert.match(html, /Product watch lists/);
-  assert.match(html, /Zyn does Target and Pokémon Center US\./);
-  assert.match(html, /Typical all-in-one/);
-  assert.match(html, /Generate Target accounts\. Jig the address\./);
+  assert.match(html, /Walmart/);
+  assert.match(html, /ZynAIO is the whole drop in one place\./);
+  assert.match(html, /Typical setup/);
+  assert.match(html, /Three retailers\. One desktop app\./);
   assert.match(html, /Generate accounts, jig the address/);
   assert.match(html, /Star it, then switch/);
   assert.match(html, /Lists that keep working/);
@@ -56,16 +56,20 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /Save your setup/);
   assert.match(html, /\$100 for two months/);
   assert.match(html, /\$40 every month/);
+  assert.match(html, /screenshots\/zyn-target\.png/);
+  assert.match(html, /screenshots\/zyn-walmart\.png/);
+  assert.match(html, /screenshots\/zyn-pokemon-center\.png/);
   assert.doesNotMatch(html, /\bWine\b/i);
   assert.doesNotMatch(html, /\bcompiled\b/i);
   assert.doesNotMatch(html, /native engine/i);
   assert.doesNotMatch(html, /Free during beta/);
+  assert.doesNotMatch(html, /not an all-in-one/i);
   assert.doesNotMatch(html, /Refract|Stellar|HiddenAIO|NSB/i);
   assert.match(html, /Buy Zyn/);
   assert.match(html, /href="\/buy"/);
   assert.doesNotMatch(html, /Request access/);
   assert.match(html, /mailto:hello@zynbot\.app/);
-  assert.match(html, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
+  assert.match(html, /https:\/\/zynbot\.app\/og-aio\.png/);
 });
 
 test("renders the Stripe purchase form", async () => {
@@ -108,8 +112,9 @@ test("renders the branded waiting-list form and confirmation", async () => {
   const formHtml = await form.text();
   assert.match(formHtml, /<title>Join the Zyn waiting list<\/title>/i);
   assert.match(formHtml, /Join the waiting list\./);
-  assert.match(formHtml, /Target and Pokémon Center US/);
+  assert.match(formHtml, /ZynAIO/);
   assert.match(formHtml, /Pokémon Center US/);
+  assert.match(formHtml, /Walmart/);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
@@ -207,7 +212,7 @@ test("publishes the Zyn canonical identity and keeps service traffic in the visi
     const home = await render("/", {}, "https://zynbot.app");
     assert.equal(home.status, 200);
     const homeHtml = await home.text();
-    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-retailers-beta\.png/);
+    assert.match(homeHtml, /https:\/\/zynbot\.app\/og-aio\.png/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/favicon\.png"/);
     assert.match(homeHtml, /href="https:\/\/zynbot\.app\/manifest\.webmanifest"/);
 
@@ -251,7 +256,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
-  assert.match(layout, /Zyn — Target and Pokémon Center Checkout/);
+  assert.match(layout, /ZynAIO — Target, Pokémon Center, and Walmart/);
   assert.match(layout, /manifest\.webmanifest/);
   assert.match(css, /--zyn-orange:/);
   assert.match(css, /--zyn-rose:/);
@@ -273,13 +278,16 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   await access(new URL("../public/favicon.png", import.meta.url));
   await access(new URL("../public/apple-touch-icon.png", import.meta.url));
   await access(new URL("../public/manifest.webmanifest", import.meta.url));
-  await access(new URL("../public/og-retailers-beta.png", import.meta.url));
+  await access(new URL("../public/og-aio.png", import.meta.url));
+  await access(new URL("../public/screenshots/zyn-target.png", import.meta.url));
+  await access(new URL("../public/screenshots/zyn-walmart.png", import.meta.url));
 });
 
 test("ships only the reviewed Zyn raster brand assets", async () => {
   const reviewed = {
     "apple-touch-icon.png": "784039266ddfcdcf1e0ac5e06499038ad05aa6e0257e827e43e27633574abc00",
     "favicon.png": "268f21db55c7951a55895d4baa6f7318077983510bc56553b59d78b379b75438",
+    "og-aio.png": "0e072ad1952320bf95dd77b536f2817ff7746e1f11242428600028c66d5945c8",
     "og-retailers-beta.png": "cbc518f8b028fe99aa3a1be2870289c1cda3897ad0e497057cfbb45db27ce171",
     "og-target-beta.png": "d5bfe6f405ab2f495996f9b6ef0aa4587c6a97d5ac07ee09bec8962aac3c4ddd",
     "og.png": "1e06a3c6b28fd1bb1346a59bf418ae4e6a6b4f51c8940593f6cfb95702765cc0",

@@ -88,8 +88,8 @@ class LicenseGate extends Component {
       <div className="license-gate-r4">
         <form onSubmit={mode === 'login' ? this.signIn : this.resetPassword} className="license-gate-card">
           <div className="license-gate-mark"><i className={mode === 'login' ? 'ion-md-lock' : 'ion-md-key'} /></div>
-          <div className="license-gate-badge">ZYN</div>
-          <div className="license-gate-title">{mode === 'login' ? 'Sign in to Zyn' : 'Choose a new password'}</div>
+          <div className="license-gate-badge">ZYN<span className="aio-mark">AIO</span></div>
+          <div className="license-gate-title">{mode === 'login' ? 'Sign in to ZynAIO' : 'Choose a new password'}</div>
           <div className="license-gate-copy">
             {mode === 'login'
               ? 'Use the credentials provided with your Zyn account.'

@@ -172,7 +172,7 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 
   assert.equal(result.authoritativeOk, false);
-  assert.equal(result.gateBadge, 'ZYN');
+  assert.equal(result.gateBadge, 'ZYNAIO');
   assert.equal(result.deniedTest.ok, false);
   assert.match(result.deniedTest.message, /Sign in/i);
   assert.equal(result.providerCount, 6);

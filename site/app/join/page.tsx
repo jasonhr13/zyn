@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Join the Zyn waiting list",
-  description: "Join the Zyn waiting list for Target and Pokémon Center US checkout automation.",
+  description: "Join the Zyn waiting list for Target, Pokémon Center US, and Walmart checkout.",
 };
 
 type SearchParams = Promise<{ joined?: string | string[]; error?: string | string[] }>;
@@ -37,14 +37,14 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
             <>
               <p className="kicker">Request received</p>
               <h1 id="join-title">You’re on the list.</h1>
-              <p className="join-lede">We’ll email if a seat opens. You can also buy Zyn now for Target and Pokémon Center US.</p>
+              <p className="join-lede">We’ll email if a seat opens. You can also buy ZynAIO now for Target, Pokémon Center US, and Walmart.</p>
               <Link className="button button-primary" href="/buy">Buy Zyn</Link>
             </>
           ) : (
             <>
-              <p className="kicker">Target and Pokémon Center US</p>
+              <p className="kicker">ZynAIO</p>
               <h1 id="join-title">Join the waiting list.</h1>
-              <p className="join-lede">Prefer an invite instead of buying now? Leave your email. Zyn supports Target and Pokémon Center US.</p>
+              <p className="join-lede">Prefer an invite instead of buying now? Leave your email. ZynAIO supports Target, Pokémon Center US, and Walmart.</p>
               <form className="join-form" action="/api/waitlist" method="post">
                 <label htmlFor="waitlist-email">Email address</label>
                 <div className="join-form-row">
@@ -66,7 +66,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
 
       <footer className="download-footer">
         <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
-        <p>Target and Pokémon Center US checkout automation.</p>
+        <p>ZynAIO — Target, Pokémon Center US, and Walmart checkout.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

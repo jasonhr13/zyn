@@ -258,7 +258,7 @@ async function main() {
 
   const report = { ...result, rendererExceptions, rendererErrors, screenshotPath, collapsedScreenshotPath };
   console.log(JSON.stringify(report, null, 2));
-  assert.equal(report.gate.badge, 'ZYN');
+  assert.equal(report.gate.badge, 'ZYNAIO');
   assert.equal(report.gate.acknowledgementPresent, false);
   assert.equal(report.gate.checkboxCount, 0);
   assert.equal(report.pageTitle, 'Target Log Verification');

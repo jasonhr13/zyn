@@ -297,7 +297,7 @@ async function main() {
 
   const routeFailed = report.routes.some((route) => !route.rendered || route.errorBoundary);
   const bridgeFailed = Object.values(report.electronBridge).some((value) => !value);
-  const shellFailed = report.shell.brand !== 'Zyn'
+  const shellFailed = report.shell.brand !== 'ZynAIO'
     || report.shell.activeNavigation !== 'Tasks'
     || JSON.stringify(report.shell.navigation) !== JSON.stringify([
       'Tasks', 'Profiles', 'Accounts', 'Proxies', 'Settings'

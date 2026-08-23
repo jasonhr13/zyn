@@ -172,7 +172,7 @@ async function main() {
   const result = { ...evaluated.result.value, rendererExceptions, rendererErrors, screenshotPath };
   console.log(JSON.stringify(result, null, 2));
   assert.equal(result.authoritativeOk, false);
-  assert.equal(result.gateBadge, 'ZYN');
+  assert.equal(result.gateBadge, 'ZYNAIO');
   assert.equal(result.forgedManagedPersisted, false);
   assert.equal(result.persistedCatalogSafe, true);
   assert.equal(result.managedReadOnly, true);

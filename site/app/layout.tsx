@@ -5,8 +5,8 @@ export function generateMetadata(): Metadata {
   const origin = "https://zynbot.app";
 
   return {
-    title: "Zyn — Target and Pokémon Center Checkout",
-    description: "A desktop app for Target and Pokémon Center US restocks. Watch products, keep working proxies, and check out when they come back.",
+    title: "ZynAIO — Target, Pokémon Center, and Walmart",
+    description: "One desktop app for Target, Pokémon Center US, and Walmart restocks. Watch products, keep working proxies, and check out when they come back.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -18,22 +18,22 @@ export function generateMetadata(): Metadata {
       apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     },
     openGraph: {
-      title: "Zyn — Target and Pokémon Center Checkout",
-      description: "A desktop app for Target and Pokémon Center US restocks. $100 for two months, then $40 every month.",
+      title: "ZynAIO — Target, Pokémon Center, and Walmart",
+      description: "One desktop app for Target, Pokémon Center US, and Walmart. $100 for two months, then $40 every month.",
       type: "website",
       url: origin,
       images: [{
-        url: `${origin}/og-retailers-beta.png`,
+        url: `${origin}/og-aio.png`,
         width: 1200,
         height: 630,
-        alt: "Zyn — Target and Pokémon Center US checkout automation",
+        alt: "ZynAIO — Target, Pokémon Center US, and Walmart checkout",
       }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Zyn — Target and Pokémon Center Checkout",
-      description: "Target and Pokémon Center US checkout automation for desktop. $100 for two months, then $40 every month.",
-      images: [`${origin}/og-retailers-beta.png`],
+      title: "ZynAIO — Target, Pokémon Center, and Walmart",
+      description: "Target, Pokémon Center US, and Walmart checkout from one desktop app. $100 for two months, then $40 every month.",
+      images: [`${origin}/og-aio.png`],
     },
   };
 }

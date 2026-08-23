@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Buy Zyn",
-  description: "Get Zyn for Target and Pokémon Center US. $100 for the first two months, then $40 every month.",
+  description: "Get ZynAIO for Target, Pokémon Center US, and Walmart. $100 for the first two months, then $40 every month.",
 };
 
 type SearchParams = Promise<{ error?: string | string[] }>;
@@ -32,11 +32,11 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
         <div className="buy-layout">
           <article className="buy-card">
             <div className="status-pill"><span /> Self-serve license</div>
-            <p className="kicker">Target and Pokémon Center US</p>
+            <p className="kicker">ZynAIO</p>
             <h1 id="buy-title">Buy Zyn.</h1>
             <p className="join-lede">
               $100 covers the first two months. After that Stripe renews the license at $40 every month.
-              Both retailers are included.
+              Target and Pokémon Center US are included.
             </p>
             <form className="join-form" action="/api/checkout" method="post">
               <label htmlFor="checkout-email">Email address</label>
@@ -73,7 +73,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             <ul>
               <li><i aria-hidden="true">01</i><span><strong>Target checkout</strong>Watch lists, accounts, proxies, and live drop counts.</span></li>
               <li><i aria-hidden="true">02</i><span><strong>Pokémon Center US</strong>Included on the same license. No extra module fee.</span></li>
-              <li><i aria-hidden="true">03</i><span><strong>Mac and Windows</strong>Sign in on the desktop app after Stripe finishes.</span></li>
+              <li><i aria-hidden="true">03</i><span><strong>Walmart in the same app</strong>Log in on placeholder, then apply drop SKUs when they land.</span></li>
             </ul>
           </aside>
         </div>
@@ -81,7 +81,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
 
       <footer className="download-footer">
         <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
-        <p>Target and Pokémon Center US checkout automation.</p>
+        <p>ZynAIO — Target, Pokémon Center US, and Walmart checkout.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

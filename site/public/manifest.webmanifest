@@ -1,7 +1,7 @@
 {
-  "name": "Zyn",
+  "name": "ZynAIO",
   "short_name": "Zyn",
-  "description": "Target checkout automation from one focused desktop workspace.",
+  "description": "Target, Pokémon Center US, and Walmart checkout from one desktop workspace.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1012",

@@ -1,52 +1,45 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const checkoutFlow = [
-  ["01", "Products being watched", "Ready"],
-  ["02", "Ready to add to cart", "Ready"],
-  ["03", "Priority item in cart", "Running"],
-  ["04", "Order confirmed", "Success"],
-];
-
 const features = [
   {
-    kicker: "Checkout",
-    title: "From login to order.",
-    copy: "Zyn signs in, adds the item to cart, pays, and places the order on Target or Pokémon Center US from one Mac or Windows app.",
+    kicker: "All-in-one",
+    title: "Three retailers. One desktop app.",
+    copy: "Run Target, Pokémon Center US, and Walmart from the same Mac or Windows workspace instead of juggling separate bots.",
   },
   {
-    kicker: "Accounts",
-    title: "Generate Target accounts. Jig the address.",
-    copy: "Create Target accounts in the app. Each one can get a checkout profile with a slightly different shipping address, so they do not all look the same.",
+    kicker: "Target",
+    title: "Watch, harvest, then check out.",
+    copy: "Star the SKUs that matter, bank session cookies ahead of time, and switch running tasks to a priority item before they pay.",
   },
   {
-    kicker: "Proxies",
-    title: "Keep the lists that work.",
-    copy: "Give a group several proxy lists. Zyn keeps using the ones that add to cart and sets aside the ones that don’t.",
+    kicker: "Pokémon Center",
+    title: "Wait for the queue. Then go.",
+    copy: "Hold guest checkout on placeholder SKUs, wait for queue, and apply products to every waiting task when the drop opens.",
   },
   {
-    kicker: "Priority items",
-    title: "Buy the product you care about first.",
-    copy: "Star the items that matter. Running tasks switch to them before paying, and stop chasing a product you take off the list.",
+    kicker: "Walmart",
+    title: "Log in first. Apply SKUs later.",
+    copy: "Start on placeholder, get the account ready, then paste drop SKUs and send them to every waiting Walmart task at once.",
   },
   {
-    kicker: "Ready to cart",
-    title: "Be ready when it restocks.",
-    copy: "Collect Target session cookies ahead of time so checkout is not waiting around when the item comes back.",
+    kicker: "Workspace",
+    title: "Profiles, accounts, and proxies together.",
+    copy: "Keep checkout profiles, logins, and proxy lists in one place. Zyn stays on the lists that add to cart and sets the rest aside.",
   },
   {
-    kicker: "Live run",
-    title: "See the drop as it happens.",
-    copy: "Watch how many tasks carted, submitted, and checked out without opening every account.",
+    kicker: "Live drop",
+    title: "See carts, submits, and checkouts.",
+    copy: "Watch the restock as a group instead of opening every account. Mac and Windows, same license.",
   },
 ];
 
 const differences = [
   {
-    usualTitle: "Every store in one app",
-    usual: "Amazon, Walmart, Best Buy, Target, and more — so setup is spread across sites you may never run.",
-    zynTitle: "Target and Pokémon Center US",
-    zyn: "The watch list, proxies, and checkout are built for Target and Pokémon Center US drops. Nothing else to configure.",
+    usualTitle: "A different app per store",
+    usual: "Target in one bot, Pokémon Center in another, Walmart in a third — three setups, three logins, three places to fail.",
+    zynTitle: "ZynAIO",
+    zyn: "Target, Pokémon Center US, and Walmart share one desktop app, one account, and one drop workspace.",
   },
   {
     usualTitle: "Same address on every account",
@@ -64,7 +57,7 @@ const differences = [
     usualTitle: "Whatever hits cart first",
     usual: "Tasks chase the first in-stock product on a long list — even if it is not the one you wanted.",
     zynTitle: "Star it, then switch",
-    zyn: "Mark the product you care about. Running tasks move to it before they pay.",
+    zyn: "Mark the product you care about. Running Target tasks move to it before they pay.",
   },
   {
     usualTitle: "Guess how the drop is going",
@@ -86,17 +79,59 @@ const differences = [
   },
 ];
 
+const shots = [
+  {
+    src: "/screenshots/zyn-target.png",
+    title: "Target",
+    copy: "Watch lists, accounts, and live drop counts in one group.",
+  },
+  {
+    src: "/screenshots/zyn-target-harvesters.png",
+    title: "Cookie harvest",
+    copy: "Bank Target login and add-to-cart sessions before the restock.",
+  },
+  {
+    src: "/screenshots/zyn-pokemon-center.png",
+    title: "Pokémon Center US",
+    copy: "Queue wait, placeholders, and guest checkout on the same screen.",
+  },
+  {
+    src: "/screenshots/zyn-walmart.png",
+    title: "Walmart",
+    copy: "Log in on placeholder, then apply drop SKUs to every waiting task.",
+  },
+  {
+    src: "/screenshots/zyn-profiles.png",
+    title: "Profiles",
+    copy: "Checkout profiles, groups, and mailboxes for every retailer.",
+  },
+  {
+    src: "/screenshots/zyn-proxies.png",
+    title: "Proxies",
+    copy: "Keep the lists that add to cart. Set the rest aside.",
+  },
+];
+
+function BrandMark({ size = 44 }: { size?: number }) {
+  return (
+    <>
+      <Image src="/zyn-icon.png" alt="" width={size} height={size} unoptimized />
+      <span>Zyn<span className="aio-mark">AIO</span></span>
+    </>
+  );
+}
+
 export default function Home() {
   return (
     <main className="home-page">
       <header className="site-header home-header">
-        <a className="brand" href="#top" aria-label="Zyn home">
-          <Image src="/zyn-icon.png" alt="" width={44} height={44} unoptimized />
-          <span>Zyn</span>
+        <a className="brand" href="#top" aria-label="ZynAIO home">
+          <BrandMark />
         </a>
         <nav aria-label="Main navigation">
           <a href="#features">Features</a>
-          <a href="#why">Why Zyn</a>
+          <a href="#product">Product</a>
+          <a href="#why">Why ZynAIO</a>
           <a href="#pricing">Pricing</a>
           <Link className="nav-cta" href="/buy">Buy Zyn</Link>
         </nav>
@@ -104,72 +139,43 @@ export default function Home() {
 
       <section className="target-hero" id="top">
         <div className="target-hero-copy">
-          <div className="target-chip"><i aria-hidden="true" /> Target and Pokémon Center US</div>
-          <h1>Built for<br />Target and Pokémon Center drops.</h1>
+          <div className="target-chip"><i aria-hidden="true" /> ZynAIO</div>
+          <h1>One app for Target, Pokémon Center, and Walmart.</h1>
           <p className="target-lede">
-            Zyn is a desktop app for Target and Pokémon Center US restocks — not an all-in-one for every store.
-            Watch the products you want, keep proxies that work, and check out when they come back.
+            ZynAIO is the desktop checkout workspace for the drops that matter.
+            Watch products, keep working proxies, and check out from one Mac or Windows app.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/buy">
               Buy Zyn — $100 <span aria-hidden="true">→</span>
             </Link>
-            <a className="button button-secondary" href="#features">See how it works</a>
+            <a className="button button-secondary" href="#product">See the app</a>
           </div>
           <p className="beta-promise">
             <strong>$100 for two months.</strong> Then $40 every month. Target and Pokémon Center US are included.
           </p>
           <div className="target-capabilities" aria-label="Supported retailers">
-            <span>Target checkout</span>
+            <span>Target</span>
             <span>Pokémon Center US</span>
-            <span>Product watch lists</span>
+            <span>Walmart</span>
             <span>Mac and Windows</span>
           </div>
         </div>
 
-        <div className="performance-stage" aria-label="Preview of Zyn Target checkout">
+        <div className="performance-stage" aria-label="Zyn Target workspace">
           <div className="performance-halo" aria-hidden="true" />
-          <div className="target-console">
-            <div className="console-bar">
-              <div className="console-brand">
-                <Image src="/zyn-icon.png" alt="" width={26} height={26} unoptimized />
-                <div><strong>Zyn</strong><span>Target and Pokémon Center US</span></div>
-              </div>
-              <div className="engine-status"><i /> Watching Target</div>
-            </div>
-
-            <div className="console-content">
-              <div className="console-heading">
-                <div><span>Live checkout</span><strong>Target restock group</strong></div>
-                <em>Priority item ready</em>
-              </div>
-
-              <div className="console-metrics">
-                <div><span>Carted</span><strong>12</strong></div>
-                <div><span>Submit</span><strong>4</strong></div>
-                <div><span>Checkout</span><strong>2</strong></div>
-              </div>
-
-              <div className="checkout-flow">
-                <div className="flow-header"><span>This drop</span><span>Live</span></div>
-                {checkoutFlow.map(([number, label, state], index) => (
-                  <div className="flow-row" key={number}>
-                    <span className="flow-number">{number}</span>
-                    <div className="flow-line" aria-hidden="true"><i className={index === checkoutFlow.length - 1 ? "complete" : ""} /></div>
-                    <strong>{label}</strong>
-                    <em className={state.toLowerCase()}>{state}</em>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="console-footer">
-              <span>Target · Pokémon Center US</span>
-              <span>Mac and Windows</span>
-            </div>
-          </div>
-          <div className="performance-tag tag-native"><span>Retailers</span><strong>Target + PCUS</strong></div>
-          <div className="performance-tag tag-confirmed"><span>Checkout</span><strong>Confirmed</strong></div>
+          <figure className="product-shot">
+            <Image
+              src="/screenshots/zyn-target.png"
+              alt="Zyn Target task group with accounts, proxies, and live drop counts"
+              width={1600}
+              height={1000}
+              unoptimized
+              priority
+            />
+          </figure>
+          <div className="performance-tag tag-native"><span>Retailers</span><strong>Target · PCUS · Walmart</strong></div>
+          <div className="performance-tag tag-confirmed"><span>Desktop</span><strong>Mac + Windows</strong></div>
         </div>
       </section>
 
@@ -178,8 +184,8 @@ export default function Home() {
           <p className="kicker">On a drop</p>
           <h2>What you actually use.</h2>
           <p>
-            Watch the products you want, keep the proxies that work, and see carts, submits, and
-            checkouts as they happen.
+            Three retailers, one workspace. Watch the products you want, keep the proxies that work,
+            and see carts, submits, and checkouts as they happen.
           </p>
         </div>
         <div className="home-feature-grid">
@@ -193,30 +199,52 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="difference-section" id="why">
-        <div className="difference-intro">
-          <p className="kicker">Unlike most bots</p>
-          <h2>Zyn does Target and Pokémon Center US.</h2>
+      <section className="gallery-section" id="product">
+        <div className="feature-intro">
+          <p className="kicker">Inside the app</p>
+          <h2>ZynAIO in the wild.</h2>
           <p>
-            Most all-in-one bots try to cover every store, then charge thousands
-            before you even run a drop. Zyn is built around Target and Pokémon Center
-            US restocks — and a few things those bots do not give you.
+            Target groups, cookie harvest, Pokémon Center queues, Walmart login-first tasks,
+            plus the profiles and proxies that back every run.
           </p>
         </div>
-        <div className="difference-board" aria-label="How Zyn compares with typical all-in-one bots">
+        <div className="product-gallery">
+          {shots.map((shot) => (
+            <figure className="gallery-card" key={shot.src}>
+              <Image src={shot.src} alt={shot.title} width={1600} height={1000} unoptimized />
+              <figcaption>
+                <strong>{shot.title}</strong>
+                <span>{shot.copy}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      <section className="difference-section" id="why">
+        <div className="difference-intro">
+          <p className="kicker">Unlike most setups</p>
+          <h2>ZynAIO is the whole drop in one place.</h2>
+          <p>
+            Most people pay for a different bot per store, then spend the drop switching windows.
+            ZynAIO puts Target, Pokémon Center US, and Walmart on one desktop — with the Target
+            tools you actually use mid-restock.
+          </p>
+        </div>
+        <div className="difference-board" aria-label="How ZynAIO compares with typical setups">
           <div className="difference-head">
-            <span>Typical all-in-one</span>
-            <span>Zyn</span>
+            <span>Typical setup</span>
+            <span>ZynAIO</span>
           </div>
           {differences.map((row) => (
             <div className="difference-row" key={row.zynTitle}>
               <div>
-                <small>Typical all-in-one</small>
+                <small>Typical setup</small>
                 <strong>{row.usualTitle}</strong>
                 <p>{row.usual}</p>
               </div>
               <div>
-                <small>Zyn</small>
+                <small>ZynAIO</small>
                 <strong>{row.zynTitle}</strong>
                 <p>{row.zyn}</p>
               </div>
@@ -236,12 +264,12 @@ export default function Home() {
         </div>
 
         <div className="beta-offer">
-          <div className="offer-topline"><span>Zyn license</span><em>Self-serve</em></div>
+          <div className="offer-topline"><span>ZynAIO license</span><em>Self-serve</em></div>
           <div className="offer-price"><strong>$100</strong><span>first two months</span></div>
           <ul>
             <li><i aria-hidden="true">01</i><span><strong>Target and Pokémon Center US</strong>Watch lists, proxies, and checkout for both retailers on Mac and Windows.</span></li>
-            <li><i aria-hidden="true">02</i><span><strong>$100 for two months</strong>Then $40 every month. Cancel from the billing email Stripe sends you.</span></li>
-            <li><i aria-hidden="true">03</i><span><strong>Same desktop app</strong>Buy on the web, then sign in on Mac or Windows with the account Zyn creates for you.</span></li>
+            <li><i aria-hidden="true">02</i><span><strong>Walmart in the same app</strong>Log in on placeholder, then apply drop SKUs to waiting tasks.</span></li>
+            <li><i aria-hidden="true">03</i><span><strong>$100 for two months</strong>Then $40 every month. Cancel from the billing email Stripe sends you.</span></li>
           </ul>
           <Link className="button button-primary offer-button" href="/buy">
             Buy Zyn <span aria-hidden="true">→</span>
@@ -251,8 +279,8 @@ export default function Home() {
       </section>
 
       <footer className="home-footer">
-        <a className="brand" href="#top"><Image src="/zyn-icon.png" alt="" width={38} height={38} unoptimized /><span>Zyn</span></a>
-        <p>Target and Pokémon Center US checkout automation.</p>
+        <a className="brand" href="#top"><BrandMark size={38} /></a>
+        <p>ZynAIO — Target, Pokémon Center US, and Walmart checkout.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

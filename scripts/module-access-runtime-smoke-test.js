@@ -173,7 +173,7 @@ async function main() {
   const compactSettingsAccess = report.settingsAccess.replace(/\s+/g, '');
   if (report.authoritative.ok !== false
     || !exact(report.authoritative.taskTypes, { pokemoncenter: false, round1: false })
-    || report.gateBadge !== 'ZYN'
+    || report.gateBadge !== 'ZYNAIO'
     || !exact(report.deniedCards, deniedCardsExpected)
     || !report.deniedRound1Route.hash.endsWith('/modules')
     || !report.deniedPokemonRoute.hash.endsWith('/modules')
