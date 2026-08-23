@@ -14,7 +14,7 @@ function readJSON(filename, defaultVal) {
 }
 
 function writeJSON(filename, data) {
-  fs.writeFileSync(path.join(dataDir, filename), JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(path.join(dataDir, filename), JSON.stringify(data), 'utf8');
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────────

@@ -148,9 +148,15 @@ const editSandbox = {
   Buffer,
   URL,
   LOG_LINE_MAX: 1000,
+  LOG_BUF_MAX: 800,
+  LOG_FLUSH_MS: 250,
+  setTimeout,
+  clearTimeout,
   redactProxies: value => value,
   zynBrandText: value => String(value == null ? '' : value),
   toRenderer: () => {},
+  createStatusCoalescer: () => ({ enqueue() {}, drop() {}, dropAll() {}, flushNow() {} }),
+  STATUS_FLUSH_MS: 64,
   engineContract: {
     SITES: { POKEMON_CENTER_US: 'Pokemon Center US' },
     normalizeStartTask: value => value,
@@ -234,12 +240,12 @@ assert.match(page, /toggleSetup/);
 assert.match(page, /setupSummary/);
 assert.match(page, /Queue delay \$\{String\(pokemon\.queueEntryDelay \|\| '0'\)\}/);
 assert.match(page, /setupOpen !== false/);
-assert.match(page, /taskLogRef = React\.createRef\(\)/);
-assert.match(page, /engineLogRef = React\.createRef\(\)/);
-assert.match(page, /componentDidUpdate\(prevProps, prevState\)/);
-assert.match(page, /node\.scrollTop = node\.scrollHeight/);
-assert.match(page, /ref=\{this\.taskLogRef\}/);
-assert.match(page, /ref=\{this\.engineLogRef\}/);
+assert.match(page, /<VirtualList/);
+assert.match(page, /<InlineSelect/);
+assert.match(page, /connectTaskLog\('pokemon'\)/);
+assert.match(page, /connectEngineLog\('pokemon'\)/);
+assert.match(page, /pickTableState\(state\.pokemon/);
+assert.doesNotMatch(page, /pokemon\.tasks\.map\(task =>/);
 assert.match(page, /HTTPS queue-status endpoint every three seconds/);
 assert.match(page, /30-second heartbeats, failures\/recovery/);
 assert.match(page, /editPokemonCenter/);

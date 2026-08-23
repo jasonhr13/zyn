@@ -1,8 +1,17 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyLabel, proxyRef } from '../proxy-options';
+import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
+import InlineSelect from '../inline-select';
+import { connectEngineLog, connectTaskLog, indexById, pickTableState } from '../module-table-state';
 const { ipcRenderer } = window.require('electron');
 
+const POKEMON_TABLE_KEYS = Object.freeze([
+  'products', 'tasks', 'taskStatus', 'taskInputs', 'monitorDelay', 'retryDelay',
+  'loopCheckout', 'waitForQueue', 'queueEntryDelay', 'allInstock',
+]);
+const PokemonEngineLog = connectEngineLog('pokemon');
+const PokemonTaskLog = connectTaskLog('pokemon');
 const uid = () => 'pc_' + Math.random().toString(36).slice(2, 10);
 const productUid = () => 'pc_product_' + Math.random().toString(36).slice(2, 10);
 const MAX_PRODUCTS = 3;
@@ -77,9 +86,6 @@ function Status({ value }) {
 }
 
 class PokemonCenter extends Component {
-  taskLogRef = React.createRef();
-  engineLogRef = React.createRef();
-
   state = {
     draftProfiles: [], draftProxy: '', draftCount: '2', expanded: null, notice: '',
     editingProductsTask: null, productDraft: [], setupOpen: true,
@@ -102,28 +108,25 @@ class PokemonCenter extends Component {
     } catch {}
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    const taskId = this.state.expanded;
-    const previousTaskLogs = taskId ? (prevProps.pokemon.taskLogs[taskId] || []) : [];
-    const taskLogs = taskId ? (this.props.pokemon.taskLogs[taskId] || []) : [];
-
-    if (taskId && (prevState.expanded !== taskId || previousTaskLogs !== taskLogs)) {
-      this.scrollLogToBottom(this.taskLogRef);
-    }
-
-    if ((prevProps.pokemon.logs || []) !== (this.props.pokemon.logs || [])) {
-      this.scrollLogToBottom(this.engineLogRef);
-    }
+  componentWillUnmount() {
+    this.flushPersist();
+    clearTimeout(this.editTimer);
+    clearTimeout(this.noticeTimer);
   }
 
-  componentWillUnmount() { clearTimeout(this.editTimer); clearTimeout(this.noticeTimer); }
-
-  scrollLogToBottom = ref => {
-    const node = ref.current;
-    if (node) node.scrollTop = node.scrollHeight;
+  persist = (over = {}) => {
+    this.pendingPersist = { ...(this.pendingPersist || {}), ...over };
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(this.flushPersist, 400);
   };
 
-  persist = (over = {}) => {
+  flushPersist = () => {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = 0;
+    }
+    const over = this.pendingPersist || {};
+    this.pendingPersist = null;
     const payload = { ...this.props.pokemon, ...over };
     const saved = {
       products: payload.products, tasks: payload.tasks,
@@ -376,11 +379,62 @@ class PokemonCenter extends Component {
 
   stop = taskId => { ipcRenderer.sendSync('stopPokemonCenter', taskId); };
 
+  renderTaskRow = (task, { profilesById, profileOptions, proxyOptions }) => {
+    const profile = profilesById.get(String(task.profileId));
+    const status = this.props.pokemon.taskStatus[task.id];
+    const active = status && status.running !== false;
+    const input = this.props.pokemon.taskInputs[task.id];
+    const open = this.state.expanded === task.id;
+    const taskProducts = this.productsForTask(task);
+    const taskProductCount = this.configuredProductCount(taskProducts);
+    const customProducts = Array.isArray(task.products) && task.products.length > 0;
+    return (
+      <div key={task.id} className="site-task-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10 }}>
+        <InlineSelect
+          className="form-select"
+          value={task.profileId}
+          placeholder="Select profile"
+          options={profileOptions}
+          onChange={value => this.updateTask(task, { profileId: value })}
+        />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(input && input.productName) || ''}>
+          {`${taskProductCount} product${taskProductCount === 1 ? '' : 's'} configured`}
+          {customProducts && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>task-specific</small>}
+          {input && input.productName && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>· {input.productName}</small>}
+        </span>
+        <InlineSelect
+          className="form-select"
+          value={task.proxyListName || ''}
+          placeholder="Local (no proxy)"
+          options={proxyOptions}
+          onChange={value => this.updateTask(task, { proxyListName: value })}
+        />
+        <Status value={status} />
+        <span style={{ display: 'flex', gap: 5 }}>
+          {active
+            ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
+            : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!profile}>Start</button>}
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.openTaskProducts(task)} title="Edit task products"><i className="ion-md-create" /></button>
+          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
+        </span>
+      </div>
+    );
+  };
+
   render() {
     const { pokemon, profiles, proxies } = this.props;
     const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft, setupOpen } = this.state;
     const list = profileList(profiles);
     const proxyLists = (proxies && proxies.lists) || [];
+    const profilesById = indexById(list);
+    const usedByProfile = new Map();
+    for (const task of pokemon.tasks || []) {
+      const id = String(task.profileId || '');
+      if (id) usedByProfile.set(id, (usedByProfile.get(id) || 0) + 1);
+    }
+    const profileOptions = list.map(value => ({ value: value.id, label: profileName(value) }));
+    const proxyOptions = [{ value: '', label: 'Local (no proxy)' }, ...proxyLists.map(proxy => ({ value: proxyRef(proxy), label: proxyLabel(proxy) }))];
 
     return (
       <div className="page" style={{ padding: '16px 20px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -506,7 +560,7 @@ class PokemonCenter extends Component {
                   {!list.length && <div style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}>Add a checkout profile first.</div>}
                   {list.map(profile => {
                     const selected = draftProfiles.includes(profile.id);
-                    const used = pokemon.tasks.filter(task => String(task.profileId) === String(profile.id)).length;
+                    const used = usedByProfile.get(String(profile.id)) || 0;
                     return (
                       <div key={profile.id} onClick={() => this.toggleDraftProfile(profile.id)} style={{
                         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 5,
@@ -535,64 +589,42 @@ class PokemonCenter extends Component {
             </div>
           </div>}
 
-          <div className="panel" style={{ margin: 0, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>
+          <div className="panel site-task-panel">
+            <div className="site-task-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10 }}>
               <span>PROFILE</span><span>PRODUCTS</span><span>PROXY</span><span>STATUS</span><span>ACTIONS</span>
             </div>
             {!pokemon.tasks.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>No Pokémon Center tasks yet.</div>}
-            {pokemon.tasks.map(task => {
-              const profile = list.find(value => String(value.id) === String(task.profileId));
-              const status = pokemon.taskStatus[task.id];
-              const active = status && status.running !== false;
-              const input = pokemon.taskInputs[task.id];
-              const logs = pokemon.taskLogs[task.id] || [];
-              const open = expanded === task.id;
-              const taskProducts = this.productsForTask(task);
-              const taskProductCount = this.configuredProductCount(taskProducts);
-              const customProducts = Array.isArray(task.products) && task.products.length > 0;
-              return (
-                <div key={task.id} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10, padding: '10px 12px', alignItems: 'center', fontSize: 11 }}>
-                    <select className="form-select" value={task.profileId} onChange={e => this.updateTask(task, { profileId: e.target.value })}>
-                      <option value="">Select profile</option>
-                      {list.map(value => <option key={value.id} value={value.id}>{profileName(value)}</option>)}
-                    </select>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(input && input.productName) || ''}>
-                      {`${taskProductCount} product${taskProductCount === 1 ? '' : 's'} configured`}
-                      {customProducts && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>task-specific</small>}
-                      {input && input.productName && <small style={{ marginLeft: 5, color: 'var(--muted)' }}>· {input.productName}</small>}
-                    </span>
-                    <select className="form-select" value={task.proxyListName || ''} onChange={e => this.updateTask(task, { proxyListName: e.target.value })}>
-                      <option value="">Local (no proxy)</option>
-                      {proxyLists.map(proxy => <option key={proxyRef(proxy)} value={proxyRef(proxy)}>{proxyLabel(proxy)}</option>)}
-                    </select>
-                    <Status value={status} />
-                    <span style={{ display: 'flex', gap: 5 }}>
-                      {active
-                        ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
-                        : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!profile}>Start</button>}
-                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.openTaskProducts(task)} title="Edit task products"><i className="ion-md-create" /></button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })} title="Task log">Log</button>
-                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
-                    </span>
-                  </div>
-                  {open && <div style={{ padding: '0 12px 12px' }}>
-                    <div ref={this.taskLogRef} style={{ background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 7, padding: 9, minHeight: 52, maxHeight: 180, overflowY: 'auto' }}>
-                      {!logs.length ? <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>
-                        : logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
-                    </div>
-                  </div>}
-                </div>
-              );
-            })}
+            {!!pokemon.tasks.length && (
+              <VirtualList
+                className="virtual-list site-task-virtual"
+                count={pokemon.tasks.length}
+                rowHeight={TASK_ROW_HEIGHT}
+                estimatedHeight={480}
+                renderRow={index => this.renderTaskRow(pokemon.tasks[index], {
+                  profilesById, profileOptions, proxyOptions,
+                })}
+              />
+            )}
+            {expanded && (
+              <div className="site-task-log-dock">
+                <PokemonTaskLog
+                  className="task-log-view"
+                  taskId={expanded}
+                  estimatedHeight={160}
+                  empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>}
+                />
+              </div>
+            )}
           </div>
 
-          {pokemon.logs.length > 0 && <div className="panel" style={{ marginTop: 14, padding: 12 }}>
+          <div className="panel" style={{ marginTop: 14, padding: 12 }}>
             <strong style={{ fontSize: 11 }}>Engine log</strong>
-            <div ref={this.engineLogRef} style={{ marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
-              {pokemon.logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
-            </div>
-          </div>}
+            <PokemonEngineLog
+              className="task-log-view"
+              estimatedHeight={180}
+              empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>Task and monitor output will appear here.</span>}
+            />
+          </div>
         </div>
 
         {editingProductsTask && <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeTaskProducts()}>
@@ -654,5 +686,6 @@ class PokemonCenter extends Component {
 }
 
 export default connect(state => ({
-  pokemon: state.pokemon, profiles: state.profiles, proxies: state.proxies,
+  pokemon: pickTableState(state.pokemon, POKEMON_TABLE_KEYS),
+  profiles: state.profiles, proxies: state.proxies,
 }))(PokemonCenter);

@@ -29,6 +29,8 @@ import {
 import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 import VirtualLogView from '../virtual-log-view';
+import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
+import InlineSelect from '../inline-select';
 import Store from '../store';
 import {
   accountForTask,
@@ -237,9 +239,16 @@ class TaskGroupTaskRowView extends Component {
           <i className="task-avatar">{initial}</i>
           <strong>{host.accountLabel(task)}</strong>
         </span>
-        <select className="form-select task-proxy-select" value={task.proxyListName || ''} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => host.updateTaskProxy(group, task, event.target.value)}>
-          {host.renderProxySelectOptions()}
-        </select>
+        <span onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          <InlineSelect
+            className="form-select task-proxy-select"
+            value={task.proxyListName || ''}
+            options={host.proxySelectOptions()}
+            placeholder="Local"
+            ariaLabel={`Proxy for ${host.accountLabel(task)}`}
+            onChange={value => host.updateTaskProxy(group, task, value)}
+          />
+        </span>
         <label
           className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
           title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
@@ -382,7 +391,7 @@ class TaskGroupTaskDetailView extends Component {
             </section>
           </div>
 
-          {host.renderSharedEngineLog()}
+          {<SharedEngineLog host={host} />}
         </div>
         {host.renderHarvesterDrawer()}
         {host.renderReadinessModal()}
@@ -564,6 +573,7 @@ class TaskGroups extends Component {
   }
 
   componentWillUnmount() {
+    this.flushPersist();
     clearInterval(this.bankTimer);
     clearInterval(this.scheduleClockTimer);
     try { ipcRenderer.removeListener('taskGroupSchedule', this.onTaskGroupSchedule); } catch {}
@@ -766,6 +776,14 @@ class TaskGroups extends Component {
     }
     return [...names];
   };
+  proxySelectOptions = ({ localValue = '', localLabel = 'Local', includeLocal = true } = {}) => {
+    const options = [];
+    if (includeLocal) options.push({ value: localValue, label: localLabel });
+    for (const name of this.proxyFolders()) options.push({ value: proxyFolderRef(name), label: name, group: 'Folders' });
+    for (const list of this.proxyLists()) options.push({ value: proxyRef(list), label: proxyLabel(list), group: 'Lists' });
+    return options;
+  };
+
   renderProxySelectOptions = ({ localValue = '', localLabel = 'Local', includeLocal = true } = {}) => {
     const folders = this.proxyFolders();
     const lists = this.proxyLists();
@@ -822,9 +840,19 @@ class TaskGroups extends Component {
   profileForAccount = (accountId) => profileForAccountId(this.props.profiles, this.props.accounts, accountId);
 
   persist = (groups, callback) => {
-    let saved = groups;
-    try { saved = ipcRenderer.sendSync('saveTaskGroups', groups) || groups; } catch {}
-    this.setState({ groups: saved }, callback);
+    this.setState({ groups }, callback);
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = 0;
+      try { ipcRenderer.sendSync('saveTaskGroups', this.state.groups); } catch {}
+    }, 400);
+  };
+
+  flushPersist = () => {
+    if (!this.persistTimer) return;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = 0;
+    try { ipcRenderer.sendSync('saveTaskGroups', this.state.groups); } catch {}
   };
 
   allStats = () => selectTargetWorkspaceRuntime(liveTarget(), this.state.groups);
@@ -1372,7 +1400,7 @@ class TaskGroups extends Component {
   };
 
   copyEngineLogs = () => {
-    const logs = this.props.targetLogs || [];
+    const logs = liveTarget().logs || [];
     if (!logs.length) return;
     try { clipboard.writeText(logs.join('\n')); } catch {}
     this.setState({ copiedEngine: true }, () => {
@@ -1381,7 +1409,7 @@ class TaskGroups extends Component {
   };
 
   clearEngineLogs = () => {
-    const logs = this.props.targetLogs || [];
+    const logs = liveTarget().logs || [];
     if (!logs.length || !window.confirm('Clear the shared engine / monitor log?')) return;
     this.props.dispatch({ type: 'targetSet', obj: { logs: [] } });
   };
@@ -1501,11 +1529,11 @@ class TaskGroups extends Component {
     );
   }
 
-  renderSharedEngineLog() {
+  renderSharedEngineLog(source = this.props) {
     const target = {
-      logs: this.props.targetLogs || [],
-      monitorStatus: this.props.monitorStatus,
-      monitorBandwidth: this.props.monitorBandwidth,
+      logs: source.targetLogs || [],
+      monitorStatus: source.monitorStatus,
+      monitorBandwidth: source.monitorBandwidth,
     };
     const logs = target.logs || [];
     const monitor = target.monitorStatus;
@@ -2039,12 +2067,19 @@ class TaskGroups extends Component {
                   </span>
                   <span>Account</span><span>Proxy</span><span>Loop</span><span>This run</span><span>Status</span><span>Created</span><span>Actions</span>
                 </div>
-                {visibleTasks.map(task => this.renderTaskRow(group, task))}
-                {!visibleTasks.length && <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
+                {visibleTasks.length ? (
+                  <VirtualList
+                    className="virtual-list group-task-virtual"
+                    count={visibleTasks.length}
+                    rowHeight={TASK_ROW_HEIGHT}
+                    estimatedHeight={520}
+                    renderRow={index => this.renderTaskRow(group, visibleTasks[index])}
+                  />
+                ) : <div className="table-empty" style={{ padding: 28 }}>No matching tasks.</div>}
               </div>
             )}
           </div>
-          {this.renderSharedEngineLog()}
+          {<SharedEngineLog host={this} />}
         </div>
         {this.renderHarvesterDrawer()}
         {this.renderReadinessModal()}
@@ -2467,12 +2502,21 @@ class TaskGroups extends Component {
   }
 }
 
+class SharedEngineLogView extends Component {
+  render() {
+    return this.props.host.renderSharedEngineLog(this.props);
+  }
+}
+
+const SharedEngineLog = connect(state => ({
+  targetLogs: state.target.logs,
+  monitorStatus: state.target.monitorStatus,
+  monitorBandwidth: state.target.monitorBandwidth,
+}))(SharedEngineLogView);
+
 export default connect(state => ({
   accounts: state.accounts,
   profiles: state.profiles,
   proxies: state.proxies,
   settings: state.settings,
-  targetLogs: state.target.logs,
-  monitorStatus: state.target.monitorStatus,
-  monitorBandwidth: state.target.monitorBandwidth,
 }))(TaskGroups);

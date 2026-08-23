@@ -10,7 +10,10 @@ const sent = [];
 let now = 0;
 const timers = [];
 const coalescer = createStatusCoalescer({
-  send: payload => sent.push(payload),
+  send: batch => {
+    assert.ok(Array.isArray(batch), 'a flush must send one array, not one IPC per task');
+    sent.push(...batch);
+  },
   intervalMs: 64,
   setTimeoutFn: (fn, ms) => {
     const timer = { fn, at: now + ms, id: timers.length + 1 };
@@ -64,6 +67,12 @@ const engine = fs.readFileSync(
 );
 assert.match(engine, /require\('\.\/status-coalesce'\)/);
 assert.match(engine, /statusCoalescer\.enqueue/);
+assert.match(engine, /targetStatusBatch/);
+assert.match(engine, /targetLogBatch/);
+assert.match(engine, /pokemonLogBatch/);
+assert.match(engine, /walmartLogBatch/);
+assert.match(engine, /pokemonStatusBatch/);
+assert.match(engine, /walmartStatusBatch/);
 assert.match(engine, /running === false/);
 assert.match(engine, /statusCoalescer\.dropAll\(\)/);
 assert.match(engine, /statusCoalescer\.drop\(requestedId\)/);

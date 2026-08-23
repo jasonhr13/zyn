@@ -64,17 +64,19 @@ class PageHandler extends Component {
     ipcRenderer.on('targetLog', (e, { line, lines, taskId }) => {
       this.props.dispatch({ type: 'targetLog', line, lines, taskId, at: Date.now() });
     });
+    ipcRenderer.on('targetLogBatch', (e, { byTask } = {}) => {
+      this.props.dispatch({ type: 'targetLogBatch', byTask: byTask || {}, at: Date.now() });
+    });
     // Distinct statuses are already coalesced per task in the Target engine bridge.
-    ipcRenderer.on('targetStatus', (e, { state, label, color, detail, taskId, taskState, running }) => {
+    ipcRenderer.on('targetStatus', (e, payload = {}) => {
+      this.dispatchTargetStatus(payload);
+    });
+    ipcRenderer.on('targetStatusBatch', (e, { updates } = {}) => {
       const receivedAt = Date.now();
-      this.props.dispatch({ type: 'targetStatus', state, label, color, detail, taskId, taskState, running, receivedAt });
-      if (taskId && isTargetProxyStatus(label || state)) {
-        clearTimeout(this.targetProxyTimers[taskId]);
-        this.targetProxyTimers[taskId] = setTimeout(() => {
-          this.props.dispatch({ type: 'targetProxyStatusClear', taskId, at: receivedAt });
-          delete this.targetProxyTimers[taskId];
-        }, 4000);
-      }
+      const list = Array.isArray(updates) ? updates : [];
+      if (!list.length) return;
+      this.props.dispatch({ type: 'targetStatusBatch', updates: list, receivedAt });
+      for (const update of list) this.armTargetProxyTimer(update, receivedAt);
     });
     ipcRenderer.on('targetDone', (e, { taskId } = {}) => {
       this.props.dispatch({ type: 'targetDone', taskId });
@@ -97,8 +99,14 @@ class PageHandler extends Component {
     ipcRenderer.on('pokemonLog', (e, { line, lines, taskId } = {}) => {
       this.props.dispatch({ type: 'pokemonLog', line, lines, taskId, at: Date.now() });
     });
+    ipcRenderer.on('pokemonLogBatch', (e, { byTask } = {}) => {
+      this.props.dispatch({ type: 'pokemonLogBatch', byTask: byTask || {}, at: Date.now() });
+    });
     ipcRenderer.on('pokemonStatus', (e, payload = {}) => {
       this.props.dispatch({ type: 'pokemonStatus', ...payload });
+    });
+    ipcRenderer.on('pokemonStatusBatch', (e, { updates } = {}) => {
+      this.props.dispatch({ type: 'pokemonStatusBatch', updates: Array.isArray(updates) ? updates : [] });
     });
     ipcRenderer.on('pokemonInput', (e, payload = {}) => {
       this.props.dispatch({ type: 'pokemonInput', ...payload });
@@ -109,8 +117,14 @@ class PageHandler extends Component {
     ipcRenderer.on('walmartLog', (e, { line, lines, taskId } = {}) => {
       this.props.dispatch({ type: 'walmartLog', line, lines, taskId, at: Date.now() });
     });
+    ipcRenderer.on('walmartLogBatch', (e, { byTask } = {}) => {
+      this.props.dispatch({ type: 'walmartLogBatch', byTask: byTask || {}, at: Date.now() });
+    });
     ipcRenderer.on('walmartStatus', (e, payload = {}) => {
       this.props.dispatch({ type: 'walmartStatus', ...payload });
+    });
+    ipcRenderer.on('walmartStatusBatch', (e, { updates } = {}) => {
+      this.props.dispatch({ type: 'walmartStatusBatch', updates: Array.isArray(updates) ? updates : [] });
     });
     ipcRenderer.on('walmartDone', (e, { taskId, idle } = {}) => {
       this.props.dispatch({ type: 'walmartDone', taskId, idle });
@@ -124,6 +138,23 @@ class PageHandler extends Component {
 
   }
 
+  dispatchTargetStatus = (payload = {}) => {
+    const receivedAt = Date.now();
+    this.props.dispatch({ type: 'targetStatus', ...payload, receivedAt });
+    this.armTargetProxyTimer(payload, receivedAt);
+  };
+
+  armTargetProxyTimer = (payload, receivedAt) => {
+    const taskId = payload && payload.taskId;
+    const label = (payload && (payload.label || payload.state)) || '';
+    if (!taskId || !isTargetProxyStatus(label)) return;
+    clearTimeout(this.targetProxyTimers[taskId]);
+    this.targetProxyTimers[taskId] = setTimeout(() => {
+      this.props.dispatch({ type: 'targetProxyStatusClear', taskId, at: receivedAt });
+      delete this.targetProxyTimers[taskId];
+    }, 4000);
+  };
+
   componentWillUnmount() {
     Object.values(this.targetProxyTimers).forEach(clearTimeout);
     this.targetProxyTimers = {};
@@ -133,18 +164,24 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('proxiesUpdated');
     ipcRenderer.removeAllListeners('managedProxyError');
     ipcRenderer.removeAllListeners('targetLog');
+    ipcRenderer.removeAllListeners('targetLogBatch');
     ipcRenderer.removeAllListeners('targetStatus');
+    ipcRenderer.removeAllListeners('targetStatusBatch');
     ipcRenderer.removeAllListeners('targetDone');
     ipcRenderer.removeAllListeners('targetRunStarted');
     ipcRenderer.removeAllListeners('targetMonitorBandwidth');
     ipcRenderer.removeAllListeners('targetOutcome');
     ipcRenderer.removeAllListeners('targetOtp');
     ipcRenderer.removeAllListeners('pokemonLog');
+    ipcRenderer.removeAllListeners('pokemonLogBatch');
     ipcRenderer.removeAllListeners('pokemonStatus');
+    ipcRenderer.removeAllListeners('pokemonStatusBatch');
     ipcRenderer.removeAllListeners('pokemonInput');
     ipcRenderer.removeAllListeners('pokemonDone');
     ipcRenderer.removeAllListeners('walmartLog');
+    ipcRenderer.removeAllListeners('walmartLogBatch');
     ipcRenderer.removeAllListeners('walmartStatus');
+    ipcRenderer.removeAllListeners('walmartStatusBatch');
     ipcRenderer.removeAllListeners('walmartDone');
     ipcRenderer.removeAllListeners('updateStatus');
   }

@@ -545,12 +545,14 @@ let logTimer = null;
 // would be readable.
 function flushLogs() {
   logTimer = null;
+  const byTask = {};
   for (const key of Object.keys(logBufs)) {
     const lines = logBufs[key];
     if (!lines || !lines.length) continue;
     delete logBufs[key];
-    toRenderer('targetLog', { taskId: key || '', lines });
+    byTask[key] = lines;
   }
+  if (Object.keys(byTask).length) toRenderer('targetLogBatch', { byTask });
 }
 
 const LOG_LINE_MAX = 500;   // a single Shape header value is ~4 KB; 800 retained lines of those is not free
@@ -653,7 +655,7 @@ const log = (line, taskId = '') => {
 let lastStatusKeys = {};
 const statusCoalescer = createStatusCoalescer({
   intervalMs: STATUS_FLUSH_MS,
-  send: payload => toRenderer('targetStatus', payload),
+  send: updates => toRenderer('targetStatusBatch', { updates }),
 });
 // taskState is the ENGINE's own step (constants.StatusSteps: 0 idle, 1 running, 2 carted,
 // 3 checked out, 4 declined), forwarded rather than inferred. The UI groups tasks by it, and
@@ -2484,22 +2486,44 @@ let pokemonQueueStreamHealth = { configured: false, connected: false, connecting
 let pokemonQueueStreamLogKey = '';
 let solverLucaApiKey = '';
 
+const pokemonStatusCoalescer = createStatusCoalescer({
+  intervalMs: STATUS_FLUSH_MS,
+  send: updates => toRenderer('pokemonStatusBatch', { updates }),
+});
+const pokemonLogBufs = {};
+let pokemonLogTimer = null;
+function flushPokemonLogs() {
+  pokemonLogTimer = null;
+  const byTask = {};
+  for (const key of Object.keys(pokemonLogBufs)) {
+    const lines = pokemonLogBufs[key];
+    if (!lines || !lines.length) continue;
+    delete pokemonLogBufs[key];
+    byTask[key] = lines;
+  }
+  if (Object.keys(byTask).length) toRenderer('pokemonLogBatch', { byTask });
+}
+
 function pokemonStatus(state, color, detail, taskId, taskState, running) {
   state = zynBrandText(state);
   detail = zynBrandText(detail);
-  toRenderer('pokemonStatus', {
+  pokemonStatusCoalescer.enqueue(String(taskId || ''), {
     taskId: String(taskId || ''), state: String(state || ''), label: String(state || ''),
     color: String(color || ''), detail: String(detail || ''),
     taskState: typeof taskState === 'number' ? taskState : undefined,
     running: typeof running === 'boolean' ? running : undefined,
-  });
+  }, { immediate: running === false });
 }
 
 function pokemonLog(line, taskId = '') {
   let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
   if (!value) return;
   if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
-  toRenderer('pokemonLog', { taskId: String(taskId || ''), line: value });
+  const key = String(taskId || '');
+  const buf = pokemonLogBufs[key] || (pokemonLogBufs[key] = []);
+  buf.push(value);
+  if (buf.length > LOG_BUF_MAX) pokemonLogBufs[key] = buf.slice(-LOG_BUF_MAX);
+  if (!pokemonLogTimer) pokemonLogTimer = setTimeout(flushPokemonLogs, LOG_FLUSH_MS);
 }
 
 function pokemonDone(taskId = '') {
@@ -2894,22 +2918,44 @@ const pendingWalmartStarts = [];
 const walmartMonitorIds = new Map(); // pid -> monitor task id
 let walmartStartSeq = 0;
 
+const walmartStatusCoalescer = createStatusCoalescer({
+  intervalMs: STATUS_FLUSH_MS,
+  send: updates => toRenderer('walmartStatusBatch', { updates }),
+});
+const walmartLogBufs = {};
+let walmartLogTimer = null;
+function flushWalmartLogs() {
+  walmartLogTimer = null;
+  const byTask = {};
+  for (const key of Object.keys(walmartLogBufs)) {
+    const lines = walmartLogBufs[key];
+    if (!lines || !lines.length) continue;
+    delete walmartLogBufs[key];
+    byTask[key] = lines;
+  }
+  if (Object.keys(byTask).length) toRenderer('walmartLogBatch', { byTask });
+}
+
 function walmartStatus(state, color, detail, taskId, taskState, running) {
   state = zynBrandText(state);
   detail = zynBrandText(detail);
-  toRenderer('walmartStatus', {
+  walmartStatusCoalescer.enqueue(String(taskId || ''), {
     taskId: String(taskId || ''), state: String(state || ''), label: String(state || ''),
     color: String(color || ''), detail: String(detail || ''),
     taskState: typeof taskState === 'number' ? taskState : undefined,
     running: typeof running === 'boolean' ? running : undefined,
-  });
+  }, { immediate: running === false });
 }
 
 function walmartLog(line, taskId = '') {
   let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
   if (!value) return;
   if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
-  toRenderer('walmartLog', { taskId: String(taskId || ''), line: value });
+  const key = String(taskId || '');
+  const buf = walmartLogBufs[key] || (walmartLogBufs[key] = []);
+  buf.push(value);
+  if (buf.length > LOG_BUF_MAX) walmartLogBufs[key] = buf.slice(-LOG_BUF_MAX);
+  if (!walmartLogTimer) walmartLogTimer = setTimeout(flushWalmartLogs, LOG_FLUSH_MS);
 }
 
 function walmartDone(taskId = '', { idle = false } = {}) {

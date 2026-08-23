@@ -165,6 +165,55 @@ const defaultState = {
   },
 };
 
+function applyLogBatch(moduleState, byTask, at, { alwaysModule = false, moduleCap = 800, taskCap = 400 } = {}) {
+  let logs = moduleState.logs || [];
+  let taskLogs = moduleState.taskLogs || {};
+  let logsChanged = false;
+  let taskChanged = false;
+  for (const taskId of Object.keys(byTask || {})) {
+    const incoming = byTask[taskId];
+    if (!incoming || !incoming.length) continue;
+    const timestamped = timestampLogLines(incoming, at);
+    if (!taskId || alwaysModule) {
+      logs = [...logs, ...timestamped].slice(-moduleCap);
+      logsChanged = true;
+    }
+    if (taskId) {
+      if (!taskChanged) {
+        taskLogs = { ...taskLogs };
+        taskChanged = true;
+      }
+      const previous = taskLogs[taskId] || [];
+      taskLogs[taskId] = [...previous, ...timestamped].slice(-taskCap);
+    }
+  }
+  if (!logsChanged && !taskChanged) return moduleState;
+  return {
+    ...moduleState,
+    ...(logsChanged ? { logs } : {}),
+    ...(taskChanged ? { taskLogs } : {}),
+  };
+}
+
+function applyStatusEntries(current, updates) {
+  if (!updates.length) return current;
+  const taskStatus = { ...current };
+  for (const update of updates) {
+    if (!update || !update.taskId) continue;
+    const previous = taskStatus[update.taskId] || {};
+    taskStatus[update.taskId] = {
+      ...previous,
+      state: update.state,
+      label: update.label || update.state,
+      color: update.color || previous.color || '#6DACFF',
+      detail: update.detail || '',
+      taskState: update.taskState === undefined ? previous.taskState : update.taskState,
+      running: update.running === undefined ? previous.running : update.running,
+    };
+  }
+  return taskStatus;
+}
+
 export function reducer(state = defaultState, action) {
   switch (action.type) {
     case 'update':
@@ -287,6 +336,11 @@ export function reducer(state = defaultState, action) {
         [action.taskId]: [...previous, ...timestamped].slice(-400) } } };
     }
 
+    case 'pokemonLogBatch': {
+      const next = applyLogBatch(state.pokemon, action.byTask, action.at);
+      return next === state.pokemon ? state : { ...state, pokemon: next };
+    }
+
     case 'pokemonStatus': {
       if (!action.taskId) return state;
       const previous = state.pokemon.taskStatus[action.taskId] || {};
@@ -297,6 +351,12 @@ export function reducer(state = defaultState, action) {
           taskState: action.taskState === undefined ? previous.taskState : action.taskState,
           running: action.running === undefined ? previous.running : action.running,
         } } } };
+    }
+
+    case 'pokemonStatusBatch': {
+      const updates = Array.isArray(action.updates) ? action.updates : [];
+      if (!updates.length) return state;
+      return { ...state, pokemon: { ...state.pokemon, taskStatus: applyStatusEntries(state.pokemon.taskStatus, updates) } };
     }
 
     case 'pokemonInput':
@@ -342,6 +402,11 @@ export function reducer(state = defaultState, action) {
         [action.taskId]: [...previous, ...timestamped].slice(-400) } } };
     }
 
+    case 'walmartLogBatch': {
+      const next = applyLogBatch(state.walmart, action.byTask, action.at, { alwaysModule: true });
+      return next === state.walmart ? state : { ...state, walmart: next };
+    }
+
     case 'walmartStatus': {
       if (!action.taskId) return state;
       const previous = state.walmart.taskStatus[action.taskId] || {};
@@ -352,6 +417,12 @@ export function reducer(state = defaultState, action) {
           taskState: action.taskState === undefined ? previous.taskState : action.taskState,
           running: action.running === undefined ? previous.running : action.running,
         } } } };
+    }
+
+    case 'walmartStatusBatch': {
+      const updates = Array.isArray(action.updates) ? action.updates : [];
+      if (!updates.length) return state;
+      return { ...state, walmart: { ...state.walmart, taskStatus: applyStatusEntries(state.walmart.taskStatus, updates) } };
     }
 
     case 'walmartDone': {
@@ -494,6 +565,11 @@ export function reducer(state = defaultState, action) {
         taskLogs: { ...state.target.taskLogs, [action.taskId]: [...prev, ...timestamped].slice(-400) } } };
     }
 
+    case 'targetLogBatch': {
+      const next = applyLogBatch(state.target, action.byTask, action.at);
+      return next === state.target ? state : { ...state, target: next };
+    }
+
     case 'targetStatus': {
       const entry = {
         state: action.state,
@@ -535,6 +611,26 @@ export function reducer(state = defaultState, action) {
       if (proxyEdit && !proxyEdit.pending) delete proxyStatus[action.taskId];
       return { ...state, target: { ...state.target,
         taskStatus: { ...state.target.taskStatus, [action.taskId]: entry }, proxyStatus } };
+    }
+
+    case 'targetStatusBatch': {
+      const updates = Array.isArray(action.updates) ? action.updates : [];
+      if (!updates.length) return state;
+      const receivedAt = action.receivedAt;
+      const plain = [];
+      let next = state;
+      for (const update of updates) {
+        if (!update) continue;
+        if (!update.taskId || next.target.proxyStatus[update.taskId]) {
+          next = reducer(next, { type: 'targetStatus', ...update, receivedAt });
+        } else {
+          plain.push({ ...update, receivedAt });
+        }
+      }
+      if (plain.length) {
+        next = { ...next, target: { ...next.target, taskStatus: applyStatusEntries(next.target.taskStatus, plain) } };
+      }
+      return next;
     }
 
     case 'targetOtp':

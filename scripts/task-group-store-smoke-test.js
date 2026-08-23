@@ -41,7 +41,9 @@ try {
   assert.equal(migrated[0].stockConfidence, 'any');
   assert.equal(fs.readFileSync(legacyPath, 'utf8'), originalLegacy, 'legacy rollback file changed');
 
-  const persisted = JSON.parse(fs.readFileSync(store.filePath, 'utf8'));
+  const persistedRaw = fs.readFileSync(store.filePath, 'utf8');
+  assert.equal(persistedRaw.includes('\n  '), false, 'task groups must persist compact JSON');
+  const persisted = JSON.parse(persistedRaw);
   assert.equal(persisted.version, TASK_GROUP_SCHEMA_VERSION);
   assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
 

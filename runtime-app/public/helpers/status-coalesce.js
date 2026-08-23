@@ -19,7 +19,7 @@ function createStatusCoalescer({
     if (!pending.size) return;
     const batch = [...pending.values()];
     pending.clear();
-    for (const payload of batch) send(payload);
+    send(batch);
   }
 
   function cancelTimer() {

@@ -2,8 +2,16 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import { proxyLabel, proxyRef } from '../proxy-options';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
+import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
+import InlineSelect from '../inline-select';
+import { connectEngineLog, connectTaskLog, indexByEmail, indexById, pickTableState } from '../module-table-state';
 const { ipcRenderer } = window.require('electron');
 
+const WALMART_TABLE_KEYS = Object.freeze([
+  'products', 'tasks', 'taskStatus', 'monitorDelay', 'retryDelay', 'endless',
+]);
+const WalmartEngineLog = connectEngineLog('walmart');
+const WalmartTaskLog = connectTaskLog('walmart');
 const uid = () => 'wm_' + Math.random().toString(36).slice(2, 10);
 const productUid = () => 'wm_product_' + Math.random().toString(36).slice(2, 10);
 const MAX_PRODUCTS = 10;
@@ -97,9 +105,6 @@ function Status({ value }) {
 }
 
 class Walmart extends Component {
-  taskLogRef = React.createRef();
-  engineLogRef = React.createRef();
-
   state = {
     draftAccountIds: [], draftProxy: '',
     expanded: null, notice: '', setupOpen: true,
@@ -119,28 +124,31 @@ class Walmart extends Component {
     } catch {}
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    const taskId = this.state.expanded;
-    const previousLogs = taskId ? (prevProps.walmart.taskLogs[taskId] || []) : [];
-    const logs = taskId ? (this.props.walmart.taskLogs[taskId] || []) : [];
-    if (taskId && (prevState.expanded !== taskId || previousLogs !== logs)) {
-      const node = this.taskLogRef.current;
-      if (node) node.scrollTop = node.scrollHeight;
-    }
-    if ((prevProps.walmart.logs || []) !== (this.props.walmart.logs || [])) {
-      const node = this.engineLogRef.current;
-      if (node) node.scrollTop = node.scrollHeight;
-    }
+  componentWillUnmount() {
+    this.flushPersist();
+    clearTimeout(this.noticeTimer);
   }
 
   persist = (over = {}) => {
+    this.pendingPersist = { ...(this.pendingPersist || {}), ...over };
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(this.flushPersist, 400);
+  };
+
+  flushPersist = () => {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = 0;
+    }
+    const over = this.pendingPersist || {};
+    this.pendingPersist = null;
     const payload = { ...this.props.walmart, ...over };
     try {
       ipcRenderer.sendSync('saveWalmartTasks', {
         products: payload.products,
         tasks: payload.tasks, monitorDelay: payload.monitorDelay, retryDelay: payload.retryDelay,
         endless: payload.endless,
-        setupOpen: this.state.setupOpen !== false,
+        setupOpen: payload.setupOpen !== undefined ? payload.setupOpen !== false : this.state.setupOpen !== false,
       });
     } catch {}
   };
@@ -187,18 +195,28 @@ class Walmart extends Component {
     this.setModule('products', products.length ? products : [blankProduct()]);
   };
 
-  profileForAccount = accountId => {
-    const accounts = walmartAccounts(this.props.accounts);
-    const profiles = checkoutProfiles(this.props.profiles);
-    const account = accounts.find(value => String(value.id) === String(accountId));
+  accountLookup = () => {
+    const loginAccounts = walmartAccounts(this.props.accounts);
+    const list = checkoutProfiles(this.props.profiles);
+    return {
+      loginAccounts,
+      list,
+      accountsById: indexById(loginAccounts),
+      profilesById: indexById(list),
+      profilesByEmail: indexByEmail(list),
+    };
+  };
+
+  profileForAccount = (accountId, lookup = this.accountLookup()) => {
+    const account = lookup.accountsById.get(String(accountId));
     if (!account) return null;
     if (account.profileId) {
-      const linked = profiles.find(profile => profile.id === account.profileId);
+      const linked = lookup.profilesById.get(String(account.profileId));
       if (linked) return linked;
     }
     const email = String(account.email || '').trim().toLowerCase();
     if (!email) return null;
-    return profiles.find(profile => String(profile.email || '').trim().toLowerCase() === email) || null;
+    return lookup.profilesByEmail.get(email) || null;
   };
 
   toggleDraftAccount = id => {
@@ -252,10 +270,11 @@ class Walmart extends Component {
       return;
     }
     const used = new Set((this.props.walmart.tasks || []).map(task => String(task.accountId)));
+    const lookup = this.accountLookup();
     const tasks = [];
     for (const accountId of draftAccountIds) {
       if (used.has(String(accountId))) continue;
-      const profile = this.profileForAccount(accountId);
+      const profile = this.profileForAccount(accountId, lookup);
       if (!profile) {
         this.flash('Each Walmart account needs a matching Walmart profile (same email)');
         return;
@@ -316,17 +335,62 @@ class Walmart extends Component {
 
   stop = taskId => { ipcRenderer.sendSync('stopWalmart', taskId); };
 
+  renderTaskRow = (task, { accountsById, profilesById, otpList, accountOptions, profileOptions, proxyOptions }) => {
+    const account = accountsById.get(String(task.accountId));
+    const profile = profilesById.get(String(task.profileId));
+    const status = this.props.walmart.taskStatus[task.id];
+    const active = status && status.running !== false;
+    const open = this.state.expanded === task.id;
+    const otpRequest = targetOtpForTask(otpList, task.id, account && account.email);
+    return (
+      <div key={task.id} className="site-task-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(160px, 1fr) 170px 150px 170px', gap: 10 }}>
+        <InlineSelect
+          className="form-select"
+          value={task.accountId}
+          placeholder="Select account"
+          options={accountOptions}
+          onChange={value => this.updateTask(task, { accountId: value })}
+        />
+        <InlineSelect
+          className="form-select"
+          value={task.profileId}
+          placeholder="Select profile"
+          options={profileOptions}
+          onChange={value => this.updateTask(task, { profileId: value })}
+        />
+        <InlineSelect
+          className="form-select"
+          value={task.proxyListName || ''}
+          placeholder="Local (no proxy)"
+          options={proxyOptions}
+          onChange={value => this.updateTask(task, { proxyListName: value })}
+        />
+        {otpRequest ? <TargetOtpInput request={otpRequest} /> : <Status value={status} />}
+        <span style={{ display: 'flex', gap: 5 }}>
+          {active
+            ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
+            : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!account || !profile}>Start</button>}
+          <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })}>Log</button>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
+        </span>
+      </div>
+    );
+  };
+
   render() {
-    const { walmart, profiles, proxies, accounts, target } = this.props;
+    const { walmart, proxies, otpPending } = this.props;
     const { draftAccountIds, draftProxy, expanded, notice, setupOpen } = this.state;
-    const list = checkoutProfiles(profiles);
-    const loginAccounts = walmartAccounts(accounts);
+    const lookup = this.accountLookup();
+    const { list, loginAccounts, accountsById, profilesById } = lookup;
     const usedAccountIds = new Set((walmart.tasks || []).map(task => String(task.accountId)));
     const availableAccounts = loginAccounts.filter(account => !usedAccountIds.has(String(account.id)));
     const allAvailablePicked = availableAccounts.length > 0
       && availableAccounts.every(account => draftAccountIds.includes(account.id));
     const proxyLists = (proxies && proxies.lists) || [];
-    const otpPending = (target && target.otpPending) || [];
+    const otpList = otpPending || [];
+    const accountOptions = loginAccounts.map(value => ({ value: value.id, label: value.email || value.id }));
+    const profileOptions = list.map(value => ({ value: value.id, label: profileName(value) }));
+    const proxyOptions = [{ value: '', label: 'Local (no proxy)' }, ...proxyLists.map(proxy => ({ value: proxyRef(proxy), label: proxyLabel(proxy) }))];
 
     return (
       <div className="page" style={{ padding: '16px 20px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -387,8 +451,8 @@ class Walmart extends Component {
                     )}
                     {loginAccounts.map(account => {
                       const on = draftAccountIds.includes(account.id);
-                      const inUse = walmart.tasks.some(task => String(task.accountId) === String(account.id));
-                      const matched = !!this.profileForAccount(account.id);
+                      const inUse = usedAccountIds.has(String(account.id));
+                      const matched = !!this.profileForAccount(account.id, lookup);
                       return (
                         <div
                           key={account.id}
@@ -474,63 +538,41 @@ class Walmart extends Component {
             </div>
           </div>}
 
-          <div className="panel" style={{ margin: 0, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(160px, 1fr) 170px 150px 170px', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--panel-border)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>
+          <div className="panel site-task-panel">
+            <div className="site-task-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(160px, 1fr) 170px 150px 170px', gap: 10 }}>
               <span>ACCOUNT</span><span>PROFILE</span><span>PROXY</span><span>STATUS</span><span>ACTIONS</span>
             </div>
             {!walmart.tasks.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>No Walmart tasks yet.</div>}
-            {walmart.tasks.map(task => {
-              const account = loginAccounts.find(value => String(value.id) === String(task.accountId));
-              const profile = list.find(value => String(value.id) === String(task.profileId));
-              const status = walmart.taskStatus[task.id];
-              const active = status && status.running !== false;
-              const logs = walmart.taskLogs[task.id] || [];
-              const open = expanded === task.id;
-              const otpRequest = targetOtpForTask(otpPending, task.id, account && account.email);
-              return (
-                <div key={task.id} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(160px, 1fr) 170px 150px 170px', gap: 10, padding: '10px 12px', alignItems: 'center', fontSize: 11 }}>
-                    <select className="form-select" value={task.accountId} onChange={e => this.updateTask(task, { accountId: e.target.value })}>
-                      <option value="">Select account</option>
-                      {loginAccounts.map(value => <option key={value.id} value={value.id}>{value.email || value.id}</option>)}
-                    </select>
-                    <select className="form-select" value={task.profileId} onChange={e => this.updateTask(task, { profileId: e.target.value })}>
-                      <option value="">Select profile</option>
-                      {list.map(value => <option key={value.id} value={value.id}>{profileName(value)}</option>)}
-                    </select>
-                    <select className="form-select" value={task.proxyListName || ''} onChange={e => this.updateTask(task, { proxyListName: e.target.value })}>
-                      <option value="">Local (no proxy)</option>
-                      {proxyLists.map(proxy => <option key={proxyRef(proxy)} value={proxyRef(proxy)}>{proxyLabel(proxy)}</option>)}
-                    </select>
-                    {otpRequest
-                      ? <TargetOtpInput request={otpRequest} />
-                      : <Status value={status} />}
-                    <span style={{ display: 'flex', gap: 5 }}>
-                      {active
-                        ? <button className="btn btn-secondary btn-sm" onClick={() => this.stop(task.id)}>Stop</button>
-                        : <button className="btn btn-primary btn-sm" onClick={() => this.start([task])} disabled={!account || !profile}>Start</button>}
-                      <button className="btn btn-secondary btn-sm" onClick={() => this.setState({ expanded: open ? null : task.id })}>Log</button>
-                      <button className="btn btn-secondary btn-sm btn-icon" onClick={() => this.removeTask(task)} title="Delete task"><i className="ion-md-trash" /></button>
-                    </span>
-                  </div>
-                  {open && <div style={{ padding: '0 12px 12px' }}>
-                    <div ref={this.taskLogRef} style={{ background: 'var(--field)', border: '1px solid var(--field-border)', borderRadius: 7, padding: 9, minHeight: 52, maxHeight: 180, overflowY: 'auto' }}>
-                      {!logs.length ? <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>
-                        : logs.map((line, index) => <div className="log-line" key={index}>{line}</div>)}
-                    </div>
-                  </div>}
-                </div>
-              );
-            })}
+            {!!walmart.tasks.length && (
+              <VirtualList
+                className="virtual-list site-task-virtual"
+                count={walmart.tasks.length}
+                rowHeight={TASK_ROW_HEIGHT}
+                estimatedHeight={480}
+                renderRow={index => this.renderTaskRow(walmart.tasks[index], {
+                  accountsById, profilesById, otpList, accountOptions, profileOptions, proxyOptions,
+                })}
+              />
+            )}
+            {expanded && (
+              <div className="site-task-log-dock">
+                <WalmartTaskLog
+                  className="task-log-view"
+                  taskId={expanded}
+                  estimatedHeight={160}
+                  empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>No task output yet.</span>}
+                />
+              </div>
+            )}
           </div>
 
           <div className="panel" style={{ marginTop: 14, padding: 12 }}>
             <strong style={{ fontSize: 11 }}>Engine log</strong>
-            <div ref={this.engineLogRef} style={{ marginTop: 8, maxHeight: 180, overflowY: 'auto' }}>
-              {!(walmart.logs || []).length
-                ? <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>Task and monitor output will appear here.</span>
-                : (walmart.logs || []).map((line, index) => <div className="log-line" key={index}>{line}</div>)}
-            </div>
+            <WalmartEngineLog
+              className="task-log-view"
+              estimatedHeight={180}
+              empty={<span style={{ color: 'var(--muted)', fontSize: 10.5 }}>Task and monitor output will appear here.</span>}
+            />
           </div>
         </div>
       </div>
@@ -539,6 +581,7 @@ class Walmart extends Component {
 }
 
 export default connect(state => ({
-  walmart: state.walmart, profiles: state.profiles, proxies: state.proxies,
-  accounts: state.accounts, target: state.target,
+  walmart: pickTableState(state.walmart, WALMART_TABLE_KEYS),
+  profiles: state.profiles, proxies: state.proxies,
+  accounts: state.accounts, otpPending: state.target.otpPending,
 }))(Walmart);

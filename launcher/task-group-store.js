@@ -179,7 +179,7 @@ function atomicWrite(filePath, value) {
   const tempPath = `${filePath}.${process.pid}.tmp`;
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   try {
-    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    fs.writeFileSync(tempPath, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600 });
     fs.renameSync(tempPath, filePath);
     fs.chmodSync(filePath, 0o600);
   } catch (error) {

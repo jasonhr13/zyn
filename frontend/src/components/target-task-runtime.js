@@ -4,22 +4,53 @@ import { targetOtpForTask } from './target-otp';
 export const EMPTY_TARGET_LOGS = Object.freeze([]);
 export const EMPTY_OUTCOME = Object.freeze({});
 
+const emptyMap = Object.freeze(new Map());
+let accountsCache = { source: null, byId: emptyMap };
+let profilesCache = { source: null, byEmail: emptyMap, checkout: null };
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.list)) return value.list;
+  if (value && Array.isArray(value.profiles)) return value.profiles;
+  return [];
+}
+
+export function accountsById(accounts) {
+  if (accountsCache.source === accounts) return accountsCache.byId;
+  const byId = new Map();
+  for (const account of (accounts || [])) {
+    if (account && account.id != null) byId.set(String(account.id), account);
+  }
+  accountsCache = { source: accounts, byId };
+  return byId;
+}
+
 export function profileListFrom(profiles) {
-  const value = profiles || [];
-  return (value.list || value.profiles || (Array.isArray(value) ? value : []))
+  return asArray(profiles)
     .filter(profile => profile && profile.profileType !== 'pokemoncenter' && profile.profileType !== 'walmart');
+}
+
+export function checkoutProfilesByEmail(profiles) {
+  if (profilesCache.source === profiles && profilesCache.checkout === 'target') return profilesCache.byEmail;
+  const byEmail = new Map();
+  for (const profile of profileListFrom(profiles)) {
+    const email = String(profile.email || '').trim().toLowerCase();
+    if (email && !byEmail.has(email)) byEmail.set(email, profile);
+  }
+  profilesCache = { source: profiles, byEmail, checkout: 'target' };
+  return byEmail;
 }
 
 export function accountForTask(accounts, task) {
   if (!task) return null;
-  return (accounts || []).find(account => String(account.id) === String(task.accountId)) || null;
+  return accountsById(accounts).get(String(task.accountId)) || null;
 }
 
 export function profileForAccountId(profiles, accounts, accountId) {
-  const account = (accounts || []).find(item => String(item.id) === String(accountId));
+  const account = accountsById(accounts).get(String(accountId));
   const email = String((account && account.email) || '').trim().toLowerCase();
   if (!email) return null;
-  return profileListFrom(profiles).find(profile => String(profile.email || '').trim().toLowerCase() === email) || null;
+  return checkoutProfilesByEmail(profiles).get(email) || null;
 }
 
 function outcomeCount(outcome, key) {
