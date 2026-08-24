@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Join the Zyn waiting list",
-  description: "Join the Zyn waiting list for Target, Pokémon Center US, and Walmart checkout.",
+  description: "Join the Zyn waiting list for Target, Pokémon Center US, and Walmart.",
 };
 
 type SearchParams = Promise<{ joined?: string | string[]; error?: string | string[] }>;
@@ -37,14 +37,14 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
             <>
               <p className="kicker">Request received</p>
               <h1 id="join-title">You’re on the list.</h1>
-              <p className="join-lede">We’ll email if a seat opens. You can also buy ZynAIO now for Target, Pokémon Center US, and Walmart.</p>
+              <p className="join-lede">We’ll email if a seat opens. You can also buy Zyn now.</p>
               <Link className="button button-primary" href="/buy">Buy Zyn</Link>
             </>
           ) : (
             <>
               <p className="kicker">ZynAIO</p>
               <h1 id="join-title">Join the waiting list.</h1>
-              <p className="join-lede">Prefer an invite instead of buying now? Leave your email. ZynAIO supports Target, Pokémon Center US, and Walmart.</p>
+              <p className="join-lede">Leave your email for an invite.</p>
               <form className="join-form" action="/api/waitlist" method="post">
                 <label htmlFor="waitlist-email">Email address</label>
                 <div className="join-form-row">
@@ -58,7 +58,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
               </form>
               {error === "email" && <p className="join-error" role="alert">Enter a valid email address.</p>}
               {error === "service" && <p className="join-error" role="alert">The waiting list is temporarily unavailable. Please try again.</p>}
-              <p className="join-note">No payment required to join the list. To start immediately, <Link href="/buy">buy Zyn</Link> for $100.</p>
+              <p className="join-note">Or <Link href="/buy">buy Zyn</Link> now for $100.</p>
             </>
           )}
         </div>

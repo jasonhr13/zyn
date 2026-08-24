@@ -42,29 +42,32 @@ test("server-renders the Zyn product site", async () => {
   const html = await response.text();
   assert.match(html, /<title>ZynAIO — Target, Pokémon Center, and Walmart<\/title>/i);
   assert.match(html, /ZynAIO/);
-  assert.match(html, /One app for Target, Pokémon Center, and Walmart\./);
+  assert.match(html, /Retail automation for Target, Pokémon Center, and Walmart\./);
+  assert.match(html, /Top-tier checkout on the three sites that matter/);
+  assert.match(html, /What’s in the app\./);
+  assert.match(html, /Task Groups/);
+  assert.match(html, /Scheduled Tasks/);
+  assert.match(html, /2FA Handling/);
+  assert.match(html, /Cookie Harvest/);
+  assert.match(html, /Proxy Support/);
+  assert.match(html, /Local &amp; Secure|Local & Secure/);
+  assert.match(html, /Discord webhooks/);
   assert.match(html, /Target/);
   assert.match(html, /Pokémon Center US/);
   assert.match(html, /Walmart/);
-  assert.match(html, /ZynAIO is the whole drop in one place\./);
-  assert.match(html, /Typical setup/);
-  assert.match(html, /Three retailers\. One desktop app\./);
-  assert.match(html, /Generate accounts, jig the address/);
-  assert.match(html, /Star it, then switch/);
-  assert.match(html, /Lists that keep working/);
-  assert.match(html, /Carts, submits, checkouts/);
-  assert.match(html, /Save your setup/);
+  assert.match(html, /href="\/join"/);
   assert.match(html, /\$100 for two months/);
   assert.match(html, /\$40 every month/);
-  assert.match(html, /screenshots\/zyn-target\.png/);
-  assert.match(html, /screenshots\/zyn-walmart\.png/);
-  assert.match(html, /screenshots\/zyn-pokemon-center\.png/);
+  assert.doesNotMatch(html, /screenshots\/zyn-/);
   assert.doesNotMatch(html, /\bWine\b/i);
   assert.doesNotMatch(html, /\bcompiled\b/i);
   assert.doesNotMatch(html, /native engine/i);
   assert.doesNotMatch(html, /Free during beta/);
   assert.doesNotMatch(html, /not an all-in-one/i);
   assert.doesNotMatch(html, /Refract|Stellar|HiddenAIO|NSB/i);
+  assert.doesNotMatch(html, /same license/i);
+  assert.doesNotMatch(html, /not charged extra per computer/i);
+  assert.doesNotMatch(html, /table dying/i);
   assert.match(html, /Buy Zyn/);
   assert.match(html, /href="\/buy"/);
   assert.doesNotMatch(html, /Request access/);
@@ -77,9 +80,10 @@ test("renders the Stripe purchase form", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /<title>Buy Zyn<\/title>/i);
-  assert.match(html, /\$100 covers the first two months/);
+  assert.match(html, /\$100 for two months/);
   assert.match(html, /\$40 every month/);
   assert.match(html, /Pokémon Center US/);
+  assert.doesNotMatch(html, /same license/i);
   assert.match(html, /action="\/api\/checkout"/);
   assert.match(html, /name="email"/);
 });
@@ -113,8 +117,8 @@ test("renders the branded waiting-list form and confirmation", async () => {
   assert.match(formHtml, /<title>Join the Zyn waiting list<\/title>/i);
   assert.match(formHtml, /Join the waiting list\./);
   assert.match(formHtml, /ZynAIO/);
-  assert.match(formHtml, /Pokémon Center US/);
-  assert.match(formHtml, /Walmart/);
+  assert.match(formHtml, /Leave your email for an invite/);
+  assert.match(formHtml, /href="\/buy"/);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
@@ -280,7 +284,6 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   await access(new URL("../public/manifest.webmanifest", import.meta.url));
   await access(new URL("../public/og-aio.png", import.meta.url));
   await access(new URL("../public/screenshots/zyn-target.png", import.meta.url));
-  await access(new URL("../public/screenshots/zyn-walmart.png", import.meta.url));
 });
 
 test("ships only the reviewed Zyn raster brand assets", async () => {

@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Buy Zyn",
-  description: "Get ZynAIO for Target, Pokémon Center US, and Walmart. $100 for the first two months, then $40 every month.",
+  description: "Buy ZynAIO. Retail automation for Target, Pokémon Center US, and Walmart. $100 for two months, then $40.",
 };
 
 type SearchParams = Promise<{ error?: string | string[] }>;
@@ -35,8 +35,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             <p className="kicker">ZynAIO</p>
             <h1 id="buy-title">Buy Zyn.</h1>
             <p className="join-lede">
-              $100 covers the first two months. After that Stripe renews the license at $40 every month.
-              Target and Pokémon Center US are included.
+              $100 for two months, then $40 every month. Target and Pokémon Center US are included.
             </p>
             <form className="join-form" action="/api/checkout" method="post">
               <label htmlFor="checkout-email">Email address</label>
@@ -62,8 +61,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             {error === "email" && <p className="join-error" role="alert">Enter a valid email address.</p>}
             {error === "service" && <p className="join-error" role="alert">Checkout is temporarily unavailable. Please try again.</p>}
             <p className="join-note">
-              Stripe collects the card. If this email is new, Zyn creates the account after payment
-              and shows a one-time password on the next page.
+              Stripe collects the card. New accounts get a one-time password after payment.
             </p>
           </article>
 
@@ -71,9 +69,9 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             <div className="offer-topline"><span>Zyn license</span><em>$40 / month after</em></div>
             <div className="offer-price"><strong>$100</strong><span>first two months</span></div>
             <ul>
-              <li><i aria-hidden="true">01</i><span><strong>Target checkout</strong>Watch lists, accounts, proxies, and live drop counts.</span></li>
-              <li><i aria-hidden="true">02</i><span><strong>Pokémon Center US</strong>Included on the same license. No extra module fee.</span></li>
-              <li><i aria-hidden="true">03</i><span><strong>Walmart in the same app</strong>Log in on placeholder, then apply drop SKUs when they land.</span></li>
+              <li><i aria-hidden="true">01</i><span><strong>Target</strong>Included.</span></li>
+              <li><i aria-hidden="true">02</i><span><strong>Pokémon Center US</strong>Included.</span></li>
+              <li><i aria-hidden="true">03</i><span><strong>Walmart</strong>In the app.</span></li>
             </ul>
           </aside>
         </div>

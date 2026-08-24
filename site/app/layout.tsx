@@ -6,7 +6,7 @@ export function generateMetadata(): Metadata {
 
   return {
     title: "ZynAIO — Target, Pokémon Center, and Walmart",
-    description: "One desktop app for Target, Pokémon Center US, and Walmart restocks. Watch products, keep working proxies, and check out when they come back.",
+    description: "Top-tier retail automation for Target, Pokémon Center US, and Walmart. $100 for two months, then $40.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -19,7 +19,7 @@ export function generateMetadata(): Metadata {
     },
     openGraph: {
       title: "ZynAIO — Target, Pokémon Center, and Walmart",
-      description: "One desktop app for Target, Pokémon Center US, and Walmart. $100 for two months, then $40 every month.",
+      description: "Top-tier retail automation for Target, Pokémon Center US, and Walmart. $100 for two months, then $40.",
       type: "website",
       url: origin,
       images: [{
@@ -32,7 +32,7 @@ export function generateMetadata(): Metadata {
     twitter: {
       card: "summary_large_image",
       title: "ZynAIO — Target, Pokémon Center, and Walmart",
-      description: "Target, Pokémon Center US, and Walmart checkout from one desktop app. $100 for two months, then $40 every month.",
+      description: "Retail automation for Target, Pokémon Center US, and Walmart. $100 for two months, then $40.",
       images: [`${origin}/og-aio.png`],
     },
   };
