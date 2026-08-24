@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "version": "1.7.27",
   "notes": [
-    "Cookie harvesters can run Headed mode: Zyn opens Chrome for you and keeps a private profile, without the browser extension.",
+    "Cookie harvesters can run Headed mode: Zyn opens Chrome with a private profile, without the browser extension.",
     "Proxy tests now measure latency to Target Redsky instead of a generic internet check.",
     "Headless harvest stays the default volume path. Checkout is unchanged."
   ]
