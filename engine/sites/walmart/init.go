@@ -59,8 +59,12 @@ func StartTask(t sites.TaskInput) {
 	}
 	newTask.TMXDeviceID = GenerateDeviceProfileRefID(36)
 
-	switch newTask.Mode {
-	case "Default", "Checkout":
+	if isRaffleMode(newTask.Mode) {
+		newTask.Mode = raffleEntryMode
+	}
+
+	switch {
+	case newTask.Mode == "Default", newTask.Mode == "Checkout", newTask.Mode == "", isRaffleMode(newTask.Mode):
 		newTask.NextStep = "get-session"
 		newTask.HandleTask()
 	default:

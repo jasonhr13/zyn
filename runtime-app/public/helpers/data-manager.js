@@ -60,7 +60,7 @@ function savePokemonCenterTasks(data) {
 function getWalmartTasks() {
   return readJSON('walmart-tasks.json', {
     products: [{ id: 'wm_product_1', input: '', quantity: '1', maxPrice: '' }], tasks: [],
-    monitorDelay: '3000', retryDelay: '3000', endless: false, setupOpen: true,
+    monitorDelay: '3000', retryDelay: '3000', endless: false, mode: 'Checkout', setupOpen: true,
   });
 }
 

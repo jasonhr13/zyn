@@ -3743,3 +3743,321 @@ func (t *WalmartMonitorTask) GetProductGraphql() {
 		t.Error = fmt.Errorf("get-stock (%d)", response.StatusCode)
 	}
 }
+
+func (t *WalmartTask) drawTrace() (correlationID, traceparent, baggage, clientTrace string) {
+	correlationBytes := make([]byte, 24)
+	rand.Read(correlationBytes)
+	correlationID = base64.RawURLEncoding.EncodeToString(correlationBytes)
+	traceID := make([]byte, 16)
+	spanID := make([]byte, 8)
+	rand.Read(traceID)
+	rand.Read(spanID)
+	traceparent = fmt.Sprintf("00-%s-%s-00", hex.EncodeToString(traceID), hex.EncodeToString(spanID))
+	baggage = fmt.Sprintf("trafficType=customer,deviceType=desktop,renderScope=SSR,webRequestSource=Browser,pageName=shop,requestTs=%d,tpid=%s", time.Now().UnixMilli(), traceparent)
+	clientTrace = hex.EncodeToString(traceID)
+	return
+}
+
+func (t *WalmartTask) drawHeaders(correlationID, traceparent, baggage, clientTrace string) map[string][]string {
+	ua := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+	secUA := "\"Chromium\";v=\"142\", \"Google Chrome\";v=\"142\", \"Not_A Brand\";v=\"99\""
+	platform := "\"macOS\""
+	if t.Requests != nil && t.Requests.UserAgent != nil {
+		if t.Requests.UserAgent.Useragent != "" {
+			ua = t.Requests.UserAgent.Useragent
+		}
+		if t.Requests.UserAgent.Sec_ua != "" {
+			secUA = t.Requests.UserAgent.Sec_ua
+		}
+		if t.Requests.UserAgent.Platform != "" {
+			platform = t.Requests.UserAgent.Platform
+		}
+	}
+	return map[string][]string{
+		"host":                   {drawServiceHost},
+		"accept":                 {"application/json"},
+		"accept-language":        {"en-US"},
+		"baggage":                {baggage},
+		"content-type":           {"application/json"},
+		"device_profile_ref_id":  {t.TMXDeviceID},
+		"origin":                 {"https://www.walmart.com"},
+		"priority":               {"u=1, i"},
+		"referer":                {"https://www.walmart.com/"},
+		"sec-ch-ua":              {secUA},
+		"sec-ch-ua-mobile":       {"?0"},
+		"sec-ch-ua-platform":     {platform},
+		"sec-fetch-dest":         {"empty"},
+		"sec-fetch-mode":         {"cors"},
+		"sec-fetch-site":         {"same-site"},
+		"tenant-id":              {"elh9ie"},
+		"traceparent":            {traceparent},
+		"user-agent":             {ua},
+		"wm-client-traceid":      {clientTrace},
+		"wm_mp":                  {"true"},
+		"wm_qos.correlation_id":  {correlationID},
+		"x-enable-server-timing": {"1"},
+		"x-latency-trace":        {"1"},
+		"x-o-bu":                 {"WALMART-US"},
+		"x-o-correlation-id":     {correlationID},
+		"x-o-mart":               {"B2C"},
+		"x-o-platform":           {"rweb"},
+		"x-o-platform-version":   {"usweb-1.298.0-51b518e315b7bf0501f81f06c75b6438fce2b010-8191858r"},
+		"x-o-segment":            {"oaoh"},
+		"header-order":           {"host", "accept", "accept-language", "baggage", "content-type", "device_profile_ref_id", "origin", "priority", "referer", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "tenant-id", "traceparent", "user-agent", "wm-client-traceid", "wm_mp", "wm_qos.correlation_id", "x-enable-server-timing", "x-latency-trace", "x-o-bu", "x-o-correlation-id", "x-o-mart", "x-o-platform", "x-o-platform-version", "x-o-segment"},
+	}
+}
+
+type drawAPIResponse struct {
+	EntrySubmitted *bool           `json:"entrySubmitted"`
+	AlreadyEntered *bool           `json:"alreadyEntered"`
+	Eligible       *bool           `json:"eligible"`
+	MaxQty         int             `json:"maxQty"`
+	MaxQuantity    int             `json:"maxQuantity"`
+	Qty            int             `json:"qty"`
+	Quantity       int             `json:"quantity"`
+	ItemId         string          `json:"itemId"`
+	Status         string          `json:"status"`
+	Message        string          `json:"message"`
+	Error          string          `json:"error"`
+	ErrorCode      string          `json:"errorCode"`
+	Code           string          `json:"code"`
+	Data           json.RawMessage `json:"data"`
+}
+
+func decodeDrawResponse(body string) drawAPIResponse {
+	var top drawAPIResponse
+	if strings.TrimSpace(body) == "" {
+		return top
+	}
+	_ = jsoniter.Unmarshal([]byte(body), &top)
+	if len(top.Data) == 0 || string(top.Data) == "null" {
+		return top
+	}
+	var inner drawAPIResponse
+	if err := jsoniter.Unmarshal(top.Data, &inner); err != nil {
+		return top
+	}
+	return mergeDrawResponse(top, inner)
+}
+
+func mergeDrawResponse(top, inner drawAPIResponse) drawAPIResponse {
+	if inner.EntrySubmitted != nil {
+		top.EntrySubmitted = inner.EntrySubmitted
+	}
+	if inner.AlreadyEntered != nil {
+		top.AlreadyEntered = inner.AlreadyEntered
+	}
+	if inner.Eligible != nil {
+		top.Eligible = inner.Eligible
+	}
+	if inner.MaxQty > 0 {
+		top.MaxQty = inner.MaxQty
+	}
+	if inner.MaxQuantity > 0 {
+		top.MaxQuantity = inner.MaxQuantity
+	}
+	if inner.Qty > 0 {
+		top.Qty = inner.Qty
+	}
+	if inner.Quantity > 0 {
+		top.Quantity = inner.Quantity
+	}
+	if inner.ItemId != "" {
+		top.ItemId = inner.ItemId
+	}
+	if inner.Status != "" {
+		top.Status = inner.Status
+	}
+	if inner.Message != "" {
+		top.Message = inner.Message
+	}
+	if inner.Error != "" {
+		top.Error = inner.Error
+	}
+	if inner.ErrorCode != "" {
+		top.ErrorCode = inner.ErrorCode
+	}
+	if inner.Code != "" {
+		top.Code = inner.Code
+	}
+	return top
+}
+
+func (r drawAPIResponse) maxQty() int {
+	if r.MaxQty > 0 {
+		return r.MaxQty
+	}
+	return r.MaxQuantity
+}
+
+func (r drawAPIResponse) alreadyEntered() bool {
+	if r.AlreadyEntered != nil && *r.AlreadyEntered {
+		return true
+	}
+	if r.EntrySubmitted != nil && *r.EntrySubmitted {
+		return true
+	}
+	return containsAnyText(r.Status+" "+r.Message+" "+r.Error+" "+r.ErrorCode+" "+r.Code,
+		"already entered", "already_entered", "alreadyentered", "duplicate entry")
+}
+
+func (r drawAPIResponse) notOpen() bool {
+	if r.Eligible != nil && !*r.Eligible {
+		return true
+	}
+	return containsAnyText(r.Status+" "+r.Message+" "+r.Error+" "+r.ErrorCode+" "+r.Code,
+		"not open", "not_open", "closed", "ineligible", "not started", "not_started", "coming soon")
+}
+
+func (t *WalmartTask) handleDrawStatus(status int, body, step string) bool {
+	switch status {
+	case 401:
+		t.Error = fmt.Errorf("unauthorized")
+		return true
+	case 403:
+		if t.handlePX412(body) {
+			return true
+		}
+		t.Error = fmt.Errorf("unauthorized")
+		return true
+	case 412:
+		if t.handlePX412(body) {
+			return true
+		}
+		t.Error = fmt.Errorf("%s (%d)", step, status)
+		return true
+	case 444:
+		t.Error = fmt.Errorf("proxy block")
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *WalmartTask) GetDrawPreferences() {
+	itemID := t.drawItemID()
+	if itemID == "" {
+		t.Error = fmt.Errorf("need item id")
+		return
+	}
+	t.DrawAlreadyEntered = false
+	correlationID, traceparent, baggage, clientTrace := t.drawTrace()
+	Request := client.RequestStruct{
+		CTX: t.TaskContext.CTX,
+		Req: client.ReqStruct{
+			Method: "GET",
+			URL:    fmt.Sprintf("https://%s/draw/preferences?itemId=%s", drawServiceHost, url.QueryEscape(itemID)),
+		},
+		Headers: t.drawHeaders(correlationID, traceparent, baggage, clientTrace),
+	}
+	response, body, err := client.MakeRequest(Request, t.Requests.Client, &t.ClientID)
+	if err != nil {
+		log.Printf("[draw-preferences] ERROR: %s", err)
+		t.handleProxyRequestError(err)
+		return
+	}
+	if t.handleDrawStatus(response.StatusCode, body, "draw-preferences") {
+		return
+	}
+	switch response.StatusCode {
+	case 200:
+		parsed := decodeDrawResponse(body)
+		if maxQty := parsed.maxQty(); maxQty > 0 {
+			t.DrawMaxQty = maxQty
+		}
+		if parsed.alreadyEntered() {
+			t.DrawAlreadyEntered = true
+			t.ensureDrawProduct()
+			return
+		}
+		if parsed.notOpen() {
+			t.Error = fmt.Errorf("draw not open")
+			return
+		}
+	case 404:
+		t.Error = fmt.Errorf("draw not open")
+	default:
+		t.AddUnkownResponse(Request.Req.URL, *response, body)
+		t.Error = fmt.Errorf("draw-preferences (%d)", response.StatusCode)
+	}
+}
+
+func (t *WalmartTask) SubmitDrawEntry() {
+	itemID := t.drawItemID()
+	if itemID == "" {
+		t.Error = fmt.Errorf("need item id")
+		return
+	}
+	qty := t.drawQuantity()
+	payloadBytes, err := json.Marshal(map[string]interface{}{
+		"itemId": itemID,
+		"qty":    qty,
+	})
+	if err != nil {
+		t.Error = err
+		return
+	}
+	t.AddCookiesToDraw()
+	correlationID, traceparent, baggage, clientTrace := t.drawTrace()
+	Request := client.RequestStruct{
+		CTX: t.TaskContext.CTX,
+		Req: client.ReqStruct{
+			Method: "POST",
+			URL:    fmt.Sprintf("https://%s/draw/enter?itemId=%s&qty=%d", drawServiceHost, url.QueryEscape(itemID), qty),
+			Data:   string(payloadBytes),
+		},
+		Headers: t.drawHeaders(correlationID, traceparent, baggage, clientTrace),
+	}
+	response, body, err := client.MakeRequest(Request, t.Requests.Client, &t.ClientID)
+	if err != nil {
+		log.Printf("[draw-enter] ERROR: %s", err)
+		t.handleProxyRequestError(err)
+		return
+	}
+	if t.handleDrawStatus(response.StatusCode, body, "draw-enter") {
+		return
+	}
+	switch response.StatusCode {
+	case 200, 201:
+		parsed := decodeDrawResponse(body)
+		if maxQty := parsed.maxQty(); maxQty > 0 {
+			t.DrawMaxQty = maxQty
+		}
+		if parsed.notOpen() {
+			t.Error = fmt.Errorf("draw not open")
+			return
+		}
+		if parsed.EntrySubmitted != nil && *parsed.EntrySubmitted {
+			t.ensureDrawProduct()
+			t.Quantity = qty
+			if t.OrderNumber == "" {
+				t.OrderNumber = "DRAW"
+			}
+			return
+		}
+		if parsed.alreadyEntered() {
+			t.DrawAlreadyEntered = true
+			t.ensureDrawProduct()
+			return
+		}
+		snippet := strings.TrimSpace(body)
+		if len(snippet) > 180 {
+			snippet = snippet[:180] + "…"
+		}
+		if snippet == "" {
+			snippet = "<empty>"
+		}
+		t.Error = fmt.Errorf("entry not submitted (%s)", snippet)
+	case 404, 409:
+		parsed := decodeDrawResponse(body)
+		if parsed.alreadyEntered() {
+			t.DrawAlreadyEntered = true
+			t.ensureDrawProduct()
+			return
+		}
+		t.Error = fmt.Errorf("draw not open")
+	default:
+		t.AddUnkownResponse(Request.Req.URL, *response, body)
+		t.Error = fmt.Errorf("draw-enter (%d)", response.StatusCode)
+	}
+}

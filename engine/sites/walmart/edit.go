@@ -24,7 +24,11 @@ func (t *WalmartTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 		t.MinPrice = in.MinPrice
 	}
 	if in.Mode != "" {
-		t.Mode = in.Mode
+		if isRaffleMode(in.Mode) {
+			t.Mode = raffleEntryMode
+		} else {
+			t.Mode = in.Mode
+		}
 	}
 	if in.TaskGroup != "" {
 		t.GroupID = in.TaskGroup

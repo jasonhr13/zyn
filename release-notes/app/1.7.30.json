@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.30",
+  "notes": [
+    "Added Walmart raffle support.",
+    "Walmart tasks can run Raffle Entry on a drawing item ID.",
+    "Raffle uses the account login, address, and payment already on the profile."
+  ]
+}

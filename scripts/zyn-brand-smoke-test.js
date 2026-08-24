@@ -39,7 +39,7 @@ for (const color of ['#450A0A', '#7F1D1D', '#BE123C', '#E11D48', '#F97316', '#FB
 const contract = JSON.parse(read('config/runtime-contract.json'));
 assert.equal(contract.product.name, 'Zyn');
 assert.equal(contract.product.bundleIdentifier, 'com.thwebco.zyn');
-assert.equal(contract.appRelease, 'R8.40');
+assert.equal(contract.appRelease, 'R8.41');
 assert.ok(fs.statSync(path.join(project, 'assets/brand/Zyn.icns')).size > 100_000, 'Zyn icon is missing');
 assert.ok(fs.statSync(path.join(project, 'frontend/public/zyn-icon.png')).size > 100_000, 'renderer icon is missing');
 

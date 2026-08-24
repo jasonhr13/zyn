@@ -117,6 +117,7 @@ const defaultState = {
     monitorDelay: '3000',
     retryDelay: '3000',
     endless: false,
+    mode: 'Checkout',
   },
   // Target: one compiled Go engine instance driving MANY checkout tasks plus a single shared
   // monitor. Lives in the store (not page state) for the same reason as pokemon above — the page

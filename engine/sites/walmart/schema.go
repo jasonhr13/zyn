@@ -53,6 +53,9 @@ type WalmartTask struct {
 	SetCardAttempts int
 	emailCodeWaiter *imapcode.Waiter
 	SkipPx          bool
+
+	DrawMaxQty         int
+	DrawAlreadyEntered bool
 }
 
 type WatchItem struct {

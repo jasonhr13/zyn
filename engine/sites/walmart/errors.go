@@ -62,7 +62,7 @@ func (t *WalmartTask) HandleErrors(step string) bool {
 
 	errText := strings.ToLower(strings.TrimSpace(t.Error.Error()))
 	switch {
-	case step == "set-address" && containsAnyText(errText, "unauthorized", "unauthenticated"):
+	case (step == "set-address" || step == "draw-preferences" || step == "draw-enter") && containsAnyText(errText, "unauthorized", "unauthenticated"):
 		t.UpdateStatus("Session Expired, Restarting", constants.Colors.RED)
 		t.restartTask()
 		return true

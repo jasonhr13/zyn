@@ -52,6 +52,8 @@ func (t *WalmartTask) resetSessionState() {
 	t.NextQueuePoll = 0
 	t.QueuePassed = false
 	t.StepAfterSolve = ""
+	t.DrawMaxQty = 0
+	t.DrawAlreadyEntered = false
 	t.Error = nil
 }
 
@@ -72,6 +74,18 @@ func isPlaceholderInput(input string) bool {
 	return strings.EqualFold(strings.TrimSpace(input), "placeholder")
 }
 
+func isNumericItemID(value string) bool {
+	if len(value) < 6 {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func parsePidFromInput(input string) string {
 	input = strings.TrimSpace(input)
 	if input == "" || isOfferIDInput(input) || isPlaceholderInput(input) {
@@ -80,13 +94,25 @@ func parsePidFromInput(input string) string {
 	lower := strings.ToLower(input)
 	if idx := strings.Index(lower, "/ip/"); idx >= 0 {
 		rest := input[idx+4:]
-		if slash := strings.Index(rest, "/"); slash >= 0 {
-			rest = rest[:slash]
-		}
 		if q := strings.Index(rest, "?"); q >= 0 {
 			rest = rest[:q]
 		}
-		return strings.TrimSpace(rest)
+		parts := strings.Split(rest, "/")
+		for i := len(parts) - 1; i >= 0; i-- {
+			part := strings.TrimSpace(parts[i])
+			if isNumericItemID(part) {
+				return part
+			}
+		}
+		if len(parts) > 0 {
+			if first := strings.TrimSpace(parts[0]); isNumericItemID(first) {
+				return first
+			}
+		}
+		return ""
+	}
+	if isNumericItemID(input) {
+		return input
 	}
 	return input
 }
@@ -192,9 +218,99 @@ func (t *WalmartTask) pingWithinPriceRange(ping monitorhub.StockPing) bool {
 	return true
 }
 
+const raffleEntryMode = "Raffle Entry"
+const drawServiceHost = "draw.www.walmart.com"
+
+func isRaffleMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "raffle entry", "raffle", "draw":
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *WalmartTask) isRaffleMode() bool {
+	return t != nil && isRaffleMode(t.Mode)
+}
+
+func (t *WalmartTask) nextStepAfterPayment() string {
+	if t.isRaffleMode() {
+		return "wait-for-draw"
+	}
+	if t.hasDirectOfferInput() {
+		return "add-to-cart"
+	}
+	return "wait-for-restock"
+}
+
+func (t *WalmartTask) drawItemID() string {
+	if t == nil {
+		return ""
+	}
+	for _, item := range t.WatchItems {
+		if item.Placeholder {
+			continue
+		}
+		if item.Pid != "" {
+			return item.Pid
+		}
+	}
+	if t.InputPid != "" {
+		return t.InputPid
+	}
+	if pid := parsePidFromInput(t.RawInput); pid != "" {
+		return pid
+	}
+	if t.UsItemID != "" && !isOfferIDInput(t.UsItemID) {
+		return t.UsItemID
+	}
+	return ""
+}
+
+func (t *WalmartTask) drawQuantity() int {
+	qty := t.Quantity
+	if t != nil {
+		itemID := t.drawItemID()
+		for _, item := range t.WatchItems {
+			if item.Pid != "" && item.Pid == itemID && item.Quantity > 0 {
+				qty = item.Quantity
+				break
+			}
+		}
+	}
+	if qty <= 0 {
+		qty = 1
+	}
+	if t != nil && t.DrawMaxQty > 0 && qty > t.DrawMaxQty {
+		qty = t.DrawMaxQty
+	}
+	return qty
+}
+
+func (t *WalmartTask) waitingForDrawInput() bool {
+	return t.drawItemID() == ""
+}
+
+func (t *WalmartTask) ensureDrawProduct() {
+	itemID := t.drawItemID()
+	if itemID == "" {
+		return
+	}
+	t.UsItemID = itemID
+	t.Product.Sku = itemID
+	if t.Product.Name == "" {
+		t.Product.Name = "Walmart Draw " + itemID
+	}
+	if t.Product.ProductLink == "" {
+		t.Product.ProductLink = walmartProductPageURL(itemID)
+	}
+}
+
 var walmartCookieHosts = []string{
 	"https://www.walmart.com",
 	"https://identity.walmart.com",
+	"https://draw.www.walmart.com",
 }
 
 func (t *WalmartTask) addWalmartCookie(name, value string) {
@@ -218,13 +334,21 @@ func (t *WalmartTask) addWalmartCookie(name, value string) {
 }
 
 func (t *WalmartTask) AddCookiesToQueue() {
-	if t.Requests == nil || t.Requests.Client == nil {
+	t.copyCookiesToHost("q-api.www.walmart.com")
+}
+
+func (t *WalmartTask) AddCookiesToDraw() {
+	t.copyCookiesToHost(drawServiceHost)
+}
+
+func (t *WalmartTask) copyCookiesToHost(host string) {
+	if t.Requests == nil || t.Requests.Client == nil || host == "" {
 		return
 	}
 	u, _ := url.Parse("https://www.walmart.com")
 	cookies := t.Requests.Client.GetCookies(u)
 	for _, cookie := range cookies {
-		t.Requests.AddCookie(cookie.Name, cookie.Value, "q-api.www.walmart.com")
+		t.Requests.AddCookie(cookie.Name, cookie.Value, host)
 	}
 }
 

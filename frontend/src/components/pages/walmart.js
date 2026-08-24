@@ -8,9 +8,16 @@ import { connectEngineLog, connectTaskLog, indexByEmail, indexById, pickTableSta
 import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer } = window.require('electron');
 
+const WALMART_MODES = Object.freeze(['Checkout', 'Raffle Entry']);
 const WALMART_TABLE_KEYS = Object.freeze([
-  'products', 'tasks', 'taskStatus', 'monitorDelay', 'retryDelay', 'endless',
+  'products', 'tasks', 'taskStatus', 'monitorDelay', 'retryDelay', 'endless', 'mode',
 ]);
+
+function normalizeWalmartMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'raffle entry' || mode === 'raffle' || mode === 'draw') return 'Raffle Entry';
+  return 'Checkout';
+}
 const WalmartEngineLog = connectEngineLog('walmart');
 const WalmartTaskLog = connectTaskLog('walmart');
 const uid = () => 'wm_' + Math.random().toString(36).slice(2, 10);
@@ -120,6 +127,7 @@ class Walmart extends Component {
         monitorDelay: String(saved.monitorDelay || '3000'),
         retryDelay: String(saved.retryDelay || '3000'),
         endless: !!saved.endless,
+        mode: normalizeWalmartMode(saved.mode),
       } });
       this.setState({ setupOpen: saved.setupOpen !== false });
     } catch {}
@@ -148,7 +156,7 @@ class Walmart extends Component {
       ipcRenderer.sendSync('saveWalmartTasks', {
         products: payload.products,
         tasks: payload.tasks, monitorDelay: payload.monitorDelay, retryDelay: payload.retryDelay,
-        endless: payload.endless,
+        endless: payload.endless, mode: normalizeWalmartMode(payload.mode),
         setupOpen: payload.setupOpen !== undefined ? payload.setupOpen !== false : this.state.setupOpen !== false,
       });
     } catch {}
@@ -178,6 +186,7 @@ class Walmart extends Component {
       monitorDelay: String(w.monitorDelay || '3000'),
       retryDelay: String(w.retryDelay || '3000'),
       endless: !!w.endless,
+      mode: normalizeWalmartMode(w.mode),
     };
   };
 
@@ -401,7 +410,9 @@ class Walmart extends Component {
           <div>
             <h1 className="page-title" style={{ margin: 0 }}><span className="page-title-dot" /> Walmart</h1>
             <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
-              One task per account. Start on placeholder to log in, then apply SKUs before the drop.
+              {normalizeWalmartMode(walmart.mode) === 'Raffle Entry'
+                ? 'Raffle Entry logs in, sets address and payment, then enters the drawing for the item ID.'
+                : 'One task per account. Start on placeholder to log in, then apply SKUs before the drop.'}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -495,7 +506,11 @@ class Walmart extends Component {
                 {(walmart.products || []).map((product, index) => (
                   <div key={product.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px 90px 30px', gap: 7, alignItems: 'end' }}>
                     <label className="form-group" style={{ margin: 0 }}>
-                      <span className="form-label">{index === 0 ? 'SKU, URL, offer ID, or placeholder' : `Product ${index + 1}`}</span>
+                      <span className="form-label">{index === 0
+                        ? (normalizeWalmartMode(walmart.mode) === 'Raffle Entry'
+                          ? 'Item ID, product URL, or placeholder'
+                          : 'SKU, URL, offer ID, or placeholder')
+                        : `Product ${index + 1}`}</span>
                       <input
                         className="form-input"
                         value={product.input}
@@ -520,9 +535,18 @@ class Walmart extends Component {
                 ))}
               </div>
               <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, lineHeight: 1.45 }}>
-                Leave <b>placeholder</b> to log in first. When SKUs land, paste them here and Apply to all tasks.
+                {normalizeWalmartMode(walmart.mode) === 'Raffle Entry'
+                  ? <>Leave <b>placeholder</b> to log in first. Qty is how many drawing entries to request. Use the item ID from the product page, not an offer ID.</>
+                  : <>Leave <b>placeholder</b> to log in first. When SKUs land, paste them here and Apply to all tasks.</>}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 1fr', gap: 10, marginTop: 12, alignItems: 'end' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '140px 110px 110px 1fr', gap: 10, marginTop: 12, alignItems: 'end' }}>
+                <label className="form-group" style={{ margin: 0 }}>
+                  <span className="form-label">Mode</span>
+                  <select className="form-select" value={normalizeWalmartMode(walmart.mode)}
+                    onChange={e => this.setModule('mode', normalizeWalmartMode(e.target.value))}>
+                    {WALMART_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
+                  </select>
+                </label>
                 <label className="form-group" style={{ margin: 0 }}>
                   <span className="form-label">Monitor ms</span>
                   <input className="form-input" value={walmart.monitorDelay}

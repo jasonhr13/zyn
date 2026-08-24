@@ -32,7 +32,11 @@ func (t *WalmartTask) HandleTask() {
 			switch t.NextStep {
 			case "stop":
 				if t.Checkout {
-					t.StopTask("Successful", constants.Colors.GREEN)
+					if t.isRaffleMode() {
+						t.StopTask("Entered", constants.Colors.GREEN)
+					} else {
+						t.StopTask("Successful", constants.Colors.GREEN)
+					}
 				} else if t.Decline {
 					t.StopTask("Payment Declined", constants.Colors.RED)
 				} else {
@@ -321,10 +325,8 @@ func (t *WalmartTask) HandleTask() {
 				}
 				if t.PaymentID == "" {
 					t.NextStep = "set-payment"
-				} else if t.hasDirectOfferInput() {
-					t.NextStep = "add-to-cart"
 				} else {
-					t.NextStep = "wait-for-restock"
+					t.NextStep = t.nextStepAfterPayment()
 				}
 			case "set-payment":
 				t.UpdateStatus("Setting Payment", constants.Colors.BLUE)
@@ -337,11 +339,47 @@ func (t *WalmartTask) HandleTask() {
 				if t.HandleErrors("set-payment") {
 					break
 				}
-				if t.hasDirectOfferInput() {
-					t.NextStep = "add-to-cart"
-				} else {
-					t.NextStep = "wait-for-restock"
+				t.NextStep = t.nextStepAfterPayment()
+			case "wait-for-draw":
+				if t.waitingForDrawInput() {
+					t.UpdateStatus("Waiting for Input", constants.Colors.BLUE)
+					t.SleepTask(200)
+					break
 				}
+				t.ensureDrawProduct()
+				t.AddCookiesToDraw()
+				go t.MakeInSyncRequest(walmartProductPageURL(t.drawItemID()))
+				t.NextStep = "draw-preferences"
+
+			case "draw-preferences":
+				t.UpdateStatus("Getting Draw", constants.Colors.BLUE)
+				t.GetDrawPreferences()
+				if t.HandleErrors("draw-preferences") {
+					break
+				}
+				if t.DrawAlreadyEntered {
+					t.NextStep = "draw-already-entered"
+					break
+				}
+				t.NextStep = "draw-enter"
+
+			case "draw-enter":
+				t.UpdateStatus("Submitting Entry", constants.Colors.BLUE)
+				t.SubmitDrawEntry()
+				if t.HandleErrors("draw-enter") {
+					break
+				}
+				if t.DrawAlreadyEntered {
+					t.NextStep = "draw-already-entered"
+					break
+				}
+				t.Checkout = true
+				t.NextStep = "checkout"
+
+			case "draw-already-entered":
+				t.TaskState = constants.StatusSteps.CheckedOut
+				t.StopTask("Already Entered", constants.Colors.GREEN)
+
 			case "wait-for-restock":
 				if t.hasDirectOfferInput() {
 					t.NextStep = "add-to-cart"
@@ -492,7 +530,11 @@ func (t *WalmartTask) HandleTask() {
 				t.NextStep = "join-queue"
 			case "checkout":
 				t.TaskState = constants.StatusSteps.CheckedOut
-				t.UpdateStatus("Successful", constants.Colors.GREEN)
+				if t.isRaffleMode() {
+					t.UpdateStatus("Entered", constants.Colors.GREEN)
+				} else {
+					t.UpdateStatus("Successful", constants.Colors.GREEN)
+				}
 				if t.Product.Name != "" {
 					t.SendCheckoutDeclineNoti(t.Product.Name, t.Product.ProductImage, true)
 				}

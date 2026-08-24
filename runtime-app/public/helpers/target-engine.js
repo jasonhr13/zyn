@@ -2985,13 +2985,14 @@ function parseWalmartPid(value) {
   const ip = lower.indexOf('/ip/');
   if (ip >= 0) {
     let rest = input.slice(ip + 4);
-    const slash = rest.indexOf('/');
-    if (slash >= 0) rest = rest.slice(0, slash);
     const query = rest.indexOf('?');
     if (query >= 0) rest = rest.slice(0, query);
-    if (/^\d{6,}$/.test(rest.trim())) return rest.trim();
-    const trailing = rest.match(/(\d{6,})\s*$/);
-    return trailing ? trailing[1] : '';
+    const parts = rest.split('/');
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const part = String(parts[i] || '').trim();
+      if (/^\d{6,}$/.test(part)) return part;
+    }
+    return '';
   }
   const item = input.match(/\/(\d{6,})(?:[/?]|$)/);
   if (item) return item[1];
@@ -3047,6 +3048,12 @@ function walmartItems(products) {
   }));
 }
 
+function normalizeWalmartMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'raffle entry' || mode === 'raffle' || mode === 'draw') return 'Raffle Entry';
+  return 'Checkout';
+}
+
 function walmartMessage(task = {}, shared = {}) {
   const products = validateWalmartProducts(
     task.products != null ? task.products : shared.products,
@@ -3064,7 +3071,7 @@ function walmartMessage(task = {}, shared = {}) {
     profileId: String(task.profileId || ''), profileGroup: '',
     accountId: String(task.accountId || ''),
     item: items, monitorItems: items,
-    status: '', mode: 'Checkout', minPrice: '', maxPrice: '', statusColor: '',
+    status: '', mode: normalizeWalmartMode(task.mode || shared.mode), minPrice: '', maxPrice: '', statusColor: '',
     running: true, carted: false, failed: false, successful: false,
     loopCheckout: false, waitForQueue: false, QueueEntryDelay: '0',
     allInstock: false, endless: task.endless != null ? !!task.endless : !!shared.endless,
@@ -3104,6 +3111,7 @@ function walmartPidsFromConfig(config) {
 function reconcileWalmartMonitors() {
   const wanted = new Set();
   for (const config of walmartTaskConfigs.values()) {
+    if (normalizeWalmartMode(config.mode) === 'Raffle Entry') continue;
     for (const pid of walmartPidsFromConfig(config)) wanted.add(pid);
   }
   for (const pid of [...walmartMonitorIds.keys()]) {
