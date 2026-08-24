@@ -1667,7 +1667,7 @@ function startFarming(browserMode) {
     }
     log(`browsers: ${detected.map(browser => browser.key).join(', ')} (selection: ${BROWSER_SELECTION})`);
     const requestedWorkers = parseInt(argOf('workers', ''), 10);
-    const engineCap = PATCHRIGHT ? 8 : MAX_FARMER_WORKERS;
+    const engineCap = MAX_FARMER_WORKERS;
     const configuredWorkers = Number.isFinite(requestedWorkers)
       ? Math.max(1, Math.min(requestedWorkers, engineCap)) : Math.min(detected.length, engineCap);
     // A managed Local producer intentionally allows up to its configured worker count. Legacy mode

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.41",
+  "appRelease": "R8.42",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -18,7 +18,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.30",
+    "version": "1.7.31",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",

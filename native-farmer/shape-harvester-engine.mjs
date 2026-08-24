@@ -8,7 +8,6 @@ export function normalizeHarvesterEngine(value) {
 
 export function harvesterWorkerMaximum({ type, engine, proxyListName } = {}) {
   if (type === 'login') return 1;
-  if (normalizeHarvesterEngine(engine) === 'patchright') return proxyListName ? 8 : 2;
   return proxyListName ? 100 : 2;
 }
 

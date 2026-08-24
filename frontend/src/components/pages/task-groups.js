@@ -79,9 +79,8 @@ const HARVESTER_ENGINES = [
 ];
 const harvesterEngineOf = raw => (raw === 'patchright' ? 'patchright' : 'playwright');
 const harvesterModeLabel = engine => (engine === 'patchright' ? 'Experimental' : 'Default');
-const harvesterWorkerMaximum = ({ type, engine, proxyListName }) => {
+const harvesterWorkerMaximum = ({ type, proxyListName }) => {
   if (type === 'login') return 1;
-  if (engine === 'patchright') return proxyListName ? 8 : 2;
   return proxyListName ? 100 : 2;
 };
 
@@ -2116,9 +2115,7 @@ class TaskGroups extends Component {
               <div className="form-group">
                 <label className="form-label">Workers</label>
                 <input className="form-input" type="number" min="1" max={workerMaximum} disabled={draft.type === 'login'} value={draft.type === 'login' ? '1' : draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
-                <div className="form-hint">{harvesterEngineOf(draft.engine) === 'patchright'
-                  ? 'Experimental mode is capped at 2 local workers or 8 with proxies.'
-                  : 'Local is capped at 2; proxy harvesters allow up to 100.'}</div>
+                <div className="form-hint">Local is capped at 2; proxy harvesters allow up to 100.</div>
               </div>
             </div>
             <div className="form-row">

@@ -840,7 +840,7 @@ function managedHarvesterConfigs() {
     const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
     const engine = String((raw && raw.engine) || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
     const route = String((raw && raw.proxyListName) || '');
-    const workerCap = type === 'login' ? 1 : engine === 'patchright' ? (route ? 8 : 2) : (route ? 100 : 2);
+    const workerCap = type === 'login' ? 1 : (route ? 100 : 2);
     const requestedWorkers = Math.max(1, Math.min(workerCap, parseInt(raw && raw.workers, 10) || 1));
     const id = normalizedManagedHarvesterId(raw && raw.id, `harvester-${index + 1}`);
     return {

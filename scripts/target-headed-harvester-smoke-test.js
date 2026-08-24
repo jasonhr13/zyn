@@ -31,7 +31,11 @@ assert.match(ui, /engine: 'playwright'/);
 assert.match(ui, /harvesterEngineOf\(raw && raw\.engine\)/);
 
 assert.match(config, /=== 'patchright' \? 'patchright' : 'playwright'/);
-assert.match(config, /engine === 'patchright' \? \(route \? 8 : 2\)/);
+assert.match(config, /type === 'login' \? 1 : \(route \? 100 : 2\)/);
+assert.match(engine, /type === 'login' \? 1 : \(route \? 100 : 2\)/);
+assert.match(harvestEngine, /return proxyListName \? 100 : 2;/);
+assert.match(farmer, /const engineCap = MAX_FARMER_WORKERS;/);
+assert.doesNotMatch(ui, /capped at 2 local workers or 8/);
 assert.match(engine, /`--engine=\$\{engine\}`/);
 assert.match(engine, /`--headless=\$\{headed \? 'false' : 'true'\}`/);
 assert.match(engine, /`--profileRoot=\$\{profileRoot\}`/);

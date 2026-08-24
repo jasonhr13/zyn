@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.31",
+  "notes": [
+    "Experimental harvesters with proxies can run up to 100 workers.",
+    "Worker count is no longer capped at 8 in Experimental mode.",
+    "Local harvesters stay limited to 2 workers on one home IP."
+  ]
+}
