@@ -20,8 +20,8 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "2c28aa2ce240c919a00cfb4be693fc7281f0bd3e0e01679e93713b278a06f056",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize."
+      "sha256": "b6b7dff4cd5c138780622b93025beca01edaa865341b2eb995edbeca376e6abe",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling."
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
@@ -48,8 +48,8 @@
     },
     "target-consent-overlay.mjs": "1d03320ff0c35dae0406a82778cba52a3f3b16ca98618c01af67eab468135827",
     "shape-harvester-engine.mjs": {
-      "sha256": "d47c20160f7198747a92a354adbc4593cb324d5b137d515d3756ac52b4eabc42",
-      "adaptation": "Headed harvest engine helpers: engine selection, persistent profile dirs, and Mac window minimize."
+      "sha256": "460873fa7dbf6f7cae284c91e8299042c932a3cac865ffb145b78abe809c408e",
+      "adaptation": "Headed harvest engine helpers: engine selection, persistent profile dirs, and Mac window minimize. Experimental proxy workers share the 100-worker ceiling."
     },
     "shape-harvest-window.mjs": {
       "sha256": "80d86f4b6f20890a2b0e7cbd773126078b60e58671b84766b67326dd8b7ec144",
