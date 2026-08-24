@@ -1,7 +1,7 @@
 'use strict';
 
-// HTTP/SOCKS health checks for persisted proxy lists. This is request latency through the
-// proxy, not ICMP ping — HTTP proxies cannot forward ping.
+// HTTP/SOCKS health checks for persisted proxy lists. Connect is the proxy tunnel to
+// Redsky (CONNECT 200). Round trip is TLS plus the catalog GET. Not ICMP ping.
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
@@ -142,11 +142,14 @@ function emptySummary(ref = '') {
     invalid: 0,
     p50: null,
     p95: null,
+    connectP50: null,
+    connectP95: null,
   };
 }
 
 function summarize(partial = {}) {
   const latencies = Array.isArray(partial.latencies) ? partial.latencies : [];
+  const connectLatencies = Array.isArray(partial.connectLatencies) ? partial.connectLatencies : [];
   return {
     ...emptySummary(partial.ref),
     updatedAt: Number(partial.updatedAt) || 0,
@@ -160,6 +163,8 @@ function summarize(partial = {}) {
     invalid: Math.max(0, Number(partial.invalid) || 0),
     p50: percentile(latencies, 50),
     p95: percentile(latencies, 95),
+    connectP50: percentile(connectLatencies, 50),
+    connectP95: percentile(connectLatencies, 95),
   };
 }
 
@@ -172,6 +177,7 @@ function probeHttpConnect(parsed, { url, timeoutMs, signal } = {}) {
     let settled = false;
     let socket;
     let tlsSocket;
+    let connectMs = null;
     const finish = result => {
       if (settled) return;
       settled = true;
@@ -179,7 +185,11 @@ function probeHttpConnect(parsed, { url, timeoutMs, signal } = {}) {
       clearTimeout(timer);
       try { tlsSocket?.destroy(); } catch {}
       try { socket?.destroy(); } catch {}
-      resolve({ ...result, ms: Date.now() - started });
+      resolve({
+        ...result,
+        ms: Date.now() - started,
+        ...(connectMs != null ? { connectMs } : {}),
+      });
     };
     const onAbort = () => finish({ ok: false, error: 'cancelled' });
     const timer = setTimeout(() => finish({ ok: false, error: 'timeout' }), timeoutMs || TIMEOUT_MS);
@@ -214,6 +224,7 @@ function probeHttpConnect(parsed, { url, timeoutMs, signal } = {}) {
         finish({ ok: false, error: status.trim() || 'proxy refused CONNECT' });
         return;
       }
+      connectMs = Date.now() - started;
       const leftover = header.slice(split + 4);
       if (target.protocol === 'http:') {
         const request = http.request({
@@ -376,12 +387,14 @@ function createProxyTestControl({
     let failed = 0;
     let tested = 0;
     const latencies = [];
+    const connectLatencies = [];
     for (const raw of lines) {
       const parsed = parseProxyLine(raw);
       const key = lineKey(raw);
       const saved = results[key];
       let status = 'untested';
       let ms = null;
+      let connectMs = null;
       let error = '';
       let testedAt = 0;
       let bucket = '';
@@ -392,6 +405,7 @@ function createProxyTestControl({
       } else if (saved && saved.status) {
         status = saved.status;
         ms = Number.isFinite(Number(saved.ms)) ? Number(saved.ms) : null;
+        connectMs = Number.isFinite(Number(saved.connectMs)) ? Number(saved.connectMs) : null;
         error = String(saved.error || '');
         testedAt = Number(saved.testedAt) || 0;
         bucket = speedBucket(ms);
@@ -400,6 +414,7 @@ function createProxyTestControl({
           if (status === 'working') {
             working += 1;
             if (ms != null) latencies.push(ms);
+            if (connectMs != null) connectLatencies.push(connectMs);
           } else failed += 1;
         }
         if (status === 'invalid') invalid += 1;
@@ -409,6 +424,7 @@ function createProxyTestControl({
         host: displayHost(parsed, raw),
         status,
         ms,
+        connectMs,
         error,
         testedAt,
         bucket,
@@ -431,6 +447,8 @@ function createProxyTestControl({
       invalid,
       p50: percentile(latencies, 50),
       p95: percentile(latencies, 95),
+      connectP50: percentile(connectLatencies, 50),
+      connectP95: percentile(connectLatencies, 95),
     };
     return {
       ...summary,
@@ -466,6 +484,7 @@ function createProxyTestControl({
     const controller = new AbortController();
     running = { ref: wanted, cancelled: false, controller };
     const latencies = [];
+    const connectLatencies = [];
     const results = {};
     for (const item of invalidItems) {
       results[item.key] = {
@@ -493,6 +512,7 @@ function createProxyTestControl({
       failed,
       invalid: invalidItems.length,
       latencies,
+      connectLatencies,
       ...extra,
     });
     const emit = force => {
@@ -513,13 +533,16 @@ function createProxyTestControl({
         });
         const ok = outcome && outcome.ok === true;
         const ms = Number(outcome && outcome.ms);
+        const connectMs = Number(outcome && outcome.connectMs);
         if (ok && Number.isFinite(ms)) latencies.push(ms);
+        if (ok && Number.isFinite(connectMs)) connectLatencies.push(connectMs);
         if (ok) working += 1;
         else failed += 1;
         tested += 1;
         results[item.key] = {
           status: ok ? 'working' : 'failed',
           ms: Number.isFinite(ms) ? ms : null,
+          connectMs: Number.isFinite(connectMs) ? connectMs : null,
           error: ok ? '' : String((outcome && outcome.error) || 'failed'),
           host: displayHost(item.parsed, item.raw),
           testedAt: now(),

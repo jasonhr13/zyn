@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.28",
+  "notes": [
+    "Proxy tests now show connect time to Redsky separately from the full round trip.",
+    "Connect is the tunnel to Redsky. Round trip is the full catalog request.",
+    "Older results keep a single latency until you test the list again."
+  ]
+}

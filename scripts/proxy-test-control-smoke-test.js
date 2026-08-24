@@ -54,7 +54,7 @@ const control = createProxyTestControl({
     const last = Number(String(parsed.server).split('.').pop().split(':')[0]);
     return last % 10 === 0
       ? { ok: false, error: 'timeout', ms: 5000 }
-      : { ok: true, ms: 80 + (last % 7) * 15 };
+      : { ok: true, ms: 80 + (last % 7) * 15, connectMs: 20 + (last % 7) * 5 };
   },
   random: () => 0,
   now: () => 1_700_000_000_000,
@@ -69,6 +69,8 @@ const control = createProxyTestControl({
   assert.ok(small.failed > 0);
   assert.equal(small.working + small.failed, 80);
   assert.equal(typeof small.p50, 'number');
+  assert.equal(typeof small.connectP50, 'number');
+  assert.ok(small.connectP50 <= small.p50);
 
   const report = control.getReport('ISP');
   assert.equal(report.rows.length, 80);
@@ -76,6 +78,12 @@ const control = createProxyTestControl({
   assert.ok(report.rows.every(row => !String(row.host).includes('pass')));
   assert.ok(report.rows.some(row => row.status === 'working'));
   assert.ok(report.rows.some(row => row.status === 'failed'));
+  const workingRow = report.rows.find(row => row.status === 'working');
+  assert.equal(typeof workingRow.connectMs, 'number');
+  assert.equal(typeof workingRow.ms, 'number');
+  assert.ok(workingRow.connectMs <= workingRow.ms);
+  assert.equal(typeof report.connectP50, 'number');
+  assert.equal(typeof report.p50, 'number');
 
   const large = await control.start({ ref: 'Resi', mode: 'auto' });
   assert.equal(large.mode, 'sample');
@@ -97,6 +105,8 @@ const control = createProxyTestControl({
   assert.ok(fs.existsSync(path.join(directory, 'proxy-tests.json')));
   const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'proxy-tests.json'), 'utf8'));
   assert.equal(lineKey(lines.ISP[0]) in persisted.lists.ISP.results, true);
+  assert.equal(typeof persisted.lists.ISP.results[lineKey(lines.ISP[1])].connectMs, 'number');
+  assert.equal(typeof persisted.lists.ISP.summary.connectP50, 'number');
 
   const page = fs.readFileSync(path.join(__dirname, '../frontend/src/components/pages/proxies.js'), 'utf8');
   const bootstrap = fs.readFileSync(path.join(__dirname, '../launcher/bootstrap.js'), 'utf8');
@@ -105,7 +115,10 @@ const control = createProxyTestControl({
   assert.match(page, /startProxyTest/);
   assert.match(page, /Test sample/);
   assert.match(page, /healthLabel/);
-  assert.match(page, /Target latency/);
+  assert.match(page, />Connect</);
+  assert.match(page, />Round trip</);
+  assert.match(page, /connectP50/);
+  assert.doesNotMatch(page, /Target latency/);
   const tester = fs.readFileSync(path.join(__dirname, '../launcher/proxy-test-control.js'), 'utf8');
   assert.match(tester, /redsky\.target\.com/);
   assert.doesNotMatch(tester, /cloudflare\.com\/cdn-cgi\/trace/);
@@ -117,8 +130,10 @@ const control = createProxyTestControl({
   assert.ok(contract.requiredResources.includes('Contents/Resources/app/proxy-test-control.js'));
 
   const origin = http.createServer((req, res) => {
-    res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('ok');
+    setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    }, 25);
   });
   const proxy = net.createServer(client => {
     let header = '';
@@ -157,6 +172,12 @@ const control = createProxyTestControl({
   });
   const liveResult = await live.start({ ref: 'Local', mode: 'full' });
   assert.equal(liveResult.working, 1, `live CONNECT probe failed: ${JSON.stringify(liveResult)}`);
+  assert.equal(typeof liveResult.connectP50, 'number');
+  assert.equal(typeof liveResult.p50, 'number');
+  assert.ok(liveResult.connectP50 <= liveResult.p50);
+  const liveReport = live.getReport('Local');
+  assert.equal(typeof liveReport.rows[0].connectMs, 'number');
+  assert.ok(liveReport.rows[0].connectMs <= liveReport.rows[0].ms);
   origin.close();
   proxy.close();
   fs.rmSync(liveDir, { recursive: true, force: true });

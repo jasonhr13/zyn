@@ -18,6 +18,7 @@ function emptyHealth() {
   return {
     ref: '', updatedAt: 0, mode: '', running: false, total: 0, sampled: 0,
     tested: 0, working: 0, failed: 0, invalid: 0, p50: null, p95: null,
+    connectP50: null, connectP95: null,
   };
 }
 
@@ -29,8 +30,13 @@ function healthLabel(summary) {
   }
   if (!summary.tested) return 'Untested';
   const rate = Math.round((Number(summary.working) || 0) / summary.tested * 100);
-  const latency = Number(summary.p50);
-  return Number.isFinite(latency) ? `${rate}% · ${latency}ms` : `${rate}% working`;
+  const connect = Number(summary.connectP50);
+  const roundTrip = Number(summary.p50);
+  if (Number.isFinite(connect) && Number.isFinite(roundTrip)) {
+    return `${rate}% · ${Math.round(connect)}/${Math.round(roundTrip)}ms`;
+  }
+  if (Number.isFinite(roundTrip)) return `${rate}% · ${Math.round(roundTrip)}ms`;
+  return `${rate}% working`;
 }
 
 function formatLatency(ms) {
@@ -475,9 +481,14 @@ class Proxies extends Component {
             <small>{summary.invalid ? `${summary.invalid} invalid line${summary.invalid === 1 ? '' : 's'}` : 'Connect or timeout'}</small>
           </div>
           <div className="proxy-stat">
-            <span>Target latency</span>
+            <span>Connect</span>
+            <strong>{formatLatency(summary.connectP50)}</strong>
+            <small>{summary.connectP95 != null ? `p95 ${formatLatency(summary.connectP95)} tunnel to Redsky` : 'Tunnel to Redsky'}</small>
+          </div>
+          <div className="proxy-stat">
+            <span>Round trip</span>
             <strong>{formatLatency(summary.p50)}</strong>
-            <small>{summary.p95 != null ? `p95 ${formatLatency(summary.p95)} to Redsky` : 'Median to Target Redsky'}</small>
+            <small>{summary.p95 != null ? `p95 ${formatLatency(summary.p95)} full request` : 'Full request to Redsky'}</small>
           </div>
           <div className="proxy-stat">
             <span>Coverage</span>
@@ -510,7 +521,7 @@ class Proxies extends Component {
 
         <div className="profile-table-wrap proxy-table-wrap">
           <div className="profile-table-head proxy-line-table-head">
-            <span>Proxy</span><span>Status</span><span>Latency</span><span>Speed</span>
+            <span>Proxy</span><span>Status</span><span>Connect</span><span>Round trip</span><span>Speed</span>
           </div>
           <div className="profile-table-body proxy-line-table-body">
             {shown.length ? shown.map(row => (
@@ -524,6 +535,7 @@ class Proxies extends Component {
                     {row.status === 'working' ? 'Working' : row.status === 'failed' ? 'Failed' : row.status === 'invalid' ? 'Invalid' : 'Untested'}
                   </strong>
                 </div>
+                <div className="profile-row-cell"><strong>{formatLatency(row.connectMs)}</strong></div>
                 <div className="profile-row-cell"><strong>{formatLatency(row.ms)}</strong></div>
                 <div className="profile-row-cell"><small>{row.bucket || '—'}</small></div>
               </div>
