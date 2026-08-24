@@ -25,7 +25,7 @@ assert.match(browserPool, /Yandex\.app/);
 assert.match(browserPool, /Opera\.app/);
 assert.match(farmer, /normalizeShapeBrowserSelection\(argOf\('browsers', 'auto'\)\)/,
   'explicit installed-browser selections still collapse to the automatic pool');
-assert.match(farmer, /const HEADLESS = argOf\('headless', 'false'\) === 'true'/);
+assert.match(farmer, /const HEADLESS = PATCHRIGHT \? false : argOf\('headless', 'false'\) === 'true'/);
 assert.match(farmer, /browserMode = HEADLESS \? 'new-headless'/);
 assert.match(farmer, /activeWorkers: scale\.activeWorkers/);
 assert.match(farmer, /configuredWorkers: startedWorkerCount/);
@@ -49,8 +49,8 @@ for (const filename of ['target-engine.js', 'plain-log.js']) {
 }
 fs.copyFileSync(path.join(project, 'native-farmer', 'runtime-paths.js'), path.join(directory, 'runtime-paths.js'));
 const engine = fs.readFileSync(path.join(directory, 'target-engine.js'), 'utf8');
-assert.match(engine, /'--headless=true'/, 'Zyn does not request New Headless');
-assert.doesNotMatch(engine, /'--headless=false'/);
+assert.match(engine, /`--headless=\$\{headed \? 'false' : 'true'\}`/, 'Zyn does not request New Headless for the default farmer');
+assert.match(engine, /engine === 'patchright'/, 'headed harvest producers are not wired');
 assert.match(engine, /const findNodeExe = nodeExecutable/);
 assert.match(engine, /nodeEnvironment\(\{ FORCE_COLOR/);
 assert.match(engine, /`--browsers=auto`/);

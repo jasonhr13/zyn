@@ -15,7 +15,10 @@ const FULL_TEST_LIMIT = 250;
 const SAMPLE_SIZE = 100;
 const CONCURRENCY = 20;
 const TIMEOUT_MS = 5000;
-const PROBE_URL = 'https://cloudflare.com/cdn-cgi/trace';
+// Target catalog (Redsky), not Shape checkout. A completed HTTP response from this host is the
+// latency that matters on a drop: can this proxy reach Target, and how long did it take.
+const PROBE_URL = 'https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2'
+  + '?key=9f36aeafbe60771e321a7cc95a78140772ab3e96&channel=WEB&keyword=a&count=1&offset=0&page=%2Fs%2Fa';
 const ROW_CAP = 500;
 const VALID_PROTOCOLS = new Set(['http:', 'https:', 'socks4:', 'socks5:']);
 
@@ -218,7 +221,12 @@ function probeHttpConnect(parsed, { url, timeoutMs, signal } = {}) {
           host: target.hostname,
           path: `${target.pathname}${target.search}`,
           method: 'GET',
-          headers: { Host: target.host, Connection: 'close' },
+          headers: {
+            Host: target.host,
+            Connection: 'close',
+            Accept: 'application/json',
+            'User-Agent': 'Zyn/1.0',
+          },
         }, response => {
           response.resume();
           response.on('end', () => {
@@ -243,7 +251,12 @@ function probeHttpConnect(parsed, { url, timeoutMs, signal } = {}) {
           host: target.hostname,
           path: `${target.pathname}${target.search}`,
           method: 'GET',
-          headers: { Host: target.host, Connection: 'close' },
+          headers: {
+            Host: target.host,
+            Connection: 'close',
+            Accept: 'application/json',
+            'User-Agent': 'Zyn/1.0',
+          },
         }, response => {
           response.resume();
           response.on('end', () => {

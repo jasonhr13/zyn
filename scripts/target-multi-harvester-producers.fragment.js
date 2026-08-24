@@ -93,11 +93,17 @@ function spawnHarvesterProducer(config) {
   const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(settings.targetLoadsPerBrowser, 10) || 3));
   const blockHeavyResources = settings.targetBlockHeavyResources !== false && settings.targetBlockHeavyResources !== 'false';
   const types = config.type === 'auto' ? 'login,atc' : config.type;
+  const engine = String(config.engine || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
+  const headed = engine === 'patchright';
+  const profileRoot = headed
+    ? path.join((typeof userDataDir === 'function' && userDataDir('shape-patchright')) || os.tmpdir(), String(config.id))
+    : '';
   const args = [script,
     '--producer=true',
     `--harvesterId=${config.id}`,
     `--harvesterName=${config.name}`,
     `--harvesterType=${config.type}`,
+    `--engine=${engine}`,
     `--atcMode=${config.atcMode}`,
     `--routeLabel=${config.proxyListName || 'Local'}`,
     `--proxyFile=${proxyFile}`,
@@ -111,7 +117,9 @@ function spawnHarvesterProducer(config) {
     `--types=${types}`,
     '--sessionReady=false',
     '--loginMode=password',
-    '--headless=true',
+    `--headless=${headed ? 'false' : 'true'}`,
+    '--offscreen=true',
+    ...(profileRoot ? [`--profileRoot=${profileRoot}`] : []),
     `--diag=${verboseLogs()}`,
     `--intervalDelayMs=${config.intervalDelaySec * 1000}`,
     `--cookieTtlMs=${config.cookieTtlSec * 1000}`,

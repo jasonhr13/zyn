@@ -475,9 +475,9 @@ class Proxies extends Component {
             <small>{summary.invalid ? `${summary.invalid} invalid line${summary.invalid === 1 ? '' : 's'}` : 'Connect or timeout'}</small>
           </div>
           <div className="proxy-stat">
-            <span>Latency</span>
+            <span>Target latency</span>
             <strong>{formatLatency(summary.p50)}</strong>
-            <small>{summary.p95 != null ? `p95 ${formatLatency(summary.p95)}` : 'Median of working'}</small>
+            <small>{summary.p95 != null ? `p95 ${formatLatency(summary.p95)} to Redsky` : 'Median to Target Redsky'}</small>
           </div>
           <div className="proxy-stat">
             <span>Coverage</span>
@@ -761,7 +761,7 @@ class Proxies extends Component {
                         <small>{health.mode === 'sample' ? 'sampled' : health.tested ? 'tested' : 'open to inspect'}</small>
                       </div>
                       <div className="profile-row-actions" onClick={event => event.stopPropagation()}>
-                        <button className="profile-row-action" title={health.running ? 'Stop test' : 'Test proxies'}
+                        <button className="profile-row-action" title={health.running ? 'Stop test' : 'Test proxy latency to Target'}
                           onClick={() => health.running ? this.stopTest(ref) : this.startTest(list, 'auto')}>
                           <i className={health.running ? 'ion-md-square' : 'ion-md-pulse'} />
                         </button>

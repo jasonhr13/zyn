@@ -30,7 +30,15 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { chromium as playwrightChromium } from 'playwright';
+import {
+  ensureProfileDir,
+  harvestSourceForEngine,
+  loadHarvestChromium,
+  normalizeHarvesterEngine,
+  workerProfileDir,
+} from './shape-harvester-engine.mjs';
+import { concealHarvestWindow } from './shape-harvest-window.mjs';
 import { makePersona, personaInitScript, makeContextOptions, createHuman } from './harvest-persona.mjs';
 import { createHarvestCoordinator } from './shape-harvest-coordinator.mjs';
 import { createBankDemand } from './shape-bank-demand.mjs';
@@ -76,6 +84,10 @@ const argOf = (name, def = '') => {
 const log = (...a) => console.log('[shape]', ...a);
 const PRODUCER_MODE = argOf('producer', 'false') === 'true';
 const HARVESTER_ID = String(argOf('harvesterId', 'legacy')).replace(/[^a-z0-9_-]/gi, '').slice(0, 64) || 'legacy';
+const HARVEST_ENGINE = normalizeHarvesterEngine(argOf('engine', 'playwright'));
+const PATCHRIGHT = HARVEST_ENGINE === 'patchright';
+const PROFILE_ROOT = argOf('profileRoot', '') || path.join(os.tmpdir(), 'zyn-shape-patchright', HARVESTER_ID);
+let chromium = playwrightChromium;
 const HARVESTER_NAME = String(argOf('harvesterName', 'Cookie Harvester')).slice(0, 80);
 const HARVESTER_TYPE = ['login', 'atc', 'auto'].includes(argOf('harvesterType', 'auto'))
   ? argOf('harvesterType', 'auto') : 'auto';
@@ -755,7 +767,7 @@ function pickProxy() {
   while (recentOrder.length > RECENT_MAX) recent.delete(recentOrder.shift());
   return { proxy: PROXIES[idx], waitMs: 0 };
 }
-const HEADLESS = argOf('headless', 'false') === 'true';
+const HEADLESS = PATCHRIGHT ? false : argOf('headless', 'false') === 'true';
 const BROWSER_SELECTION = normalizeShapeBrowserSelection(argOf('browsers', 'auto'));
 // Every browser in the pool has an explicit channel. In headless mode that opts Chrome, Edge, and
 // bundled Chromium into their regular browser's New Headless implementation.
@@ -817,8 +829,8 @@ function launchOptionsFor(proxy, selectedBrowser) {
   // three --disable flags switch that throttling off, so an off-screen harvest runs at the same speed
   // as a visible one. None of them are observable from page JS.
   if (!HEADLESS && OFFSCREEN) {
-    args.push('--window-position=-32000,-32000',
-      '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling');
+    args.push('--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling');
+    if (process.platform !== 'darwin') args.push('--window-position=-32000,-32000');
   }
   const launchOptions = shapeBrowserLaunchOptions(selectedBrowser, {
     headless: HEADLESS, args, ignoreDefaultArgs: ['--enable-automation'],
@@ -834,17 +846,24 @@ function launchOptionsFor(proxy, selectedBrowser) {
 // owned by the worker session; without it this function preserves its original standalone behavior
 // and launches/closes a browser itself.
 async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
-  // One coherent fake machine per harvest: UA, screen, GPU, cores, timezone and canvas/audio noise
-  // all agree with each other, and differ from the last harvest's.
+  const persistent = PATCHRIGHT && reuse && typeof reuse.newContext !== 'function';
   const persona = makePersona();
   const browser = reuse || await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
   let context = null;
+  let page = null;
   let bandwidthMeter = null;
   try {
-    // Browser reuse does not mean Target-state reuse. Every load gets a fresh context, storage jar,
-    // page, and persona while retaining the expensive browser process and its fixed proxy.
-    context = await browser.newContext(makeContextOptions(persona));
-    const page = await context.newPage();
+    if (persistent) {
+      context = reuse;
+      page = await context.newPage();
+      await concealHarvestWindow(page, { offscreen: OFFSCREEN });
+      page.on('load', () => { concealHarvestWindow(page, { offscreen: OFFSCREEN }).catch(() => {}); });
+    } else {
+      // Browser reuse does not mean Target-state reuse. Every load gets a fresh context, storage jar,
+      // page, and persona while retaining the expensive browser process and its fixed proxy.
+      context = await browser.newContext(makeContextOptions(persona));
+      page = await context.newPage();
+    }
     const interceptedEndpoint = harvestUrlRe(type);
     bandwidthMeter = await createPageBandwidthMeter(context, page, {
       isLocalResponse: request => {
@@ -863,7 +882,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
       enabled: BLOCK_HEAVY_RESOURCES,
       onBlocked: request => bandwidthMeter.noteBlocked(request),
     });
-    await page.addInitScript(personaInitScript(persona)).catch(() => {});
+    if (!persistent) await page.addInitScript(personaInitScript(persona)).catch(() => {});
     const human = createHuman(page, persona);
 
     // Stealth + device persona are installed above via personaInitScript(), before any navigation.
@@ -1367,7 +1386,8 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
       headers: captured,
       fail,
       failureCategory,
-      source: type === 'atc' && HARVESTER_ATC_MODE === 'v2' ? TARGET_ATC_V2_SOURCE : 'inBot',
+      source: harvestSourceForEngine(HARVEST_ENGINE,
+        type === 'atc' && HARVESTER_ATC_MODE === 'v2' ? TARGET_ATC_V2_SOURCE : 'inBot'),
       bandwidth,
     };
   } catch (error) {
@@ -1383,9 +1403,13 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
     throw wrapped;
   } finally {
     if (bandwidthMeter) await bandwidthMeter.stop().catch(() => {});
-    // A reused browser must not retain pages, cookies, storage, or personas between loads.
-    if (context) await context.close().catch(() => {});
-    if (!reuse) await browser.close().catch(() => {});
+    if (persistent) {
+      if (page) await page.close().catch(() => {});
+    } else {
+      // A reused browser must not retain pages, cookies, storage, or personas between loads.
+      if (context) await context.close().catch(() => {});
+      if (!reuse && browser) await browser.close().catch(() => {});
+    }
   }
 }
 
@@ -1479,7 +1503,16 @@ async function farmerWorker(id, initialBrowser) {
             : initialBrowser;
           firstSession = false;
           sessionBrowser = selectedBrowser;
-          browser = await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
+          browser = PATCHRIGHT
+            ? await chromium.launchPersistentContext(
+              ensureProfileDir(workerProfileDir(PROFILE_ROOT, HARVESTER_ID, id)),
+              launchOptionsFor(proxy, selectedBrowser),
+            )
+            : await chromium.launch(launchOptionsFor(proxy, selectedBrowser));
+          if (PATCHRIGHT) {
+            const firstPage = browser.pages?.()[0];
+            if (firstPage) await concealHarvestWindow(firstPage, { offscreen: OFFSCREEN });
+          }
           sessionLoads = randomLoadsForBrowser(LOADS_PER_BROWSER);
           loadsLeft = sessionLoads;
         }
@@ -1617,12 +1650,16 @@ function startFarming(browserMode) {
         + (optimization ? ` browserPolicy=${optimization.policy} leader=${browserLeader}` : '') : ''));
   }, 20000).unref?.();
 
-  detectShapeBrowsers(
+  loadHarvestChromium(HARVEST_ENGINE).then((loaded) => {
+    chromium = loaded;
+    if (PATCHRIGHT) log('engine: headed persistent Chrome (experimental)');
+    return detectShapeBrowsers(
     (options) => chromium.launch(options),
     (browser) => log(`browser: ${browser.key} not available on this machine — skipping`),
     BROWSER_SELECTION,
-  ).then((detected) => {
-    if (!detected.length) {
+  );
+  }).then((detected) => {
+    if (!detected || !detected.length) {
       log(BROWSER_SELECTION === 'auto'
         ? 'browser detection failed — no Chrome, Edge, Brave, Vivaldi, Yandex, Opera, or bundled Chromium browser is available'
         : `browser detection failed — ${BROWSER_SELECTION} is not available`);
@@ -1630,8 +1667,9 @@ function startFarming(browserMode) {
     }
     log(`browsers: ${detected.map(browser => browser.key).join(', ')} (selection: ${BROWSER_SELECTION})`);
     const requestedWorkers = parseInt(argOf('workers', ''), 10);
+    const engineCap = PATCHRIGHT ? 8 : MAX_FARMER_WORKERS;
     const configuredWorkers = Number.isFinite(requestedWorkers)
-      ? Math.max(1, Math.min(requestedWorkers, MAX_FARMER_WORKERS)) : detected.length;
+      ? Math.max(1, Math.min(requestedWorkers, engineCap)) : Math.min(detected.length, engineCap);
     // A managed Local producer intentionally allows up to its configured worker count. Legacy mode
     // remains one home-IP lane, preserving the original conservative behavior.
     const proxyCapacity = PROXIES.length || (PRODUCER_MODE ? configuredWorkers : 1);
@@ -1667,7 +1705,7 @@ function startFarming(browserMode) {
 if (PRODUCER_MODE) {
   const browserMode = HEADLESS ? 'new-headless' : OFFSCREEN ? 'headed/off-screen' : 'headed/visible';
   farmerBrowser = { key: 'pool', channel: '', mode: browserMode };
-  log(`producer ${HARVESTER_NAME} starting (type ${HARVESTER_TYPE}, route ${ROUTE_LABEL}, proxies ${PROXIES.length})`);
+  log(`producer ${HARVESTER_NAME} starting (type ${HARVESTER_TYPE}, engine ${HARVEST_ENGINE}, route ${ROUTE_LABEL}, proxies ${PROXIES.length})`);
   refreshProducerBank();
   publishProducerStatus();
   setInterval(refreshProducerBank, 3000).unref?.();

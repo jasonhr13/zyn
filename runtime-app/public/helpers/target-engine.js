@@ -25,7 +25,7 @@ const WebSocket = require('ws');
 const dm = require('./data-manager');
 const plat = require('./platform');
 // Packaged bot scripts reuse Electron as native Node.
-const { nodeEnvironment, nodeExecutable } = require('./runtime-paths');
+const { nodeEnvironment, nodeExecutable, userDataDir } = require('./runtime-paths');
 const plainLog = require('./plain-log');
 const { normalizeState } = require('./address');
 const reporter = require('./checkout-reporter');
@@ -838,18 +838,21 @@ function managedHarvesterConfigs() {
   if (!Array.isArray(settings.targetHarvesters)) return [];
   const configs = settings.targetHarvesters.map((raw, index) => {
     const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+    const engine = String((raw && raw.engine) || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
     const route = String((raw && raw.proxyListName) || '');
-    const requestedWorkers = Math.max(1, Math.min(100, parseInt(raw && raw.workers, 10) || 1));
+    const workerCap = type === 'login' ? 1 : engine === 'patchright' ? (route ? 8 : 2) : (route ? 100 : 2);
+    const requestedWorkers = Math.max(1, Math.min(workerCap, parseInt(raw && raw.workers, 10) || 1));
     const id = normalizedManagedHarvesterId(raw && raw.id, `harvester-${index + 1}`);
     return {
       id,
       name: String((raw && raw.name) || `Harvester ${index + 1}`).slice(0, 80),
       type,
+      engine,
       atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
       browser: HARVESTER_BROWSERS.has(raw && raw.browser) ? raw.browser : 'auto',
       proxyListName: route,
       // Two home-IP workers are useful; more only duplicates one route and is unnecessarily noisy.
-      workers: type === 'login' ? 1 : route ? requestedWorkers : Math.min(2, requestedWorkers),
+      workers: requestedWorkers,
       input: String((raw && raw.input) || '').slice(0, 12000),
       cookieTtlSec: Math.max(30, Math.min(86400, parseInt(raw && raw.cookieTtlSec, 10) || 600)),
       intervalDelaySec: Math.max(0, Math.min(3600, parseInt(raw && raw.intervalDelaySec, 10) || 0)),
@@ -1708,11 +1711,18 @@ function spawnHarvesterProducer(config) {
   const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(settings.targetLoadsPerBrowser, 10) || 3));
   const blockHeavyResources = settings.targetBlockHeavyResources !== false && settings.targetBlockHeavyResources !== 'false';
   const types = config.type === 'auto' ? 'login,atc' : config.type;
+  const engine = String(config.engine || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
+  const headed = engine === 'patchright';
+  const profileRoot = headed
+    ? (userDataDir('shape-patchright') ? path.join(userDataDir('shape-patchright'), String(config.id))
+      : path.join(os.tmpdir(), 'zyn-shape-patchright', String(config.id)))
+    : '';
   const args = [script,
     '--producer=true',
     `--harvesterId=${config.id}`,
     `--harvesterName=${config.name}`,
     `--harvesterType=${config.type}`,
+    `--engine=${engine}`,
     `--atcMode=${config.atcMode}`,
     `--routeLabel=${displayProxyGroup(config.proxyListName)}`,
     `--proxyFile=${proxyFile}`,
@@ -1726,7 +1736,9 @@ function spawnHarvesterProducer(config) {
     `--types=${types}`,
     '--sessionReady=false',
     '--loginMode=password',
-    '--headless=true',
+    `--headless=${headed ? 'false' : 'true'}`,
+    '--offscreen=true',
+    ...(profileRoot ? [`--profileRoot=${profileRoot}`] : []),
     `--diag=${verboseLogs()}`,
     `--intervalDelayMs=${config.intervalDelaySec * 1000}`,
     `--cookieTtlMs=${config.cookieTtlSec * 1000}`,
@@ -1753,7 +1765,7 @@ function spawnHarvesterProducer(config) {
     if (!quitting) setTimeout(ensureHarvesterBroker, 1000);
   });
   const mode = config.type === 'login' ? '' : config.atcMode === 'v2' ? ' ATC+' : ' ATC';
-  log(`[target] harvester ${config.name} starting — ${config.type}${mode}, ${config.workers} worker(s), ${displayProxyGroup(config.proxyListName)}`);
+  log(`[target] harvester ${config.name} starting — ${config.type}${mode}, ${headed ? 'headed' : 'headless'}, ${config.workers} worker(s), ${displayProxyGroup(config.proxyListName)}`);
 }
 
 function syncHarvesterProducers(configs = managedHarvesterConfigs() || []) {

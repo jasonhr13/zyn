@@ -105,6 +105,10 @@ const control = createProxyTestControl({
   assert.match(page, /startProxyTest/);
   assert.match(page, /Test sample/);
   assert.match(page, /healthLabel/);
+  assert.match(page, /Target latency/);
+  const tester = fs.readFileSync(path.join(__dirname, '../launcher/proxy-test-control.js'), 'utf8');
+  assert.match(tester, /redsky\.target\.com/);
+  assert.doesNotMatch(tester, /cloudflare\.com\/cdn-cgi\/trace/);
   assert.match(bootstrap, /createProxyTestControl/);
   assert.match(bootstrap, /installProxyTestIpc/);
   assert.match(macBuild, /proxy-test-control\.js/);

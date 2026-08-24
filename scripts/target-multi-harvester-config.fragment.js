@@ -35,18 +35,21 @@ function managedHarvesterConfigs() {
   if (!Array.isArray(settings.targetHarvesters)) return [];
   const configs = settings.targetHarvesters.map((raw, index) => {
     const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+    const engine = String((raw && raw.engine) || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
     const route = String((raw && raw.proxyListName) || '');
-    const requestedWorkers = Math.max(1, Math.min(100, parseInt(raw && raw.workers, 10) || 1));
+    const workerCap = type === 'login' ? 1 : engine === 'patchright' ? (route ? 8 : 2) : (route ? 100 : 2);
+    const requestedWorkers = Math.max(1, Math.min(workerCap, parseInt(raw && raw.workers, 10) || 1));
     const id = normalizedManagedHarvesterId(raw && raw.id, `harvester-${index + 1}`);
     return {
       id,
       name: String((raw && raw.name) || `Harvester ${index + 1}`).slice(0, 80),
       type,
+      engine,
       atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
       browser: HARVESTER_BROWSERS.has(raw && raw.browser) ? raw.browser : 'auto',
       proxyListName: route,
       // Two home-IP workers are useful; more only duplicates one route and is unnecessarily noisy.
-      workers: type === 'login' ? 1 : route ? requestedWorkers : Math.min(2, requestedWorkers),
+      workers: requestedWorkers,
       input: String((raw && raw.input) || '').slice(0, 12000),
       cookieTtlSec: Math.max(30, Math.min(86400, parseInt(raw && raw.cookieTtlSec, 10) || 600)),
       intervalDelaySec: Math.max(0, Math.min(3600, parseInt(raw && raw.intervalDelaySec, 10) || 0)),

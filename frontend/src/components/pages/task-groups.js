@@ -60,6 +60,7 @@ const EMPTY_GROUP = Object.freeze({
 const EMPTY_HARVESTER = Object.freeze({
   name: '',
   type: 'atc',
+  engine: 'playwright',
   atcMode: 'v1',
   browser: 'auto',
   proxyListName: '',
@@ -72,6 +73,18 @@ const EMPTY_HARVESTER = Object.freeze({
   // Saving a new configuration must not be equivalent to clicking Start.
   enabled: false,
 });
+
+const HARVESTER_ENGINES = [
+  ['playwright', 'Headless'],
+  ['patchright', 'Headed (experimental)'],
+];
+const harvesterEngineOf = raw => (raw === 'patchright' ? 'patchright' : 'playwright');
+const harvesterModeLabel = engine => (engine === 'patchright' ? 'Headed' : 'Headless');
+const harvesterWorkerMaximum = ({ type, engine, proxyListName }) => {
+  if (type === 'login') return 1;
+  if (engine === 'patchright') return proxyListName ? 8 : 2;
+  return proxyListName ? 100 : 2;
+};
 
 const HARVESTER_BROWSERS = [
   ['auto', 'Automatic pool'],
@@ -116,14 +129,17 @@ const isoDateTimeValue = value => {
 };
 const normalizeHarvester = (raw, index = 0) => {
   const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+  const engine = harvesterEngineOf(raw && raw.engine);
+  const proxyListName = String((raw && raw.proxyListName) || '');
   return {
     id: String((raw && raw.id) || uid('harvester')),
     name: String((raw && raw.name) || `Harvester ${index + 1}`),
     type,
+    engine,
     atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
     browser: HARVESTER_BROWSERS.some(([value]) => value === (raw && raw.browser)) ? raw.browser : 'auto',
-    proxyListName: String((raw && raw.proxyListName) || ''),
-    workers: type === 'login' ? 1 : clampInteger(raw && raw.workers, 1, 100, 1),
+    proxyListName,
+    workers: type === 'login' ? 1 : clampInteger(raw && raw.workers, 1, harvesterWorkerMaximum({ type, engine, proxyListName }), 1),
     input: String((raw && raw.input) || ''),
     cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
     intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
@@ -731,7 +747,7 @@ class TaskGroups extends Component {
       return;
     }
     const requestedWorkers = draft.type === 'login'
-      ? 1 : clampInteger(draft.workers, 1, 100, 1);
+      ? 1 : clampInteger(draft.workers, 1, harvesterWorkerMaximum(draft), 1);
     const harvester = normalizeHarvester({
       ...draft,
       id: this.state.editingHarvesterId || uid('harvester'),
@@ -1751,6 +1767,7 @@ class TaskGroups extends Component {
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
           const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
             : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
+          const modeLabel = harvesterModeLabel(harvester.engine);
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
             : 'Always';
@@ -1786,7 +1803,7 @@ class TaskGroups extends Component {
                 <span className="target-harvester-state-dot" />
                 <span>
                   <strong>{harvester.name}</strong>
-                  <small>{typeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')} · {schedule}</small>
+                  <small>{typeLabel} · {modeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')} · {schedule}</small>
                 </span>
               </div>
               <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
@@ -2098,7 +2115,7 @@ class TaskGroups extends Component {
     const setDraft = patch => this.setState({ harvesterDraft: { ...draft, ...patch } });
     const proxyMissing = draft.proxyListName
       && !this.proxyLists().some(list => proxyRef(list) === draft.proxyListName);
-    const workerMaximum = draft.type === 'login' ? 1 : draft.proxyListName ? 100 : 2;
+    const workerMaximum = harvesterWorkerMaximum(draft);
     return (
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeHarvesterModal()}>
         <div className="modal target-harvester-modal" onMouseDown={event => event.stopPropagation()}>
@@ -2132,6 +2149,19 @@ class TaskGroups extends Component {
                 <div className="form-hint">Automatic distributes workers across every detected browser.</div>
               </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Mode</label>
+              <select className="form-select" value={harvesterEngineOf(draft.engine)} onChange={event => {
+                const engine = harvesterEngineOf(event.target.value);
+                const maximum = harvesterWorkerMaximum({ ...draft, engine });
+                setDraft({ engine, workers: String(Math.min(maximum, clampInteger(draft.workers, 1, 100, 1))) });
+              }}>
+                {HARVESTER_ENGINES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+              </select>
+              {harvesterEngineOf(draft.engine) === 'patchright' && (
+                <div className="form-hint">Zyn opens the browser and assigns the proxy. You do not set up Chrome profiles or an extension.</div>
+              )}
+            </div>
             {draft.type !== 'login' && (
               <div className="form-group">
                 <label className="form-label">ATC mode</label>
@@ -2162,7 +2192,9 @@ class TaskGroups extends Component {
               <div className="form-group">
                 <label className="form-label">Workers</label>
                 <input className="form-input" type="number" min="1" max={workerMaximum} disabled={draft.type === 'login'} value={draft.type === 'login' ? '1' : draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
-                <div className="form-hint">Local is capped at 2; proxy harvesters allow up to 100.</div>
+                <div className="form-hint">{harvesterEngineOf(draft.engine) === 'patchright'
+                  ? 'Headed Chrome is capped at 2 local workers or 8 with proxies.'
+                  : 'Local is capped at 2; proxy harvesters allow up to 100.'}</div>
               </div>
             </div>
             <div className="form-row">

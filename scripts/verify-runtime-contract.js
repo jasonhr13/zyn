@@ -379,8 +379,8 @@ check('Target farmer New Headless launch contract', () => {
   const asar = require(path.join(projectDir, 'frontend', 'node_modules', '@electron', 'asar'));
   const targetEngine = fs.readFileSync(path.join(projectDir, 'runtime-app', 'public', 'helpers', 'target-engine.js'), 'utf8');
   const runtimePaths = fs.readFileSync(path.join(projectDir, 'native-farmer', 'runtime-paths.js'), 'utf8');
-  assert.match(targetEngine, /'--headless=true'/, 'Zyn does not request headless mode');
-  assert.doesNotMatch(targetEngine, /'--headless=false'/, 'Zyn still requests headed mode');
+  assert.match(targetEngine, /`--headless=\$\{headed \? 'false' : 'true'\}`/, 'Zyn does not request headless mode');
+  assert.match(targetEngine, /engine === 'patchright'/, 'headed harvest producers are not wired');
   assert.match(targetEngine, /const findNodeExe = nodeExecutable/, 'Target farmer does not use native Node boundary');
   assert.match(targetEngine, /process\.env\.ZYN_ENGINE_PATH/,
     'Target engine does not prefer a side-by-side downloaded backend');
