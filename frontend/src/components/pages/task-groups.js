@@ -7,7 +7,6 @@ import {
   sameTargetBank,
   targetBandwidthSummary,
   targetBankPresentation,
-  targetHarvesterBandwidth,
 } from '../target-bank-metrics.mjs';
 import {
   TARGET_MONITOR_BANDWIDTH_TOOLTIP,
@@ -75,11 +74,11 @@ const EMPTY_HARVESTER = Object.freeze({
 });
 
 const HARVESTER_ENGINES = [
-  ['playwright', 'Headless'],
-  ['patchright', 'Headed (experimental)'],
+  ['playwright', 'Default'],
+  ['patchright', 'Experimental'],
 ];
 const harvesterEngineOf = raw => (raw === 'patchright' ? 'patchright' : 'playwright');
-const harvesterModeLabel = engine => (engine === 'patchright' ? 'Headed' : 'Headless');
+const harvesterModeLabel = engine => (engine === 'patchright' ? 'Experimental' : 'Default');
 const harvesterWorkerMaximum = ({ type, engine, proxyListName }) => {
   if (type === 'login') return 1;
   if (engine === 'patchright') return proxyListName ? 8 : 2;
@@ -1683,16 +1682,6 @@ class TaskGroups extends Component {
       : { kind: 'running', label: 'Detecting browsers' };
   };
 
-  harvesterLastSuccess = runtime => {
-    const timestamp = Number(runtime && runtime.lastSuccessAt) || 0;
-    if (!timestamp) return 'No cookies yet';
-    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    if (seconds < 5) return 'Just now';
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
-  };
-
   renderHarvesterDrawer() {
     const availableHarvesters = this.state.harvesters.map(harvester =>
       this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
@@ -1735,35 +1724,9 @@ class TaskGroups extends Component {
           const runtime = this.harvesterRuntimeFor(harvester.id);
           const state = this.harvesterState(harvester, runtime);
           const produced = (runtime && runtime.produced) || {};
-          const bandwidth = targetHarvesterBandwidth(runtime, Date.now());
           const workerValue = state.kind === 'running'
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
-          const browser = (HARVESTER_BROWSERS.find(([value]) => value === harvester.browser) || [null, harvester.browser])[1];
-          const browserPerformance = runtime && runtime.browserPerformance;
-          const performanceBrowsers = browserPerformance && Array.isArray(browserPerformance.browsers)
-            ? browserPerformance.browsers : [];
-          const browserLeader = browserPerformance && browserPerformance.leader;
-          const adaptiveBrowserPool = browserPerformance && browserPerformance.policy === 'adaptive-efficiency';
-          const browserPolicy = harvester.browser === 'auto'
-            ? !browserPerformance
-              ? `${browser} · Starting`
-              : adaptiveBrowserPool
-                ? browserPerformance.learning
-                  ? `${browser} · Learning`
-                  : browserLeader
-                    ? `${browser} · Favoring ${browserLeader.label}`
-                    : `${browser} · Balancing`
-                : `${browser} · One browser available`
-            : `${browser} · Fixed`;
-          const browserDetail = performanceBrowsers.filter(item => Number(item.attempts) > 0).map(item => {
-            const successRate = Math.round((Number(item.successRate) || 0) * 100);
-            const efficiency = Number(item.bytesPerCookie) > 0
-              ? `${formatBandwidth(item.bytesPerCookie)}/cookie` : 'no cookie yield';
-            const latency = Number(item.successfulAverageMs) > 0
-              ? `${(Number(item.successfulAverageMs) / 1000).toFixed(1)}s success` : 'no successful timing';
-            return `${item.label}: ${successRate}% · ${Number(item.cookies) || 0} cookies · ${efficiency} · ${latency}`;
-          }).join(' | ');
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
           const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
             : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
@@ -1771,32 +1734,6 @@ class TaskGroups extends Component {
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
             : 'Always';
-          const runtimeRoute = String((runtime && runtime.route) || '').trim().toLowerCase();
-          const routeExpectsProxy = !!(runtimeRoute && runtimeRoute !== 'local');
-          const hasMeasuredTraffic = bandwidth.attempts > 0 || bandwidth.totalBytes > 0;
-          const usesProxy = bandwidth.proxyBytes > 0 || (!hasMeasuredTraffic && routeExpectsProxy);
-          const proxyRouteMismatch = hasMeasuredTraffic && routeExpectsProxy
-            && bandwidth.proxyBytes === 0 && bandwidth.directBytes > 0;
-          const bandwidthValue = !runtime || bandwidth.attempts === 0
-            ? 'Waiting for first page'
-            : !bandwidth.supported
-              ? 'Telemetry unavailable for this browser'
-              : `${formatBandwidth(bandwidth.totalBytes)} · ${formatBandwidth(bandwidth.bytesPerHour)}/hr avg`
-                + (bandwidth.cookies ? ` · ${formatBandwidth(bandwidth.bytesPerCookie)}/cookie` : ' · no cookie yield yet');
-          const transferDetail = `↓ ${formatBandwidth(bandwidth.downloadBytes)} · ↑ ${formatBandwidth(bandwidth.uploadBytes)} est.`
-            + ` · ${bandwidth.requests} requests · ${bandwidth.blockedRequests} heavy assets blocked`;
-          const typeBreakdown = ['login', 'atc'].map(type => {
-            const item = bandwidth.byType[type] || {};
-            const bytes = Number(item.totalBytes) || 0;
-            const cookies = Number(item.cookies) || 0;
-            if (!(Number(item.attempts) > 0)) return '';
-            const name = type === 'atc' ? atcModeLabel : 'Login';
-            return `${name} ${formatBandwidth(bytes)}${cookies ? ` (${formatBandwidth(bytes / cookies)}/cookie)` : ''}`;
-          }).filter(Boolean).join(' · ');
-          const requestDetail = `${bandwidth.attempts} pages · ${bandwidth.failedRequests} failed requests`
-            + ` · ${bandwidth.cachedRequests} cache hits`
-            + (bandwidth.unmeasuredAttempts ? ` · ${bandwidth.unmeasuredAttempts} unmeasured` : '')
-            + (typeBreakdown ? ` · ${typeBreakdown}` : '');
           return (
             <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
               <div className="target-harvester-identity">
@@ -1811,19 +1748,6 @@ class TaskGroups extends Component {
                 <span><small>Workers</small><strong>{workerValue}</strong></span>
                 <span><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></span>
               </div>
-              {bandwidth.attempts > 0 && (
-                <div className="target-harvester-notes">
-                  <span title={transferDetail}>
-                    {proxyRouteMismatch ? 'Direct · proxy unavailable' : usesProxy ? 'Proxy' : 'Direct'} · {bandwidthValue}
-                  </span>
-                  {bandwidth.attempts > 0 && <em>{requestDetail}</em>}
-                </div>
-              )}
-              {(state.kind === 'running' || !!browserDetail) && (
-                <div className="target-harvester-notes" title={browserDetail || undefined}>
-                  <span>{browserPolicy} · {this.harvesterLastSuccess(runtime)}</span>
-                </div>
-              )}
               <div className="target-harvester-actions">
                 <button className={harvester.enabled ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'} onClick={() => this.toggleHarvester(harvester)}>
                   <Icon name={harvester.enabled ? 'stop' : 'play'} size={11} /> {harvester.enabled ? 'Stop' : 'Start'}
@@ -2193,7 +2117,7 @@ class TaskGroups extends Component {
                 <label className="form-label">Workers</label>
                 <input className="form-input" type="number" min="1" max={workerMaximum} disabled={draft.type === 'login'} value={draft.type === 'login' ? '1' : draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
                 <div className="form-hint">{harvesterEngineOf(draft.engine) === 'patchright'
-                  ? 'Headed Chrome is capped at 2 local workers or 8 with proxies.'
+                  ? 'Experimental mode is capped at 2 local workers or 8 with proxies.'
                   : 'Local is capped at 2; proxy harvesters allow up to 100.'}</div>
               </div>
             </div>

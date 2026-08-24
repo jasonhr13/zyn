@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.29",
+  "notes": [
+    "Cookie harvesters can run Experimental mode: Zyn opens Chrome with a private profile, no extension.",
+    "Proxy tests show connect time to Redsky separately from the full catalog round trip.",
+    "Harvester cards keep workers and produced counts. Bandwidth stays at the top of the panel.",
+    "Mode options are Default and Experimental. Checkout is unchanged."
+  ]
+}

@@ -19,11 +19,14 @@ const harvestEngine = read('native-farmer/shape-harvester-engine.mjs');
 const harvestWindow = read('native-farmer/shape-harvest-window.mjs');
 const botPackage = JSON.parse(read('bot-runtime/package.json'));
 
-assert.match(ui, /\['playwright', 'Headless'\]/);
-assert.match(ui, /\['patchright', 'Headed \(experimental\)'\]/);
+assert.match(ui, /\['playwright', 'Default'\]/);
+assert.match(ui, /\['patchright', 'Experimental'\]/);
 assert.match(ui, /Zyn opens the browser and assigns the proxy/);
 assert.doesNotMatch(ui, />Playwright</);
 assert.doesNotMatch(ui, />Patchright</);
+assert.doesNotMatch(ui, />Headless</);
+assert.doesNotMatch(ui, /Headed \(experimental\)/);
+assert.doesNotMatch(ui, /target-harvester-notes/);
 assert.match(ui, /engine: 'playwright'/);
 assert.match(ui, /harvesterEngineOf\(raw && raw\.engine\)/);
 
@@ -50,7 +53,7 @@ execFileSync(process.execPath, ['--check', path.join(project, 'runtime-app/publi
 
 console.log(JSON.stringify({
   ok: true,
-  uiMode: ['Headless', 'Headed (experimental)'],
+  uiMode: ['Default', 'Experimental'],
   internalEngine: ['playwright', 'patchright'],
   headedWindow: { win32: 'offscreen', darwin: 'minimized' },
   hash: crypto.createHash('sha256').update(farmer).digest('hex').slice(0, 12),

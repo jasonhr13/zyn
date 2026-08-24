@@ -289,7 +289,9 @@ async function main() {
   assert.match(report.harvesterDrawerText, /7\.54 MB/);
   assert.match(report.harvesterDrawerText, /754 KB/);
   assert.match(report.harvesterText, /5 configured/);
-  assert.match(report.harvesterText, /92 heavy assets blocked/);
+  assert.doesNotMatch(report.harvesterText, /92 heavy assets blocked/);
+  assert.doesNotMatch(report.harvesterText, /MB\/hr/);
+  assert.match(report.harvesterDrawerText, /92 heavy assets blocked/);
   assert.doesNotMatch(report.harvesterText, /5\/5/);
   assert.equal(report.atcCookiesPerTask, '4');
   assert.equal(report.savedAtcCookiesPerTask, '4');
