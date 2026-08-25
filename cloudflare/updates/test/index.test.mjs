@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../src/index.js';
+import { brandDiscordPayload, brandText } from '../src/discord-relay.js';
 
 const encoder = new TextEncoder();
 
@@ -943,3 +944,103 @@ test('app notification receipt binds the immutable artifact fingerprint', async 
     globalThis.fetch = originalFetch;
   }
 });
+
+const POLAR_CHECKOUT = {
+  username: 'Polar AIO',
+  avatar_url: 'https://cdn.polaraio.com/logo.png',
+  content: null,
+  embeds: [{
+    title: 'Successful Checkout :tada:',
+    description: 'Checked out with Polar AIO',
+    color: 5276158,
+    fields: [
+      { name: 'Site', value: 'Target', inline: true },
+      { name: 'Profile', value: '||home||', inline: true },
+    ],
+    footer: { text: 'Polar AIO', icon_url: 'https://cdn.polaraio.com/logo.png' },
+    thumbnail: { url: 'https://i5.walmartimages.com/product.jpeg' },
+    timestamp: '2026-08-24T12:00:00.000Z',
+  }],
+};
+
+test('rebrands Polar Discord webhook payloads as Zyn', () => {
+  const branded = brandDiscordPayload(POLAR_CHECKOUT);
+  assert.equal(branded.username, 'Zyn');
+  assert.equal(branded.avatar_url, 'https://zynbot.app/zyn-icon.png');
+  assert.deepEqual(branded.allowed_mentions, { parse: [] });
+  assert.equal(branded.content, undefined);
+  assert.equal(branded.embeds[0].description, 'Checked out with Zyn');
+  assert.equal(branded.embeds[0].footer.text, 'Zyn');
+  assert.equal(branded.embeds[0].footer.icon_url, 'https://zynbot.app/zyn-icon.png');
+  assert.equal(branded.embeds[0].thumbnail.url, 'https://i5.walmartimages.com/product.jpeg');
+  assert.equal(brandText('Polar restock on rCart'), 'Zyn restock on Zyn');
+  assert.equal(brandText('Hayha AIO just checked out'), 'Zyn AIO just checked out');
+  assert.equal(brandText('HayhaAIO restock'), 'Zyn AIO restock');
+  assert.equal(brandText('Checked out with Hayha'), 'Checked out with Zyn');
+});
+
+test('replaces Hayha logos even when they are hosted off-brand', () => {
+  const branded = brandDiscordPayload({
+    username: 'Hayha AIO',
+    avatar_url: 'https://cdn.discordapp.com/icons/1/hayha-mark.png',
+    embeds: [{
+      author: { name: 'Hayha AIO', icon_url: 'https://i.imgur.com/hayha.png' },
+      title: 'Testing success webhook',
+      thumbnail: { url: 'https://cdn.discordapp.com/icons/1/hayha-mark.png' },
+      image: { url: 'https://cdn.discordapp.com/attachments/1/2/logo.png' },
+    }],
+  });
+  assert.equal(branded.embeds[0].author.name, 'Zyn AIO');
+  assert.equal(branded.embeds[0].author.icon_url, 'https://zynbot.app/zyn-icon.png');
+  assert.equal(branded.embeds[0].thumbnail.url, 'https://zynbot.app/zyn-icon.png');
+  assert.equal(branded.embeds[0].image.url, 'https://zynbot.app/zyn-icon.png');
+  assert.doesNotMatch(JSON.stringify(branded), /hayha/i);
+});
+
+test('relays a Discord-shaped webhook through updates.zynbot.app with Zyn branding', async () => {
+  const env = {
+    RELEASES: releaseStore(),
+    ZYN_DISCORD_RELAY_TOKEN: 'inbound-relay-token-1',
+    ZYN_DISCORD_RELAY_WEBHOOK: 'https://discord.com/api/webhooks/999/outbound-secret',
+  };
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ id: 'relayed-message-1' });
+  };
+  try {
+    const missing = await worker.fetch(new Request(
+      'https://updates.zynbot.app/api/webhooks/1/wrong-token-value1',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(POLAR_CHECKOUT) },
+    ), env);
+    assert.equal(missing.status, 404);
+
+    const response = await worker.fetch(new Request(
+      'https://updates.zynbot.app/api/webhooks/1/inbound-relay-token-1',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(POLAR_CHECKOUT) },
+    ), env);
+    assert.equal(response.status, 204);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://discord.com/api/v10/webhooks/999/outbound-secret?wait=true');
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.username, 'Zyn');
+    assert.doesNotMatch(JSON.stringify(payload), /Polar/i);
+    assert.equal(payload.embeds[0].footer.text, 'Zyn');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('also accepts /hooks/<token> and rejects unconfigured relays', async () => {
+  const env = {
+    RELEASES: releaseStore(),
+    ZYN_DISCORD_RELAY_TOKEN: 'inbound-relay-token-1',
+  };
+  const response = await worker.fetch(new Request(
+    'https://updates.zynbot.app/hooks/inbound-relay-token-1',
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(POLAR_CHECKOUT) },
+  ), env);
+  assert.equal(response.status, 503);
+});
+

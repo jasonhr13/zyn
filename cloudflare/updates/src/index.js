@@ -1,3 +1,5 @@
+import { handleDiscordRelay, isDiscordRelayPath } from './discord-relay.js';
+
 const CHANNELS = new Set(['mac', 'windows', 'runtimes', 'extension']);
 const MAC_ARCHES = new Set(['arm64', 'x64']);
 const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
@@ -1105,6 +1107,13 @@ export default {
 
     if (url.pathname === '/__publish/app') {
       return publishApp(request, env);
+    }
+
+    if (isDiscordRelayPath(url.pathname)) {
+      return handleDiscordRelay(request, env, {
+        postDiscord: postDiscordPayload,
+        parseWebhook: validDiscordWebhook,
+      });
     }
 
     const macDownload = url.pathname.match(/^\/download\/mac\/(arm64|x64)$/);
