@@ -649,12 +649,24 @@ export function reducer(state = defaultState, action) {
     }
 
     case 'targetDone': {
-      if (!action.taskId) return { ...state, target: { ...state.target,
+      const ids = [];
+      if (Array.isArray(action.taskIds)) {
+        for (const id of action.taskIds) {
+          const value = String(id || '');
+          if (value) ids.push(value);
+        }
+      }
+      if (action.taskId) ids.push(String(action.taskId));
+      if (!ids.length) return { ...state, target: { ...state.target,
         monitorStatus: null,
         monitorBandwidth: stopTargetMonitorBandwidthRuns(state.target.monitorBandwidth),
       } };
-      const status = { ...state.target.taskStatus }; delete status[action.taskId];
-      const proxyStatus = { ...state.target.proxyStatus }; delete proxyStatus[action.taskId];
+      const status = { ...state.target.taskStatus };
+      const proxyStatus = { ...state.target.proxyStatus };
+      for (const id of ids) {
+        delete status[id];
+        delete proxyStatus[id];
+      }
       return { ...state, target: { ...state.target, taskStatus: status, proxyStatus } };
     }
 

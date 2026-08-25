@@ -78,8 +78,8 @@ class PageHandler extends Component {
       this.props.dispatch({ type: 'targetStatusBatch', updates: list, receivedAt });
       for (const update of list) this.armTargetProxyTimer(update, receivedAt);
     });
-    ipcRenderer.on('targetDone', (e, { taskId } = {}) => {
-      this.props.dispatch({ type: 'targetDone', taskId });
+    ipcRenderer.on('targetDone', (e, payload = {}) => {
+      this.props.dispatch({ type: 'targetDone', taskId: payload.taskId, taskIds: payload.taskIds });
     });
     ipcRenderer.on('targetRunStarted', (e, { taskIds, startedAt } = {}) => {
       this.props.dispatch({ type: 'targetRunStarted', taskIds: taskIds || [], startedAt });

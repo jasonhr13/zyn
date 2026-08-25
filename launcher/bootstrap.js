@@ -414,7 +414,7 @@ function installTaskGroups() {
   });
 }
 
-async function targetReadinessForGroup(group, taskIds) {
+async function targetReadinessForGroup(group, taskIds, options = {}) {
   const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
   const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
   const candidate = group && typeof group === 'object' ? group : {};
@@ -445,7 +445,9 @@ async function targetReadinessForGroup(group, taskIds) {
     }
   }
   let bank = null;
-  try { bank = await targetEngine.getCookieBank?.(); } catch {}
+  if (options.includeBank !== false) {
+    try { bank = await targetEngine.getCookieBank?.(); } catch {}
+  }
   return evaluateTargetReadiness(candidate, {
     taskIds: Array.isArray(taskIds) ? taskIds : undefined,
     accounts: dataManager.getAccounts?.() || [],
@@ -471,7 +473,9 @@ function installTargetReadiness() {
         counts: { tasks: 0, skus: 0 },
       };
     }
-    return targetReadinessForGroup(group, Array.isArray(payload.taskIds) ? payload.taskIds : undefined);
+    return targetReadinessForGroup(group, Array.isArray(payload.taskIds) ? payload.taskIds : undefined, {
+      includeBank: payload.includeBank !== false,
+    });
   });
 }
 
@@ -622,7 +626,7 @@ function installTaskGroupScheduling(authority, managedProxyControl) {
     saveGroups: groups => taskGroupStore.save(groups),
     getAccounts: () => dataManager.getAccounts?.() || [],
     getProfiles: () => dataManager.getProfiles?.() || [],
-    getReadiness: group => targetReadinessForGroup(group),
+    getReadiness: group => targetReadinessForGroup(group, undefined, { includeBank: false }),
     isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
     canStart: () => (!authority || authority.cached().ok === true)
       && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),

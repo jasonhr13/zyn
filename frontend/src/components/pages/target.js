@@ -452,12 +452,12 @@ class Target extends Component {
   // it looked like delete had never saved.
   deleteTasks = (ids) => {
     const gone = new Set(ids.map(String));
-    for (const id of ids) {
-      // Stop is sent unconditionally rather than only for rows that look busy — taskStatus can lag
-      // the engine, and stopping an already-stopped task is a no-op while missing a live one is the bug.
-      try { ipcRenderer.sendSync('stopTarget', id); } catch {}
-      this.props.dispatch({ type: 'targetTaskDelete', id });
+    // Stop is sent unconditionally rather than only for rows that look busy — taskStatus can lag
+    // the engine, and stopping an already-stopped task is a no-op while missing a live one is the bug.
+    if (ids.length) {
+      try { ipcRenderer.send('stopTarget', ids.map(String)); } catch {}
     }
+    for (const id of ids) this.props.dispatch({ type: 'targetTaskDelete', id });
     this.persist({ tasks: (this.props.target.tasks || []).filter(t => !gone.has(String(t.id))) });
   };
 
@@ -475,7 +475,7 @@ class Target extends Component {
     if (n && !window.confirm(`Delete all ${n} task${n === 1 ? '' : 's'}? This cannot be undone.`)) return;
     // Stop EVERYTHING, not each task in turn: stopTarget with no id tears down the engine, the
     // farmer and the monitor together, which is what clearing the whole list means.
-    try { ipcRenderer.sendSync('stopTarget'); } catch {}
+    try { ipcRenderer.send('stopTarget'); } catch {}
     this.props.dispatch({ type: 'targetTasksClear' });
     this.persist({ tasks: [] });
   };
@@ -511,8 +511,8 @@ class Target extends Component {
   startAll = () => this.start();
   startTask = (t) => this.start([t]);
 
-  stopAll = () => ipcRenderer.sendSync('stopTarget');
-  stopTask = (id) => ipcRenderer.sendSync('stopTarget', id);
+  stopAll = () => { try { ipcRenderer.send('stopTarget'); } catch {} };
+  stopTask = (id) => { try { ipcRenderer.send('stopTarget', [id]); } catch {} };
 
   // ── bulk selection ─────────────────────────────────────────────────────────
   // Twenty tasks and one dropdown each is not a workflow you can run during a drop. Selecting by

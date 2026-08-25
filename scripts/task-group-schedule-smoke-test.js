@@ -70,7 +70,13 @@ const scheduler = createTaskGroupScheduler({
   getProfiles: () => profiles,
   isTaskRunning: id => running.has(id),
   startTarget: config => { starts.push(config); config.tasks.forEach(task => running.add(task.id)); },
-  stopTarget: id => { stops.push(id); running.delete(id); },
+  stopTarget: taskId => {
+    const ids = Array.isArray(taskId) ? taskId : [taskId];
+    for (const id of ids) {
+      stops.push(String(id));
+      running.delete(String(id));
+    }
+  },
   canStart: () => true,
   notify: event => events.push(event),
   now: () => now,
@@ -137,6 +143,8 @@ const bootstrap = read('launcher/bootstrap.js');
 const taskGroupsPage = read('frontend/src/components/pages/task-groups.js');
 const targetEngine = read('runtime-app/public/helpers/target-engine.js');
 assert.match(bootstrap, /createTaskGroupScheduler/);
+assert.match(bootstrap, /includeBank: false/,
+  'scheduled Target starts must not wait on the cookie bank HTTP probe');
 assert.match(bootstrap, /taskGroupScheduler\?\.sync\(\)/,
   'saving task groups does not reconcile main-process timers');
 assert.match(bootstrap, /webContents\.send\('taskGroupSchedule'/,

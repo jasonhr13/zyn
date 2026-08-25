@@ -674,6 +674,9 @@ const status = (state, color, detail, taskId = '', taskState, running) => {
     running: typeof running === 'boolean' ? running : undefined,
   }, { immediate: running === false });
 };
+const flushStartingStatuses = coalescer => {
+  if (coalescer && typeof coalescer.flushNow === 'function') coalescer.flushNow();
+};
 
 // ── engine binary path (packaged sibling of app.asar, or repo dir in dev) ────────
 function enginePath() {
@@ -2828,6 +2831,7 @@ function startPokemonCenter(config = {}, mainWindow) {
     engineTaskSites.register(id, POKEMON_SITE);
     pokemonStatus('Starting', '#868686', 'launching engine', id, 1, true);
   }
+  flushStartingStatuses(pokemonStatusCoalescer);
   lastStatusKeys = {};
   const seq = ++pokemonStartSeq;
   ensureServer(() => {
@@ -3198,6 +3202,7 @@ function startWalmart(config = {}, mainWindow) {
     taskProfileById.set(id, String(task.profileId || ''));
     walmartStatus('Starting', '#868686', 'launching engine', id, 1, true);
   }
+  flushStartingStatuses(walmartStatusCoalescer);
   const seq = ++walmartStartSeq;
   ensureServer(() => {
     if (seq !== walmartStartSeq && !batch.tasks.some(task => walmartTaskIds.has(String(task.id)))) return;
@@ -3817,6 +3822,7 @@ function startTarget(config, mainWindow) {
     });
     status('Starting', '#868686', 'launching engine', t.id);
   }
+  flushStartingStatuses(statusCoalescer);
   // Binding is asynchronous now (it may fall back to a free port), and the engine has to be told
   // which port it got — so the spawns move inside the ready callback. `seq` guards the gap: if the
   // user presses Stop while the socket is still binding, stopTarget bumps startSeq and this callback
@@ -3857,25 +3863,41 @@ function startTarget(config, mainWindow) {
   });
 }
 
-// taskId omitted => stop everything (engine, farmer, monitor). With an id, only that task is
-// stopped and the engine keeps running for the others.
+// Empty / omitted => stop everything (engine, farmer, monitor). A string or array of ids stops
+// only those tasks in one engine message. Empty arrays are a no-op so a UI bug cannot tear down
+// every running checkout.
+function normalizeTargetStopIds(taskId) {
+  if (taskId == null || taskId === '') return null;
+  const raw = Array.isArray(taskId) ? taskId : [taskId];
+  return [...new Set(raw.map(value => String(value || '')).filter(Boolean))];
+}
+
+function notifyTargetDone(ids) {
+  if (!ids.length) return;
+  if (ids.length === 1) toRenderer('targetDone', { taskId: ids[0] });
+  else toRenderer('targetDone', { taskIds: ids });
+}
+
+function releaseStoppedTargetTask(id) {
+  removePendingTargetStartTask(id);
+  runningTaskIds.delete(id);
+  releaseTargetCookieTask(id);
+  engineTaskSites.remove(id);
+  taskProfileById.delete(id);
+  taskCheckoutConfigById.delete(id);
+  taskAccountById.delete(id);
+  cancelOtpForTask(id);
+  manualCaptchaManager.cancelTask(id);
+  statusCoalescer.drop(id);
+}
+
 function stopTarget(taskId) {
-  const requestedId = String(taskId || '');
-  if (requestedId) {
-    // A start can be queued while the native WebSocket is still connecting. Remove a stopped task
-    // from every queued config before the early return below, or flushStart() can resurrect it later.
-    removePendingTargetStartTask(requestedId);
-    if (engineConn) sendToEngine({ type: 'stop-tasks', messages: [{ id: requestedId }] });
-    runningTaskIds.delete(requestedId);
-    releaseTargetCookieTask(requestedId);
-    engineTaskSites.remove(requestedId);
-    taskProfileById.delete(requestedId);
-    taskCheckoutConfigById.delete(requestedId);
-    taskAccountById.delete(requestedId);
-    cancelOtpForTask(requestedId);
-    manualCaptchaManager.cancelTask(requestedId);
-    statusCoalescer.drop(requestedId);
-    toRenderer('targetDone', { taskId: requestedId });
+  const requested = normalizeTargetStopIds(taskId);
+  if (Array.isArray(requested) && !requested.length) return;
+  if (requested) {
+    if (engineConn) sendToEngine({ type: 'stop-tasks', messages: requested.map(id => ({ id })) });
+    for (const id of requested) releaseStoppedTargetTask(id);
+    notifyTargetDone(requested);
     flushLogs();
     if (runningTaskIds.size) {
       if (targetMainMonitorRunning) reconcileTargetMainMonitor();

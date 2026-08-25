@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.32",
+  "notes": [
+    "Starting several Target tasks no longer waits on the cookie bank.",
+    "Cookie-bank and local-IP warnings no longer block Start.",
+    "Stopping many Target tasks is one action instead of a freeze.",
+    "Starting status shows immediately on all checkout modules."
+  ]
+}

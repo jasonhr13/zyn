@@ -37,6 +37,12 @@ test('Target checkout counts are per-run, deduplicated, and survive status rotat
   state = reducer(state, { type: 'targetDone', taskId: 'task-a' });
   expect(state.target.taskOutcomes['task-a'].checkouts).toBe(2);
 
+  state = reducer(state, {
+    type: 'targetStatus', taskId: 'task-b', state: 'Starting', label: 'Starting', running: true,
+  });
+  state = reducer(state, { type: 'targetDone', taskIds: ['task-b'] });
+  expect(state.target.taskStatus['task-b']).toBeUndefined();
+
   // A late event from the prior run is ignored after the new run starts.
   state = reducer(state, { type: 'targetRunStarted', taskIds: ['task-a'], startedAt: 200 });
   state = reducer(state, outcome('task-a', 'event-0000000004', 'checkout', 199));

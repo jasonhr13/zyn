@@ -209,8 +209,14 @@ function createTaskGroupScheduler(deps = {}) {
     const group = getGroups().find(candidate => String(candidate.id) === String(groupId));
     if (!group) return;
     let stopped = 0;
-    for (const task of (Array.isArray(group.tasks) ? group.tasks : [])) {
-      try { stopTarget(String(task.id)); stopped += 1; } catch {}
+    const ids = (Array.isArray(group.tasks) ? group.tasks : [])
+      .map(task => String(task && task.id || ''))
+      .filter(Boolean);
+    if (ids.length) {
+      try {
+        stopTarget(ids);
+        stopped = ids.length;
+      } catch {}
     }
     // The stop boundary closes the whole window. Clear a still-pending start as well so a group
     // that spent its window waiting for sign-in or another group cannot launch afterward.

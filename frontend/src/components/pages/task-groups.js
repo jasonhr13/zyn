@@ -43,6 +43,9 @@ import {
 } from '../target-task-runtime';
 
 const { ipcRenderer, clipboard } = window.require('electron');
+const stopTargetTasks = ids => {
+  try { ipcRenderer.send('stopTarget', ids); } catch {}
+};
 
 const EMPTY_GROUP = Object.freeze({
   name: '',
@@ -1147,8 +1150,9 @@ class TaskGroups extends Component {
 
   deleteGroup = (group) => {
     if (!window.confirm(`Delete “${group.name}” and its ${(group.tasks || []).length} task(s)?\n\nThe legacy Target workspace is not affected.`)) return;
+    const taskIds = (group.tasks || []).map(task => task.id);
+    if (taskIds.length) stopTargetTasks(taskIds);
     for (const task of (group.tasks || [])) {
-      try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
       this.props.dispatch({ type: 'targetTaskDelete', id: task.id });
     }
     this.persist(this.state.groups.filter(item => item.id !== group.id), () => {
@@ -1271,7 +1275,7 @@ class TaskGroups extends Component {
 
   deleteTask = (group, task) => {
     if (!window.confirm(`Delete the task for “${this.accountLabel(task)}” from “${group.name}”?`)) return;
-    try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
+    stopTargetTasks([task.id]);
     this.props.dispatch({ type: 'targetTaskDelete', id: task.id });
     const groups = this.state.groups.map(item => item.id === group.id ? {
       ...item,
@@ -1361,7 +1365,11 @@ class TaskGroups extends Component {
     this.setState({ readinessPending: true });
     let readiness;
     try {
-      readiness = await ipcRenderer.invoke('targetReadiness', { groupId: group.id, taskIds });
+      readiness = await ipcRenderer.invoke('targetReadiness', {
+        groupId: group.id,
+        taskIds,
+        includeBank: intent !== 'start',
+      });
     } catch (error) {
       readiness = {
         ok: false,
@@ -1372,7 +1380,7 @@ class TaskGroups extends Component {
         counts: { tasks: taskIds.length, skus: watchedItemsForGroup(group).length },
       };
     }
-    if (intent === 'start' && readiness && readiness.level === 'ready') {
+    if (intent === 'start' && readiness && readiness.ok) {
       this.setState({ readinessPending: false }, () => this.launchTasks(group, tasks));
       return;
     }
@@ -1412,9 +1420,8 @@ class TaskGroups extends Component {
   stopTasks = (tasks) => {
     const runningBefore = this.allStats().running;
     const stopping = tasks.filter(task => targetTaskIsRunning(this.statusFor(task))).length;
-    for (const task of tasks) {
-      try { ipcRenderer.sendSync('stopTarget', task.id); } catch {}
-    }
+    const ids = tasks.map(task => task && task.id).filter(Boolean);
+    if (ids.length) stopTargetTasks(ids);
     if (!runningBefore || stopping >= runningBefore) this.setState({ brokerStartRequestedAt: 0 });
   };
 

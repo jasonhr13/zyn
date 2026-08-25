@@ -75,8 +75,13 @@ assert.match(engine, /pokemonStatusBatch/);
 assert.match(engine, /walmartStatusBatch/);
 assert.match(engine, /running === false/);
 assert.match(engine, /statusCoalescer\.dropAll\(\)/);
-assert.match(engine, /statusCoalescer\.drop\(requestedId\)/);
+assert.match(engine, /statusCoalescer\.drop\(/);
 assert.match(engine, /for \(const t of \(config\.tasks \|\| \[\]\)\) statusCoalescer\.drop\(t\.id\)/);
+assert.match(engine, /flushStartingStatuses\(statusCoalescer\)/);
+assert.match(engine, /flushStartingStatuses\(pokemonStatusCoalescer\)/);
+assert.match(engine, /flushStartingStatuses\(walmartStatusCoalescer\)/);
+assert.match(engine, /normalizeTargetStopIds/);
+assert.match(engine, /notifyTargetDone\(requested\)/);
 
 const taskGroups = fs.readFileSync(
   path.join(__dirname, '..', 'frontend', 'src', 'components', 'pages', 'task-groups.js'),

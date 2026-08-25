@@ -44,6 +44,7 @@ const warning = evaluateTargetReadiness({
   settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
 });
 assert.equal(warning.level, 'warning');
+assert.equal(warning.ok, true, 'cookie-bank and local-IP warnings must not block Start');
 assert.ok(warning.warnings.some(item => item.code === 'local-proxy'));
 assert.ok(warning.warnings.some(item => item.code === 'cookie-bank-offline'));
 assert.ok(warning.warnings.some(item => item.code === 'no-atc-harvester'));
