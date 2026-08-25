@@ -64,7 +64,7 @@ assert.match(styles, /\.group-task-virtual \{ max-height:/);
 assert.match(styles, /\.site-task-virtual \{ max-height:/);
 assert.doesNotMatch(styles, /\.group-task-virtual \{ height:/);
 assert.doesNotMatch(styles, /\.site-task-virtual \{ height:/);
-assert.match(styles, /\.inline-select-menu/);
+assert.match(styles, /\.inline-select-menu \{[\s\S]*z-index: 1100/);
 
 const store = fs.readFileSync(path.join(root, 'launcher/task-group-store.js'), 'utf8');
 assert.match(store, /JSON\.stringify\(value\)/);

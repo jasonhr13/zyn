@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.34",
+  "notes": [
+    "Windows harvester Type, Browser, Mode, and Proxy menus open again.",
+    "Harvester create and edit no longer use native Windows dropdowns.",
+    "Modal clicks are no longer treated as dragging the window."
+  ]
+}

@@ -2049,7 +2049,7 @@ class TaskGroups extends Component {
     const workerMaximum = harvesterWorkerMaximum(draft);
     return (
       <div className="modal-overlay" onMouseDown={event => event.target === event.currentTarget && this.closeHarvesterModal()}>
-        <div className="modal target-harvester-modal" onMouseDown={event => event.stopPropagation()}>
+        <div className="modal target-harvester-modal">
           <div className="modal-header">
             <div><div className="modal-title">{editing ? 'Edit Cookie Harvester' : 'Create Cookie Harvester'}</div><p>Each harvester runs independently and contributes to the shared Target cookie bank.</p></div>
             <button className="modal-close" onClick={this.closeHarvesterModal}>×</button>
@@ -2062,33 +2062,41 @@ class TaskGroups extends Component {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Type</label>
-                <select className="form-select" value={draft.type} onChange={event => {
-                  const type = event.target.value;
-                  setDraft({ type, workers: type === 'login' ? '1' : draft.workers });
-                }}>
-                  <option value="atc">Target ATC</option>
-                  <option value="login">Target Login</option>
-                  <option value="auto">Automatic (Login + ATC)</option>
-                </select>
+                <InlineSelect
+                  className="form-select"
+                  value={draft.type}
+                  options={[
+                    { value: 'atc', label: 'Target ATC' },
+                    { value: 'login', label: 'Target Login' },
+                    { value: 'auto', label: 'Automatic (Login + ATC)' },
+                  ]}
+                  onChange={type => setDraft({ type, workers: type === 'login' ? '1' : draft.workers })}
+                />
                 <div className="form-hint">Login uses a generated email and one worker. ATC uses the product rotation below.</div>
               </div>
               <div className="form-group">
                 <label className="form-label">Browser</label>
-                <select className="form-select" value={draft.browser} onChange={event => setDraft({ browser: event.target.value })}>
-                  {HARVESTER_BROWSERS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                </select>
+                <InlineSelect
+                  className="form-select"
+                  value={draft.browser}
+                  options={HARVESTER_BROWSERS.map(([value, label]) => ({ value, label }))}
+                  onChange={browser => setDraft({ browser })}
+                />
                 <div className="form-hint">Automatic distributes workers across every detected browser.</div>
               </div>
             </div>
             <div className="form-group">
               <label className="form-label">Mode</label>
-              <select className="form-select" value={harvesterEngineOf(draft.engine)} onChange={event => {
-                const engine = harvesterEngineOf(event.target.value);
-                const maximum = harvesterWorkerMaximum({ ...draft, engine });
-                setDraft({ engine, workers: String(Math.min(maximum, clampInteger(draft.workers, 1, 100, 1))) });
-              }}>
-                {HARVESTER_ENGINES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
+              <InlineSelect
+                className="form-select"
+                value={harvesterEngineOf(draft.engine)}
+                options={HARVESTER_ENGINES.map(([value, label]) => ({ value, label }))}
+                onChange={value => {
+                  const engine = harvesterEngineOf(value);
+                  const maximum = harvesterWorkerMaximum({ ...draft, engine });
+                  setDraft({ engine, workers: String(Math.min(maximum, clampInteger(draft.workers, 1, 100, 1))) });
+                }}
+              />
               {harvesterEngineOf(draft.engine) === 'patchright' && (
                 <div className="form-hint">Zyn opens the browser and assigns the proxy. You do not set up Chrome profiles or an extension.</div>
               )}
@@ -2096,10 +2104,15 @@ class TaskGroups extends Component {
             {draft.type !== 'login' && (
               <div className="form-group">
                 <label className="form-label">ATC mode</label>
-                <select className="form-select" value={draft.atcMode} onChange={event => setDraft({ atcMode: event.target.value })}>
-                  <option value="v1">Standard — Live Target product page</option>
-                  <option value="v2">ATC+</option>
-                </select>
+                <InlineSelect
+                  className="form-select"
+                  value={draft.atcMode}
+                  options={[
+                    { value: 'v1', label: 'Standard — Live Target product page' },
+                    { value: 'v2', label: 'ATC+' },
+                  ]}
+                  onChange={atcMode => setDraft({ atcMode })}
+                />
               </div>
             )}
             {draft.type !== 'login' && (
@@ -2111,14 +2124,19 @@ class TaskGroups extends Component {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Proxy</label>
-                <select className="form-select" value={draft.proxyListName} onChange={event => {
-                  const proxyListName = event.target.value;
-                  const workers = proxyListName ? draft.workers : String(Math.min(2, clampInteger(draft.workers, 1, 100, 1)));
-                  setDraft({ proxyListName, workers });
-                }}>
-                  {this.renderProxySelectOptions({ localLabel: 'Local (no proxy)' })}
-                  {proxyMissing && <option value={draft.proxyListName}>Unavailable: {draft.proxyListName}</option>}
-                </select>
+                <InlineSelect
+                  className="form-select"
+                  value={draft.proxyListName}
+                  placeholder="Local (no proxy)"
+                  options={[
+                    ...this.proxySelectOptions({ localLabel: 'Local (no proxy)' }),
+                    ...(proxyMissing ? [{ value: draft.proxyListName, label: `Unavailable: ${draft.proxyListName}` }] : []),
+                  ]}
+                  onChange={proxyListName => {
+                    const workers = proxyListName ? draft.workers : String(Math.min(2, clampInteger(draft.workers, 1, 100, 1)));
+                    setDraft({ proxyListName, workers });
+                  }}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Workers</label>

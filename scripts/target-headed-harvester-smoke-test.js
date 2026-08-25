@@ -29,6 +29,17 @@ assert.doesNotMatch(ui, /Headed \(experimental\)/);
 assert.doesNotMatch(ui, /target-harvester-notes/);
 assert.match(ui, /engine: 'playwright'/);
 assert.match(ui, /harvesterEngineOf\(raw && raw\.engine\)/);
+assert.match(ui, /<label className="form-label">Type<\/label>\s*<InlineSelect/);
+assert.match(ui, /<label className="form-label">Browser<\/label>\s*<InlineSelect/);
+assert.match(ui, /<label className="form-label">Mode<\/label>\s*<InlineSelect/);
+assert.match(ui, /<label className="form-label">Proxy<\/label>\s*<InlineSelect/);
+assert.doesNotMatch(ui, /<label className="form-label">Type<\/label>\s*<select/);
+assert.doesNotMatch(ui, /<label className="form-label">Browser<\/label>\s*<select/);
+assert.doesNotMatch(ui, /<label className="form-label">Proxy<\/label>\s*<select className="form-select" value=\{draft\.proxyListName\}/);
+const styles = read('frontend/src/App.css');
+assert.doesNotMatch(styles, /\.modal \{[\s\S]{0,280}transform: translateZ\(0\)/,
+  'Windows native selects do not open inside a transformed frameless modal');
+assert.match(styles, /\.inline-select-menu \{[\s\S]*z-index: 1100/);
 
 assert.match(config, /=== 'patchright' \? 'patchright' : 'playwright'/);
 assert.match(config, /type === 'login' \? 1 : \(route \? 100 : 2\)/);

@@ -26,6 +26,7 @@ export default class InlineSelect extends Component {
   };
 
   toggle = event => {
+    event.preventDefault();
     event.stopPropagation();
     if (this.props.disabled) return;
     if (this.state.open) {
