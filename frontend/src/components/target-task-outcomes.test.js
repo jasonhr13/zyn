@@ -11,6 +11,17 @@ import { reducer } from './store';
 const outcome = (taskId, eventId, eventType, occurredAt) => ({
   type: 'targetOutcome', taskId, eventId, eventType, occurredAt,
 });
+test('Target launch paints Starting immediately for every accepted task id', () => {
+  let state = reducer(undefined, { type: '@@test/init' });
+  state = reducer(state, { type: 'targetLaunch', taskIds: ['task-a', 'task-b'] });
+  expect(state.target.taskStatus['task-a']).toMatchObject({
+    state: 'Starting', label: 'Starting', running: true,
+  });
+  expect(state.target.taskStatus['task-b']).toMatchObject({
+    state: 'Starting', label: 'Starting', running: true,
+  });
+});
+
 test('Target checkout counts are per-run, deduplicated, and survive status rotation and completion', () => {
   let state = reducer(undefined, { type: '@@test/init' });
   state = reducer(state, { type: 'targetRunStarted', taskIds: ['task-a', 'task-b'], startedAt: 100 });

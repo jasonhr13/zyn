@@ -505,6 +505,7 @@ class Target extends Component {
     if (skipped.length) {
       window.alert(`Skipping ${skipped.length} task(s) with no matching profile:\n` + skipped.slice(0, 8).join('\n'));
     }
+    this.props.dispatch({ type: 'targetLaunch', taskIds: runnable.map(task => task.id) });
     ipcRenderer.send('startTarget', { tasks: runnable, skus, qty: target.qty || 2 });
   };
 

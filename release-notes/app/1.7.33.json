@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.33",
+  "notes": [
+    "Start All paints Starting on every task as soon as you click.",
+    "Start no longer waits on a readiness check before launch.",
+    "Shared proxy lists are parsed once per start, not once per task."
+  ]
+}

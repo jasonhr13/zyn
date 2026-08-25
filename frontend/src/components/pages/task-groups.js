@@ -1354,6 +1354,7 @@ class TaskGroups extends Component {
   launchTasks = (group, tasks) => {
     const config = this.runnableTasks(group, tasks);
     if (config) {
+      this.props.dispatch({ type: 'targetLaunch', taskIds: config.tasks.map(task => task.id) });
       this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
       ipcRenderer.send('startTarget', config);
     }
@@ -1414,7 +1415,7 @@ class TaskGroups extends Component {
       window.alert(`“${other.name}” is already running. The current Target engine has one shared monitor, so stop that group first.`);
       return;
     }
-    this.runReadiness(group, tasks, 'start');
+    this.launchTasks(group, tasks);
   };
 
   stopTasks = (tasks) => {

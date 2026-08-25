@@ -1979,10 +1979,13 @@ function sendConfigs(config = {}) {
   //
   // Accumulating means every group/profile/account we have ever sent is in every message, with the
   // newest content winning for a given name, so a re-send can add and update but never take away.
+  const proxyMaps = new Map();
   for (const t of (config.tasks || [])) {
     Object.assign(sentConfigs.profiles, buildProfileMap(t.profileId, t.accountId));
     Object.assign(sentConfigs.accounts, buildAccountMap(t.accountId));
-    Object.assign(sentConfigs.proxies, buildProxyMap(t.proxyListName));
+    const proxyKey = String(t.proxyListName || '');
+    if (!proxyMaps.has(proxyKey)) proxyMaps.set(proxyKey, buildProxyMap(t.proxyListName));
+    Object.assign(sentConfigs.proxies, proxyMaps.get(proxyKey));
   }
   const { profiles, accounts, proxies } = sentConfigs;
   // ConfigsStruct fields are STRINGS holding inner JSON (settings/profileList/proxyList/accountList).
@@ -3803,26 +3806,35 @@ function startTarget(config, mainWindow) {
   // coalescer; dropping everyone would swallow that update on an additive Start.
   for (const t of (config.tasks || [])) statusCoalescer.drop(t.id);
   lastStatusKeys = {};   // a fresh run must re-emit first statuses even if they repeat the last ones
-  // ADDITIVE, not a replacement: starting one task must not make the bridge forget the ones already
-  // running, or their Stop would no longer reach the engine and an engine crash would leave their
-  // cards stuck showing a live status.
+  // Paint Starting before proxy-list parsing. Resolving the same large list once per task was
+  // enough to leave Start All blank for several seconds on Windows.
+  const skuMeta = skuMetaFromItems(config.items);
+  const skus = [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))];
+  const qty = Math.max(1, parseInt(config.qty, 10) || 2);
+  const ignoreLowStock = config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus';
   for (const t of (config.tasks || [])) {
     runningTaskIds.add(t.id);
     engineTaskSites.register(t.id, engineContract.SITES.TARGET);
     taskAccountById.set(t.id, t.accountId || '');
     taskProfileById.set(t.id, t.profileId || '');
-    taskCheckoutConfigById.set(t.id, {
-      skus: [...new Set((config.skus || []).map(sku => String(sku || '').trim()).filter(Boolean))],
-      ...skuMetaFromItems(config.items),
-      qty: Math.max(1, parseInt(config.qty, 10) || 2),
-      proxyListName: String(t.proxyListName || '').trim(),
-      proxySources: sourceNamesFor(t.proxyListName),
-      loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
-      ignoreLowStock: config.ignoreLowStock === true || config.stockConfidence === 'confirmed-10-plus',
-    });
-    status('Starting', '#868686', 'launching engine', t.id);
+    status('Starting', '#868686', 'launching engine', t.id, 1, true);
   }
   flushStartingStatuses(statusCoalescer);
+  const proxySourcesByRef = new Map();
+  for (const t of (config.tasks || [])) {
+    const proxyListName = String(t.proxyListName || '').trim();
+    const proxyKey = proxyListName;
+    if (!proxySourcesByRef.has(proxyKey)) proxySourcesByRef.set(proxyKey, sourceNamesFor(t.proxyListName));
+    taskCheckoutConfigById.set(t.id, {
+      skus,
+      ...skuMeta,
+      qty,
+      proxyListName,
+      proxySources: proxySourcesByRef.get(proxyKey),
+      loopCheckout: (t.loopCheckout != null ? t.loopCheckout === true : t.repeatCheckout === true) || config.endless === true,
+      ignoreLowStock,
+    });
+  }
   // Binding is asynchronous now (it may fall back to a free port), and the engine has to be told
   // which port it got — so the spawns move inside the ready callback. `seq` guards the gap: if the
   // user presses Stop while the socket is still binding, stopTarget bumps startSeq and this callback

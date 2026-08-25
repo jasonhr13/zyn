@@ -486,6 +486,20 @@ export function reducer(state = defaultState, action) {
         ...state.target, tasks: [], taskStatus: {}, taskOutcomes: {}, proxyStatus: {}, taskLogs: {},
       } };
 
+    case 'targetLaunch': {
+      const ids = action.taskIds || [];
+      if (!ids.length) return state;
+      const taskStatus = { ...state.target.taskStatus };
+      for (const id of ids) {
+        if (!id) continue;
+        taskStatus[id] = {
+          state: 'Starting', label: 'Starting', color: '#868686',
+          detail: 'launching engine', running: true,
+        };
+      }
+      return { ...state, target: { ...state.target, taskStatus } };
+    }
+
     // Emitted by the main-process bridge only after the native engine accepted these tasks. This
     // keeps a refused order-cap start from erasing the result of the previous run, and resets only
     // additive tasks rather than every task already running in another group.

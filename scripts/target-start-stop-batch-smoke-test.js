@@ -23,9 +23,13 @@ assert.match(taskGroups, /stopTargetTasks\(ids\)/,
 assert.match(taskGroups, /stopTargetTasks\(taskIds\)/,
   'Deleting a group must stop its tasks in one IPC');
 assert.match(taskGroups, /includeBank: intent !== 'start'/,
-  'Start must not wait on the cookie-bank HTTP probe');
-assert.match(taskGroups, /intent === 'start' && readiness && readiness\.ok/,
-  'Start must launch when there are no blockers, including cookie-bank warnings');
+  'Check Readiness may load the cookie bank; Start must not');
+assert.match(taskGroups, /type: 'targetLaunch'/,
+  'Start All must paint Starting in the renderer before main-process work');
+assert.match(taskGroups, /this\.launchTasks\(group, tasks\)/,
+  'Start All must not wait on a readiness IPC round-trip');
+assert.doesNotMatch(taskGroups, /this\.runReadiness\(group, tasks, 'start'\)/,
+  'Start All must not block on targetReadiness');
 assert.doesNotMatch(taskGroups, /level === 'ready'/,
   'Start must not wait for a ready-level readiness modal');
 
@@ -38,6 +42,9 @@ assert.match(engine, /function normalizeTargetStopIds/);
 assert.match(engine, /sendToEngine\(\{ type: 'stop-tasks', messages: requested\.map/);
 assert.match(engine, /notifyTargetDone\(requested\)/);
 assert.match(engine, /flushStartingStatuses\(statusCoalescer\)/);
+assert.match(engine, /status\('Starting', '#868686', 'launching engine', t\.id, 1, true\)/);
+assert.match(engine, /proxyMaps\.set\(proxyKey, buildProxyMap/);
+assert.match(store, /case 'targetLaunch':/);
 assert.match(engine, /flushStartingStatuses\(pokemonStatusCoalescer\)/);
 assert.match(engine, /flushStartingStatuses\(walmartStatusCoalescer\)/);
 assert.doesNotMatch(engine, /for \(const t of \(config\.tasks \|\| \[\]\)\) \{\s*[\s\S]{0,80}sendToEngine\(\{ type: 'stop-tasks'/,
