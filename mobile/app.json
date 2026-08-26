@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "app.zynbot.mobile",
-      "versionCode": 18,
+      "versionCode": 19,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#7F1D1D"

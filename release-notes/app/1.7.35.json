@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.35",
+  "notes": [
+    "Pair Target ATC harvest from iPhone or Android into the desktop cookie bank.",
+    "Scan a Settings QR once; the phone reconnects whenever Zyn is open.",
+    "Up to three phones can harvest into the same Zyn instance."
+  ]
+}
