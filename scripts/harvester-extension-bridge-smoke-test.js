@@ -265,6 +265,8 @@ function httpOptions(port, path, origin, extraHeaders = {}) {
     assert.deepEqual(normalizeChromeExtensionIds([
       ` ${'A'.repeat(32)},${'b'.repeat(32)} `, 'a'.repeat(32), 'invalid',
     ]), ['a'.repeat(32), 'b'.repeat(32)]);
+    assert.equal(extensionStatus({ atc: 20, login: 1 }).atc, 20);
+    assert.equal(extensionStatus({ atc: 20, login: 1 }).login, 1);
     assert.deepEqual(extensionStatus({
       pools: { login: 1, atc: 3 },
       demand: { activeTasks: 2, effectiveTasks: 7, targets: { atc: 10 } },
@@ -684,9 +686,16 @@ function httpOptions(port, path, origin, extraHeaders = {}) {
       'macOS packaging omits the extension bridge');
     assert.match(windowsBuild, /harvester-extension-bridge\.js/,
       'Windows packaging omits the extension bridge');
+    assert.match(macBuild, /mobile-harvester-bridge\.js/,
+      'macOS packaging omits the mobile harvester bridge');
+    assert.match(windowsBuild, /mobile-harvester-bridge\.js/,
+      'Windows packaging omits the mobile harvester bridge');
     assert.ok(contract.requiredResources.includes(
       'Contents/Resources/app/harvester-extension-bridge.js'),
     'runtime contract omits the extension bridge');
+    assert.ok(contract.requiredResources.includes(
+      'Contents/Resources/app/mobile-harvester-bridge.js'),
+    'runtime contract omits the mobile harvester bridge');
 
     const foreignServer = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });

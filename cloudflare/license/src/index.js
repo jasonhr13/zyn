@@ -1,4 +1,8 @@
 import {
+  MobileHarvesterRoom,
+  handleMobileRoutes,
+} from './mobile-harvester.js';
+import {
   SUBSCRIPTION_EXPIRED,
   accessUntilFromIntro,
   accessUntilFromStripeObject,
@@ -3361,6 +3365,8 @@ async function api(request, env, url) {
   if (url.pathname === '/api/services/pokemon-center/queue-events') {
     return brokerPokemonQueueEvents(request, env);
   }
+  const mobile = await handleMobileRoutes(request, env, url, { authenticate: authenticatedLicense });
+  if (mobile) return mobile;
   if (url.pathname === '/api/billing/catalog' && request.method === 'GET') {
     return json({ ok: true, ...catalogSnapshot() });
   }
@@ -3402,6 +3408,8 @@ function secureAsset(response) {
   headers.set('x-frame-options', 'DENY');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
+
+export { MobileHarvesterRoom };
 
 export const __test = Object.freeze({
   activeDeviceLimitStatements,

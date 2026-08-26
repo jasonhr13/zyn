@@ -35,7 +35,7 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "61eb06dc9dcd9de7899c18d01fde3eb1520a9eeeb92027df87babd9ef3fc925d"
+      "sha256": "2dc0d278ceac528fa9417729f3bd9e184ba62528fcc52fbb109e2abbe78a6121"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
@@ -89,6 +89,7 @@
     "Contents/Resources/app/node_modules/onnxruntime-node/package.json",
     "Contents/Resources/app/node_modules/sharp/package.json",
     "Contents/Resources/app/harvester-extension-bridge.js",
+    "Contents/Resources/app/mobile-harvester-bridge.js",
     "Contents/Resources/app/cloud-backup.js",
     "Contents/Resources/app/cloud-backup-data.js",
     "Contents/Resources/app/runtime-manager.js",
@@ -96,6 +97,7 @@
     "Contents/Resources/app/node_modules/ws/package.json",
     "Contents/Resources/engine/backend",
     "Contents/Resources/bot/shape-farmer.mjs",
+    "Contents/Resources/bot/shape-atc-replay.mjs",
     "Contents/Resources/bot/shape-bank-demand.mjs",
     "Contents/Resources/bot/shape-browser-pool.mjs",
     "Contents/Resources/bot/shape-harvest-health.mjs",

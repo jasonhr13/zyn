@@ -34,6 +34,7 @@ const { installCheckoutReporting } = require('./checkout-reporting');
 const { createAnalyticsService } = require('./analytics-recorder');
 const { createPokemonQueueEvents } = require('./pokemon-queue-events');
 const { createHarvesterExtensionBridge } = require('./harvester-extension-bridge');
+const { createMobileHarvesterBridge } = require('./mobile-harvester-bridge');
 const { createCloudBackupManager } = require('./cloud-backup');
 const { createCloudBackupDataAdapter } = require('./cloud-backup-data');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
@@ -269,6 +270,7 @@ let targetProductHistoryStore = null;
 let pokemonQueueEvents = null;
 let analyticsService = null;
 let harvesterExtensionBridge = null;
+let mobileHarvesterBridge = null;
 let cloudBackupManager = null;
 
 function disarmPersistedTargetHarvesters() {
@@ -360,6 +362,68 @@ function installHarvesterExtensionCompatibility(authority) {
     return bridge;
   } catch (error) {
     console.warn(`[harvester-extension] compatibility bridge could not start: ${error.message}`);
+    return null;
+  }
+}
+
+function installMobileHarvesterCompanion(authority) {
+  if (!authority) return null;
+  try {
+    const dataManager = require(path.join(originalAsar, 'public', 'helpers', 'data-manager.js'));
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const enabled = () => {
+      let settings = {};
+      try { settings = dataManager.getSettings?.() || {}; } catch {}
+      return settings.mobileHarvesterEnabled === true;
+    };
+    const configuredCookieTtl = () => {
+      let settings = {};
+      try { settings = dataManager.getSettings?.() || {}; } catch {}
+      const seconds = Number.parseInt(String(settings.targetCookieTtlSec || ''), 10);
+      return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 600)) * 1000;
+    };
+    const bridge = createMobileHarvesterBridge({
+      dataDirectory: app.getPath('userData'),
+      authority,
+      enabled,
+      ensureBroker: () => targetEngine.ensureHarvesterBroker?.(),
+      getCookieBank: () => (typeof targetEngine.getCookieBank === 'function'
+        ? targetEngine.getCookieBank() : {}),
+      saveCookie: cookie => {
+        if (typeof targetEngine.saveHarvesterCookie !== 'function') {
+          throw new Error('Target engine does not expose authenticated mobile saves');
+        }
+        return targetEngine.saveHarvesterCookie(cookie);
+      },
+      getProxyCatalog: () => {
+        try {
+          if (typeof dataManager.getProxyCatalog === 'function') return dataManager.getProxyCatalog();
+          return dataManager.getProxies?.() || { lists: [] };
+        } catch {
+          return { lists: [] };
+        }
+      },
+      cookieTtlMs: configuredCookieTtl,
+      logger: console,
+    });
+    ipcMain.handle('mobileHarvesterStatus', () => bridge.snapshot());
+    ipcMain.handle('mobileHarvesterPair', () => bridge.pair());
+    ipcMain.handle('mobileHarvesterReset', () => bridge.reset());
+    ipcMain.handle('mobileHarvesterUpdate', () => bridge.update());
+    if (typeof targetEngine.getCookieBank === 'function') {
+      const getCookieBank = targetEngine.getCookieBank.bind(targetEngine);
+      targetEngine.getCookieBank = async (...args) => {
+        const bank = await getCookieBank(...args);
+        return bank && typeof bank === 'object'
+          ? { ...bank, mobileHarvester: bridge.activity() }
+          : bank;
+      };
+    }
+    app.whenReady().then(() => bridge.start());
+    app.once('will-quit', () => bridge.stop());
+    return bridge;
+  } catch (error) {
+    console.warn(`[mobile-harvester] companion unavailable: ${error.message}`);
     return null;
   }
 }
@@ -1267,6 +1331,7 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
       pushLicenseStatus(status);
       try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
+      try { mobileHarvesterBridge?.update(); } catch (error) { console.warn(`[mobile-harvester] status: ${error.message}`); }
       if (status && status.ok === true) {
         startRuntimeUpdatePolling();
         try { taskGroupScheduler?.resume?.(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
@@ -1484,6 +1549,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   const licenseAuthority = FEATURES.licenseEnforce ? installReplacementLicenseEnforcement(managedProxyControl) : null;
   if (!licenseAuthority) setTargetHarvestAuthorization(true);
   harvesterExtensionBridge = installHarvesterExtensionCompatibility(licenseAuthority);
+  mobileHarvesterBridge = installMobileHarvesterCompanion(licenseAuthority);
   analyticsService = installAnalytics(licenseAuthority);
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);

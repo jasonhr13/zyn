@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Zyn",
+    "slug": "zyn-mobile",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "scheme": "zyn",
+    "userInterfaceStyle": "dark",
+    "jsEngine": "hermes",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "app.zynbot.mobile",
+      "appleTeamId": "Y9NTVP37VK",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": false
+        }
+      }
+    },
+    "android": {
+      "package": "app.zynbot.mobile",
+      "versionCode": 17,
+      "permissions": ["android.permission.INTERNET", "android.permission.CAMERA"]
+    },
+    "plugins": [
+      "./plugins/withZynHarvester.js",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Zyn uses the camera to scan the pairing QR from Settings.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ]
+  }
+}

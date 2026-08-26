@@ -20,8 +20,12 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "b6b7dff4cd5c138780622b93025beca01edaa865341b2eb995edbeca376e6abe",
+      "sha256": "32c18be7acb343feeae9a74bc8fd5837d05c9045094b7797362eee48c0354943",
       "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling."
+    },
+    "shape-atc-replay.mjs": {
+      "sha256": "0d1bf73d818e03bf642c5e7333c4c283636055ab66e067259f19937da6383e83",
+      "adaptation": "Warmup and sampled ATC replay gate plus Go engine canary launcher. Harvest still stubs cart_items; the canary consumes a banked cookie on the checkout TLS stack. Canaries use the bundled engine only, strip the license token, and fail-open on spawn/timeout/proxy/unknown so a downloaded checkout binary cannot hold the bank."
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",

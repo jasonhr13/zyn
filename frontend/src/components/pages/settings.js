@@ -5,6 +5,7 @@ import {
   harvesterExtensionIdsFromSettings,
   parseHarvesterExtensionIds,
 } from '../harvester-extension-ids.mjs';
+import PairingQr from '../pairing-qr';
 import { showOperatorLogs } from '../operator-logs';
 const { ipcRenderer, shell } = window.require('electron');
 
@@ -126,6 +127,7 @@ class Settings extends Component {
       targetAtcHarvestTcins: '', targetAtcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK), targetHarvestWorkers: '', targetCookieTtlSec: '', targetHarvestDataDir: '',
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
+      mobileHarvesterEnabled: false, mobileHarvester: null, mobileBusy: false, mobileError: '',
       licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
@@ -161,6 +163,7 @@ class Settings extends Component {
       shapeMethod: /^harvester$/i.test((s.shapeMethod || '').trim()) ? 'Harvester' : 'In Bot',
       targetHarvesterExtensionIds: harvesterExtensionIdsFromSettings(s),
       extensionIdsError: '',
+      mobileHarvesterEnabled: s.mobileHarvesterEnabled === true,
     });
   }
 
@@ -193,6 +196,9 @@ class Settings extends Component {
     ipcRenderer.on('cloudBackupStatus', this.applyCloudBackupStatus);
     ipcRenderer.invoke('licenseStatus').then(this.applyLicenseStatus).catch(() => {});
     ipcRenderer.invoke('cloudBackupStatus').then(this.applyCloudBackupStatus).catch(() => {});
+    ipcRenderer.invoke('mobileHarvesterStatus').then(mobileHarvester => {
+      if (mobileHarvester) this.setState({ mobileHarvester });
+    }).catch(() => {});
   }
   componentWillUnmount() {
     ipcRenderer.removeListener('licenseStatus', this.applyLicenseStatus);
@@ -276,6 +282,7 @@ class Settings extends Component {
       targetHarvesterExtensionIds,
       // Keep the first ID under the legacy singular key so older backups/builds remain reversible.
       targetHarvesterExtensionId: targetHarvesterExtensionIds.split('\n')[0] || '',
+      mobileHarvesterEnabled: this.state.mobileHarvesterEnabled === true,
     };
     ipcRenderer.sendSync('saveSettings', settings);
     const previousExtensionMode = /^harvester$/i.test(String(previousSettings.shapeMethod || '').trim());
@@ -285,9 +292,53 @@ class Settings extends Component {
     }
     try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
     try { ipcRenderer.invoke('targetCookieBank').catch(() => {}); } catch {}
+    try {
+      ipcRenderer.invoke('mobileHarvesterUpdate').then(mobileHarvester => {
+        if (mobileHarvester) this.setState({ mobileHarvester, mobileError: '' });
+      }).catch(() => {});
+    } catch {}
     this.props.dispatch({ type: 'update', obj: { settings } });
     this.setState({ saved: true, extensionIdsError: '', webhookError: '' });
     setTimeout(() => this.setState({ saved: false }), 2000);
+  };
+
+  applyMobileEnabled = async (enabled) => {
+    this.setState({ mobileHarvesterEnabled: enabled });
+    const next = { ...(this.props.settings || {}), mobileHarvesterEnabled: enabled === true };
+    try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+    this.props.dispatch({ type: 'update', obj: { settings: next } });
+    try {
+      const mobileHarvester = await ipcRenderer.invoke('mobileHarvesterUpdate');
+      if (mobileHarvester) this.setState({ mobileHarvester, mobileError: '' });
+    } catch {}
+  };
+
+  pairMobileHarvester = async () => {
+    this.setState({ mobileBusy: true, mobileError: '' });
+    try {
+      if (this.state.mobileHarvesterEnabled !== true) {
+        await this.applyMobileEnabled(true);
+      }
+      const result = await ipcRenderer.invoke('mobileHarvesterPair');
+      if (!result || result.ok === false) {
+        this.setState({ mobileBusy: false, mobileError: (result && result.message) || 'Could not create a pairing code.' });
+        return;
+      }
+      this.setState({ mobileBusy: false, mobileHarvester: result, mobileError: '' });
+    } catch (error) {
+      this.setState({ mobileBusy: false, mobileError: error.message || 'Could not create a pairing code.' });
+    }
+  };
+
+  resetMobileHarvester = async () => {
+    if (!window.confirm('Disconnect every paired phone and generate a new code?')) return;
+    this.setState({ mobileBusy: true, mobileError: '' });
+    try {
+      const result = await ipcRenderer.invoke('mobileHarvesterReset');
+      this.setState({ mobileBusy: false, mobileHarvester: result || null, mobileError: '' });
+    } catch (error) {
+      this.setState({ mobileBusy: false, mobileError: error.message || 'Could not reset pairing.' });
+    }
   };
 
   checkUpdates = () => { try { ipcRenderer.send('checkForUpdates'); } catch {} };
@@ -617,6 +668,7 @@ class Settings extends Component {
       targetHarvestDataDir,
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
+      mobileHarvesterEnabled, mobileHarvester, mobileBusy, mobileError,
       licenseEmail, licenseOffline, pokemonCenterAccess, walmartAccess, proxyAccess, managedProxyCount,
       billingStatus, accessUntil, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
@@ -808,6 +860,63 @@ class Settings extends Component {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Target — Mobile Harvesters</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
+              Pair a sideloaded Zyn phone app. Scan the QR once; the phone reconnects whenever this
+              Zyn is open. It harvests Target Shape ATC cookies and deposits them into this cookie bank.
+              Managed proxies stay on the desktop.
+              Download:{' '}
+              <a
+                href={(mobileHarvester && mobileHarvester.downloadUrl) || 'https://updates.zynbot.app/download/android'}
+                onClick={event => openBillingPage(event, (mobileHarvester && mobileHarvester.downloadUrl) || 'https://updates.zynbot.app/download/android')}
+              >
+                updates.zynbot.app/download/android
+              </a>
+            </div>
+            <div className="form-group">
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={mobileHarvesterEnabled === true}
+                  onChange={e => this.applyMobileEnabled(e.target.checked)}
+                />
+                Enable mobile harvesting
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button type="button" className="btn" disabled={mobileBusy} onClick={this.pairMobileHarvester}>
+                {mobileBusy ? 'Working…' : (mobileHarvester && mobileHarvester.paired ? 'Show pairing code' : 'Generate pairing code')}
+              </button>
+              <button type="button" className="btn" disabled={mobileBusy} onClick={this.resetMobileHarvester}>
+                Reset pairing
+              </button>
+            </div>
+            {mobileError && (
+              <div role="alert" style={{ color: 'var(--danger)', fontSize: 10, marginTop: 8 }}>{mobileError}</div>
+            )}
+            {mobileHarvester && mobileHarvester.paired && (
+              <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>
+                <div>
+                  {mobileHarvester.connected ? 'Desktop relay connected' : 'Waiting for this Zyn instance'}
+                  {mobileHarvester.phoneCount ? ` · ${mobileHarvester.phoneCount} phone(s)` : ''}
+                  {mobileHarvester.lastSavedAt ? ' · recently saved a cookie' : ''}
+                </div>
+                <div className="form-hint" style={{ marginTop: 6 }}>
+                  Scan this QR once in the Zyn phone app. After that it reconnects by itself.
+                </div>
+                <PairingQr url={mobileHarvester.pairingUrl || ''} />
+                <textarea
+                  className="form-input monospace"
+                  rows={3}
+                  readOnly
+                  value={mobileHarvester.pairingUrl || ''}
+                  style={{ marginTop: 8 }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Operator-only advanced Target harvest settings. Hidden by default because wrong TCINs

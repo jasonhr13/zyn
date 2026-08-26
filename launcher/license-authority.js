@@ -483,6 +483,39 @@ function createLicenseAuthority({
     deleteBackup: (backupId, expectedAccountId = '') => backupRequest(
       expectedAccountId, 'deleteBackup', backupId,
     ),
+    async pairMobileHarvester() {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.pairMobileHarvester(licenseToken);
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] mobile pair unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Mobile pairing service is unavailable.' };
+      }
+    },
+    async resetMobileHarvester() {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.resetMobileHarvester(licenseToken);
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] mobile pair reset unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Mobile pairing service is unavailable.' };
+      }
+    },
+    openMobileHarvesterEvents(roomId, handlers = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');
+      return licenseApi.mobileHarvesterEvents(licenseToken, { roomId, handlers, maxPayload: 1024 * 1024 });
+    },
     openPokemonQueueEvents(handlers = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');

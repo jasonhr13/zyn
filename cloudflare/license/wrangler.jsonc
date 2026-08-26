@@ -32,6 +32,10 @@
       {
         "name": "POKEMON_QUEUE_RELAY",
         "class_name": "PokemonQueueRelay"
+      },
+      {
+        "name": "MOBILE_HARVESTER",
+        "class_name": "MobileHarvesterRoom"
       }
     ]
   },
@@ -39,6 +43,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["PokemonQueueRelay"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["MobileHarvesterRoom"]
     }
   ],
   "r2_buckets": [

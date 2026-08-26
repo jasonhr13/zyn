@@ -412,7 +412,9 @@ assert.match(taskGroups, /ipcRenderer\.invoke\('targetCookieBank'\)/);
 assert.match(taskGroups, /<small>Login<\/small>/);
 assert.match(taskGroups, /<small>ATC<\/small>/);
 assert.match(taskGroups, /<small>Shared Cookie Bank<\/small>/);
-assert.match(taskGroups, /presentation\.brokerLabel/);
+assert.match(taskGroups, /bank\.brokerLabel/);
+assert.doesNotMatch(taskGroups, /Replay \$\{bank\.replay\.label\}/);
+assert.doesNotMatch(taskGroups, /<small>Replay<\/small>/);
 assert.match(taskGroups, /<span>ATC per task<\/span>/);
 assert.doesNotMatch(taskGroups, /workerDescription/);
 assert.doesNotMatch(taskGroups, /<small>Run output<\/small>/);
@@ -424,17 +426,17 @@ assert.match(taskGroups, /targetAtcCookiesPerTask/);
 assert.match(taskGroups, /Set 0 for no bank limit/);
 assert.doesNotMatch(taskGroups, /max="20"/);
 assert.match(taskGroups, /min="0"/);
-assert.match(taskGroups, /presentation\.atcTargetLabel/);
+assert.match(taskGroups, /bank\.atcTargetLabel/);
 assert.match(taskGroups, /const availableHarvesters = this\.state\.harvesters\.map\(harvester =>[\s\S]{0,180}enabled: false/,
   'main bank summary must not count harvesters whose proxy group is unavailable');
 assert.match(taskGroups, /syncTargetHarvesters/);
-assert.match(taskGroups, /presentation\.atcTarget/);
-assert.match(taskGroups, /presentation\.demandLabel/);
+assert.match(taskGroups, /bank\.atcTarget/);
+assert.match(taskGroups, /bank\.demandLabel/);
 assert.doesNotMatch(taskGroups, /Per-type limit/);
-assert.match(taskGroups, /targetBankPresentation\(bank, availableHarvesters/);
+assert.match(taskGroups, /targetBankPresentation\(this\.state\.bank, availableHarvesters/);
 assert.match(taskGroups, /extensionHarvesterConfigured = \(\) =>/);
-assert.equal((taskGroups.match(/externalAtcHarvesterEnabled: this\.extensionHarvesterConfigured\(\)/g) || []).length, 2,
-  'both bank presentations must receive the configured extension source');
+assert.equal((taskGroups.match(/externalAtcHarvesterEnabled: this\.extensionHarvesterConfigured\(\)/g) || []).length, 1,
+  'the harvester bank presentation must receive the configured extension source');
 assert.match(taskGroups, /renderHarvesterDrawer\(\)/);
 assert.match(taskGroups, /className=\{`target-harvester-rail/);
 assert.match(taskGroups, /id="target-harvester-drawer"/);

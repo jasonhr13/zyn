@@ -53,6 +53,7 @@ function managedHarvesterConfigs() {
       input: String((raw && raw.input) || '').slice(0, 12000),
       cookieTtlSec: Math.max(30, Math.min(86400, parseInt(raw && raw.cookieTtlSec, 10) || 600)),
       intervalDelaySec: Math.max(0, Math.min(3600, parseInt(raw && raw.intervalDelaySec, 10) || 0)),
+      loadsPerBrowser: Math.max(1, Math.min(10, parseInt(raw && raw.loadsPerBrowser, 10) || 3)),
       startSchedule: String((raw && raw.startSchedule) || ''),
       stopSchedule: String((raw && raw.stopSchedule) || ''),
       enabled: explicitlyStartedHarvesterIds.has(id),

@@ -132,6 +132,7 @@ export function targetBankMetrics(bank) {
   const scheduling = scaling.scheduling || {};
   const browsers = Array.isArray(health.browsers) ? health.browsers : [];
   const demand = (bank && bank.demand) || {};
+  const replay = (bank && bank.replay) || {};
   const extension = bank && bank.extensionHarvester && typeof bank.extensionHarvester === 'object'
     ? bank.extensionHarvester : {};
   const extensionClients = (Array.isArray(extension.clients) ? extension.clients : []).map(client => ({
@@ -245,6 +246,13 @@ export function targetBankMetrics(bank) {
       clientCount: Math.max(count(extension.clientCount), extensionClients.length),
       authorizedIdCount: count(extension.authorizedIdCount),
       clients: extensionClients,
+    },
+    replay: {
+      gated: replay.gated === true,
+      skipped: replay.skipped === true,
+      label: String(replay.label || ''),
+      recentOk: count(replay.recentOk),
+      recentTotal: count(replay.recentTotal),
     },
   };
 }

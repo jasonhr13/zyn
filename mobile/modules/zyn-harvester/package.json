@@ -1,0 +1,7 @@
+{
+  "name": "zyn-harvester",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "description": "Zyn iOS Mode B Target harvester"
+}

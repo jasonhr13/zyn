@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+*.log
+.DS_Store
+android/app/build/
+android/build/
+android/.gradle/
+ios/build/
+*.jsbundle

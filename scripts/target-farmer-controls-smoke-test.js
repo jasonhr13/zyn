@@ -37,6 +37,14 @@ assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredCaptures\)\)/);
 assert.match(engine, /Math\.max\(1, Math\.min\(10, configuredLoads\)\)/);
 assert.match(engine, /`--capturesPerLoad=\$\{capturesPerLoad\}`/);
 assert.match(engine, /`--loadsPerBrowser=\$\{loadsPerBrowser\}`/);
+assert.match(engine, /parseInt\(config\.loadsPerBrowser, 10\)/,
+  'managed harvesters must honor per-harvester browser refresh');
+assert.match(engine, /ZYN_ENGINE_PATH: enginePath\(\)/,
+  'broker and farmer must receive the engine path');
+assert.doesNotMatch(farmer, /atcReplay\.reserve\(/,
+  'ATC harvest must not hold the bank behind a replay canary');
+assert.doesNotMatch(farmer, /enqueueAtcCanary/,
+  'broker must not spawn ATC replay canaries');
 assert.match(engine, /`--blockHeavyResources=\$\{blockHeavyResources\}`/);
 
 // A configurable harvest data directory redirects each managed harvester's browser profile + disk
@@ -46,7 +54,7 @@ assert.match(engine, /settings\.targetHarvestDataDir/,
   'managed harvester does not honor a configurable data directory');
 assert.match(engine, /dataDirEnv\.TMPDIR = dir; dataDirEnv\.TEMP = dir; dataDirEnv\.TMP = dir;/,
   'harvest data directory is not applied to the harvester temp environment');
-assert.match(engine, /ZYN_OWNER_PID: String\(process\.pid\), \.\.\.dataDirEnv/,
+assert.match(engine, /ZYN_OWNER_PID: String\(process\.pid\), ZYN_ENGINE_PATH: enginePath\(\), \.\.\.dataDirEnv/,
   'harvest data directory env is not merged into the managed producer environment');
 assert.match(settings, /targetHarvestDataDir/,
   'Settings must persist the harvest data directory');

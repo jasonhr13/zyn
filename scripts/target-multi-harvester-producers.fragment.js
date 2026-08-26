@@ -77,7 +77,7 @@ function spawnHarvesterProducer(config) {
   const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ...dataDirEnv });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ZYN_ENGINE_PATH: enginePath(), ...dataDirEnv });
 
   const builtInTargets = String(settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '').trim();
   const defaultTargets = [
@@ -90,7 +90,8 @@ function spawnHarvesterProducer(config) {
   const atcTcins = String(config.input || '').split(/[\s,]+/).filter(Boolean).join(',') || builtInTargets || defaultTargets;
   const poolSize = parseInt(settings.targetCookieBank, 10) > 0 ? parseInt(settings.targetCookieBank, 10) : 0;
   const capturesPerLoad = Math.max(1, Math.min(10, parseInt(settings.targetCapturesPerLoad, 10) || 1));
-  const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(settings.targetLoadsPerBrowser, 10) || 3));
+  const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(config.loadsPerBrowser, 10)
+    || parseInt(settings.targetLoadsPerBrowser, 10) || 3));
   const blockHeavyResources = settings.targetBlockHeavyResources !== false && settings.targetBlockHeavyResources !== 'false';
   const types = config.type === 'auto' ? 'login,atc' : config.type;
   const engine = String(config.engine || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';

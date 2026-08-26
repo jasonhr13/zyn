@@ -16,6 +16,7 @@ import (
 	"zynbot.app/engine/bot-base/siteconfig"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/frontend"
+	"zynbot.app/engine/sites/target"
 )
 
 var (
@@ -24,6 +25,9 @@ var (
 )
 
 func main() {
+	if os.Getenv("ZYN_SHAPE_CANARY") == "1" || (len(os.Args) > 1 && os.Args[1] == "shape-canary") {
+		os.Exit(target.RunShapeCanaryCLI())
+	}
 	flag.Parse()
 	if strings.TrimSpace(os.Getenv("ZYN_SHAPE_TOKEN")) == "" {
 		log.Fatal("missing ZYN_SHAPE_TOKEN")

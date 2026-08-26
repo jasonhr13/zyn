@@ -166,8 +166,8 @@ function extensionStatus(status = {}) {
     ? status.activity.waiting : {};
   const effectiveTasks = Number(demand.effectiveTasks);
   const activeTasks = Number(demand.activeTasks);
-  const login = Math.max(0, Number(pools.login) || 0);
-  const atc = Math.max(0, Number(pools.atc) || 0);
+  const login = Math.max(0, Number(pools.login ?? status.login) || 0);
+  const atc = Math.max(0, Number(pools.atc ?? status.atc) || 0);
   const rawAtcTarget = targets.atc;
   const atcTarget = Number(rawAtcTarget);
   const hasAuthoritativeTarget = rawAtcTarget !== null && rawAtcTarget !== undefined
@@ -195,6 +195,7 @@ function extensionCookie(message = {}, {
   now = Date.now(),
   maxTtlMs = DEFAULT_COOKIE_TTL_MS,
   harvesterId = 'chrome-extension',
+  source = 'extension',
 } = {}) {
   const type = String(message.type || '').toLowerCase();
   if (type !== 'login' && type !== 'atc') throw new TypeError('cookie type must be login or atc');
@@ -221,7 +222,7 @@ function extensionCookie(message = {}, {
     expiresAt,
     harvesterId: String(harvesterId || 'chrome-extension')
       .replace(/[^a-z0-9_-]/gi, '').slice(0, 64) || 'chrome-extension',
-    source: 'extension',
+    source: String(source || 'extension').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'extension',
   };
 }
 

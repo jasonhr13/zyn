@@ -1151,6 +1151,23 @@ export default {
       });
     }
 
+    if (url.pathname === '/download/android') {
+      const object = await env.RELEASES.get('android/zyn-mobile.apk');
+      if (!object) {
+        return new Response('Zyn Android companion is not published yet.', {
+          status: 404,
+          headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+        });
+      }
+      return new Response(object.body, {
+        status: 200,
+        headers: {
+          'content-type': 'application/vnd.android.package-archive',
+          'content-disposition': 'attachment; filename="zyn-mobile.apk"',
+          'cache-control': 'public, max-age=60',
+        },
+      });
+    }
     if (url.pathname === '/download/extension') {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } });

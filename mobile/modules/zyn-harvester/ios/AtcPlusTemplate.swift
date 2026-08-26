@@ -1,0 +1,511 @@
+import Foundation
+
+enum AtcPlusTemplate {
+  static let defaultTcin = "90188801"
+  static let source = ###"""
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=2"
+    />
+    <meta name="theme-color" content="#cc0000" />
+    <title>Zyn</title>
+    <script>
+      // Load ssx after parse so DOMContentLoaded isn't blocked on the CDN.
+      (function () {
+        function loadSsx() {
+          var s = document.createElement("script");
+          s.src = "https://assets.targetimg1.com/ssx/ssx.mod.js?async";
+          s.async = true;
+          s.onload = function () {
+            document.documentElement.setAttribute("data-ssx-ready", "true");
+          };
+          document.documentElement.appendChild(s);
+        }
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", function () {
+            setTimeout(loadSsx, 50);
+          });
+        } else {
+          setTimeout(loadSsx, 50);
+        }
+      })();
+    </script>
+    <style>
+      :root {
+        --tgt-red: #cc0000;
+        --tgt-red-hover: #aa0000;
+        --tgt-text: #333333;
+        --tgt-muted: #666666;
+        --tgt-border: #d6d6d6;
+        --tgt-selected: #222222;
+        --zyn-bg: #0f1012;
+        --zyn-rose: #e11d48;
+        --zyn-orange: #f97316;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        background: var(--zyn-bg);
+        color: var(--tgt-text);
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+
+      /* Visual-only Zyn screen — pointer-events none so the automated mouse still hits buy-box. */
+      .harvest-cover {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        background:
+          radial-gradient(ellipse 80% 60% at 50% 40%, rgba(225, 29, 72, 0.2) 0%, transparent 60%),
+          radial-gradient(ellipse 100% 80% at 50% 100%, rgba(16, 20, 29, 0.9) 0%, transparent 50%),
+          var(--zyn-bg);
+      }
+
+      .zyn-mark {
+        color: #ffffff;
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-size: 62px;
+        font-weight: 800;
+        letter-spacing: -0.07em;
+        line-height: 1;
+        text-shadow: 0 0 38px rgba(225, 29, 72, 0.38);
+      }
+
+      .zyn-mark::after {
+        content: "";
+        display: block;
+        width: 100%;
+        height: 4px;
+        margin-top: 14px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--zyn-rose), var(--zyn-orange));
+      }
+
+      .harvest-label {
+        color: #ffffff;
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.9;
+      }
+
+      /* Same PDP buy-box placement as Target — invisible, still clickable for mouse paths. */
+      .page {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+        gap: 32px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .gallery {
+        min-height: 70vh;
+        visibility: hidden;
+      }
+
+      .buy-box {
+        align-self: start;
+        margin-top: 120px;
+        background: #ffffff;
+        border: 1px solid var(--tgt-border);
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        opacity: 0;
+        pointer-events: auto;
+      }
+
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.25;
+        margin-bottom: 8px;
+      }
+
+      .price {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 20px;
+      }
+
+      .fulfillment {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .fulfillment-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-height: 88px;
+        padding: 10px 8px;
+        border: 1px solid var(--tgt-border);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--tgt-text);
+        font-size: 13px;
+        cursor: pointer;
+        text-align: center;
+      }
+
+      .fulfillment-cell[aria-pressed="true"] {
+        border-color: var(--tgt-selected);
+        border-width: 2px;
+        padding: 9px 7px;
+      }
+
+      .fulfillment-name {
+        font-weight: 700;
+      }
+
+      .fulfillment-message {
+        color: var(--tgt-muted);
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .pickup-meta {
+        font-size: 14px;
+        margin-bottom: 16px;
+        line-height: 1.4;
+      }
+
+      .pickup-meta .ready {
+        color: #008300;
+        font-weight: 500;
+      }
+
+      .atc-row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+      }
+
+      .qty {
+        flex: 0 0 88px;
+        border: 1px solid var(--tgt-border);
+        border-radius: 4px;
+        background: #fff;
+        padding: 0 10px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--tgt-text);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+      }
+
+      .qty span:first-child {
+        color: var(--tgt-muted);
+        font-weight: 500;
+        margin-right: 6px;
+      }
+
+      #addToCartButtonOrTextIdFor90188801 {
+        flex: 1;
+        height: 44px;
+        border: none;
+        border-radius: 4px;
+        background: var(--tgt-red);
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      #addToCartButtonOrTextIdFor90188801:hover {
+        background: var(--tgt-red-hover);
+      }
+
+      #addToCartButtonOrTextIdFor90188801:disabled {
+        opacity: 0.65;
+        cursor: wait;
+      }
+
+      .buy-now {
+        width: 100%;
+        margin-top: 12px;
+        height: 44px;
+        border: 1px solid var(--tgt-text);
+        border-radius: 4px;
+        background: #fff;
+        color: var(--tgt-text);
+        font-size: 16px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      @media (max-width: 900px) {
+        .page {
+          grid-template-columns: 1fr;
+          padding: 16px;
+        }
+
+        .buy-box {
+          margin-top: 0;
+        }
+
+        .gallery {
+          min-height: 40vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="harvest-cover" aria-hidden="true">
+      <div class="zyn-mark">Zyn</div>
+      <div class="harvest-label">Harvesting</div>
+    </div>
+
+    <div class="page">
+      <section class="gallery" aria-hidden="true"></section>
+
+      <aside class="buy-box" aria-label="Fulfillment">
+        <h1 class="title" id="pdp-product-title-id" data-test="product-title">
+          PlayStation 5 Console (Slim)
+        </h1>
+        <div class="price" data-test="product-price">$649.99</div>
+
+        <div
+          class="fulfillment"
+          data-test="@web/AddToCart/FulfillmentSection"
+          role="region"
+          aria-label="Fulfillment"
+        >
+          <button
+            class="fulfillment-cell"
+            type="button"
+            aria-label="pickup - selected - 1 of 3"
+            aria-pressed="true"
+            data-test="fulfillment-cell-pickup"
+            data-fulfillment="PICKUP"
+          >
+            <span class="fulfillment-name" data-test="fulfillment-name">Pickup</span>
+            <span class="fulfillment-message">Ready within 2 hours</span>
+          </button>
+          <button
+            class="fulfillment-cell"
+            type="button"
+            aria-label="delivery - unselected - 2 of 3"
+            aria-pressed="false"
+            data-test="fulfillment-cell-delivery"
+            data-fulfillment="SCHEDULED_DELIVERY"
+          >
+            <span class="fulfillment-name" data-test="fulfillment-name">Delivery</span>
+            <span class="fulfillment-message">Check availability</span>
+          </button>
+          <button
+            class="fulfillment-cell"
+            type="button"
+            aria-label="shipping - unselected - 3 of 3"
+            aria-pressed="false"
+            data-test="fulfillment-cell-shipping"
+            data-fulfillment="SHIPPING"
+          >
+            <span class="fulfillment-name" data-test="fulfillment-name">Shipping</span>
+            <span class="fulfillment-message">Arrives by Wed, Aug 5</span>
+          </button>
+        </div>
+
+        <div class="pickup-meta" data-test="orderPickupSection">
+          <div>
+            Pick up at
+            <button type="button" class="styles_ndsLink__GUaai" id="store-name-1419">
+              Portland East Washington Street
+            </button>
+          </div>
+          <div data-test="orderPickupFulfillmentDeliveryMessage">
+            <span class="ready">Ready within 2 hours</span> for pickup inside the store
+          </div>
+        </div>
+
+        <div class="atc-row">
+          <button class="qty" type="button" id="select-qty" aria-expanded="false">
+            <span>Qty</span>
+            <span id="qty-value">1</span>
+          </button>
+          <button
+            class="styles_btn__1hjpW styles_ndsButton__XOOOH styles_md__Yc3tr styles_filled___MOAP styles_fullWidth__8m0Wc"
+            type="button"
+            aria-label="Add to cart for PlayStation 5 Console (Slim)"
+            data-test="orderPickupButton"
+            id="addToCartButtonOrTextIdFor90188801"
+            onclick="return window.__zynAddToCart(event)"
+          >
+            Add to cart
+          </button>
+        </div>
+
+        <button
+          class="buy-now"
+          type="button"
+          aria-label="Sign in to buy now for PlayStation 5 Console (Slim)"
+          data-test="sign-in-to-buy-now-button"
+          id="sign-in-to-buy-now-button"
+        >
+          Sign in to buy now
+        </button>
+      </aside>
+    </div>
+
+    <script>
+      (function () {
+        var API_KEY = "9f36aeafbe60771e321a7cc95a78140772ab3e96";
+        var TCIN = "90188801";
+        var CART_URL =
+          "https://carts.target.com/web_checkouts/v1/cart_items" +
+          "?field_groups=CART%2CCART_ITEMS%2CSUMMARY&key=" +
+          encodeURIComponent(API_KEY);
+
+        var state = {
+          fulfillment: "PICKUP",
+          quantity: 1,
+          pending: false,
+        };
+
+        var cells = document.querySelectorAll(".fulfillment-cell");
+
+        function setFulfillment(next) {
+          state.fulfillment = next;
+          for (var i = 0; i < cells.length; i++) {
+            var cell = cells[i];
+            var selected = cell.getAttribute("data-fulfillment") === next;
+            cell.setAttribute("aria-pressed", selected ? "true" : "false");
+            var label = cell.getAttribute("aria-label") || "";
+            cell.setAttribute(
+              "aria-label",
+              selected
+                ? label.replace("unselected", "selected")
+                : label.replace("selected", "unselected"),
+            );
+          }
+        }
+
+        for (var i = 0; i < cells.length; i++) {
+          cells[i].addEventListener("click", function (ev) {
+            setFulfillment(ev.currentTarget.getAttribute("data-fulfillment"));
+          });
+        }
+
+        function fulfillmentPayload() {
+          if (state.fulfillment === "SHIPPING") {
+            return {
+              type: "SHIPPING",
+              address: { zip_code: "97212", state: "OR" },
+              ship_method: "STANDARD",
+            };
+          }
+          if (state.fulfillment === "SCHEDULED_DELIVERY") {
+            return {
+              type: "SCHEDULED_DELIVERY",
+              address: { zip_code: "97212", state: "OR" },
+              store_id: "1419",
+            };
+          }
+          return {
+            type: "PICKUP",
+            store_id: "1419",
+            pickup_location: "STORE",
+          };
+        }
+
+        function buildBody() {
+          return JSON.stringify({
+            cart_type: "REGULAR",
+            channel_id: "10",
+            shopping_context: "DIGITAL",
+            cart_item: {
+              tcin: TCIN,
+              quantity: state.quantity,
+              item_channel_id: "10",
+            },
+            fulfillment: fulfillmentPayload(),
+          });
+        }
+
+        // Target/ssx hooks XHR — fire the same cart_items POST the harvester captures.
+        window.__zynAddToCart = function (event) {
+          if (event && event.preventDefault) event.preventDefault();
+          if (state.pending) return false;
+          state.pending = true;
+
+          try {
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", CART_URL, true);
+            xhr.withCredentials = true;
+            xhr.setRequestHeader("accept", "application/json");
+            xhr.setRequestHeader("content-type", "application/json");
+            xhr.setRequestHeader("x-api-key", API_KEY);
+            xhr.setRequestHeader("x-application-name", "web");
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState === 4) state.pending = false;
+            };
+            xhr.onerror = function () {
+              state.pending = false;
+            };
+            xhr.send(buildBody());
+          } catch (err) {
+            state.pending = false;
+            try {
+              fetch(CART_URL, {
+                method: "POST",
+                mode: "cors",
+                credentials: "include",
+                headers: {
+                  accept: "application/json",
+                  "content-type": "application/json",
+                  "x-api-key": API_KEY,
+                  "x-application-name": "web",
+                },
+                body: buildBody(),
+              }).finally(function () {
+                state.pending = false;
+              });
+            } catch (e2) {
+              state.pending = false;
+            }
+          }
+
+          return false;
+        };
+      })();
+    </script>
+  </body>
+</html>
+"""###
+
+  static func html(tcin: String) -> String {
+    let id = tcin.isEmpty ? defaultTcin : tcin
+    return source.replacingOccurrences(of: defaultTcin, with: id)
+  }
+}

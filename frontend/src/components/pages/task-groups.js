@@ -70,6 +70,7 @@ const EMPTY_HARVESTER = Object.freeze({
   input: '',
   cookieTtlSec: '600',
   intervalDelaySec: '10',
+  loadsPerBrowser: '3',
   startSchedule: '',
   stopSchedule: '',
   // Saving a new configuration must not be equivalent to clicking Start.
@@ -144,6 +145,7 @@ const normalizeHarvester = (raw, index = 0) => {
     input: String((raw && raw.input) || ''),
     cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
     intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
+    loadsPerBrowser: clampInteger(raw && raw.loadsPerBrowser, 1, 10, 3),
     startSchedule: String((raw && raw.startSchedule) || ''),
     stopSchedule: String((raw && raw.stopSchedule) || ''),
     enabled: !!(raw && raw.enabled),
@@ -1754,6 +1756,7 @@ class TaskGroups extends Component {
               <div className="target-harvester-meta">
                 <span><small>Workers</small><strong>{workerValue}</strong></span>
                 <span><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></span>
+                <span><small>Browser refresh</small><strong>every {harvester.loadsPerBrowser || 3}</strong></span>
               </div>
               <div className="target-harvester-actions">
                 <button className={harvester.enabled ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'} onClick={() => this.toggleHarvester(harvester)}>
@@ -1807,6 +1810,7 @@ class TaskGroups extends Component {
                   <small>Shared Cookie Bank</small>
                   <strong>{bank.label}</strong>
                   <em>{bank.description}</em>
+                  <small>{bank.brokerLabel}</small>
                 </span>
                 <span className="cookie-bank-counts">
                   <span><strong>{bank.login}</strong><small>Login</small></span>
@@ -2154,6 +2158,11 @@ class TaskGroups extends Component {
                 <input className="form-input" type="number" min="0" max="3600" value={draft.intervalDelaySec} onChange={event => setDraft({ intervalDelaySec: event.target.value })} />
                 <div className="form-hint">Minimum pause after an attempt; health cooldowns may wait longer.</div>
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Refresh browser every</label>
+              <input className="form-input" type="number" min="1" max="10" value={draft.loadsPerBrowser} onChange={event => setDraft({ loadsPerBrowser: event.target.value })} />
+              <div className="form-hint">Successful harvests on this process before Zyn launches a fresh browser. Randomized up to this number. Default 3.</div>
             </div>
             <div className="target-harvester-schedule-grid">
               <div className="form-group">

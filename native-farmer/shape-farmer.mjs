@@ -287,7 +287,6 @@ const {
   capturesPerLoad: argOf('capturesPerLoad', '1'),
   loadsPerBrowser: argOf('loadsPerBrowser', '3'),
 });
-
 // What a cookie MUST carry to be worth banking.
 //
 // x-gyjwza5z-a0 is deliberately NOT here. Target's current Shape build stopped emitting it —
@@ -405,11 +404,11 @@ function pushCookie(type, headers, proxy, options = {}) {
 function takeCookie(type, waitMs) {
   return new Promise((resolve) => {
     prune(type);
-    const c = pool[type].shift();
-    if (c) {
+    const available = pool[type].shift();
+    if (available) {
       activity.delivered[type]++;
       saveBank();
-      resolve(c);
+      resolve(available);
       return;
     }   // spent — don't hand it back after a restart
     if (!waitMs) { resolve(null); return; }
@@ -522,6 +521,7 @@ function producerStatusPayload() {
     route: ROUTE_LABEL,
     browser: BROWSER_SELECTION,
     configuredWorkers: startedWorkerCount,
+    loadsPerBrowser: LOADS_PER_BROWSER,
     activeWorkers: scale ? scale.activeWorkers : 0,
     produced: { ...activity.produced },
     failures: health.failures || {},

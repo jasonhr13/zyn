@@ -398,7 +398,7 @@ function verboseLogs() {
 // successes beside them. That made the farmer look broken during a drop where it was in fact
 // serving cookies the whole time (four orders were placed off it). A yield of 3/40 and a yield of
 // 30/40 have to be distinguishable without turning verbose on.
-const KEEP_IN_QUIET = /(error|fail|fatal|decline|refus|424|4\d\d body|EADDRINUSE|exited|missing|not starting|still in use|blocked|invalid|unauthor|timed? ?out|no atc|captcha|signature|^\[shape\] bank:|^\[shape\] browsers:|farmer worker|- polls \d+\/\d+|: \+\d+ (login|atc) in |\[unexpected\])/i;
+const KEEP_IN_QUIET = /(error|fail|fatal|decline|refus|424|4\d\d body|EADDRINUSE|exited|missing|not starting|still in use|blocked|invalid|unauthor|timed? ?out|no atc|captcha|signature|replay canary|^\[shape\] bank:|^\[shape\] browsers:|farmer worker|- polls \d+\/\d+|: \+\d+ (login|atc) in |\[unexpected\])/i;
 
 const ENGINE_PORT = 8727;   // must match the engine's -port flag
 // Local Shape cookie broker. Defined ONCE here and pushed to both children — the farmer binds it
@@ -679,14 +679,18 @@ const flushStartingStatuses = coalescer => {
 };
 
 // ── engine binary path (packaged sibling of app.asar, or repo dir in dev) ────────
+function bundledEnginePath() {
+  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
+  if (packed && fs.existsSync(packed)) return packed;
+  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+}
+
 function enginePath() {
   // The runtime manager installs engines side by side and changes this pointer only for future
   // spawns. A child that already owns tasks keeps its original executable and process image.
   const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
   if (downloaded && fs.existsSync(downloaded)) return downloaded;
-  const packed = process.resourcesPath && path.join(process.resourcesPath, 'engine', plat.engineBin());
-  if (packed && fs.existsSync(packed)) return packed;
-  return path.join(__dirname, '..', '..', 'backend', plat.engineBin());
+  return bundledEnginePath();
 }
 
 // Where the farmer mirrors its cookie bank. Both spawns below get the same path, so the broker-only
@@ -859,6 +863,7 @@ function managedHarvesterConfigs() {
       input: String((raw && raw.input) || '').slice(0, 12000),
       cookieTtlSec: Math.max(30, Math.min(86400, parseInt(raw && raw.cookieTtlSec, 10) || 600)),
       intervalDelaySec: Math.max(0, Math.min(3600, parseInt(raw && raw.intervalDelaySec, 10) || 0)),
+      loadsPerBrowser: Math.max(1, Math.min(10, parseInt(raw && raw.loadsPerBrowser, 10) || 3)),
       startSchedule: String((raw && raw.startSchedule) || ''),
       stopSchedule: String((raw && raw.stopSchedule) || ''),
       enabled: explicitlyStartedHarvesterIds.has(id),
@@ -1183,7 +1188,7 @@ function ensureHarvesterBroker() {
   const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid) });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ZYN_ENGINE_PATH: enginePath() });
 
   // stopTarget kills the running farmer and calls straight into here, so this hits the SAME
   // kill-then-bind race that startFarmer had: the dead farmer still held :4727 and the broker
@@ -1423,7 +1428,7 @@ function spawnFarmer(config) {
   const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid) });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ZYN_ENGINE_PATH: enginePath() });
 
   // Pass the task's account creds via env (never argv — argv is world-readable in the process list).
   // The farmer does a real email+password login so it captures the credential_validations request's
@@ -1698,7 +1703,7 @@ function spawnHarvesterProducer(config) {
   const env = nodeEnvironment({ FORCE_COLOR: '0', ZYN_SHAPE_PORT: String(SHAPE_PORT), ZYN_SHAPE_TOKEN: SHAPE_TOKEN,
     // The farmer watches its stdin for EOF and exits when it closes — the only parent-death
     // signal that survives a crash or an End Task, neither of which runs a quit handler.
-    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ...dataDirEnv });
+    ZYN_PARENT_WATCH: '1', ZYN_OWNER_PID: String(process.pid), ZYN_ENGINE_PATH: enginePath(), ...dataDirEnv });
 
   const builtInTargets = String(settings.targetAtcHarvestTcins || settings.targetAtcHarvestTcin || '').trim();
   const defaultTargets = [
@@ -1711,7 +1716,8 @@ function spawnHarvesterProducer(config) {
   const atcTcins = String(config.input || '').split(/[\s,]+/).filter(Boolean).join(',') || builtInTargets || defaultTargets;
   const poolSize = parseInt(settings.targetCookieBank, 10) > 0 ? parseInt(settings.targetCookieBank, 10) : 0;
   const capturesPerLoad = Math.max(1, Math.min(10, parseInt(settings.targetCapturesPerLoad, 10) || 1));
-  const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(settings.targetLoadsPerBrowser, 10) || 3));
+  const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(config.loadsPerBrowser, 10)
+    || parseInt(settings.targetLoadsPerBrowser, 10) || 3));
   const blockHeavyResources = settings.targetBlockHeavyResources !== false && settings.targetBlockHeavyResources !== 'false';
   const types = config.type === 'auto' ? 'login,atc' : config.type;
   const engine = String(config.engine || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
@@ -4027,6 +4033,7 @@ function getCookieBank() {
             activity: j.activity || null,
             health: j.health || null,
             demand: j.demand || targetCookieDemand(),
+            replay: j.replay || null,
             lastBankedAt: latestBankedAt(),
           });
         } catch { resolve(null); }
