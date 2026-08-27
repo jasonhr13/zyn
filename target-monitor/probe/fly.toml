@@ -1,0 +1,36 @@
+# Redsky proxy latency probe. Deploy from this directory:
+#   fly deploy --ha=false
+#   fly machine clone <iad-id> --region dfw
+#   fly machine clone <iad-id> --region ord
+#
+# Run a test from the repo:
+#   node target-monitor/probe/run.mjs --direct-only
+#   node target-monitor/probe/run.mjs --proxies proxies.txt
+
+app = "hope-redsky-probe"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 8
+    soft_limit = 4
+
+  [http_service.http_options]
+    idle_timeout = 180
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -10,6 +10,9 @@
 .env.*
 !.env.example
 /.local/
+/target-monitor/probe/proxies*.txt
+/target-monitor/probe/.token
+/target-monitor/probe/results/
 /engine/cmd/pcus-session-poc/snapshots/
 
 # JavaScript dependencies and generated frontend output
