@@ -105,6 +105,11 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.UpdateStatus("Out Of Stock", constants.Colors.RED)
 		t.NextStep = "oos-check-cart"
 	case errText == "out of stock (check)":
+		if t.submittedOrderPending() {
+			t.UpdateStatus("Order Status Unavailable", constants.Colors.YELLOW)
+			t.SleepTask(t.ErrorDelay)
+			break
+		}
 		t.UpdateStatus("Out Of Stock", constants.Colors.RED)
 		t.bailToRestock()
 	case containsAnyText(errText, "cancel-filler order not finished processing"):

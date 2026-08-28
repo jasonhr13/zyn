@@ -19,6 +19,27 @@ import (
 
 var FillerItem = "84704409"
 
+// checkoutProxy is the line that actually carted / submitted: the Shape
+// cookie's harvest proxy. The task-group assignment is only a fallback when
+// the cookie did not carry one (local harvest, empty proxy field).
+func (t *TargetTask) checkoutProxy() string {
+	if t == nil {
+		return ""
+	}
+	if p := strings.TrimSpace(t.ShapeProxy); p != "" {
+		return p
+	}
+	if t.BaseTask != nil && t.Requests != nil && t.Requests.Client != nil {
+		if p := strings.TrimSpace(t.Requests.Client.GetProxy()); p != "" {
+			return p
+		}
+	}
+	if t.BaseTask == nil {
+		return ""
+	}
+	return proxy.AssignedProxyURL(t.ProxyGroup, t.ID)
+}
+
 func (t *TargetTask) HandleTask() {
 	defer catchError(t)
 	defer t.cancelEmailCodeWaiter()
@@ -573,8 +594,17 @@ func (t *TargetTask) HandleTask() {
 			case "check-order":
 				t.UpdateStatus("Getting Order Status", constants.Colors.YELLOW)
 				t.CheckOrder(t.CheckoutData.ReferenceId, false)
-				if t.HandleErrors("check-order") {
-					break
+				if t.Error != nil {
+					if t.shouldAssumeCheckout(t.Error) {
+						t.assumeCheckout()
+						t.NextStep = "checkout"
+						break
+					}
+					if t.HandleErrors("check-order") {
+						break
+					}
+				} else {
+					t.CheckOrderAttempts = 0
 				}
 				fillerCheckFailed := false
 				for _, fo := range t.FillerOrders {
@@ -582,6 +612,17 @@ func (t *TargetTask) HandleTask() {
 						continue
 					}
 					t.CheckOrder(fo.ReferenceId, true)
+					if t.Error == nil {
+						continue
+					}
+					if t.Checkout {
+						t.Error = nil
+						break
+					}
+					if t.shouldAssumeCheckout(t.Error) {
+						t.assumeCheckout()
+						break
+					}
 					if t.HandleErrors("check-order") {
 						fillerCheckFailed = true
 						break
@@ -629,7 +670,7 @@ func (t *TargetTask) HandleTask() {
 					Email:            t.Account.Username,
 					Site:             "Target",
 					ProfileName:      t.Profile.ProfileName,
-					Proxy:            proxy.AssignedProxyURL(t.ProxyGroup, t.ID),
+					Proxy:            t.checkoutProxy(),
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,
@@ -660,6 +701,7 @@ func (t *TargetTask) HandleTask() {
 					Email:            t.Account.Username,
 					Site:             "Target",
 					ProfileName:      t.Profile.ProfileName,
+					Proxy:            t.checkoutProxy(),
 					ProxyGroup:       t.ProxyGroup,
 					OrderNumber:      t.OrderNumber,
 					TaskID:           t.RunID,

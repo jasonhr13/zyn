@@ -206,6 +206,7 @@ func (t *TargetTask) resetCheckoutState() {
 	t.FillerOrders = nil
 	t.NeedCancelFiller = false
 	t.CanceledFillerItem = false
+	t.CheckOrderAttempts = 0
 	t.tmxStartedForCheckout = false
 }
 
@@ -270,6 +271,61 @@ func (t *TargetTask) fraudStatusIsSuccess(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+const checkOrderVerifyRetries = 6
+
+func isCheckOrderVerifyFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	return containsAnyText(err.Error(),
+		"check-order",
+		"proxy failed",
+		"status not found",
+		"dco_rate_limited",
+		"out of stock (check)",
+		"timeout",
+		"deadline exceeded",
+	)
+}
+
+func (t *TargetTask) submittedOrderPending() bool {
+	return t != nil && strings.TrimSpace(t.CheckoutData.ReferenceId) != ""
+}
+
+func (t *TargetTask) checkOrderAlreadyDeclined() bool {
+	if t == nil || !t.Decline {
+		return false
+	}
+	status := strings.TrimSpace(t.FraudStatus)
+	return status != "" && !t.fraudStatusIsSuccess(status)
+}
+
+// shouldAssumeCheckout is true when submit-order already created an order
+// but Target's post_orders status API will not confirm it. Retry a few times
+// first; then treat it as an unverified success so the webhook is not swallowed.
+func (t *TargetTask) shouldAssumeCheckout(err error) bool {
+	if t == nil || err == nil || !t.submittedOrderPending() || t.checkOrderAlreadyDeclined() {
+		return false
+	}
+	t.CheckOrderAttempts++
+	return t.CheckOrderAttempts >= checkOrderVerifyRetries
+}
+
+func (t *TargetTask) assumeCheckout() {
+	t.Error = nil
+	t.Checkout = true
+	t.Decline = false
+	if strings.TrimSpace(t.FraudStatus) == "" {
+		t.FraudStatus = "UNVERIFIED"
+	}
+	if strings.TrimSpace(t.OrderNumber) == "" {
+		t.OrderNumber = strings.TrimSpace(t.CheckoutData.OrderID)
+	}
+	if strings.TrimSpace(t.OrderNumber) == "" {
+		t.OrderNumber = strings.TrimSpace(t.CheckoutData.ReferenceId)
 	}
 }
 
