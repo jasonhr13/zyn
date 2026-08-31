@@ -21,6 +21,9 @@ const APP_NOTE_MAX_LENGTH = 120;
 const APP_PUBLISH_FIELDS = ['notes', 'schemaVersion', 'version'];
 const SHA512_BASE64 = /^[A-Za-z0-9+/]{86}==$/;
 const APP_INTERNAL_PREFIX = '_internal/app-notifications';
+const ENGINE_MANIFEST_KEY = 'runtimes/zyn-manifest-v1.json';
+const ENGINE_INTERNAL_PREFIX = '_internal/engine-notifications';
+const ENGINE_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64'];
 const EXTENSION_METADATA_FIELDS = [
   'filename',
   'name',
@@ -589,6 +592,118 @@ function appDiscordPayload(metadata, channels) {
   };
 }
 
+function logicalEngineVersion(raw) {
+  const match = String(raw || '').trim().match(/^(\d+\.\d+\.\d+)(?:-[0-9a-f]{8,})?$/i);
+  return match ? match[1] : '';
+}
+
+function liveEngineRelease(manifest) {
+  const platforms = manifest && manifest.payload && manifest.payload.platforms;
+  if (!platforms || typeof platforms !== 'object' || Array.isArray(platforms)) return null;
+  const engines = {};
+  let version = '';
+  for (const id of ENGINE_PLATFORMS) {
+    const full = platforms[id] && platforms[id].engine && platforms[id].engine.version;
+    const parsed = logicalEngineVersion(full);
+    if (!parsed) return null;
+    if (!version) version = parsed;
+    if (parsed !== version) return null;
+    engines[id] = String(full);
+  }
+  return { version, engines };
+}
+
+function engineDiscordPayload(release) {
+  return {
+    username: 'Zyn Downloads',
+    avatar_url: APP_ICON_URL,
+    allowed_mentions: { parse: [] },
+    embeds: [{
+      title: `Zyn Engine — v${release.version}`,
+      url: 'https://zynbot.app',
+      description: 'Restart Zyn to pick it up. Running tasks keep the previous engine until they stop.',
+      color: 14753096,
+      thumbnail: { url: APP_ICON_URL },
+      fields: [
+        { name: 'App', value: 'Unchanged — engine-only update', inline: true },
+        { name: 'Engine', value: `v${release.version}`, inline: true },
+        { name: 'Apply', value: 'Restart Zyn', inline: true },
+      ],
+      footer: { text: 'Zyn', icon_url: APP_ICON_URL },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}
+
+function enginePublishResponse(release, options = {}) {
+  return Response.json({
+    published: true,
+    notified: Boolean(options.messageId),
+    duplicate: Boolean(options.duplicate),
+    version: release.version,
+    engines: release.engines,
+    ...(options.messageId ? { messageId: options.messageId } : {}),
+    ...(options.error ? { error: options.error } : {}),
+  }, { status: options.error ? 502 : 200 });
+}
+
+function engineConflict(message) {
+  return Response.json({ error: message }, { status: 409 });
+}
+
+async function publishEngine(request, env) {
+  if (!uploadAuthorized(request, env)) return new Response('Not found', { status: 404 });
+  if (request.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } });
+  }
+
+  const object = await env.RELEASES.get(ENGINE_MANIFEST_KEY);
+  if (!object || !('body' in object)) return engineConflict('No live engine runtime manifest is published.');
+  let manifest;
+  try {
+    manifest = JSON.parse(await object.text());
+  } catch {
+    return engineConflict('The live engine runtime manifest is invalid.');
+  }
+  const release = liveEngineRelease(manifest);
+  if (!release) return engineConflict('The live engine runtime is not a complete, matching 1.x.x release across Mac and Windows.');
+
+  const receiptKey = `${ENGINE_INTERNAL_PREFIX}/${release.version}.json`;
+  const receipt = await env.RELEASES.get(receiptKey);
+  if (receipt && 'body' in receipt) {
+    try {
+      const saved = JSON.parse(await receipt.text());
+      if (typeof saved.messageId === 'string' && /^\d+$/.test(saved.messageId)) {
+        return enginePublishResponse(release, { duplicate: true, messageId: saved.messageId });
+      }
+    } catch {
+      // An invalid internal receipt is retried without exposing its contents.
+    }
+  }
+
+  const webhook = validDiscordWebhook(env[APP_WEBHOOK_SECRET]);
+  if (!webhook) {
+    return enginePublishResponse(release, { error: 'Discord webhook configuration is invalid.' });
+  }
+  const notification = await postDiscordPayload(webhook, engineDiscordPayload(release));
+  if (!notification.messageId) {
+    return enginePublishResponse(release, { error: notification.error || 'Discord notification failed.' });
+  }
+
+  await env.RELEASES.put(receiptKey, `${JSON.stringify({
+    version: release.version,
+    engines: release.engines,
+    messageId: notification.messageId,
+    notifiedAt: new Date().toISOString(),
+  })}\n`, {
+    httpMetadata: {
+      contentType: 'application/json; charset=utf-8',
+      cacheControl: 'no-store',
+    },
+  });
+  return enginePublishResponse(release, { duplicate: false, messageId: notification.messageId });
+}
+
 function discordPayload(metadata) {
   const downloadUrl = extensionVersionedDownloadUrl(metadata.version);
   return {
@@ -1107,6 +1222,10 @@ export default {
 
     if (url.pathname === '/__publish/app') {
       return publishApp(request, env);
+    }
+
+    if (url.pathname === '/__publish/engine') {
+      return publishEngine(request, env);
     }
 
     if (isDiscordRelayPath(url.pathname)) {

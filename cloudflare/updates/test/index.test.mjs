@@ -1044,3 +1044,91 @@ test('also accepts /hooks/<token> and rejects unconfigured relays', async () => 
   assert.equal(response.status, 503);
 });
 
+function engineManifest(version = '1.2.5') {
+  return JSON.stringify({
+    schema: 1,
+    payload: {
+      generatedAt: '2026-08-31T00:00:00.000Z',
+      platforms: {
+        'darwin-arm64': { engine: { version: `${version}-aaaaaaaaaaaa` } },
+        'darwin-x64': { engine: { version: `${version}-bbbbbbbbbbbb` } },
+        'win32-x64': { engine: { version: `${version}-cccccccccccc` } },
+      },
+    },
+    signature: 'test',
+  });
+}
+
+function enginePublishEnv(manifest = engineManifest()) {
+  return {
+    RELEASES: releaseStore({ 'runtimes/zyn-manifest-v1.json': manifest }),
+    ZYN_UPLOAD_TOKEN: 'test-token',
+    ZYN_APP_RELEASE_DISCORD_WEBHOOK: 'https://discord.com/api/webhooks/456/app-secret',
+  };
+}
+
+function enginePublishRequest() {
+  return authenticatedRequest('https://updates.zynbot.app/__publish/engine', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+}
+
+test('engine publish posts one restart notice to the app-release Discord webhook', async () => {
+  const env = enginePublishEnv();
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ id: '900000000000000099' });
+  };
+  try {
+    const unauthorized = await worker.fetch(new Request('https://updates.zynbot.app/__publish/engine', {
+      method: 'POST',
+      body: '{}',
+    }), env);
+    assert.equal(unauthorized.status, 404);
+
+    const response = await worker.fetch(enginePublishRequest(), env);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      published: true,
+      notified: true,
+      duplicate: false,
+      version: '1.2.5',
+      engines: {
+        'darwin-arm64': '1.2.5-aaaaaaaaaaaa',
+        'darwin-x64': '1.2.5-bbbbbbbbbbbb',
+        'win32-x64': '1.2.5-cccccccccccc',
+      },
+      messageId: '900000000000000099',
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://discord.com/api/v10/webhooks/456/app-secret?wait=true');
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.username, 'Zyn Downloads');
+    assert.equal(payload.embeds[0].title, 'Zyn Engine — v1.2.5');
+    assert.match(payload.embeds[0].description, /Restart Zyn/);
+    assert.match(JSON.stringify(payload.embeds[0].fields), /engine-only update/);
+
+    const duplicate = await worker.fetch(enginePublishRequest(), env);
+    assert.equal(duplicate.status, 200);
+    assert.equal((await duplicate.json()).duplicate, true);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('engine publish rejects an incomplete live runtime', async () => {
+  const env = enginePublishEnv(JSON.stringify({
+    schema: 1,
+    payload: { platforms: { 'darwin-arm64': { engine: { version: '1.2.5-aaaaaaaaaaaa' } } } },
+    signature: 'test',
+  }));
+  const response = await worker.fetch(enginePublishRequest(), env);
+  assert.equal(response.status, 409);
+});
+
+

@@ -276,7 +276,9 @@
   color: var(--dim);
   padding: 10px 10px 4px;
   letter-spacing: 0.08em;
+  line-height: 1.45;
 }
+.sidebar-engine-pending { color: var(--run); }
 
 /* ── Page area ──────────────────────────────────────────────────────────────── */
 .page-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: transparent; min-width: 0; }

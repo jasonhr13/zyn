@@ -5,6 +5,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { verifyManifest, MANIFEST_PATH } = require('../launcher/runtime-manager');
+const { publishEngineReleaseNotification } = require('./zyn-engine-release-notification-lib.cjs');
 
 const projectRoot = path.join(__dirname, '..');
 const artifactsRoot = path.join(projectRoot, 'release', 'runtime-artifacts');
@@ -171,6 +172,15 @@ async function main() {
   for (const asset of assets.filter(item => item.metadata)) await upload(asset, token);
   await verifyRemote();
   console.log(`Zyn runtimes are live at ${updateOrigin}${MANIFEST_PATH}`);
+  if (process.env.ZYN_SKIP_RELEASE_NOTIFICATION === '1') {
+    console.log('Skipping the Zyn Discord engine release notification.');
+    return;
+  }
+  const notification = await publishEngineReleaseNotification({ token, uploadOrigin });
+  console.log(
+    `Zyn engine ${notification.version} Discord message ${notification.messageId} was `
+    + `${notification.duplicate ? 'already present' : 'posted'}.`,
+  );
 }
 
 main().catch((error) => {

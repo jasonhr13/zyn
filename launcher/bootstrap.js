@@ -109,11 +109,24 @@ const runtimeManager = new RuntimeManager({
 });
 const runtimeInitialization = runtimeManager.initialize();
 
+function readEngineInfo() {
+  try {
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    if (typeof targetEngine.getEngineInfo === 'function') return targetEngine.getEngineInfo();
+  } catch {}
+  return { running: '', installed: '', pendingRestart: false };
+}
+
+function withEngineInfo(status) {
+  return { ...(status || runtimeManager.getStatus()), engine: readEngineInfo() };
+}
+
 function pushRuntimeStatus(status) {
   try {
+    const payload = withEngineInfo(status);
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send('runtimeStatus', status || runtimeManager.getStatus());
+        window.webContents.send('runtimeStatus', payload);
       }
     }
   } catch {}
@@ -170,7 +183,9 @@ async function waitForRuntime(names) {
 }
 
 ipcMain.removeHandler('runtimeStatus');
-ipcMain.handle('runtimeStatus', () => runtimeManager.getStatus());
+ipcMain.handle('runtimeStatus', () => withEngineInfo());
+ipcMain.removeAllListeners('getEngineInfo');
+ipcMain.on('getEngineInfo', (e) => { e.returnValue = readEngineInfo(); });
 ipcMain.removeHandler('retryRuntimeSetup');
 ipcMain.handle('retryRuntimeSetup', async () => {
   await runtimeInitialization;

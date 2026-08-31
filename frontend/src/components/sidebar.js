@@ -8,6 +8,10 @@ const { ipcRenderer } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
+function readEngineInfo() {
+  try { return ipcRenderer.sendSync('getEngineInfo') || null; } catch { return null; }
+}
+
 const NAV_ITEMS = [
   { to: '/dashboard', icon: 'activity', label: 'Dashboard', section: 'Overview' },
   { to: '/task-groups', icon: 'target', label: 'Target', section: 'Tasks', activeRoutes: ['/task-groups', '/target'] },
@@ -20,7 +24,30 @@ const NAV_ITEMS = [
 ];
 
 class Sidebar extends Component {
+  state = { engine: readEngineInfo() };
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.runtime !== this.props.runtime) {
+      this.setState({ engine: readEngineInfo() });
+    }
+  }
+
   install = () => { try { ipcRenderer.send('installUpdate'); } catch {} };
+
+  renderEngineVersion() {
+    const engine = this.state.engine || (this.props.runtime && this.props.runtime.engine);
+    const running = engine && engine.running;
+    const installed = engine && engine.installed;
+    if (!running && !installed) return <div>Engine —</div>;
+    if (engine && engine.pendingRestart && installed && running !== installed) {
+      return (
+        <div className="sidebar-engine-pending" title="Stop tasks or restart Zyn to use the downloaded engine">
+          Engine v{running} → v{installed}
+        </div>
+      );
+    }
+    return <div>Engine v{running || installed}</div>;
+  }
 
   renderUpdate() {
     const update = this.props.update;
@@ -78,11 +105,14 @@ class Sidebar extends Component {
         </nav>
         <div className="sidebar-bottom">
           {this.renderUpdate()}
-          <div className="sidebar-version">{APP_VERSION ? `ZynAIO v${APP_VERSION}` : 'ZynAIO'}</div>
+          <div className="sidebar-version">
+            <div>{APP_VERSION ? `App v${APP_VERSION}` : 'Zyn'}</div>
+            {this.renderEngineVersion()}
+          </div>
         </div>
       </div>
     );
   }
 }
 
-export default withRouter(connect(state => ({ update: state.update }))(Sidebar));
+export default withRouter(connect(state => ({ update: state.update, runtime: state.runtime }))(Sidebar));

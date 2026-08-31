@@ -13,6 +13,10 @@ const { ipcRenderer, shell } = window.require('electron');
 let APP_VERSION = '';
 try { APP_VERSION = ipcRenderer.sendSync('getAppVersion') || ''; } catch {}
 
+function readEngineInfo() {
+  try { return ipcRenderer.sendSync('getEngineInfo') || null; } catch { return null; }
+}
+
 const MAX_SHAPE_CAPTURES_PER_LOAD = 10;
 const MAX_SHAPE_LOADS_PER_BROWSER = 10;
 const DEFAULT_ATC_COOKIES_PER_TASK = 3;
@@ -138,6 +142,7 @@ class Settings extends Component {
       cloudMsg: '', cloudMsgColor: 'var(--muted)',
       recoveryAcknowledged: false, recoveryImport: '', recoveryExpectedFingerprint: '',
       cloudRestoreReplace: false,
+      engine: readEngineInfo(),
     };
   }
 
@@ -206,6 +211,7 @@ class Settings extends Component {
   }
   componentDidUpdate(prev) {
     if (prev.settings !== this.props.settings) this.syncFromProps(this.props.settings || {});
+    if (prev.runtime !== this.props.runtime) this.setState({ engine: readEngineInfo() });
   }
 
   set = (field, value) => this.setState({ [field]: value, saved: false });
@@ -694,6 +700,12 @@ class Settings extends Component {
       || (this.state.cloudBackups[0] && this.state.cloudBackups[0].keyFingerprint)
       || '';
     const subscription = subscriptionSummary({ billingStatus, accessUntil });
+    const engine = this.state.engine || (this.props.runtime && this.props.runtime.engine);
+    const engineLabel = !engine || (!engine.running && !engine.installed)
+      ? '—'
+      : (engine.pendingRestart && engine.installed && engine.running !== engine.installed
+        ? `v${engine.running} → v${engine.installed} (restart Zyn or stop all tasks)`
+        : `v${engine.running || engine.installed}`);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="page-header">
@@ -756,6 +768,10 @@ class Settings extends Component {
 
           <div className="settings-section">
             <div className="settings-section-title">Updates</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 10 }}>
+              <div>App <strong style={{ color: 'var(--text)' }}>v{APP_VERSION || '—'}</strong></div>
+              <div>Engine <strong style={{ color: 'var(--text)' }}>{engineLabel}</strong></div>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button
                 className="btn btn-secondary btn-sm"
@@ -1377,4 +1393,4 @@ class Settings extends Component {
   }
 }
 
-export default connect(s => ({ settings: s.settings, update: s.update }))(Settings);
+export default connect(s => ({ settings: s.settings, update: s.update, runtime: s.runtime }))(Settings);

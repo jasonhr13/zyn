@@ -39,6 +39,7 @@ const {
   displayProxyGroup,
 } = require('./proxy-resolve');
 const { createStatusCoalescer, STATUS_FLUSH_MS } = require('./status-coalesce');
+const { engineInfoFrom } = require('./engine-version');
 
 // IMAP belongs to the profile selected for this task. request-code normally carries taskID; email
 // matching remains a fallback for older engine messages that only identify the account address.
@@ -428,6 +429,7 @@ const serverWaiters = [];       // callbacks queued while the socket is still bi
 let startSeq = 0;               // bumped by stopTarget; a queued spawn from an older run is dropped
 let engineConn = null;  // the engine's live socket (null when disconnected)
 let engineProc = null;  // the backend.exe child process
+let runningEngineVersion = '';
 let farmerProc = null;  // the Shape cookie farmer/broker (node bot/shape-farmer.mjs, port 4727)
 // Managed harvesters are isolated producer processes. They never bind :4727; each posts signed
 // cookies into the single broker above, so one route/browser can be stopped or crash without
@@ -691,6 +693,36 @@ function enginePath() {
   const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
   if (downloaded && fs.existsSync(downloaded)) return downloaded;
   return bundledEnginePath();
+}
+
+function bundledEngineVersion() {
+  const candidates = [
+    path.join(__dirname, '..', '..', '..', 'config', 'engine-runtime.json'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'engine-runtime.json') : '',
+  ].filter(Boolean);
+  for (const file of candidates) {
+    try {
+      const version = JSON.parse(fs.readFileSync(file, 'utf8')).version;
+      if (version) return String(version);
+    } catch {}
+  }
+  return '';
+}
+
+function installedEngineRaw() {
+  const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
+  if (downloaded && enginePath() === downloaded) {
+    return String(process.env.ZYN_ENGINE_VERSION || '');
+  }
+  return bundledEngineVersion();
+}
+
+function getEngineInfo() {
+  return engineInfoFrom({
+    runningRaw: runningEngineVersion || installedEngineRaw(),
+    installedRaw: installedEngineRaw() || bundledEngineVersion(),
+    engineRunning: Boolean(engineProc),
+  });
 }
 
 // Where the farmer mirrors its cookie bank. Both spawns below get the same path, so the broker-only
@@ -3726,7 +3758,7 @@ function spawnEngine() {
     return;
   }
   const engineVersion = exe === process.env.ZYN_ENGINE_PATH
-    ? String(process.env.ZYN_ENGINE_VERSION || 'downloaded') : 'bundled';
+    ? String(process.env.ZYN_ENGINE_VERSION || 'downloaded') : (bundledEngineVersion() || 'bundled');
   log('[target] starting native engine ' + engineVersion);
   try {
     engineProc = spawn(exe, ['-port', String(boundPort || ENGINE_PORT), '-key', 'local'], {
@@ -3745,8 +3777,10 @@ function spawnEngine() {
     // above stays the backstop for a parent crash, which detaching would otherwise leave orphaned.
     ...plat.spawnOpts(),
     });
+    runningEngineVersion = engineVersion;
   } catch (err) {
     engineProc = null;
+    runningEngineVersion = '';
     log('engine spawn error: ' + err.message);
     failNativeEngineRuns('engine spawn error: ' + err.message, true);
     return;
@@ -3768,7 +3802,10 @@ function spawnEngine() {
     const ownsCurrentProcess = engineProc === spawnedEngine
       || (pendingTargetEngineStop && pendingTargetEngineStop.proc === spawnedEngine);
     if (!ownsCurrentProcess) return;
-    if (engineProc === spawnedEngine) engineProc = null;
+    if (engineProc === spawnedEngine) {
+      engineProc = null;
+      runningEngineVersion = '';
+    }
     finishTargetEngineStop(spawnedEngine);
     failNativeEngineRuns('engine spawn error: ' + err.message, true);
   });
@@ -3783,7 +3820,10 @@ function spawnEngine() {
     engineConn = null;
     try { if (stoppedConnection) stoppedConnection.close(); } catch {}
     const gracefulStop = finishTargetEngineStop(spawnedEngine);
-    if (engineProc === spawnedEngine) engineProc = null;
+    if (engineProc === spawnedEngine) {
+      engineProc = null;
+      runningEngineVersion = '';
+    }
     if (gracefulStop) {
       if (!quitting && (pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length)) {
         setImmediate(() => {
@@ -4107,4 +4147,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo };

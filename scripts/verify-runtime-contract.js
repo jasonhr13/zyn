@@ -192,6 +192,7 @@ check('Zyn runtime branding', () => {
   const packedHelpers = [
     'public/electron.js',
     'public/helpers/target-engine.js',
+    'public/helpers/engine-version.js',
     'public/helpers/data-manager.js',
     'public/helpers/checkout-reporter.js',
   ];
@@ -201,6 +202,8 @@ check('Zyn runtime branding', () => {
     assert.doesNotMatch(body, /PolarAIO|\bHope\b|hope:\/\//i, `packaged ${packed} retains retired branding`);
   }
   assert.match(electronMain, /const DEEP_LINK_SCHEME = 'zyn';/);
+  assert.match(electronMain, /ipcMain\.on\('getEngineInfo'/,
+    'packaged Electron main process omits engine version IPC');
   assert.match(electronMain, /ipcMain\.on\('editTargetTasks'/,
     'packaged Electron main process omits live Target task editing');
   assert.doesNotMatch(electronMain, /\bHope\b|hope:\/\//i);

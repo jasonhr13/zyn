@@ -1115,6 +1115,10 @@ ipcMain.on('startPbandaiRotate', (e, { profileIds, codes, interval, qty, useVpn,
 
 // Single source of truth for the version shown in the UI: the packaged app's own version.
 ipcMain.on('getAppVersion', (e) => { e.returnValue = app.getVersion(); });
+ipcMain.on('getEngineInfo', (e) => {
+  try { e.returnValue = targetEngine.getEngineInfo(); }
+  catch { e.returnValue = { running: '', installed: '', pendingRestart: false }; }
+});
 // 'dev' = running unpacked from source (npm run dev/start) — everything visible, including
 // in-progress modules. 'beta' = a packaged build (what gets pushed to beta testers) — new/unfinished
 // modules stay hidden until they're actually ready to ship. No config toggle needed: packaging IS
