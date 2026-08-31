@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.36",
+  "notes": [
+    "See the app version and checkout engine version separately in Settings.",
+    "Successful Target checkouts show the ATC cookie proxy on Discord.",
+    "If Target cannot confirm order status, Zyn still records a likely success."
+  ]
+}
