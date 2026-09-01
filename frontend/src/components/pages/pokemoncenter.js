@@ -16,6 +16,8 @@ const PokemonTaskLog = connectTaskLog('pokemon');
 const uid = () => 'pc_' + Math.random().toString(36).slice(2, 10);
 const productUid = () => 'pc_product_' + Math.random().toString(36).slice(2, 10);
 const MAX_PRODUCTS = 3;
+const LOCAL_SENTINEL = '__local__';
+const TASK_COLS = '28px minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px';
 const blankProduct = () => ({ id: productUid(), input: '', quantity: '1' });
 const normalizeQuantity = value => String(Math.max(1, parseInt(value, 10) || 1));
 function normalizeProductInput(value) {
@@ -90,6 +92,7 @@ class PokemonCenter extends Component {
   state = {
     draftProfiles: [], draftProxy: '', draftCount: '2', expanded: null, notice: '',
     editingProductsTask: null, productDraft: [], setupOpen: true,
+    selected: {}, anchorId: null,
   };
 
   componentDidMount() {
@@ -380,7 +383,61 @@ class PokemonCenter extends Component {
 
   stop = taskId => { ipcRenderer.sendSync('stopPokemonCenter', taskId); };
 
-  renderTaskRow = (task, { profilesById, profileOptions, proxyOptions }) => {
+  toggleSelected = id => this.setState(({ selected }) => {
+    const next = { ...selected };
+    if (next[id]) delete next[id]; else next[id] = true;
+    return { selected: next, anchorId: id };
+  });
+
+  selectRange = (tasks, id) => this.setState(({ selected, anchorId }) => {
+    const ids = tasks.map(task => task.id);
+    const to = ids.indexOf(id);
+    if (to < 0) return null;
+    const from = ids.indexOf(anchorId);
+    if (from < 0) return { selected: { ...selected, [id]: true }, anchorId: id };
+    const [lo, hi] = from < to ? [from, to] : [to, from];
+    const next = { ...selected };
+    for (let i = lo; i <= hi; i++) next[ids[i]] = true;
+    return { selected: next };
+  });
+
+  toggleSelectAll = () => this.setState(({ selected }) => {
+    const tasks = this.props.pokemon.tasks || [];
+    const allOn = tasks.length > 0 && tasks.every(task => selected[task.id]);
+    if (allOn) return { selected: {}, anchorId: null };
+    const next = {};
+    for (const task of tasks) next[task.id] = true;
+    return { selected: next };
+  });
+
+  clearSelection = () => this.setState({ selected: {}, anchorId: null });
+
+  selectedTasks = () => {
+    const { selected } = this.state;
+    return (this.props.pokemon.tasks || []).filter(task => selected[task.id]);
+  };
+
+  bulkSetProxy = name => {
+    if (!name && name !== '') return;
+    const list = this.selectedTasks();
+    if (!list.length) return;
+    const ids = new Set(list.map(task => String(task.id)));
+    const tasks = (this.props.pokemon.tasks || []).map(task =>
+      ids.has(String(task.id)) ? { ...task, proxyListName: name } : task);
+    this.props.dispatch({ type: 'pokemonSet', obj: { tasks } });
+    this.persist({ tasks });
+    let sent = 0;
+    let failed = 0;
+    for (const task of list) {
+      if (!this.props.pokemon.taskStatus[task.id]) continue;
+      const ok = ipcRenderer.sendSync('setPokemonCenterTaskProxy', task.id, name);
+      if (ok) sent += 1; else failed += 1;
+    }
+    if (sent) this.flash(`Proxy update sent to ${sent} running task${sent === 1 ? '' : 's'}`);
+    else if (failed) this.flash('Proxy update could not reach the engine');
+  };
+
+  renderTaskRow = (task, { profilesById, profileOptions, proxyOptions, tasks }) => {
     const profile = profilesById.get(String(task.profileId));
     const status = this.props.pokemon.taskStatus[task.id];
     const active = status && status.running !== false;
@@ -389,8 +446,22 @@ class PokemonCenter extends Component {
     const taskProducts = this.productsForTask(task);
     const taskProductCount = this.configuredProductCount(taskProducts);
     const customProducts = Array.isArray(task.products) && task.products.length > 0;
+    const picked = !!this.state.selected[task.id];
     return (
-      <div key={task.id} className="site-task-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10 }}>
+      <div key={task.id} className={`site-task-row${picked ? ' is-selected' : ''}`} style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 10 }}>
+        <input
+          type="checkbox"
+          checked={picked}
+          onClick={event => {
+            event.stopPropagation();
+            if (!event.shiftKey) return;
+            event.preventDefault();
+            try { window.getSelection().removeAllRanges(); } catch {}
+            this.selectRange(tasks, task.id);
+          }}
+          onChange={event => { event.stopPropagation(); this.toggleSelected(task.id); }}
+          title="Select task"
+        />
         <InlineSelect
           className="form-select"
           value={task.profileId}
@@ -427,7 +498,7 @@ class PokemonCenter extends Component {
 
   render() {
     const { pokemon, profiles, proxies } = this.props;
-    const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft, setupOpen } = this.state;
+    const { draftProfiles, draftProxy, draftCount, expanded, notice, editingProductsTask, productDraft, setupOpen, selected } = this.state;
     const list = profileList(profiles);
     const proxyLists = (proxies && proxies.lists) || [];
     const profilesById = indexById(list);
@@ -593,9 +664,40 @@ class PokemonCenter extends Component {
           </div>}
 
           <div className="panel site-task-panel">
-            <div className="site-task-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(170px, 1fr) 190px 165px 185px', gap: 10 }}>
+            <div className="site-task-head" style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 10 }}>
+              <input
+                type="checkbox"
+                checked={!!pokemon.tasks.length && pokemon.tasks.every(task => selected[task.id])}
+                onChange={this.toggleSelectAll}
+                disabled={!pokemon.tasks.length}
+                title="Select all"
+              />
               <span>PROFILE</span><span>PRODUCTS</span><span>PROXY</span><span>STATUS</span><span>ACTIONS</span>
             </div>
+            {Object.keys(selected).length > 0 && (
+              <div className="site-task-bulk">
+                <b>{Object.keys(selected).length} selected</b>
+                <select
+                  className="form-select"
+                  value=""
+                  onChange={event => {
+                    const value = event.target.value;
+                    if (value) this.bulkSetProxy(value === LOCAL_SENTINEL ? '' : value);
+                    event.target.value = '';
+                  }}
+                  style={{ fontSize: 11, padding: '2px 6px', maxWidth: 220 }}
+                >
+                  <option value="" disabled>Set proxy list…</option>
+                  <option value={LOCAL_SENTINEL}>Local (no proxy)</option>
+                  {proxyLists.map(proxy => (
+                    <option key={proxyRef(proxy)} value={proxyRef(proxy)}>{proxyLabel(proxy)}</option>
+                  ))}
+                </select>
+                <button className="btn btn-sm" onClick={this.clearSelection} style={{ background: 'transparent', color: 'var(--muted)' }}>
+                  Clear
+                </button>
+              </div>
+            )}
             {!pokemon.tasks.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>No Pokémon Center tasks yet.</div>}
             {!!pokemon.tasks.length && (
               <VirtualList
@@ -604,7 +706,7 @@ class PokemonCenter extends Component {
                 rowHeight={TASK_ROW_HEIGHT}
                 estimatedHeight={480}
                 renderRow={index => this.renderTaskRow(pokemon.tasks[index], {
-                  profilesById, profileOptions, proxyOptions,
+                  profilesById, profileOptions, proxyOptions, tasks: pokemon.tasks,
                 })}
               />
             )}

@@ -681,7 +681,13 @@ body.theme-night .form-select {
   min-height: 46px; padding: 6px 12px; align-items: center; font-size: 11px;
   border-bottom: 1px solid var(--panel-border); box-sizing: border-box;
 }
+.site-task-row.is-selected { background: rgba(96,165,250,0.13); }
 .site-task-row:last-child { border-bottom: 0; }
+.site-task-bulk {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  border-bottom: 1px solid var(--panel-border); font-size: 11px;
+  background: var(--panel-bg-alt, rgba(0,0,0,.15));
+}
 .site-task-log-dock { border-top: 1px solid var(--panel-border); padding: 8px 12px 12px; }
 .site-task-log-dock .task-log-view { height: 160px; }
 

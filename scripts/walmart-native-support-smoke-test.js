@@ -41,6 +41,12 @@ const authority = read('launcher/license-authority.js');
 assert.match(engine, /function startWalmart\(/);
 assert.match(engine, /function stopWalmart\(/);
 assert.match(engine, /function editWalmart\(/);
+assert.match(engine, /function setWalmartTaskProxy\(/);
+assert.match(electron, /setWalmartTaskProxy/);
+assert.match(page, /bulkSetProxy/);
+assert.match(page, /toggleSelectAll/);
+assert.match(page, /Set proxy list/);
+assert.match(page, /Select all/);
 assert.match(engine, /function setSolverLucaKey\(/);
 assert.match(engine, /lucaApiKey: solverLucaApiKey/);
 assert.doesNotMatch(engine, /webhookSettings\.lucaApiKey|getSettings\(\)\.lucaApiKey/,

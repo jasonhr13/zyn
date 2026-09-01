@@ -3274,6 +3274,19 @@ function editWalmart(config = {}) {
   return { ok, updated: ok ? messages.length : 0, error: ok ? '' : 'The native engine is not connected.' };
 }
 
+function setWalmartTaskProxy(taskId, proxyListName) {
+  const id = String(taskId || '');
+  if (!walmartTaskIds.has(id)) return false;
+  const group = String(proxyListName || '').trim() || 'Local';
+  if (group !== 'Local') {
+    Object.assign(sentConfigs.proxies, buildProxyMap(group));
+    sendConfigs();
+  }
+  const current = walmartTaskConfigs.get(id) || { id };
+  walmartTaskConfigs.set(id, { ...current, proxyListName: group === 'Local' ? '' : group });
+  return sendToEngine({ type: 'set-task-proxy', messages: [{ id, proxyGroup: group }] });
+}
+
 function stopWalmart(taskId) {
   const requestedId = String(taskId || '');
   const ids = requestedId ? [requestedId] : [...walmartTaskIds];
@@ -4147,4 +4160,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo };

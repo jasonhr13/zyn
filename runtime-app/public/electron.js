@@ -1401,6 +1401,10 @@ ipcMain.on('editWalmart', (e, config) => {
   try { e.returnValue = targetEngine.editWalmart(config || {}); }
   catch (err) { log.warn('editWalmart:', err.message); e.returnValue = { ok: false, error: err.message }; }
 });
+ipcMain.on('setWalmartTaskProxy', (e, taskId, proxyListName) => {
+  try { e.returnValue = targetEngine.setWalmartTaskProxy(taskId, proxyListName); }
+  catch (err) { log.warn('setWalmartTaskProxy:', err.message); e.returnValue = false; }
+});
 ipcMain.on('stopWalmart', (e, taskId) => {
   try { e.returnValue = targetEngine.stopWalmart(taskId); }
   catch (err) { log.warn('stopWalmart:', err.message); e.returnValue = false; }
