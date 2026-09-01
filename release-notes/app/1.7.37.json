@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.37",
+  "notes": [
+    "Select Pok\u00e9mon Center and Walmart tasks and change their proxy list at once.",
+    "Use Select all, then Set proxy list, including Local.",
+    "Shift-click checkboxes to take a range of tasks."
+  ]
+}
