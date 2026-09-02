@@ -14,7 +14,7 @@ primary_region = "iad"
   WARM_INTERVAL_S = "3"
   # Pre-launch TCINs discovery can't see yet. Polled hot; fire the moment they
   # go live. Add/remove TCINs here as needed.
-  SEED_TCINS = "1010892065,1010892067,1010892068,1010892069,1010892070,1010892076,1010892078,1012644665,1012644666,1012644667"
+  SEED_TCINS = "1010892065,1010892067,1010892068,1010892069,1010892070,1010892076,1010892078,1012644665,1012644666,1012644667,95138800"
   # TCINs that must never ping Discord. Comma-separated; add more as needed.
   IGNORED_TCINS = "1011060493"
   # Minute restock pings stop after 5 hours in stock; they resume on the next OOS -> in.
