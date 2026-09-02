@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.39",
+  "notes": [
+    "The app uses a quieter off-white look instead of cream and rose washes.",
+    "Titles, buttons, and labels use sentence case instead of all-caps.",
+    "Running status dots no longer pulse or glow while tasks are active."
+  ]
+}
