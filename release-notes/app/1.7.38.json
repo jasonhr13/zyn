@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.38",
+  "notes": [
+    "Type Target login codes as soon as the OTP field appears on a new task.",
+    "Clicking a login-code field no longer opens the task or ignores the keyboard.",
+    "macOS Cut, Copy, and Paste work in login-code fields after Start."
+  ]
+}
