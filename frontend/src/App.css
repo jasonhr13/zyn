@@ -1606,6 +1606,7 @@ body.theme-night .form-select {
 .target-otp-inline input {
   width: 100%; min-width: 0; height: 100%; padding: 0 4px; border: 0; outline: 0; background: transparent;
   color: var(--text); font: 700 11px/1 var(--font-mono); letter-spacing: 1.2px; text-align: center;
+  user-select: text; -webkit-user-select: text;
 }
 .target-otp-inline input::placeholder { color: var(--dim); font-weight: 500; letter-spacing: .5px; }
 .target-otp-inline button {

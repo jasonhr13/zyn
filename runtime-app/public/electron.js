@@ -521,7 +521,14 @@ async function initLicenseLock() {
 }
 
 function createWindow() {
-  Menu.setApplicationMenu(null);
+  // macOS routes typing/paste into inputs through the application Edit menu. A null
+  // menu is why right-click paste had to be rebuilt below, and why a login-code field
+  // that mounts after Start can look focused but ignore the keyboard until relaunch.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }]));
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 
   mainWindow = new BrowserWindow({
     width: 1100,

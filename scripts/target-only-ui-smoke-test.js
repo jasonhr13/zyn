@@ -60,6 +60,12 @@ assert.match(taskGroups, /<TargetOtpInput request=\{otpRequest\} large \/>/,
   'selected task detail does not expose its pending OTP entry');
 assert.match(inlineOtp, /sendSync\('targetSubmitOtp', \{ email: request\.email, code \}\)/);
 assert.match(inlineOtp, /autoComplete="one-time-code"/);
+assert.match(inlineOtp, /onMouseDown=\{event => event\.stopPropagation\(\)\}/,
+  'OTP entry must not let the task row steal mousedown/focus');
+assert.match(read('frontend/src/index.css'), /input, textarea \{[\s\S]*-webkit-user-select: text/,
+  'inputs must opt back into text selection under the app-wide user-select: none');
+assert.match(read('runtime-app/public/electron.js'), /role: 'editMenu'/,
+  'macOS must keep an Edit menu so newly mounted OTP fields can receive keystrokes');
 assert.match(inlineOtp, /target-otp-message[\s\S]*role="status"[\s\S]*aria-live="polite"/,
   'the OTP control does not surface automatic mailbox progress');
 assert.match(inlineOtp, /phase === 'submitting'[\s\S]*disabled=\{submitting\}/,
