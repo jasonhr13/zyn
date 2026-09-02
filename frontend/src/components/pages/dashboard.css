@@ -11,12 +11,9 @@
 .analytics-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 2px 0 0; }
 .analytics-hero h1 {
   color: var(--text);
-  font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  line-height: 1.15;
 }
 .analytics-hero p { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .analytics-ranges, .analytics-tabs, .analytics-intervals { display: flex; align-items: center; gap: 3px; }
@@ -27,11 +24,8 @@
   color: var(--muted);
   cursor: pointer;
   padding: 6px 10px;
-  font-family: var(--font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 .analytics-ranges button:hover, .analytics-tabs button:hover, .analytics-intervals button:hover { color: var(--text); background: var(--panel-hover); }
 .analytics-ranges button.active, .analytics-tabs button.active, .analytics-intervals button.active {
@@ -62,7 +56,6 @@
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--shadow-panel);
 }
 .analytics-card::before {
   content: '';
@@ -77,20 +70,15 @@
 .analytics-card span, .analytics-card strong, .analytics-card small { display: block; position: relative; z-index: 1; }
 .analytics-card span {
   color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 .analytics-card strong {
   margin-top: 10px;
   color: var(--text);
-  font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
 }
 .analytics-card small { margin-top: 6px; color: var(--dim); font-size: 10px; }
 .analytics-card i { position: absolute; right: 15px; bottom: 14px; width: 28%; height: 2px; border-radius: 0; background: var(--card-line); }
@@ -107,22 +95,18 @@
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--shadow-panel);
 }
 .analytics-panel > header { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); }
 .analytics-panel h2 {
   color: var(--text);
-  font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 .analytics-panel h2 span { color: var(--muted); font-weight: 500; }
 .analytics-overview > header > div:first-child { display: flex; align-items: center; gap: 20px; }
 .analytics-tabs button { padding: 6px 8px; }
 .analytics-tabs button.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
-.analytics-intervals button { padding: 6px 8px; text-transform: uppercase; }
+.analytics-intervals button { padding: 6px 8px; }
 .analytics-chart-canvas { position: relative; flex: 1; min-height: 330px; padding: 8px 10px 4px; }
 .analytics-chart-canvas svg { width: 100%; height: 100%; overflow: visible; }
 .analytics-grid-line { stroke: var(--panel-border); stroke-width: 1; stroke-dasharray: 2 6; }
@@ -154,11 +138,8 @@
   padding: 0 12px;
   border-bottom: 1px solid var(--panel-border);
   color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: .12em;
-  text-transform: uppercase;
 }
 .analytics-checkout-list { flex: 1; min-height: 270px; overflow-y: auto; }
 .analytics-checkout-row { min-height: 58px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); color: var(--text2); font-size: 11px; }

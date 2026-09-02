@@ -5,8 +5,8 @@
 }
 
 /* ── Zyn design tokens ───────────────────────────────────────────────────────
-   Brand pigments stay fixed. Surfaces, type, and chrome are the pit-wall console:
-   condensed titles, hairline frames, and a rose-to-gold timing tick. */
+   Brand pigments stay fixed. Surfaces stay quiet: warm off-white, rose only on
+   primary actions, identity, and focus. */
 :root {
   color-scheme: light;
   --zyn-deep-crimson: #450A0A;
@@ -18,43 +18,40 @@
   --font-display: 'Oswald', 'Arial Narrow', sans-serif;
   --font-body: 'Source Sans 3', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', Menlo, Consolas, monospace;
-  --body-bg: #f3e6d8;
-  --app-bg:
-    linear-gradient(180deg, rgba(225, 29, 72, 0.07) 0%, transparent 92px),
-    linear-gradient(90deg, rgba(69, 10, 10, 0.035), transparent 140px),
-    #f3e6d8;
-  --titlebar: #f7ece0;
-  --sidebar: #efe0d2;
-  --panel: #fff8f1;
-  --panel-solid: #fff8f1;
-  --panel-hover: rgba(127, 29, 29, 0.055);
-  --panel-raised: #fffdf8;
-  --panel-bg-alt: rgba(127, 29, 29, 0.04);
-  --panel-border: rgba(127, 29, 29, 0.16);
-  --panel-border-strong: rgba(127, 29, 29, 0.28);
-  --modal-bg: #fff8f1;
+  --body-bg: #f5f3f1;
+  --app-bg: #f5f3f1;
+  --titlebar: #f3f1ef;
+  --sidebar: #f0eeec;
+  --panel: #ffffff;
+  --panel-solid: #ffffff;
+  --panel-hover: rgba(28, 25, 23, 0.045);
+  --panel-raised: #fafaf9;
+  --panel-bg-alt: rgba(28, 25, 23, 0.03);
+  --panel-border: rgba(28, 25, 23, 0.10);
+  --panel-border-strong: rgba(28, 25, 23, 0.16);
+  --modal-bg: #ffffff;
   --blur: none;
-  --field: #fffdf9;
-  --field-hover: #ffffff;
-  --field-border: rgba(127, 29, 29, 0.2);
-  --text: #2a0c10;
-  --text2: #5a242c;
-  --muted: #84545c;
-  --dim: #a0787c;
+  --field: #ffffff;
+  --field-hover: #fafaf9;
+  --field-border: rgba(28, 25, 23, 0.12);
+  --text: #1c1917;
+  --text2: #44403c;
+  --muted: #57534e;
+  --dim: #78716c;
   --accent: #BE123C;
   --accent-strong: #7F1D1D;
-  --accent-soft: rgba(225, 29, 72, 0.1);
-  --accent-border: rgba(190, 18, 60, 0.32);
+  --accent-soft: rgba(225, 29, 72, 0.08);
+  --accent-border: rgba(190, 18, 60, 0.28);
   --accent-fill: #E11D48;
   --accent-on: #fffaf5;
-  --run: #d8560c;
-  --run-soft: rgba(249, 115, 22, 0.12);
-  --ok: #9a5f00;
-  --ok-soft: rgba(251, 191, 36, 0.16);
+  --run: #c2410c;
+  --run-soft: rgba(194, 65, 12, 0.10);
+  --ok: #a16207;
+  --ok-soft: rgba(161, 98, 7, 0.12);
   --danger: #BE123C;
-  --danger-soft: rgba(190, 18, 60, 0.1);
+  --danger-soft: rgba(190, 18, 60, 0.08);
   --info: #7F1D1D;
-  --info-soft: rgba(127, 29, 29, 0.1);
+  --info-soft: rgba(127, 29, 29, 0.08);
   --target-status-neutral: #475569;
   --target-status-neutral-bg: #f1f5f9;
   --target-status-watch: #c2410c;
@@ -70,68 +67,65 @@
   --target-status-error: #b91c1c;
   --target-status-error-bg: #fee2e2;
   --purple: #BE123C;
-  --idle-soft: rgba(127, 29, 29, 0.07);
-  --btn: #fff7ef;
-  --btn-border: rgba(127, 29, 29, 0.2);
-  --overlay: rgba(69, 10, 10, 0.46);
-  --page-header: #f7ece0;
-  --surface-tint: rgba(127, 29, 29, 0.035);
-  --runtime-bg: linear-gradient(90deg, rgba(255, 228, 230, 0.95), rgba(247, 236, 224, 0.98));
-  --runtime-error-bg: rgba(255, 235, 238, 0.98);
-  --progress-track: rgba(127, 29, 29, 0.12);
-  --log-bg: #f8eee4;
+  --idle-soft: rgba(28, 25, 23, 0.05);
+  --btn: #ffffff;
+  --btn-border: rgba(28, 25, 23, 0.12);
+  --overlay: rgba(28, 25, 23, 0.40);
+  --page-header: #f3f1ef;
+  --surface-tint: rgba(28, 25, 23, 0.025);
+  --runtime-bg: #fafaf9;
+  --runtime-error-bg: #fef2f2;
+  --progress-track: rgba(28, 25, 23, 0.10);
+  --log-bg: #fafaf9;
   --primary-hover: #BE123C;
-  --primary-border: rgba(127, 29, 29, 0.34);
+  --primary-border: rgba(190, 18, 60, 0.34);
   --primary-shadow: none;
-  --radius: 3px;
-  --radius-sm: 2px;
-  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
-  --shadow-modal: 0 24px 60px rgba(69, 10, 10, 0.22);
-  --shadow-focus: 0 0 0 2px rgba(225, 29, 72, 0.18);
-  --scroll: rgba(127, 29, 29, 0.3);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow-panel: none;
+  --shadow-modal: 0 16px 40px rgba(28, 25, 23, 0.16);
+  --shadow-focus: 0 0 0 2px rgba(225, 29, 72, 0.16);
+  --scroll: rgba(28, 25, 23, 0.22);
   --scroll-track: transparent;
-  --tick: linear-gradient(180deg, #E11D48 0%, #F97316 58%, #FBBF24 100%);
-  --hairline: rgba(190, 18, 60, 0.42);
+  --tick: var(--accent);
+  --hairline: var(--panel-border);
 }
 
 body.theme-night {
   color-scheme: dark;
   --body-bg: #101114;
-  --app-bg:
-    linear-gradient(180deg, rgba(225, 29, 72, 0.08) 0%, transparent 88px),
-    linear-gradient(90deg, rgba(225, 29, 72, 0.04), transparent 120px),
-    #101114;
+  --app-bg: #101114;
   --titlebar: #141518;
   --sidebar: #121316;
   --panel: #1a1c20;
   --panel-solid: #1a1c20;
-  --panel-hover: rgba(225, 29, 72, 0.07);
+  --panel-hover: rgba(255, 255, 255, 0.04);
   --panel-raised: #21242a;
   --panel-bg-alt: rgba(255, 255, 255, 0.03);
   --panel-border: rgba(255, 255, 255, 0.08);
-  --panel-border-strong: rgba(225, 29, 72, 0.28);
+  --panel-border-strong: rgba(255, 255, 255, 0.14);
   --modal-bg: #1c1e23;
   --field: #14161a;
   --field-hover: #1f2228;
-  --field-border: rgba(255, 255, 255, 0.1);
+  --field-border: rgba(255, 255, 255, 0.10);
   --text: #f4f4f5;
   --text2: #c4c6cb;
   --muted: #8b8f96;
   --dim: #5e6269;
   --accent: #E11D48;
   --accent-strong: #BE123C;
-  --accent-soft: rgba(225, 29, 72, 0.14);
-  --accent-border: rgba(225, 29, 72, 0.34);
+  --accent-soft: rgba(225, 29, 72, 0.12);
+  --accent-border: rgba(225, 29, 72, 0.28);
   --accent-fill: #E11D48;
   --accent-on: #fff7ed;
   --run: #F97316;
-  --run-soft: rgba(249, 115, 22, 0.14);
+  --run-soft: rgba(249, 115, 22, 0.12);
   --ok: #FBBF24;
-  --ok-soft: rgba(251, 191, 36, 0.12);
+  --ok-soft: rgba(251, 191, 36, 0.10);
   --danger: #E11D48;
-  --danger-soft: rgba(225, 29, 72, 0.13);
+  --danger-soft: rgba(225, 29, 72, 0.12);
   --info: #BE123C;
-  --info-soft: rgba(190, 18, 60, 0.13);
+  --info-soft: rgba(190, 18, 60, 0.12);
   --target-status-neutral: #cbd5e1;
   --target-status-neutral-bg: #29313d;
   --target-status-watch: #fb923c;
@@ -149,22 +143,22 @@ body.theme-night {
   --purple: #BE123C;
   --idle-soft: rgba(255, 255, 255, 0.045);
   --btn: rgba(255, 255, 255, 0.04);
-  --btn-border: rgba(255, 255, 255, 0.1);
-  --overlay: rgba(4, 5, 7, 0.78);
+  --btn-border: rgba(255, 255, 255, 0.10);
+  --overlay: rgba(4, 5, 7, 0.72);
   --page-header: #141518;
   --surface-tint: rgba(255, 255, 255, 0.025);
-  --runtime-bg: linear-gradient(90deg, rgba(225, 29, 72, 0.12), rgba(20, 21, 24, 0.97));
+  --runtime-bg: #16181c;
   --runtime-error-bg: rgba(69, 10, 10, 0.42);
-  --progress-track: rgba(255, 255, 255, 0.1);
+  --progress-track: rgba(255, 255, 255, 0.10);
   --log-bg: #111316;
   --primary-hover: #BE123C;
-  --primary-border: rgba(225, 29, 72, 0.4);
+  --primary-border: rgba(225, 29, 72, 0.34);
   --primary-shadow: none;
   --shadow-panel: none;
-  --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.55);
-  --shadow-focus: 0 0 0 2px rgba(225, 29, 72, 0.22);
-  --scroll: rgba(251, 191, 36, 0.22);
-  --hairline: rgba(225, 29, 72, 0.4);
+  --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.48);
+  --shadow-focus: 0 0 0 2px rgba(225, 29, 72, 0.20);
+  --scroll: rgba(255, 255, 255, 0.18);
+  --hairline: var(--panel-border);
 }
 
 html, body, #root {
@@ -178,7 +172,7 @@ body {
   background: var(--body-bg);
   color: var(--text);
   font-size: 13px;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'tnum' 1;
@@ -199,7 +193,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 ::-webkit-scrollbar-track { background: var(--scroll-track); }
 ::-webkit-scrollbar-thumb {
   background: var(--scroll);
-  border-radius: 0;
+  border-radius: 4px;
   min-height: 42px;
   border: 2px solid transparent;
   background-clip: padding-box;
