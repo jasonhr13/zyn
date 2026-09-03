@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.40",
+  "notes": [
+    "Starting many Target tasks no longer freezes the window before restock wait.",
+    "Starting a second group no longer refreshes cards already waiting for stock.",
+    "Accounts and tasks with a saved Target login show Signed in.",
+    "Discord monitor lines no longer flood the log one at a time."
+  ]
+}
