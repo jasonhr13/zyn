@@ -84,6 +84,8 @@ if (fs.existsSync(pagePath)) {
     'Accounts does not show a session column');
   assert.match(page, /account\.hasSession \? 'Signed in' : 'No session'/,
     'Accounts does not label saved login cookies');
+  assert.match(styles, /\.account-row-session\.configured > strong \{ color: var\(--target-status-success\); \}/,
+    'Accounts session status is not green');
 }
 
 const dataManagerSource = fs.readFileSync(path.join(root, 'runtime-app/public/helpers/data-manager.js'), 'utf8');

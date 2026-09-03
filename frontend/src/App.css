@@ -2634,8 +2634,8 @@ body.theme-night .form-select {
 .account-row-password > strong i { width: 12px; color: var(--danger); text-align: center; }
 .account-row-password.configured > strong,
 .account-row-password.configured > strong i,
-.account-row-profile.configured > strong,
-.account-row-session.configured > strong { color: var(--ok); }
+.account-row-profile.configured > strong { color: var(--ok); }
+.account-row-session.configured > strong { color: var(--target-status-success); }
 .account-add-modal { width: 660px; }
 .account-add-modal .modal-header p { margin-top: 3px; color: var(--muted); font-size: 9.5px; }
 .account-add-modal-body { display: flex; flex-direction: column; gap: 16px; }
