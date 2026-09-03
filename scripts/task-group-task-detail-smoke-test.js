@@ -53,6 +53,9 @@ assert.match(styles, /\.target-sku-remove/);
 assert.match(styles, /\.group-task-bulk-bar/);
 assert.match(taskGroups, /openTask = task => this\.setState\(\{ selectedTaskId: task\.id/);
 assert.match(taskGroups, /host\.openTask\(task\)/);
+assert.match(taskGroups, /accountHasSession\(account\) \? <small className="task-session-signed-in">Signed in<\/small>/,
+  'task rows do not show a saved-session label');
+assert.match(styles, /\.task-session-signed-in/);
 assert.match(taskGroups, /this\.props\.taskLogs/);
 assert.match(taskGroups, /only this task/);
 assert.match(taskGroups, /Broker, farmer, and monitor startup remain in the shared log below/);

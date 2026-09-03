@@ -80,6 +80,19 @@ if (fs.existsSync(pagePath)) {
     'Accounts does not restore the last group and selection');
   assert.match(styles, /\.account-list-table-head,[\s\S]{0,220}grid-template-columns:/,
     'Accounts does not use a structured grouped table');
+  assert.match(page, /<span>Session<\/span>/,
+    'Accounts does not show a session column');
+  assert.match(page, /account\.hasSession \? 'Signed in' : 'No session'/,
+    'Accounts does not label saved login cookies');
 }
+
+const dataManagerSource = fs.readFileSync(path.join(root, 'runtime-app/public/helpers/data-manager.js'), 'utf8');
+assert.match(dataManagerSource, /hasSession: Boolean\(String\(cookie \|\| ''\)\.trim\(\)\)/,
+  'renderer accounts do not expose a session flag');
+assert.match(dataManagerSource, /\{ password, cookie, \.\.\.rest \}/,
+  'renderer accounts still include the session cookie');
+const pageHandler = fs.readFileSync(path.join(root, 'frontend/src/components/page-handler.js'), 'utf8');
+assert.match(pageHandler, /accountsUpdated/,
+  'the renderer does not refresh accounts when a session cookie is saved');
 
 console.log('Account grouping workspace and credential-safe persistence smoke test passed');

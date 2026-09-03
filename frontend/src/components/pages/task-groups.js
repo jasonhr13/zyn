@@ -34,6 +34,7 @@ import InlineSelect from '../inline-select';
 import Store from '../store';
 import {
   accountForTask,
+  accountHasSession,
   mapGroupRuntimeState,
   mapTaskDetailState,
   mapTaskRowState,
@@ -257,7 +258,10 @@ class TaskGroupTaskRowView extends Component {
         </span>
         <span className={`task-primary${profile ? '' : ' task-primary-missing'}`} title={profile ? '' : 'No matching checkout profile'}>
           <i className="task-avatar">{initial}</i>
-          <strong>{host.accountLabel(task)}</strong>
+          <span className="task-primary-copy">
+            <strong>{host.accountLabel(task)}</strong>
+            {accountHasSession(account) ? <small className="task-session-signed-in">Signed in</small> : null}
+          </span>
         </span>
         <span onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
           <InlineSelect
@@ -378,7 +382,7 @@ class TaskGroupTaskDetailView extends Component {
             <section className="panel task-information">
               <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
               <dl>
-                <div><dt>Account</dt><dd>{accountName}</dd></div>
+                <div><dt>Account</dt><dd>{accountHasSession(account) ? `${accountName} · Signed in` : accountName}</dd></div>
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(host.proxyLists(), task.proxyListName, 'Local')}</dd></div>
                 <div><dt>Watch list</dt><dd>{watchListSummary(group)}</dd></div>
@@ -2471,7 +2475,7 @@ class TaskGroups extends Component {
                 return (
                   <button type="button" className={selected ? 'selected' : ''} disabled={alreadyUsed} key={account.id} onClick={() => this.toggleAccount(account.id)}>
                     <input type="checkbox" readOnly checked={selected} disabled={alreadyUsed} />
-                    <span><strong>{account.email || account.username || account.id}</strong><small className={profile ? '' : 'text-danger'}>{alreadyUsed ? 'Already in this group' : profile ? 'Matching profile ready' : 'Missing matching profile'}</small></span>
+                    <span><strong>{account.email || account.username || account.id}</strong><small className={profile ? '' : 'text-danger'}>{alreadyUsed ? 'Already in this group' : [profile ? 'Matching profile ready' : 'Missing matching profile', accountHasSession(account) ? 'Signed in' : ''].filter(Boolean).join(' · ')}</small></span>
                   </button>
                 );
               })}

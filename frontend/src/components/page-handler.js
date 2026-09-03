@@ -36,6 +36,9 @@ class PageHandler extends Component {
     ipcRenderer.on('proxiesUpdated', (e, proxies) => {
       this.props.dispatch({ type: 'update', obj: { proxies } });
     });
+    ipcRenderer.on('accountsUpdated', (e, accounts) => {
+      this.props.dispatch({ type: 'update', obj: { accounts: Array.isArray(accounts) ? accounts : [] } });
+    });
     ipcRenderer.on('managedProxyError', (e, message) => {
       window.alert(String(message || 'This managed proxy list is no longer available.'));
     });
@@ -162,6 +165,7 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('licenseStatus');
     ipcRenderer.removeAllListeners('runtimeStatus');
     ipcRenderer.removeAllListeners('proxiesUpdated');
+    ipcRenderer.removeAllListeners('accountsUpdated');
     ipcRenderer.removeAllListeners('managedProxyError');
     ipcRenderer.removeAllListeners('targetLog');
     ipcRenderer.removeAllListeners('targetLogBatch');

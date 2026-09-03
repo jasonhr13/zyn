@@ -60,7 +60,7 @@ const defaultState = {
   channel: 'beta',
   tasks: [],
   profiles: [],
-  accounts: [],   // site logins (email + hasPassword flag only — never the password itself)
+  accounts: [],   // site logins (email + hasPassword/hasSession flags — never the password or cookie)
   proxies: { lists: [] },
   settings: {},
   discordStatus: { status: 'disconnected' },

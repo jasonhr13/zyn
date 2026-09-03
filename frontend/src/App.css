@@ -1534,7 +1534,9 @@ body.theme-night .form-select {
 .group-task-bulk-proxy { display: inline-flex; align-items: center; gap: 7px; color: var(--text2); font-size: 10px; }
 .group-task-bulk-proxy .task-proxy-select { min-width: 190px; }
 .task-primary { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.task-primary-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .task-primary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; }
+.task-session-signed-in { color: var(--target-status-success); font-size: 9.5px; font-weight: 600; }
 .task-primary-missing strong { color: var(--danger); }
 .task-avatar { width: 24px; height: 24px; display: inline-grid; place-items: center; flex: 0 0 auto; border-radius: var(--radius); color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-border); font-size: 10px; font-style: normal; font-weight: 750; }
 .task-avatar-lg { width: 30px; height: 30px; border-radius: var(--radius); font-size: 11px; }
@@ -2620,18 +2622,20 @@ body.theme-night .form-select {
 .accounts-workspace .profiles-context-actions .btn i { margin-right: 4px; }
 .account-list-table-head,
 .account-list-row {
-  min-width: 780px;
-  grid-template-columns: 30px minmax(235px, 1.25fr) minmax(135px, .65fr) minmax(195px, 1fr) minmax(145px, .72fr) 72px;
+  min-width: 860px;
+  grid-template-columns: 30px minmax(210px, 1.15fr) minmax(125px, .55fr) minmax(165px, .9fr) minmax(110px, .55fr) minmax(130px, .62fr) 72px;
 }
-.account-list-table-body { min-width: 780px; }
+.account-list-table-body { min-width: 860px; }
 .account-list-row { min-height: 62px; }
 .account-list-row .profile-row-cell > strong { color: var(--text); font-size: 10.5px; }
 .account-row-password > strong,
-.account-row-profile > strong { display: flex; align-items: center; gap: 5px; }
+.account-row-profile > strong,
+.account-row-session > strong { display: flex; align-items: center; gap: 5px; }
 .account-row-password > strong i { width: 12px; color: var(--danger); text-align: center; }
 .account-row-password.configured > strong,
 .account-row-password.configured > strong i,
-.account-row-profile.configured > strong { color: var(--ok); }
+.account-row-profile.configured > strong,
+.account-row-session.configured > strong { color: var(--ok); }
 .account-add-modal { width: 660px; }
 .account-add-modal .modal-header p { margin-top: 3px; color: var(--muted); font-size: 9.5px; }
 .account-add-modal-body { display: flex; flex-direction: column; gap: 16px; }
@@ -2755,11 +2759,11 @@ body.theme-night .form-select {
 @media (max-width: 1100px) {
   .account-list-table-head,
   .account-list-row {
-    min-width: 650px;
-    grid-template-columns: 28px minmax(160px, 1.2fr) minmax(100px, .62fr) minmax(135px, .9fr) 100px 60px;
+    min-width: 720px;
+    grid-template-columns: 28px minmax(150px, 1.1fr) minmax(90px, .5fr) minmax(120px, .8fr) minmax(90px, .5fr) 90px 56px;
     column-gap: 8px;
   }
-  .account-list-table-body { min-width: 650px; }
+  .account-list-table-body { min-width: 720px; }
 }
 @media (max-width: 1500px) {
   .account-list-table-head > span:nth-of-type(3) { display: block; }
@@ -2941,7 +2945,6 @@ body.theme-night .form-select {
   border-radius: var(--radius-sm);
 }
 .monospace,
-.task-primary small,
 .target-sku-watch-identity small,
 .target-product-history-sku,
 .target-product-title-row > span,

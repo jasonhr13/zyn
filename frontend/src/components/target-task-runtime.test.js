@@ -1,5 +1,6 @@
 import { reducer } from './store';
 import {
+  accountHasSession,
   mapGroupRuntimeState,
   mapTaskDetailState,
   mapTaskRowState,
@@ -19,6 +20,13 @@ const other = { id: 'task-2', accountId: 'acct-2' };
 function withAccounts(state) {
   return reducer(state, { type: 'update', obj: { accounts: [account], profiles: [{ id: 'p1', email: 'one@example.com' }] } });
 }
+
+test('accountHasSession is true only for a saved login cookie flag', () => {
+  expect(accountHasSession({ hasSession: true })).toBe(true);
+  expect(accountHasSession({ hasSession: false })).toBe(false);
+  expect(accountHasSession({ cookie: 'must-not-count' })).toBe(false);
+  expect(accountHasSession(null)).toBe(false);
+});
 
 test('a sibling Target status change keeps this row’s mapped props referentially stable', () => {
   let state = withAccounts(reducer(undefined, { type: '@@test/init' }));

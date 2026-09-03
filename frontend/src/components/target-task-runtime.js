@@ -47,6 +47,10 @@ export function accountForTask(accounts, task) {
   return accountsById(accounts).get(String(task.accountId)) || null;
 }
 
+export function accountHasSession(account) {
+  return Boolean(account && account.hasSession);
+}
+
 export function profileForAccountId(profiles, accounts, accountId) {
   const account = accountsById(accounts).get(String(accountId));
   const email = String((account && account.email) || '').trim().toLowerCase();

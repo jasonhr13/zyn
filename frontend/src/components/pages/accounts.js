@@ -513,7 +513,7 @@ class Accounts extends Component {
                 <label className="profile-row-check" title={allShownSelected ? 'Deselect shown accounts' : 'Select shown accounts'}>
                   <input type="checkbox" checked={allShownSelected} disabled={!shown.length} onChange={() => this.selectShown(shown)} />
                 </label>
-                <span>Account</span><span>Password</span><span>Profile</span><span>Added</span><span>Actions</span>
+                <span>Account</span><span>Password</span><span>Profile</span><span>Session</span><span>Added</span><span>Actions</span>
               </div>
               <div className="profile-table-body account-list-table-body">
                 {shown.length ? shown.map(account => {
@@ -535,6 +535,10 @@ class Accounts extends Component {
                       <div className={`profile-row-cell account-row-profile${profile ? ' configured' : ''}`}>
                         <strong>{profile ? profile.profileName || profile.email : 'No matching profile'}</strong>
                         <small>{profile ? `${automatic ? 'Matched' : 'Linked'} by ${automatic ? 'email' : 'account'}` : 'Checkout profile required'}</small>
+                      </div>
+                      <div className={`profile-row-cell account-row-session${account.hasSession ? ' configured' : ''}`}>
+                        <strong>{account.hasSession ? 'Signed in' : 'No session'}</strong>
+                        <small>{account.hasSession ? 'Saved login cookie' : 'Will sign in on start'}</small>
                       </div>
                       <div className="profile-row-cell account-row-created">
                         <strong>{account.source === 'generated' ? 'Generated' : 'Added'}</strong>
