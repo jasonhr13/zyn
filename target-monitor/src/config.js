@@ -59,7 +59,8 @@ export const config = {
   seedTcins: list(process.env.SEED_TCINS),
   // TCINs that must never ping Discord/webhooks. Discovery still sees them, but
   // they are not enrolled, polled, or emitted. Ignore wins over SEED_TCINS.
-  ignoredTcins: list(process.env.IGNORED_TCINS),
+  // Env IGNORED_TCINS is additive on top of these built-in mutes.
+  ignoredTcins: [...new Set(['1011060493', '95280894', ...list(process.env.IGNORED_TCINS)])],
   pacing: { maxRequestsPerMin: num(process.env.MAX_RPM, 600) },
   brand: {
     name: process.env.BRAND_NAME || 'Zyn',
