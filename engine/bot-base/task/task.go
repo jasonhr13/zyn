@@ -27,6 +27,8 @@ var safeTaskStatuses = safeStatuses{
 	value: []taskStatus{},
 }
 
+var lastHeartbeatKeys = map[string]string{}
+
 var UserTasks = safeTaskChannels{value: map[string]Task{}}
 
 var sendMessage func(any) error
@@ -236,38 +238,59 @@ func (t *BaseTask) StartTask() {
 	}
 
 }
+func statusHeartbeatKey(status, color string, state int, running bool) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%t", status, color, state, running)
+}
+
+func flushStatusQueue() {
+	safeTaskStatuses.mu.Lock()
+	if len(safeTaskStatuses.value) == 0 {
+		safeTaskStatuses.mu.Unlock()
+		return
+	}
+	newStatuses := make([]taskStatus, len(safeTaskStatuses.value))
+	copy(newStatuses, safeTaskStatuses.value)
+	safeTaskStatuses.value = nil
+	safeTaskStatuses.mu.Unlock()
+
+	if sendMessage != nil {
+		_ = sendMessage(statusMessage{
+			Type:     "update-status",
+			Messages: newStatuses,
+		})
+	}
+}
+
 func SendStatuses() {
 	for {
-		safeTaskStatuses.mu.Lock()
-
-		if len(safeTaskStatuses.value) > 0 {
-			var newStatuses []taskStatus
-
-			for _, ts := range safeTaskStatuses.value {
-				newStatuses = append(newStatuses, taskStatus{
-					TaskID:  ts.TaskID,
-					Status:  ts.Status,
-					Color:   ts.Color,
-					State:   ts.State,
-					Running: ts.Running,
-				})
-			}
-
-			safeTaskStatuses.value = nil
-
-			message := statusMessage{
-				Type:     "update-status",
-				Messages: newStatuses,
-			}
-			if sendMessage != nil {
-				_ = sendMessage(message)
-			}
-		}
-
-		safeTaskStatuses.mu.Unlock()
-
+		flushStatusQueue()
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func queueHeartbeatStatuses(bases map[string]*BaseTask) int {
+	added := 0
+	safeTaskStatuses.mu.Lock()
+	defer safeTaskStatuses.mu.Unlock()
+	for id, t := range bases {
+		if t == nil || t.Status == nil || !t.Running {
+			continue
+		}
+		key := statusHeartbeatKey(t.Status.Status, t.Status.Color, t.TaskState, t.Running)
+		if lastHeartbeatKeys[id] == key {
+			continue
+		}
+		lastHeartbeatKeys[id] = key
+		safeTaskStatuses.value = append(safeTaskStatuses.value, taskStatus{
+			TaskID:  id,
+			Status:  t.Status.Status,
+			Color:   t.Status.Color,
+			State:   t.TaskState,
+			Running: t.Running,
+		})
+		added++
+	}
+	return added
 }
 
 func StartStatusHeartbeat() {
@@ -278,21 +301,7 @@ func StartStatusHeartbeat() {
 		if len(bases) == 0 {
 			continue
 		}
-
-		safeTaskStatuses.mu.Lock()
-		for id, t := range bases {
-			if t.Status == nil || !t.Running {
-				continue
-			}
-			safeTaskStatuses.value = append(safeTaskStatuses.value, taskStatus{
-				TaskID:  id,
-				Status:  t.Status.Status,
-				Color:   t.Status.Color,
-				State:   t.TaskState,
-				Running: t.Running,
-			})
-		}
-		safeTaskStatuses.mu.Unlock()
+		queueHeartbeatStatuses(bases)
 	}
 }
 
@@ -324,6 +333,7 @@ func (t *BaseTask) StopTask(finalStatus string, finalColor string, statusStep ..
 		}
 
 		safeTaskStatuses.mu.Lock()
+		delete(lastHeartbeatKeys, t.ID)
 		safeTaskStatuses.value = append(safeTaskStatuses.value, taskStatus{
 			TaskID:  t.ID,
 			Status:  finalStatus,
@@ -361,7 +371,7 @@ func (t *BaseTask) UpdateStatus(status string, color string) {
 	t.Status.Color = color
 	log.Printf("[ID:'%s' - %s]", t.ID, status)
 	safeTaskStatuses.mu.Lock()
-	// Initialize the TaskStatuses update
+	lastHeartbeatKeys[t.ID] = statusHeartbeatKey(status, color, t.TaskState, t.Running)
 	safeTaskStatuses.value = append(safeTaskStatuses.value, taskStatus{
 		TaskID:  t.ID,
 		Status:  status,
@@ -369,7 +379,6 @@ func (t *BaseTask) UpdateStatus(status string, color string) {
 		State:   t.TaskState,
 		Running: t.Running,
 	})
-
 	safeTaskStatuses.mu.Unlock()
 
 	emitTaskChange(t)

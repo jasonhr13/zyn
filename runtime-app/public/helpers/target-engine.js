@@ -651,10 +651,23 @@ const log = (line, taskId = '') => {
   if (buf.length > LOG_BUF_MAX) logBufs[key] = buf.slice(-LOG_BUF_MAX);
   if (!logTimer) logTimer = setTimeout(flushLogs, LOG_FLUSH_MS);
 };
+
+function logMonitorLine(line) {
+  log(String(line || ''));
+}
+
+let lastSkuTitlePayload = '';
 // Status used to cross to the renderer on every distinct engine step. Identical repeats are still
 // dropped, but a real change is coalesced per task (last write wins) so 31 checkout tasks cannot
 // each paint the Task Groups page 10 times in one burst. Stop/terminal still flushes immediately.
 let lastStatusKeys = {};
+function forgetStatusKeys(ids) {
+  for (const id of ids) {
+    if (!id && id !== 0) continue;
+    delete lastStatusKeys[id];
+    delete lastStatusKeys[String(id)];
+  }
+}
 const statusCoalescer = createStatusCoalescer({
   intervalMs: STATUS_FLUSH_MS,
   send: updates => toRenderer('targetStatusBatch', { updates }),
@@ -1949,6 +1962,12 @@ function sourceNamesFor(ref) {
   return resolveAssignment(ref).sources.map(source => source.name);
 }
 
+function cachedProxySources(taskId, proxyListName) {
+  const existing = taskCheckoutConfigById.get(taskId) || {};
+  if (Array.isArray(existing.proxySources)) return existing.proxySources;
+  return sourceNamesFor(proxyListName);
+}
+
 function taggedHarvesterLines(ref) {
   return resolveAssignment(ref).sources.flatMap(source => (
     source.lines.map(line => `${source.name}\t${line}`)
@@ -2457,7 +2476,7 @@ function sendStart(config) {
     monitorDelay: '3000',
     retryDelay: '3000',
     proxyGroup: groupOf(t.proxyListName),
-    proxySources: sourceNamesFor(t.proxyListName),
+    proxySources: cachedProxySources(t.id, t.proxyListName),
     profileId: t.profileId || '',
     profileGroup: '',
     accountId: t.accountId || '',
@@ -2491,7 +2510,7 @@ function sendStart(config) {
       maxPriceBySku,
       priorityBySku,
       proxyListName: task.proxyListName || existing.proxyListName || '',
-      proxySources: sourceNamesFor(task.proxyListName || existing.proxyListName || ''),
+      proxySources: cachedProxySources(task.id, task.proxyListName || existing.proxyListName || ''),
     });
   }
   const watched = [...new Set(tasks.flatMap(t => t.skus))];
@@ -2873,7 +2892,7 @@ function startPokemonCenter(config = {}, mainWindow) {
     pokemonStatus('Starting', '#868686', 'launching engine', id, 1, true);
   }
   flushStartingStatuses(pokemonStatusCoalescer);
-  lastStatusKeys = {};
+  forgetStatusKeys(batch.tasks.map(task => task && task.id));
   const seq = ++pokemonStartSeq;
   ensureServer(() => {
     if (seq !== pokemonStartSeq && !batch.tasks.some(task => pokemonTaskIds.has(String(task.id)))) return;
@@ -3347,10 +3366,12 @@ function handleEngineMessage(data, connection) {
         const merged = skuTitles.mergeTitles(payload.titles || {});
         // `missing` is TCINs redsky says do not exist. Forwarded even when no NEW name arrived,
         // because a SKU going missing is exactly the case where no name ever will.
-        toRenderer('targetSkuTitles', {
-          titles: merged || skuTitles.getTitles(),
-          missing: Array.isArray(payload.missing) ? payload.missing : [],
-        });
+        const titles = merged || skuTitles.getTitles();
+        const missing = Array.isArray(payload.missing) ? payload.missing : [];
+        const next = JSON.stringify({ titles, missing });
+        if (next === lastSkuTitlePayload) break;
+        lastSkuTitlePayload = next;
+        toRenderer('targetSkuTitles', { titles, missing });
       } catch (e) { log('[target] sku names: ' + e.message); }
       break;
     }
@@ -3626,6 +3647,7 @@ function handleEngineMessage(data, connection) {
             dm.setAccountCookie(m.accountId, m.cookie);
             log('[session] saved account session (' + m.cookie.length + ' chars) — future runs skip login');
             signalFarmerSessionReady();
+            try { toRenderer('accountsUpdated', dm.getAccounts()); } catch {}
           } catch (e) { log('[session] save failed: ' + e.message); }
         }
       }
@@ -3863,8 +3885,10 @@ function startTarget(config, mainWindow) {
   for (const t of (config.tasks || [])) cancelOtpForTask(t.id, 'Target task restarted');
   // Only the tasks in this start. A sibling already running may have a pending status in the
   // coalescer; dropping everyone would swallow that update on an additive Start.
+  // Drop coalesced + last-seen keys only for this batch. Wiping every key made an additive
+  // Start All re-paint cards that were already Waiting For Restock.
+  forgetStatusKeys((config.tasks || []).map(task => task && task.id));
   for (const t of (config.tasks || [])) statusCoalescer.drop(t.id);
-  lastStatusKeys = {};   // a fresh run must re-emit first statuses even if they repeat the last ones
   // Paint Starting before proxy-list parsing. Resolving the same large list once per task was
   // enough to leave Start All blank for several seconds on Windows.
   const skuMeta = skuMetaFromItems(config.items);
@@ -4160,4 +4184,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };

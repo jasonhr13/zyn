@@ -1644,7 +1644,7 @@ ipcMain.handle('runBotScript', async (e, scriptName, args, runId) => th.runBotSc
 ipcMain.on('stopBotScript', (e, runId) => { e.returnValue = th.stopBotScript(runId); });
 
 // ── Accounts ──────────────────────────────────────────────────────────────────────
-// getAccounts never returns passwords — only a hasPassword flag. Plaintext stays in main.
+// getAccounts never returns passwords or session cookies — only hasPassword and hasSession flags.
 ipcMain.on('getAccounts', (e) => { e.returnValue = dm.getAccounts(); });
 ipcMain.on('addAccountsBulk', (e, arg) => {
   // Accepts either a bare raw string (old callers) or { raw, site } (Accounts page's per-tab add).
@@ -1727,7 +1727,7 @@ async function startGlobalMonitor() {
       const target = /target/i.test(line);
       const both = !bandai && !target;
       try {
-        if (target || both) mainWindow && mainWindow.webContents.send('targetLog', { line });
+        if (target || both) targetEngine.logMonitorLine(line);
         if (bandai || both) mainWindow && mainWindow.webContents.send('pbandaiLog', { tag: 'monitor', line });
       } catch {}
     },

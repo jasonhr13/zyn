@@ -308,7 +308,7 @@ function startPokemonCenter(config = {}, mainWindow) {
     engineTaskSites.register(id, POKEMON_SITE);
     pokemonStatus('Starting', '#868686', 'launching engine', id, 1, true);
   }
-  lastStatusKeys = {};
+  forgetStatusKeys(batch.tasks.map(task => task && task.id));
   const seq = ++pokemonStartSeq;
   ensureServer(() => {
     if (seq !== pokemonStartSeq && !batch.tasks.some(task => pokemonTaskIds.has(String(task.id)))) return;

@@ -4,16 +4,35 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 const dataDir = app.getPath('userData');
+const jsonCache = new Map();
+
+function cloneDefault(value) {
+  if (Array.isArray(value)) return value.slice();
+  if (value && typeof value === 'object') return { ...value };
+  return value;
+}
 
 function readJSON(filename, defaultVal) {
+  if (jsonCache.has(filename)) return jsonCache.get(filename);
   const file = path.join(dataDir, filename);
   try {
-    if (!fs.existsSync(file)) return defaultVal;
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch { return defaultVal; }
+    if (!fs.existsSync(file)) {
+      const empty = cloneDefault(defaultVal);
+      jsonCache.set(filename, empty);
+      return empty;
+    }
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    jsonCache.set(filename, parsed);
+    return parsed;
+  } catch {
+    const empty = cloneDefault(defaultVal);
+    jsonCache.set(filename, empty);
+    return empty;
+  }
 }
 
 function writeJSON(filename, data) {
+  jsonCache.set(filename, data);
   fs.writeFileSync(path.join(dataDir, filename), JSON.stringify(data), 'utf8');
 }
 
@@ -347,8 +366,7 @@ function getProxyLines(listName) {
 // ── Accounts (email:password, for auto-login) ───────────────────────────────────
 // Passwords are encrypted at rest with Electron safeStorage (Windows DPAPI, scoped to this
 // OS user), so accounts.json never holds a readable password. The renderer only ever gets
-// `hasPassword`; the plaintext is decrypted in main at the moment an instance is spawned,
-// and handed to the engine via env — never written to any file.
+// `hasPassword` and `hasSession`; the plaintext password and session cookie stay in main.
 function encryptSecret(plain) {
   const s = String(plain == null ? '' : plain);
   if (!s) return '';
@@ -372,9 +390,13 @@ function decryptSecret(stored) {
 
 function getAccountsRaw() { return readJSON('accounts.json', []); }
 
-// Renderer-safe view — the password never leaves the main process.
+// Renderer-safe view — password and session cookie never leave the main process.
 function getAccounts() {
-  return getAccountsRaw().map(({ password, ...rest }) => ({ ...rest, hasPassword: !!password }));
+  return getAccountsRaw().map(({ password, cookie, ...rest }) => ({
+    ...rest,
+    hasPassword: !!password,
+    hasSession: Boolean(String(cookie || '').trim()),
+  }));
 }
 
 // Main-only. Decrypt at point of use. Includes the saved Target session cookie (if any) so the

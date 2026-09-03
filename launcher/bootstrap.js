@@ -980,19 +980,18 @@ function targetTaskIds(config = {}) {
 function pushTargetRuntimeState(config, state, color, detail) {
   const ids = targetTaskIds(config);
   const payloads = ids.length ? ids : [''];
+  const updates = payloads.map(taskId => ({
+    taskId,
+    state,
+    label: state,
+    color,
+    detail,
+    running: state === 'Preparing Runtime',
+  }));
   try {
     for (const window of BrowserWindow.getAllWindows()) {
       if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
-      for (const taskId of payloads) {
-        window.webContents.send('targetStatus', {
-          taskId,
-          state,
-          label: state,
-          color,
-          detail,
-          running: state === 'Preparing Runtime',
-        });
-      }
+      window.webContents.send('targetStatusBatch', { updates });
     }
   } catch {}
 }
