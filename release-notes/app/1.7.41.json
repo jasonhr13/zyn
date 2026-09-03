@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.41",
+  "notes": [
+    "Signed in on Accounts is green when a Target session cookie is saved.",
+    "Accounts session status uses the same success green as task rows.",
+    "Accounts without a saved session still show No session in the default color."
+  ]
+}
