@@ -177,15 +177,31 @@ const dataManager = {
         String(account && account.site || '').trim().toLowerCase() || 'bandai',
         String(account && account.email || '').trim().toLowerCase(),
       ]);
-      const keys = new Set(existing.map(accountKey));
-      const additions = incoming.filter((account) => {
-        const key = accountKey(account);
-        if (keys.has(key)) return false;
-        keys.add(key);
-        return true;
-      });
-      write('accounts.json', replace ? incoming : [...existing, ...additions]);
-      summary.accounts = replace ? { set: incoming.length } : { added: additions.length };
+      if (replace) {
+        write('accounts.json', incoming);
+        summary.accounts = { set: incoming.length };
+      } else {
+        const keys = new Set(existing.map(accountKey));
+        const additions = incoming.filter((account) => {
+          const key = accountKey(account);
+          if (keys.has(key)) return false;
+          keys.add(key);
+          return true;
+        });
+        let cookies = 0;
+        for (const account of incoming) {
+          const key = accountKey(account);
+          const incomingCookie = String(account && account.cookie || '').trim();
+          if (!incomingCookie) continue;
+          const current = existing.find(row => accountKey(row) === key);
+          if (current && !String(current.cookie || '').trim()) {
+            current.cookie = incomingCookie;
+            cookies += 1;
+          }
+        }
+        write('accounts.json', [...existing, ...additions]);
+        summary.accounts = cookies ? { added: additions.length, cookies } : { added: additions.length };
+      }
     }
     if (bundle.accountGroups) write('account-groups.json', bundle.accountGroups);
     if (bundle.proxies) write('proxies.json', bundle.proxies);
@@ -257,7 +273,7 @@ function comprehensiveBundle(app = 'zyn') {
     }],
     accounts: [{
       id: 'account-new', email: 'new@example.com', password: 'new-account-password',
-      cookie: 'must-not-restore',
+      cookie: 'imported-session-cookie',
     }],
     accountGroups: { version: 1, groups: ['Imported Accounts', 'Empty Account Group'] },
     proxies: { lists: [
@@ -353,8 +369,15 @@ try {
   assert.equal(exported.settings.managedProxyLists, undefined);
   assert.equal(exported.settings.nested.sessionToken, undefined);
   assert.equal(exported.accounts[0].password, 'portable-password');
-  assert.equal(exported.accounts[0].cookie, undefined, 'site session cookie reached the cloud bundle');
+  assert.equal(exported.accounts[0].cookie, 'site-session-cookie',
+    'saved site login cookie did not reach the cloud bundle');
   assert.equal(exported.accounts[0].auth.accessToken, undefined, 'nested account session reached the cloud bundle');
+  assert.deepEqual(__test.sanitizeAccounts([{
+    id: 'keep-cookie', cookie: 'login-cookie', cookies: 'jar-must-drop',
+    auth: { accessToken: 'nested-must-drop', refreshToken: 'nested-must-drop' },
+  }]), [{
+    id: 'keep-cookie', cookie: 'login-cookie', auth: {},
+  }], 'account sanitizer dropped the login cookie or kept nested live-auth fields');
   assert.deepEqual(exported.accountGroups, initial.accountGroups);
   assert.deepEqual(exported.proxies, { lists: initial.proxies.lists });
   assert.equal(JSON.stringify(exported).includes('remote:secret'), false, 'managed proxy reached the cloud bundle');
@@ -375,6 +398,22 @@ try {
   assert.equal(adapter.importAll(multiSiteBundle, 'replace').accounts.set, 2);
   assert.deepEqual(read('accounts.json').map(account => account.id), ['same-target', 'same-bandai'],
     'same-email accounts from different sites did not survive restore');
+  resetFiles();
+  adapter = makeAdapter();
+
+  write('accounts.json', [{
+    id: 'account-current', email: 'user@example.com', password: 'enc:portable-password',
+  }]);
+  const cookieMerge = adapter.importAll({
+    app: 'zyn', kind: 'settings-export', version: 2, exportedAt: Date.now(),
+    accounts: [{
+      id: 'account-current', email: 'user@example.com', password: 'portable-password',
+      cookie: 'restored-session-cookie',
+    }],
+  }, 'merge');
+  assert.equal(cookieMerge.accounts.cookies, 1);
+  assert.equal(read('accounts.json')[0].cookie, 'restored-session-cookie',
+    'merge restore did not fill a missing saved site login cookie');
   resetFiles();
   adapter = makeAdapter();
 
@@ -444,7 +483,9 @@ try {
   assert.equal(merged.warnings.length, 1);
   assert.equal(taskGroupSyncs.at(-1).summary.skippedUnsupported, 1);
   assert.equal(baseImports.at(-1).bundle.settings, undefined);
-  assert.equal(baseImports.at(-1).bundle.accounts[0].cookie, undefined);
+  assert.equal(baseImports.at(-1).bundle.accounts[0].cookie, 'imported-session-cookie');
+  assert.equal(read('accounts.json').find(account => account.id === 'account-new').cookie,
+    'imported-session-cookie', 'merge restore dropped the saved site login cookie');
   assert.deepEqual(baseImports.at(-1).bundle.accountGroups, bundle.accountGroups);
   assert.deepEqual(baseImports.at(-1).bundle.proxies, {
     lists: [{ name: 'Imported local', raw: 'imported.example:9000:user:pass' }],
@@ -463,6 +504,8 @@ try {
   const replaced = adapter.importAll(comprehensiveBundle('zyn'), 'replace');
   assert.equal(replaced.tasks.set, 2);
   assert.equal(baseImports.at(-1).bundle.app, __test.LEGACY_APP_MARKER);
+  assert.equal(read('accounts.json').find(account => account.id === 'account-new').cookie,
+    'imported-session-cookie', 'replace restore dropped the saved site login cookie');
   const replacedSettings = read('settings.json');
   assert.equal(replacedSettings.licenseToken, 'local-license-session');
   assert.equal(replacedSettings.nested.sessionToken, 'local-nested-session');

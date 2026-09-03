@@ -34,8 +34,11 @@ const PRIVATE_SETTING_KEYS = new Set([
   'sessiontoken',
 ]);
 
+// Nested live-auth fields stay out of the portable bundle. The account `cookie` field is the
+// saved site login session and is included, same as the password, so a restore on another machine
+// can skip OTP. Shape/ATC cookie jars never live on the account object.
 const ACCOUNT_SESSION_KEYS = new Set([
-  'accesstoken', 'cookie', 'cookies', 'refreshtoken', 'session', 'sessioncookie', 'token',
+  'accesstoken', 'cookies', 'refreshtoken', 'session', 'sessioncookie', 'token',
 ]);
 
 const LIMITS = Object.freeze({

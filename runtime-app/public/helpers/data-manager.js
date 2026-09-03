@@ -687,11 +687,21 @@ function importAll(bundle, mode = 'merge') {
       };
       const have = new Set(cur.map(accountKey).filter(Boolean));
       let added = 0;
+      let cookies = 0;
       for (const a of bundle.accounts) {
         const key = accountKey(a);
-        if (key && !have.has(key)) { cur.push(enc(a)); have.add(key); added++; }
+        if (!key) continue;
+        if (!have.has(key)) { cur.push(enc(a)); have.add(key); added++; continue; }
+        const incomingCookie = String(a && a.cookie || '').trim();
+        if (!incomingCookie) continue;
+        const existing = cur.find(row => accountKey(row) === key);
+        if (existing && !String(existing.cookie || '').trim()) {
+          existing.cookie = incomingCookie;
+          cookies++;
+        }
       }
-      writeJSON('accounts.json', cur); summary.accounts = { added };
+      writeJSON('accounts.json', cur);
+      summary.accounts = cookies ? { added, cookies } : { added };
     }
   }
 

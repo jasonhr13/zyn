@@ -93,6 +93,8 @@ assert.match(dataManagerSource, /hasSession: Boolean\(String\(cookie \|\| ''\)\.
   'renderer accounts do not expose a session flag');
 assert.match(dataManagerSource, /\{ password, cookie, \.\.\.rest \}/,
   'renderer accounts still include the session cookie');
+assert.match(dataManagerSource, /existing\.cookie = incomingCookie/,
+  'merge restore does not fill a missing saved site login cookie');
 const pageHandler = fs.readFileSync(path.join(root, 'frontend/src/components/page-handler.js'), 'utf8');
 assert.match(pageHandler, /accountsUpdated/,
   'the renderer does not refresh accounts when a session cookie is saved');

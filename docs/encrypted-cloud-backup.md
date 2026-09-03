@@ -26,13 +26,14 @@ key.
 ## Data scope
 
 Encrypted revisions include local profiles and payment details, account and mailbox passwords,
-user-owned solver/API credentials, local proxy lists, settings, last-order timestamps, tasks, watchlists,
-Round1/Pokémon Center data, and supported task groups.
+saved site login cookies, user-owned solver/API credentials, local proxy lists, settings,
+last-order timestamps, tasks, watchlists, Round1/Pokémon Center data, and supported task groups.
 
-They deliberately exclude the Zyn license/session, bearer/device/observer tokens, browser session
-cookies, and server-managed proxy credentials. Profile/account credentials are exported in portable
+They deliberately exclude the Zyn license/session, bearer/device/observer tokens, and
+server-managed proxy credentials. Profile/account credentials are exported in portable
 form only inside the encrypted envelope and are passed back through their owning storage adapters on
-restore so the destination device re-encrypts them locally.
+restore so the destination device re-encrypts them locally. Saved site login cookies restore as
+plaintext on the account, matching local storage, so the next Start can reuse the session.
 
 Only Target task groups can run in the current Zyn task-group engine. Restore preview reports exact
 supported and skipped legacy groups before confirmation instead of silently claiming they were

@@ -1137,9 +1137,9 @@ class Settings extends Component {
                     neither Zyn nor anyone operating the service can restore the backup.
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--dim)', lineHeight: 1.5, marginTop: 6 }}>
-                    Includes profiles and payment details, site and mailbox passwords, user API keys,
-                    local proxy lists, settings, tasks, and task groups. Zyn account/session credentials,
-                    browser session cookies, and managed-proxy service credentials are excluded.
+                    Includes profiles and payment details, site and mailbox passwords, saved site
+                    login cookies, user API keys, local proxy lists, settings, tasks, and task groups.
+                    Zyn account/session credentials and managed-proxy service credentials are excluded.
                   </div>
                 </div>
                 {cloud.hasKey && cloud.keyConfirmed && (
