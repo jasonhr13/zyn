@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.42",
+  "notes": [
+    "Encrypted cloud backups now include saved site login cookies.",
+    "Restoring on a new machine keeps Signed in so Target can skip OTP.",
+    "Merge restore fills a missing login cookie onto an existing account.",
+    "Zyn license tokens and managed-proxy credentials stay out of backups."
+  ]
+}
