@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.44",
+  "notes": [
+    "Checkout history now shows the account and profile used for each order.",
+    "You can now search checkout history by account, product, or order number.",
+    "CSV exports now include account and profile details for each checkout.",
+    "Zyn now reports task health, such as cart attempts and Shape blocks, so checkout reliability can be monitored and tuned."
+  ]
+}
