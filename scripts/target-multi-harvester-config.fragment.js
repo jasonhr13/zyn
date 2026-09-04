@@ -11,6 +11,7 @@ function normalizedManagedHarvesterId(value, fallback = '') {
 function setManagedHarvesterRunning(command = {}) {
   const id = normalizedManagedHarvesterId(command && command.id);
   if (!id || (command.running !== true && command.running !== false)) return false;
+  if (id === 'zyn-login') return false;
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}
   const configured = Array.isArray(settings.targetHarvesters)
@@ -32,12 +33,13 @@ function managedHarvesterConfigs() {
   // A missing setting is a fresh/legacy install with no user-created harvesters. Treat it as an
   // explicit empty managed list so starting checkout cannot resurrect the retired task-owned
   // producer and consume local or proxy bandwidth without the user configuring one.
-  if (!Array.isArray(settings.targetHarvesters)) return [];
-  const configs = settings.targetHarvesters.map((raw, index) => {
-    const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+  const userList = Array.isArray(settings.targetHarvesters) ? settings.targetHarvesters : [];
+  const configs = userList.filter(raw => (raw && raw.type) !== 'login'
+    && normalizedManagedHarvesterId(raw && raw.id) !== 'zyn-login').map((raw, index) => {
+    const type = ['atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
     const engine = String((raw && raw.engine) || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
     const route = String((raw && raw.proxyListName) || '');
-    const workerCap = type === 'login' ? 1 : (route ? 100 : 2);
+    const workerCap = route ? 100 : 2;
     const requestedWorkers = Math.max(1, Math.min(workerCap, parseInt(raw && raw.workers, 10) || 1));
     const id = normalizedManagedHarvesterId(raw && raw.id, `harvester-${index + 1}`);
     return {
@@ -59,7 +61,31 @@ function managedHarvesterConfigs() {
       enabled: explicitlyStartedHarvesterIds.has(id),
     };
   }).filter(config => config.id);
+  if (explicitlyStartedHarvesterIds.has('zyn-login')) {
+    const loginRaw = (settings.targetLoginHarvester && typeof settings.targetLoginHarvester === 'object')
+      ? settings.targetLoginHarvester
+      : (userList.find(item => item && item.type === 'login') || {});
+    const loginRoute = String(loginRaw.proxyListName || '');
+    configs.push({
+      id: 'zyn-login',
+      name: 'Login',
+      type: 'login',
+      engine: 'playwright',
+      atcMode: 'v1',
+      browser: 'auto',
+      proxyListName: loginRoute,
+      workers: 1,
+      input: '',
+      cookieTtlSec: Math.max(30, Math.min(86400, parseInt(loginRaw.cookieTtlSec, 10) || 600)),
+      intervalDelaySec: Math.max(0, Math.min(3600, parseInt(loginRaw.intervalDelaySec, 10) || 0)),
+      loadsPerBrowser: Math.max(1, Math.min(10, parseInt(loginRaw.loadsPerBrowser, 10) || 3)),
+      startSchedule: '',
+      stopSchedule: '',
+      enabled: true,
+    });
+  }
   const configuredIds = new Set(configs.map(config => config.id));
+  configuredIds.add('zyn-login');
   for (const id of [...explicitlyStartedHarvesterIds]) {
     if (!configuredIds.has(id)) explicitlyStartedHarvesterIds.delete(id);
   }

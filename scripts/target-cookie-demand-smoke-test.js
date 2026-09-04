@@ -59,9 +59,9 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(`${source}\n;globalThis.__demandApi = {
-  targetCookieDemand, setTargetCookieStandbyTasks, acceptTargetCookieTasks,
-  releaseTargetCookieTask, clearTargetCookieTasks, syncTargetCookieBankDemand,
-  setTargetHarvestAuthorized,
+  targetCookieDemand, setTargetCookieStandbyTasks, setTargetLoginDemandTasks,
+  acceptTargetCookieTasks, releaseTargetCookieTask, clearTargetCookieTasks,
+  syncTargetCookieBankDemand, setTargetHarvestAuthorized,
 };`, context, { filename: 'target-cookie-demand.fragment.js' });
 const api = context.__demandApi;
 
@@ -76,7 +76,7 @@ assert.equal(requests.length, 0, 'standby bootstrap must not publish before auth
 api.setTargetHarvestAuthorized(true);
 assert.deepEqual(JSON.parse(JSON.stringify(api.targetCookieDemand())), {
   mode: 'per-task', basis: 'standby', activeTasks: 0, standbyTasks: 5, effectiveTasks: 5,
-  atcPerTask: 3, targets: { login: 5, atc: 15 },
+  atcPerTask: 3, targets: { login: 0, atc: 15 },
 });
 
 api.setTargetCookieStandbyTasks('task-groups', 5);
@@ -87,6 +87,11 @@ api.acceptTargetCookieTasks([{ id: 'a' }, { id: 'a' }, { id: 'b' }]);
 assert.equal(api.targetCookieDemand().basis, 'active');
 assert.equal(api.targetCookieDemand().activeTasks, 2, 'duplicate starts must not inflate demand');
 assert.equal(api.targetCookieDemand().targets.atc, 6, 'active tasks override standby while a run exists');
+assert.equal(api.targetCookieDemand().targets.login, 0, 'ATC demand must not start login harvesting');
+api.setTargetLoginDemandTasks(['a', 'b', 'b']);
+assert.equal(api.targetCookieDemand().targets.login, 2, 'login demand follows tasks that need a sign-in');
+api.setTargetLoginDemandTasks([]);
+assert.equal(api.targetCookieDemand().targets.login, 0, 'login demand must drop when sign-in waits end');
 
 settings.targetAtcCookiesPerTask = '4';
 api.syncTargetCookieBankDemand();
@@ -120,7 +125,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(api.targetCookieDemand().targets)), {
 assert.equal(api.targetCookieDemand().basis, 'paused');
 assert.deepEqual(stoppedProducers, ['managed-atc'], 'revocation must stop every managed producer');
 assert.deepEqual(JSON.parse(requests.at(-1).body), {
-  basis: 'paused', activeTasks: 0, standbyTasks: 5, atcPerTask: 4,
+  basis: 'paused', activeTasks: 0, standbyTasks: 5, atcPerTask: 4, loginTasks: 0,
 }, 'revocation must push an explicit paused target to an existing broker');
 
 const ensuredBeforeReauthorize = ensured;
@@ -147,7 +152,7 @@ assert.ok(requests.length > 0, 'demand was never published');
 const last = requests.at(-1);
 assert.equal(last.options.path, '/demand');
 assert.equal(last.options.headers['x-zyn-token'], 'smoke-token');
-assert.deepEqual(JSON.parse(last.body), { basis: 'paused', activeTasks: 0, standbyTasks: 0, atcPerTask: 4 });
+assert.deepEqual(JSON.parse(last.body), { basis: 'paused', activeTasks: 0, standbyTasks: 0, atcPerTask: 4, loginTasks: 0 });
 assert.doesNotMatch(last.body, /legacy-a|legacy-b|"a"|"b"/, 'task ids must never leave the bridge');
 
 console.log('Target dynamic cookie demand transitions and authenticated publication passed');

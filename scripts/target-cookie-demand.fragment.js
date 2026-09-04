@@ -14,6 +14,7 @@ let targetHarvestAuthorized = false;
 let targetCookieDemandRetryTimer = null;
 let targetCookieDemandInFlight = false;
 let lastTargetCookieDemandKey = '';
+const targetLoginDemandTaskIds = new Set();
 
 function normalizeTargetCookieTaskCount(value) {
   const parsed = Number.parseInt(String(value == null ? '' : value), 10);
@@ -56,9 +57,9 @@ function targetCookieDemand() {
     effectiveTasks,
     atcPerTask,
     targets: {
-      // A login Shape signature is consumed when a task must establish or recover its Target
-      // session. ATC is the hot path and receives the operator-selected reserve per task.
-      login: effectiveTasks,
+      // Login Shape signatures are only needed while a running task is signing in or recovering
+      // a session. Standby ATC prefarm must not keep a login producer alive.
+      login: basis === 'paused' ? 0 : Math.min(TARGET_COOKIE_TASK_MAX, targetLoginDemandTaskIds.size),
       atc: effectiveTasks > 0 && atcPerTask === 0
         ? null
         : Math.min(TARGET_COOKIE_TOTAL_MAX, effectiveTasks * atcPerTask),
@@ -88,6 +89,7 @@ function publishTargetCookieDemand() {
     activeTasks: demand.activeTasks,
     standbyTasks: demand.standbyTasks,
     atcPerTask: demand.atcPerTask,
+    loginTasks: demand.targets.login,
   });
   targetCookieDemandInFlight = true;
   const req = http.request({
@@ -153,6 +155,26 @@ function setTargetCookieStandbyTasks(source, count) {
   const normalized = normalizeTargetCookieTaskCount(count);
   targetCookieStandbySources.set(name, normalized);
   return syncTargetCookieBankDemand();
+}
+
+function setTargetLoginDemandTasks(ids) {
+  const next = new Set();
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const value = String(id || '');
+    if (value) next.add(value);
+  }
+  let changed = next.size !== targetLoginDemandTaskIds.size;
+  if (!changed) {
+    for (const id of next) {
+      if (!targetLoginDemandTaskIds.has(id)) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  targetLoginDemandTaskIds.clear();
+  for (const id of next) targetLoginDemandTaskIds.add(id);
+  return changed ? syncTargetCookieBankDemand() : targetCookieDemand();
 }
 
 function acceptTargetCookieTasks(tasks) {

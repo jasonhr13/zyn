@@ -55,8 +55,11 @@ export function createBankDemand({ legacyPool = 0 } = {}) {
       const effectiveTasks = basis === 'paused'
         ? 0
         : basis === 'standby' ? standbyTasks : activeTasks;
+      const loginTasks = input.loginTasks === undefined || input.loginTasks === null || input.loginTasks === ''
+        ? effectiveTasks
+        : clampInteger(input.loginTasks, 0, MAX_DYNAMIC_ACTIVE_TASKS, 'loginTasks');
       targets = {
-        login: Math.min(effectiveTasks, MAX_DYNAMIC_COOKIE_TARGET),
+        login: basis === 'paused' ? 0 : Math.min(loginTasks, MAX_DYNAMIC_COOKIE_TARGET),
         // Zero is the explicit user-facing "no limit" sentinel. Paused demand remains a real zero
         // so signing out or stopping every task always parks prewarm workers.
         atc: effectiveTasks > 0 && atcPerTask === 0
@@ -64,7 +67,7 @@ export function createBankDemand({ legacyPool = 0 } = {}) {
           : Math.min(effectiveTasks * atcPerTask, MAX_DYNAMIC_COOKIE_TARGET),
       };
       demand = {
-        mode: 'per-task', basis, activeTasks, standbyTasks, effectiveTasks, atcPerTask,
+        mode: 'per-task', basis, activeTasks, standbyTasks, effectiveTasks, atcPerTask, loginTasks,
         targets: { ...targets },
       };
       return snapshot();

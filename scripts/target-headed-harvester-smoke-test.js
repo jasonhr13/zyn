@@ -44,8 +44,10 @@ assert.doesNotMatch(styles, /\.modal \{[\s\S]{0,280}transform: translateZ\(0\)/,
 assert.match(styles, /\.inline-select-menu \{[\s\S]*z-index: 1100/);
 
 assert.match(config, /=== 'patchright' \? 'patchright' : 'playwright'/);
-assert.match(config, /type === 'login' \? 1 : \(route \? 100 : 2\)/);
-assert.match(engine, /type === 'login' \? 1 : \(route \? 100 : 2\)/);
+assert.match(config, /id: 'zyn-login'/);
+assert.match(config, /workers: 1,/);
+assert.match(engine, /LOGIN_HARVESTER_ID/);
+assert.match(engine, /buildTargetLoginHarvesterConfig/);
 assert.match(harvestEngine, /return proxyListName \? 100 : 2;/);
 assert.match(farmer, /const engineCap = MAX_FARMER_WORKERS;/);
 assert.doesNotMatch(ui, /capped at 2 local workers or 8/);

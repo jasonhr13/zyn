@@ -79,7 +79,7 @@ export function createHarvestCoordinator({
     if (type === 'atc' && allowed.has(type)) {
       prewarm = true;
     } else if (type === 'login' && allowed.has(type) && continuousLogin) {
-      // A dedicated Target Login harvester is an operator-selected producer lane, not the automatic
+      // A dedicated Target Login harvester is an automatic producer lane, not the automatic
       // farmer's one-shot cold-login helper. Keep its login bank topped up while still enforcing a
       // single in-flight login browser.
       prewarm = true;

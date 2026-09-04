@@ -40,6 +40,14 @@ const {
 } = require('./proxy-resolve');
 const { createStatusCoalescer, STATUS_FLUSH_MS } = require('./status-coalesce');
 const { engineInfoFrom } = require('./engine-version');
+const {
+  LOGIN_HARVESTER_ID,
+  LOGIN_HARVESTER_STOP_DELAY_MS,
+  buildTargetLoginHarvesterConfig,
+  loginStatusNeedsHarvester,
+  loginStatusClearsHarvester,
+  loginHarvesterShouldRun,
+} = require('./target-login-harvester');
 
 // IMAP belongs to the profile selected for this task. request-code normally carries taskID; email
 // matching remains a fallback for older engine messages that only identify the account address.
@@ -95,6 +103,7 @@ function emitOtpPending() {
       message: p.message || 'Preparing automatic email lookup…',
     })),
   });
+  scheduleLoginHarvesterReconcile();
 }
 
 function updateOtpPending(key, patch) {
@@ -688,6 +697,10 @@ const status = (state, color, detail, taskId = '', taskState, running) => {
     taskState: typeof taskState === 'number' ? taskState : undefined,
     running: typeof running === 'boolean' ? running : undefined,
   }, { immediate: running === false });
+  if (id) {
+    if (running === false) releaseLoginHarvesterTask(id);
+    else noteLoginHarvesterTaskStatus(id, { state, detail, running });
+  }
 };
 const flushStartingStatuses = coalescer => {
   if (coalescer && typeof coalescer.flushNow === 'function') coalescer.flushNow();
@@ -866,6 +879,7 @@ function normalizedManagedHarvesterId(value, fallback = '') {
 function setManagedHarvesterRunning(command = {}) {
   const id = normalizedManagedHarvesterId(command && command.id);
   if (!id || (command.running !== true && command.running !== false)) return false;
+  if (id === LOGIN_HARVESTER_ID) return false;
   let settings = {};
   try { settings = dm.getSettings() || {}; } catch {}
   const configured = Array.isArray(settings.targetHarvesters)
@@ -887,12 +901,13 @@ function managedHarvesterConfigs() {
   // A missing setting is a fresh/legacy install with no user-created harvesters. Treat it as an
   // explicit empty managed list so starting checkout cannot resurrect the retired task-owned
   // producer and consume local or proxy bandwidth without the user configuring one.
-  if (!Array.isArray(settings.targetHarvesters)) return [];
-  const configs = settings.targetHarvesters.map((raw, index) => {
-    const type = ['login', 'atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
+  const userList = Array.isArray(settings.targetHarvesters) ? settings.targetHarvesters : [];
+  const configs = userList.filter(raw => (raw && raw.type) !== 'login'
+    && normalizedManagedHarvesterId(raw && raw.id) !== LOGIN_HARVESTER_ID).map((raw, index) => {
+    const type = ['atc', 'auto'].includes(raw && raw.type) ? raw.type : 'auto';
     const engine = String((raw && raw.engine) || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
     const route = String((raw && raw.proxyListName) || '');
-    const workerCap = type === 'login' ? 1 : (route ? 100 : 2);
+    const workerCap = route ? 100 : 2;
     const requestedWorkers = Math.max(1, Math.min(workerCap, parseInt(raw && raw.workers, 10) || 1));
     const id = normalizedManagedHarvesterId(raw && raw.id, `harvester-${index + 1}`);
     return {
@@ -914,7 +929,11 @@ function managedHarvesterConfigs() {
       enabled: explicitlyStartedHarvesterIds.has(id),
     };
   }).filter(config => config.id);
+  if (explicitlyStartedHarvesterIds.has(LOGIN_HARVESTER_ID)) {
+    configs.push(buildTargetLoginHarvesterConfig(settings, true));
+  }
   const configuredIds = new Set(configs.map(config => config.id));
+  configuredIds.add(LOGIN_HARVESTER_ID);
   for (const id of [...explicitlyStartedHarvesterIds]) {
     if (!configuredIds.has(id)) explicitlyStartedHarvesterIds.delete(id);
   }
@@ -928,6 +947,178 @@ function harvesterScheduleActive(config, now = Date.now()) {
   if (Number.isFinite(startsAt) && now < startsAt) return false;
   if (Number.isFinite(stopsAt) && now >= stopsAt) return false;
   return true;
+}
+
+const loginLatchedTaskIds = new Set();
+const lastTargetTaskStatusText = new Map();
+let loginHarvesterStopTimer = null;
+let loginHarvesterReconcileTimer = null;
+
+function accountHasSavedSession(accountId) {
+  try {
+    const accounts = dm.getAccounts() || [];
+    const account = accounts.find(item => String(item && item.id) === String(accountId || ''));
+    return Boolean(account && account.hasSession);
+  } catch {
+    return false;
+  }
+}
+
+function otpPendingNeedsLoginHarvester() {
+  if (!otpPending.size) return false;
+  for (const entry of otpPending.values()) {
+    const taskId = String((entry && entry.taskId) || '');
+    if (taskId && runningTaskIds.has(taskId)) return true;
+    const waiters = entry && entry.waiters;
+    if (waiters) {
+      for (const id of waiters) {
+        if (runningTaskIds.has(String(id))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function runningTasksNeedingLogin() {
+  const ids = [];
+  const seen = new Set();
+  const add = (id) => {
+    const value = String(id || '');
+    if (!value || seen.has(value) || !runningTaskIds.has(value)) return;
+    seen.add(value);
+    ids.push(value);
+  };
+  for (const id of runningTaskIds) {
+    if (loginLatchedTaskIds.has(id) || loginStatusNeedsHarvester(lastTargetTaskStatusText.get(id))) {
+      add(id);
+    }
+  }
+  for (const entry of otpPending.values()) {
+    add(entry && entry.taskId);
+    if (entry && entry.waiters) {
+      for (const id of entry.waiters) add(id);
+    }
+  }
+  return ids;
+}
+
+function setLoginHarvesterRunning(running) {
+  const next = running === true;
+  const current = explicitlyStartedHarvesterIds.has(LOGIN_HARVESTER_ID);
+  if (next === current) return false;
+  if (next) explicitlyStartedHarvesterIds.add(LOGIN_HARVESTER_ID);
+  else explicitlyStartedHarvesterIds.delete(LOGIN_HARVESTER_ID);
+  return true;
+}
+
+function loginHarvesterDemandState() {
+  return {
+    authorized: targetHarvestAuthorized,
+    runningTaskIds,
+    latchedTaskIds: loginLatchedTaskIds,
+    otpPending: otpPendingNeedsLoginHarvester(),
+    statuses: lastTargetTaskStatusText,
+  };
+}
+
+function reconcileLoginHarvester() {
+  if (loginHarvesterReconcileTimer) {
+    clearTimeout(loginHarvesterReconcileTimer);
+    loginHarvesterReconcileTimer = null;
+  }
+  if (quitting) {
+    clearLoginHarvesterState();
+    return;
+  }
+  const neededIds = runningTasksNeedingLogin();
+  let demandChanged = neededIds.length !== targetLoginDemandTaskIds.size;
+  if (!demandChanged) {
+    for (const id of neededIds) {
+      if (!targetLoginDemandTaskIds.has(id)) {
+        demandChanged = true;
+        break;
+      }
+    }
+  }
+  targetLoginDemandTaskIds.clear();
+  for (const id of neededIds) targetLoginDemandTaskIds.add(id);
+  if (demandChanged) syncTargetCookieBankDemand();
+
+  const needed = loginHarvesterShouldRun(loginHarvesterDemandState());
+  if (needed) {
+    if (loginHarvesterStopTimer) {
+      clearTimeout(loginHarvesterStopTimer);
+      loginHarvesterStopTimer = null;
+    }
+    if (setLoginHarvesterRunning(true)) {
+      log('[target] starting login harvester — tasks need a Target sign-in');
+    }
+    ensureHarvesterBroker();
+    return;
+  }
+
+  if (!explicitlyStartedHarvesterIds.has(LOGIN_HARVESTER_ID)) return;
+  if (loginHarvesterStopTimer) return;
+  loginHarvesterStopTimer = setTimeout(() => {
+    loginHarvesterStopTimer = null;
+    if (loginHarvesterShouldRun(loginHarvesterDemandState())) {
+      reconcileLoginHarvester();
+      return;
+    }
+    if (setLoginHarvesterRunning(false)) {
+      log('[target] stopping login harvester — no tasks waiting for sign-in');
+    }
+    syncHarvesterProducers();
+  }, LOGIN_HARVESTER_STOP_DELAY_MS);
+  loginHarvesterStopTimer.unref?.();
+}
+
+function scheduleLoginHarvesterReconcile() {
+  if (loginHarvesterReconcileTimer) return;
+  loginHarvesterReconcileTimer = setTimeout(() => {
+    loginHarvesterReconcileTimer = null;
+    reconcileLoginHarvester();
+  }, 50);
+  loginHarvesterReconcileTimer.unref?.();
+}
+
+function latchLoginHarvesterForTasks(tasks) {
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    const id = String((task && task.id) || '');
+    if (!id) continue;
+    if (!accountHasSavedSession(task.accountId)) loginLatchedTaskIds.add(id);
+  }
+  scheduleLoginHarvesterReconcile();
+}
+
+function releaseLoginHarvesterTask(taskId) {
+  const id = String(taskId || '');
+  if (!id) return;
+  loginLatchedTaskIds.delete(id);
+  lastTargetTaskStatusText.delete(id);
+  scheduleLoginHarvesterReconcile();
+}
+
+function noteLoginHarvesterTaskStatus(taskId, status) {
+  const id = String(taskId || '');
+  if (!id) return;
+  const text = [status && status.state, status && status.label, status && status.detail]
+    .filter(Boolean).join(' ');
+  lastTargetTaskStatusText.set(id, text);
+  if (loginStatusClearsHarvester(text)) loginLatchedTaskIds.delete(id);
+  scheduleLoginHarvesterReconcile();
+}
+
+function clearLoginHarvesterState() {
+  if (loginHarvesterStopTimer) {
+    clearTimeout(loginHarvesterStopTimer);
+    loginHarvesterStopTimer = null;
+  }
+  if (loginHarvesterReconcileTimer) {
+    clearTimeout(loginHarvesterReconcileTimer);
+    loginHarvesterReconcileTimer = null;
+  }
+  explicitlyStartedHarvesterIds.delete(LOGIN_HARVESTER_ID);
 }
 
 function managedHarvesterMode() { return managedHarvesterConfigs() !== null; }
@@ -995,6 +1186,7 @@ let targetHarvestAuthorized = false;
 let targetCookieDemandRetryTimer = null;
 let targetCookieDemandInFlight = false;
 let lastTargetCookieDemandKey = '';
+const targetLoginDemandTaskIds = new Set();
 
 function normalizeTargetCookieTaskCount(value) {
   const parsed = Number.parseInt(String(value == null ? '' : value), 10);
@@ -1037,9 +1229,9 @@ function targetCookieDemand() {
     effectiveTasks,
     atcPerTask,
     targets: {
-      // A login Shape signature is consumed when a task must establish or recover its Target
-      // session. ATC is the hot path and receives the operator-selected reserve per task.
-      login: effectiveTasks,
+      // Login Shape signatures are only needed while a running task is signing in or recovering
+      // a session. Standby ATC prefarm must not keep a login producer alive.
+      login: basis === 'paused' ? 0 : Math.min(TARGET_COOKIE_TASK_MAX, targetLoginDemandTaskIds.size),
       atc: effectiveTasks > 0 && atcPerTask === 0
         ? null
         : Math.min(TARGET_COOKIE_TOTAL_MAX, effectiveTasks * atcPerTask),
@@ -1069,6 +1261,7 @@ function publishTargetCookieDemand() {
     activeTasks: demand.activeTasks,
     standbyTasks: demand.standbyTasks,
     atcPerTask: demand.atcPerTask,
+    loginTasks: demand.targets.login,
   });
   targetCookieDemandInFlight = true;
   const req = http.request({
@@ -1120,13 +1313,16 @@ function setTargetHarvestAuthorized(authorized) {
   targetHarvestAuthorized = next;
   lastTargetCookieDemandKey = '';
   if (!next) {
+    clearLoginHarvesterState();
     // stopHarvesterProducer deletes before killing, so each child's exit callback cannot resurrect
     // itself; its delayed ensureHarvesterBroker call also observes this closed latch.
     for (const id of [...harvesterProcs.keys()]) stopHarvesterProducer(id);
     if (!farmerProc && targetCookieDemandRetryTimer) clearTimeout(targetCookieDemandRetryTimer);
     if (!farmerProc) targetCookieDemandRetryTimer = null;
   }
-  return syncTargetCookieBankDemand();
+  const demand = syncTargetCookieBankDemand();
+  if (next) scheduleLoginHarvesterReconcile();
+  return demand;
 }
 
 function setTargetCookieStandbyTasks(source, count) {
@@ -1855,10 +2051,12 @@ function syncTargetHarvesters(mainWindow, runCommand = null) {
   if (mainWindow) attachWindow(mainWindow);
   // Reconciliation alone never grants permission to start. Only the renderer's explicit Start or
   // Stop action sends a validated command; all other callers merely apply configuration changes to
-  // harvesters already authorized during this app session.
+  // harvesters already authorized during this app session. The login harvester is the exception:
+  // checkout demand arms it, never a Start click.
   if (runCommand && typeof runCommand === 'object') setManagedHarvesterRunning(runCommand);
   ensureHarvesterBroker();
   syncTargetCookieBankDemand();
+  scheduleLoginHarvesterReconcile();
   return true;
 }
 
@@ -3437,6 +3635,7 @@ function handleEngineMessage(data, connection) {
           taskCheckoutConfigById.delete(id);
           taskAccountById.delete(id);
           releaseTargetCookieTask(id);
+          releaseLoginHarvesterTask(id);
           taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
           if (targetMainMonitorRunning || !runningTaskIds.size) reconcileTargetMainMonitor();
         }
@@ -3902,6 +4101,7 @@ function startTarget(config, mainWindow) {
     taskProfileById.set(t.id, t.profileId || '');
     status('Starting', '#868686', 'launching engine', t.id, 1, true);
   }
+  latchLoginHarvesterForTasks(config.tasks);
   flushStartingStatuses(statusCoalescer);
   const proxySourcesByRef = new Map();
   for (const t of (config.tasks || [])) {
@@ -3984,6 +4184,7 @@ function releaseStoppedTargetTask(id) {
   cancelOtpForTask(id);
   manualCaptchaManager.cancelTask(id);
   statusCoalescer.drop(id);
+  releaseLoginHarvesterTask(id);
 }
 
 function stopTarget(taskId) {
@@ -4026,6 +4227,9 @@ function stopTarget(taskId) {
     toRenderer('targetDone', { taskId: id });
   }
   runningTaskIds.clear();
+  loginLatchedTaskIds.clear();
+  lastTargetTaskStatusText.clear();
+  clearLoginHarvesterState();
   clearTargetCookieTasks();
   taskCheckoutConfigById.clear();
   toRenderer('targetDone', { taskId: '' });
@@ -4056,6 +4260,7 @@ function shutdown() {
   try { stopWalmart(); } catch {}
   try { stopTarget(); } catch {}
   try { stopPokemonCenter(); } catch {}
+  clearLoginHarvesterState();
   if (targetCookieDemandRetryTimer) clearTimeout(targetCookieDemandRetryTimer);
   targetCookieDemandRetryTimer = null;
   if (harvesterSyncTimer) clearInterval(harvesterSyncTimer);

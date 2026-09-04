@@ -120,7 +120,7 @@ try {
   assert.equal(update.status, 200);
   assert.deepEqual(update.body.demand, {
     mode: 'per-task', basis: 'active', activeTasks: 2, standbyTasks: 6,
-    effectiveTasks: 2, atcPerTask: 3, targets: { login: 2, atc: 6 },
+    effectiveTasks: 2, atcPerTask: 3, loginTasks: 2, targets: { login: 2, atc: 6 },
   });
   const mirrored = await waitFor(async () => {
     const status = (await request(port, 'GET', '/status')).body;
@@ -147,7 +147,7 @@ try {
   assert.equal(downscaled.pools.atc, 6, 'downscaling must preserve valid cookies already in the bank');
   assert.deepEqual(downscaled.demand, {
     mode: 'per-task', basis: 'active', activeTasks: 1, standbyTasks: 6,
-    effectiveTasks: 1, atcPerTask: 2, targets: { login: 1, atc: 2 },
+    effectiveTasks: 1, atcPerTask: 2, loginTasks: 1, targets: { login: 1, atc: 2 },
   });
   const parked = await request(port, 'POST', '/saveCookies', { type: 'atc', headers, proxy: '' }, true);
   assert.equal(parked.body.saved, 0, 'new prewarm work is rejected while an over-target bank drains');

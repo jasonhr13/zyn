@@ -1040,6 +1040,75 @@ body.theme-night .form-select {
 .task-metric-success .task-metric-icon { color: var(--ok); background: var(--ok-soft); border-color: rgba(101,214,166,.18); }
 .task-metric-error .task-metric-icon { color: var(--danger); background: var(--danger-soft); border-color: rgba(255,123,131,.18); }
 
+.target-login-harvester {
+  margin-bottom: 18px;
+  padding: 14px 16px 15px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+.target-login-harvester-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 12px;
+  margin-bottom: 12px;
+}
+.target-login-harvester-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--text2);
+  background: var(--idle-soft);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+}
+.target-login-harvester-running .target-login-harvester-icon {
+  color: var(--info);
+  background: var(--info-soft);
+  border-color: rgba(119,174,247,.18);
+}
+.target-login-harvester-error .target-login-harvester-icon {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(255,123,131,.18);
+}
+.target-login-harvester-head h2 { color: var(--text); font-size: 13px; font-weight: 720; }
+.target-login-harvester-head p { margin-top: 3px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.target-login-harvester-fields {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+}
+.target-login-harvester-fields .form-group { margin-bottom: 0; }
+.target-login-harvester-compact {
+  margin: 0 0 12px;
+  padding: 11px 12px 12px;
+  background: var(--panel-bg-alt);
+  box-shadow: none;
+}
+.target-login-harvester-compact .target-login-harvester-head {
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  margin-bottom: 10px;
+}
+.target-login-harvester-compact .target-login-harvester-icon { width: 26px; height: 26px; }
+.target-login-harvester-compact .target-login-harvester-head h2 { font-size: 12px; }
+.target-login-harvester-compact .target-login-harvester-head p {
+  overflow: hidden;
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.target-login-harvester-compact .target-login-harvester-fields {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+@media (max-width: 980px) {
+  .target-login-harvester-fields { grid-template-columns: 1fr 1fr; }
+}
+
 .workspace-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .workspace-section-heading h2,
 .group-task-toolbar h2 { color: var(--text); font-size: 14px; font-weight: 720; }

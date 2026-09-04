@@ -427,7 +427,7 @@ assert.match(taskGroups, /Set 0 for no bank limit/);
 assert.doesNotMatch(taskGroups, /max="20"/);
 assert.match(taskGroups, /min="0"/);
 assert.match(taskGroups, /bank\.atcTargetLabel/);
-assert.match(taskGroups, /const availableHarvesters = this\.state\.harvesters\.map\(harvester =>[\s\S]{0,180}enabled: false/,
+assert.match(taskGroups, /const availableHarvesters = userHarvesters\.map\(harvester =>[\s\S]{0,180}enabled: false/,
   'main bank summary must not count harvesters whose proxy group is unavailable');
 assert.match(taskGroups, /syncTargetHarvesters/);
 assert.match(taskGroups, /bank\.atcTarget/);

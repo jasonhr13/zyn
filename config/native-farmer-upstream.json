@@ -29,12 +29,12 @@
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
-      "sha256": "86068d7450a3be28837e21d9f9cadd4bdcca08c940b6b9886a87bab3a7da7cd6",
-      "adaptation": "Dedicated Target Login harvesters continuously replenish their login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
+      "sha256": "d938aab1ab8390843cc73c29931cc5192ec46b73b315781bed216298149c6224",
+      "adaptation": "The automatic Target Login harvester continuously replenishes its login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
     },
     "shape-bank-demand.mjs": {
-      "sha256": "5ebf6c7f64b6614e938cd813939bb7872c47804ca106c3691ff5fb4e376a86c6",
-      "adaptation": "Authenticated active/standby Target task demand translated into separate Login and ATC bank targets, including an explicit uncapped ATC mode, without discarding valid over-target cookies."
+      "sha256": "3f11b7b17855d8605bf39905de954c656881b78d5ad4dea0bf78063d68833622",
+      "adaptation": "Authenticated active/standby Target task demand translated into separate Login and ATC bank targets, including an explicit login-task count so standby ATC prefarm does not keep a login producer alive, plus uncapped ATC mode, without discarding valid over-target cookies."
     },
     "shape-harvest-health.mjs": {
       "sha256": "41188ab05c16518f6ea81b3779049be3aa70527e0ba063f02af305c2cbc9c7ea",

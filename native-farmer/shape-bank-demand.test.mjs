@@ -19,13 +19,19 @@ assert.deepEqual(dynamic.apply({
 }), {
   demand: {
     mode: 'per-task', basis: 'active', activeTasks: 7, standbyTasks: 12,
-    effectiveTasks: 7, atcPerTask: 3, targets: { login: 7, atc: 21 },
+    effectiveTasks: 7, atcPerTask: 3, loginTasks: 7, targets: { login: 7, atc: 21 },
   },
   targets: { login: 7, atc: 21 },
 });
 assert.equal(dynamic.accepts('atc', 20), true);
 assert.equal(dynamic.accepts('atc', 21), false);
 assert.equal(dynamic.accepts('atc', 200, true), true, 'live waiters bypass the prewarm target');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 7, standbyTasks: 12, atcPerTask: 3, basis: 'active', loginTasks: 2,
+}).targets, { login: 2, atc: 21 }, 'login demand can be narrower than active checkout tasks');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 0, standbyTasks: 9, atcPerTask: 4, loginTasks: 0,
+}).targets, { login: 0, atc: 36 }, 'standby ATC prefarm must not imply login harvesting');
 
 const aboveLegacyCap = dynamic.apply({
   activeTasks: 2, standbyTasks: 0, atcPerTask: 75, basis: 'active',

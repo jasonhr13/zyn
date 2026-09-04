@@ -78,6 +78,23 @@ const EMPTY_HARVESTER = Object.freeze({
   enabled: false,
 });
 
+const LOGIN_HARVESTER_ID = 'zyn-login';
+const EMPTY_LOGIN_HARVESTER = Object.freeze({
+  proxyListName: '',
+  cookieTtlSec: '600',
+  intervalDelaySec: '10',
+  loadsPerBrowser: '3',
+});
+const normalizeLoginHarvester = raw => ({
+  proxyListName: String((raw && raw.proxyListName) || ''),
+  cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
+  intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
+  loadsPerBrowser: clampInteger(raw && raw.loadsPerBrowser, 1, 10, 3),
+});
+const isUserHarvester = harvester => harvester
+  && harvester.type !== 'login'
+  && String(harvester.id) !== LOGIN_HARVESTER_ID;
+
 const HARVESTER_ENGINES = [
   ['playwright', 'Default'],
   ['patchright', 'Experimental'],
@@ -577,6 +594,7 @@ class TaskGroups extends Component {
     brokerStartRequestedAt: 0,
     atcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK),
     harvesters: [],
+    loginHarvester: { ...EMPTY_LOGIN_HARVESTER },
     harvesterDrawerOpen: initialHarvesterDrawerOpen(),
     showHarvesterModal: false,
     editingHarvesterId: '',
@@ -620,19 +638,30 @@ class TaskGroups extends Component {
     let groups = [];
     let atcCookiesPerTask = String(DEFAULT_ATC_COOKIES_PER_TASK);
     let harvesters = [];
+    let loginHarvester = { ...EMPTY_LOGIN_HARVESTER };
     let migratedSettings = null;
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
     try {
       const settings = ipcRenderer.sendSync('getSettings') || {};
       atcCookiesPerTask = normalizeAtcCookiesPerTask(settings.targetAtcCookiesPerTask);
+      loginHarvester = normalizeLoginHarvester(settings.targetLoginHarvester);
       if (Array.isArray(settings.targetHarvesters)) {
-        harvesters = settings.targetHarvesters.map(normalizeHarvester);
+        const raw = settings.targetHarvesters.map(normalizeHarvester);
+        const leftoverLogin = raw.find(item => !isUserHarvester(item));
+        harvesters = raw.filter(isUserHarvester);
+        if (!settings.targetLoginHarvester && leftoverLogin) {
+          loginHarvester = normalizeLoginHarvester(leftoverLogin);
+        }
+        if (raw.length !== harvesters.length || !settings.targetLoginHarvester) {
+          migratedSettings = { ...settings, targetHarvesters: harvesters, targetLoginHarvester: loginHarvester };
+          ipcRenderer.sendSync('saveSettings', migratedSettings);
+        }
       } else {
         // Absence means exactly that: the user has not created a harvester. Persist an explicit
         // empty list so neither a fresh install nor an older settings file can fall through to the
         // retired task-owned farmer and begin using bandwidth merely because a task was added.
         harvesters = [];
-        migratedSettings = { ...settings, targetHarvesters: harvesters };
+        migratedSettings = { ...settings, targetHarvesters: harvesters, targetLoginHarvester: loginHarvester };
         ipcRenderer.sendSync('saveSettings', migratedSettings);
       }
     } catch {}
@@ -645,6 +674,7 @@ class TaskGroups extends Component {
       loaded: true,
       atcCookiesPerTask,
       harvesters,
+      loginHarvester,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
       selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
         ? selectedTaskId : '',
@@ -686,7 +716,7 @@ class TaskGroups extends Component {
   };
 
   persistHarvesters = (harvesters, callback, runCommand = null) => {
-    const normalized = harvesters.map(normalizeHarvester);
+    const normalized = harvesters.map(normalizeHarvester).filter(isUserHarvester);
     const requestedAt = Date.now();
     const expectsBroker = targetBankPresentation(null, normalized, { now: requestedAt }).activeHarvesters > 0;
     let settings = this.props.settings || {};
@@ -695,6 +725,7 @@ class TaskGroups extends Component {
     const next = {
       ...settings,
       targetHarvesters: normalized,
+      targetLoginHarvester: normalizeLoginHarvester(this.state.loginHarvester),
       // Keep the legacy keys synchronized so cloud backups remain readable by the previous build.
       targetHarvesterProxyList: first ? first.proxyListName : '',
       targetHarvestWorkers: first ? String(first.workers) : '',
@@ -710,6 +741,72 @@ class TaskGroups extends Component {
       try { ipcRenderer.sendSync('syncTargetHarvesters', runCommand); } catch {}
       if (callback) callback();
     });
+  };
+
+  persistLoginHarvester = (loginHarvester, callback) => {
+    const normalized = normalizeLoginHarvester(loginHarvester);
+    let settings = this.props.settings || {};
+    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
+    const current = normalizeLoginHarvester(settings.targetLoginHarvester);
+    const unchanged = current.proxyListName === normalized.proxyListName
+      && current.cookieTtlSec === normalized.cookieTtlSec
+      && current.intervalDelaySec === normalized.intervalDelaySec
+      && current.loadsPerBrowser === normalized.loadsPerBrowser;
+    this.setState({ loginHarvester: normalized }, () => {
+      if (unchanged) {
+        try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+        if (callback) callback();
+        return;
+      }
+      const next = { ...settings, targetLoginHarvester: normalized };
+      try { ipcRenderer.sendSync('saveSettings', next); } catch {}
+      this.props.dispatch({ type: 'update', obj: { settings: next } });
+      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
+      if (callback) callback();
+    });
+  };
+
+  userHarvesters = () => this.state.harvesters.filter(isUserHarvester);
+
+  loginHarvesterLikelyNeeded = () => {
+    const target = liveTarget();
+    if (Array.isArray(target.otpPending) && target.otpPending.length) return true;
+    const statuses = target.taskStatus || {};
+    for (const group of this.state.groups) {
+      for (const task of (group.tasks || [])) {
+        const status = statuses[task.id];
+        if (!targetTaskIsRunning(status)) continue;
+        if (!accountHasSession(this.accountFor(task))) return true;
+        const text = `${(status && status.label) || ''} ${(status && status.state) || ''}`;
+        if (/\b(?:getting session|logging in|\blogin\b|requesting login code|waiting for code|submitting code|validating login|waiting for shape)\b/i.test(text)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  loginHarvesterPanelState = () => {
+    const loginHarvester = this.state.loginHarvester;
+    if (!this.harvesterProxyAvailable(loginHarvester)) {
+      return { kind: 'error', label: 'Proxy unavailable' };
+    }
+    const runtime = this.harvesterRuntimeFor(LOGIN_HARVESTER_ID);
+    if (runtime && (Number(runtime.activeWorkers) || 0) > 0) {
+      return { kind: 'running', label: 'Running automatically' };
+    }
+    if (runtime || this.loginHarvesterLikelyNeeded()) {
+      return { kind: 'running', label: 'Starting' };
+    }
+    return { kind: 'idle', label: 'Idle' };
+  };
+
+  setLoginHarvesterDraft = patch => {
+    this.setState({ loginHarvester: { ...this.state.loginHarvester, ...patch } });
+  };
+
+  saveLoginHarvesterField = (field, value) => {
+    this.persistLoginHarvester({ ...this.state.loginHarvester, [field]: value });
   };
 
   openNewHarvester = () => this.setState({
@@ -755,10 +852,11 @@ class TaskGroups extends Component {
       window.alert('Stop Schedule must be later than Start Schedule.');
       return;
     }
-    const requestedWorkers = draft.type === 'login'
-      ? 1 : clampInteger(draft.workers, 1, harvesterWorkerMaximum(draft), 1);
+    const type = draft.type === 'auto' ? 'auto' : 'atc';
+    const requestedWorkers = clampInteger(draft.workers, 1, harvesterWorkerMaximum({ ...draft, type }), 1);
     const harvester = normalizeHarvester({
       ...draft,
+      type,
       id: this.state.editingHarvesterId || uid('harvester'),
       name,
       workers: draft.proxyListName ? requestedWorkers : Math.min(2, requestedWorkers),
@@ -1697,8 +1795,84 @@ class TaskGroups extends Component {
       : { kind: 'running', label: 'Detecting browsers' };
   };
 
+  renderLoginHarvesterPanel(compact = false) {
+    const draft = this.state.loginHarvester;
+    const state = this.loginHarvesterPanelState();
+    const proxyMissing = draft.proxyListName && !this.harvesterProxyAvailable(draft);
+    return (
+      <section
+        className={`target-login-harvester${compact ? ' target-login-harvester-compact' : ''} target-login-harvester-${state.kind}`}
+        aria-label="Login harvester"
+      >
+        <header className="target-login-harvester-head">
+          <span className="target-login-harvester-icon"><Icon name="key" size={compact ? 14 : 16} /></span>
+          <span>
+            <h2>Login harvester</h2>
+            <p>Zyn starts this automatically when a task needs to sign in, and stops it when Shape and OTP waits are finished.</p>
+          </span>
+          <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
+        </header>
+        <div className="target-login-harvester-fields">
+          <div className="form-group">
+            <label className="form-label">Proxy</label>
+            <InlineSelect
+              className="form-select"
+              value={draft.proxyListName}
+              placeholder="Local (no proxy)"
+              options={[
+                ...this.proxySelectOptions({ localLabel: 'Local (no proxy)' }),
+                ...(proxyMissing ? [{ value: draft.proxyListName, label: `Unavailable: ${draft.proxyListName}` }] : []),
+              ]}
+              onChange={proxyListName => this.saveLoginHarvesterField('proxyListName', proxyListName)}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Cookie expiration (seconds)</label>
+            <input
+              className="form-input"
+              type="number"
+              min="30"
+              max="86400"
+              value={draft.cookieTtlSec}
+              onChange={event => this.setLoginHarvesterDraft({ cookieTtlSec: event.target.value })}
+              onBlur={event => this.saveLoginHarvesterField('cookieTtlSec', event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Interval delay (seconds)</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              max="3600"
+              value={draft.intervalDelaySec}
+              onChange={event => this.setLoginHarvesterDraft({ intervalDelaySec: event.target.value })}
+              onBlur={event => this.saveLoginHarvesterField('intervalDelaySec', event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Refresh browser every</label>
+            <input
+              className="form-input"
+              type="number"
+              min="1"
+              max="10"
+              value={draft.loadsPerBrowser}
+              onChange={event => this.setLoginHarvesterDraft({ loadsPerBrowser: event.target.value })}
+              onBlur={event => this.saveLoginHarvesterField('loadsPerBrowser', event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   renderHarvesterDrawer() {
-    const availableHarvesters = this.state.harvesters.map(harvester =>
+    const userHarvesters = this.userHarvesters();
+    const availableHarvesters = userHarvesters.map(harvester =>
       this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
     const bank = targetBankPresentation(this.state.bank, availableHarvesters, {
       now: this.state.bankCheckedAt || Date.now(),
@@ -1707,9 +1881,10 @@ class TaskGroups extends Component {
       atcPerTask: this.state.atcCookiesPerTask,
       externalAtcHarvesterEnabled: this.extensionHarvesterConfigured(),
     });
-    const total = this.state.harvesters.length;
+    const total = userHarvesters.length;
     const open = this.state.harvesterDrawerOpen;
-    const configuredHarvesterIds = new Set(this.state.harvesters.map(item => String(item.id)));
+    const configuredHarvesterIds = new Set(userHarvesters.map(item => String(item.id)));
+    configuredHarvesterIds.add(LOGIN_HARVESTER_ID);
     const runtimeHarvesters = this.state.bank && Array.isArray(this.state.bank.harvesters)
       ? this.state.bank.harvesters.filter(item => configuredHarvesterIds.has(String(item && item.id))) : [];
     const bandwidthSummary = targetBandwidthSummary(runtimeHarvesters, Date.now());
@@ -1731,11 +1906,11 @@ class TaskGroups extends Component {
       <div className="target-harvester-empty">
         <Icon name="cookie" size={20} />
         <span>No harvesters configured</span>
-        <small>Create a Login, ATC, or Automatic harvester to feed the shared bank.</small>
+        <small>Create an ATC or Automatic harvester to feed the shared bank.</small>
       </div>
     ) : (
       <div className="target-harvester-list">
-        {this.state.harvesters.map(harvester => {
+        {userHarvesters.map(harvester => {
           const runtime = this.harvesterRuntimeFor(harvester.id);
           const state = this.harvesterState(harvester, runtime);
           const produced = (runtime && runtime.produced) || {};
@@ -1743,8 +1918,7 @@ class TaskGroups extends Component {
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
-          const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}`
-            : harvester.type === 'login' ? 'Target Login' : `Automatic (${atcModeLabel})`;
+          const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
           const modeLabel = harvesterModeLabel(harvester.engine);
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
@@ -1804,7 +1978,7 @@ class TaskGroups extends Component {
             <aside id="target-harvester-drawer" className="target-harvester-drawer" aria-label="Cookie Harvesters">
               <header className="target-harvester-drawer-head">
                 <span className="target-harvester-drawer-icon"><Icon name="cookie" size={18} /></span>
-                <span><h2>Cookie Harvesters</h2><p>Independent typed workers feed the shared Target bank.</p></span>
+                <span><h2>Cookie Harvesters</h2><p>ATC workers feed the shared Target bank. Login is managed separately.</p></span>
                 <button className="icon-action" title="Close Cookie Harvesters" aria-label="Close Cookie Harvesters" onClick={() => this.setHarvesterDrawerOpen(false)}><Icon name="close" size={14} /></button>
               </header>
               <div className="target-harvester-drawer-summary" aria-label="Harvester progress">
@@ -1863,7 +2037,10 @@ class TaskGroups extends Component {
               <div className="target-harvester-drawer-toolbar">
                 <button className="btn btn-primary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={12} /> New Harvester</button>
               </div>
-              <div className="target-harvester-drawer-content">{list}</div>
+              <div className="target-harvester-drawer-content">
+                {this.renderLoginHarvesterPanel(true)}
+                {list}
+              </div>
             </aside>
           </>
         )}
@@ -1896,6 +2073,7 @@ class TaskGroups extends Component {
         </div>
         <div className="page-content task-groups-content">
           {this.renderMetrics()}
+          {this.renderLoginHarvesterPanel()}
           <div className="workspace-section-heading">
             <div><h2>Target task groups</h2><p>Organize shared watch lists and account tasks without changing the checkout engine.</p></div>
             {this.state.groups.length > 0 && (
@@ -2077,12 +2255,11 @@ class TaskGroups extends Component {
                   value={draft.type}
                   options={[
                     { value: 'atc', label: 'Target ATC' },
-                    { value: 'login', label: 'Target Login' },
                     { value: 'auto', label: 'Automatic (Login + ATC)' },
                   ]}
-                  onChange={type => setDraft({ type, workers: type === 'login' ? '1' : draft.workers })}
+                  onChange={type => setDraft({ type })}
                 />
-                <div className="form-hint">Login uses a generated email and one worker. ATC uses the product rotation below.</div>
+                <div className="form-hint">ATC uses the product rotation below. Login is configured on the Target page and starts automatically.</div>
               </div>
               <div className="form-group">
                 <label className="form-label">Browser</label>

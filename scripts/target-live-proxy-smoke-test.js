@@ -47,8 +47,10 @@ assert.doesNotMatch(taskGroups, />FALLBACK</,
   'task groups must not render a checkout fallback selector');
 assert.match(taskGroups, /targetHarvesters/,
   'task groups must persist multiple harvester configurations');
-assert.match(taskGroups, /Target Login/,
-  'task groups must expose a dedicated login harvester type');
+assert.match(taskGroups, /Login harvester/,
+  'task groups must expose a dedicated login harvester panel');
+assert.doesNotMatch(taskGroups, /value: 'login', label: 'Target Login'/,
+  'login must not be a user-created harvester type');
 assert.match(taskGroups, /Target ATC/,
   'task groups must expose a dedicated ATC harvester type');
 assert.match(taskGroups, /\['opera', 'Opera'\]/,
@@ -81,9 +83,11 @@ assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
   'packaged bridge patch must create independent producer process handles');
 assert.match(runtimePatcher, /const harvesterStartFailures = new Map\(\)/,
   'packaged bridge patch must track fail-closed producer startup errors');
-assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
-  'managed harvester configuration must preserve the selected producer type');
-assert.match(harvesterConfig, /!Array\.isArray\(settings\.targetHarvesters\)\) return \[\]/,
+assert.match(harvesterConfig, /\['atc', 'auto'\]/,
+  'managed harvester configuration must preserve user-created ATC producer types');
+assert.match(harvesterConfig, /id === 'zyn-login'\) return false/,
+  'the login harvester must not be startable from the ATC Start button');
+assert.match(harvesterConfig, /Array\.isArray\(settings\.targetHarvesters\) \? settings\.targetHarvesters : \[\]/,
   'missing harvester settings must disable the retired task-owned producer');
 assert.match(harvesterConfig, /'opera'/,
   'managed harvester configuration must preserve an Opera browser selection');
