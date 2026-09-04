@@ -1,6 +1,6 @@
 {
   "name": "zyn-bot-runtime",
-  "version": "1.7.43",
+  "version": "1.7.44",
   "private": true,
   "dependencies": {
     "axios": "0.21.4",
