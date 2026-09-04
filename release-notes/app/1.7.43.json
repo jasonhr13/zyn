@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.43",
+  "notes": [
+    "Target login harvesting starts automatically when a task needs to sign in.",
+    "Configure the login harvester on the Target page; it is no longer mixed with ATC harvesters.",
+    "Zyn stops the login harvester when no task is waiting for Shape or OTP.",
+    "Target restock monitoring ignores TCIN 95280894 so it never sends a Discord ping."
+  ]
+}
