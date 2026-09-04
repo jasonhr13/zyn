@@ -199,8 +199,10 @@ assert.match(targetEngine, /toRenderer\('targetMonitorBandwidth', telemetry\)/,
   'Windows Target bridge does not forward sanitized monitor bandwidth');
 assert.match(nativeEngineContract, /function normalizeMonitorBandwidth\(/,
   'Windows native-engine contract omits monitor bandwidth validation');
-assert.match(nativeEngineContract, /'analytics-event', 'monitor-bandwidth'/,
-  'Windows native-engine contract does not allow the monitor bandwidth envelope');
+for (const envelope of ['analytics-event', 'task-telemetry', 'monitor-bandwidth']) {
+  assert.match(nativeEngineContract, new RegExp(`'${envelope}'`),
+    `Windows native-engine contract does not allow the ${envelope} envelope`);
+}
 const shapeFarmer = fs.readFileSync(path.join(resources, 'bot', 'shape-farmer.mjs'), 'utf8');
 assert.match(shapeFarmer,
   /u\.pathname === '\/saveCookies'[\s\S]{0,100}if \(!tokenOk\(req\)\)/,
