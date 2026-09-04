@@ -50,6 +50,19 @@ const ANALYTICS_ITEMS_MAX = 20;
 const ANALYTICS_TEXT_MAX = 500;
 const ANALYTICS_MAX_AGE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 const ANALYTICS_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const TELEMETRY_BUCKET_MS = 60 * 60 * 1000;
+const TELEMETRY_BUCKETS_MAX = 500;
+const TELEMETRY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const TELEMETRY_BATCH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TELEMETRY_EVENTS = new Set([
+  'cart_attempt', 'carted', 'checkout', 'decline', 'shape_ready', 'shape_unavailable',
+  'shape_block_login', 'shape_block_cart', 'shape_block_precart', 'shape_soft_block',
+  'dco_rate_limited', 'rate_limited_429', 'passed_queue',
+]);
+const TELEMETRY_SITES = new Map([
+  ['target', 'Target'], ['pokemoncenter', 'Pokemon Center US'], ['pokemoncenterus', 'Pokemon Center US'],
+  ['walmart', 'Walmart'],
+]);
 const MIN_ACTIVE_DEVICES = 1;
 const MAX_ACTIVE_DEVICES = 10;
 // D1 limits both a string and a complete row to 2,000,000 bytes. Keep headroom for the remaining
@@ -1525,6 +1538,8 @@ function normalizeAnalyticsEvent(value, now = Date.now()) {
     taskId: analyticsText(value.taskId, 160),
     runId: analyticsText(value.runId, 160),
     orderNumber: analyticsText(value.orderNumber, 160),
+    account: analyticsText(value.account, 254),
+    profile: analyticsText(value.profile, 160),
     totalCents: analyticsInteger(value.totalCents, 0, 1000000000, 0),
     occurredAt,
     items,
@@ -1546,6 +1561,93 @@ function analyticsWindow(url, now = Date.now()) {
   return { range, from, to };
 }
 
+function telemetryLabel(value, max = 80) {
+  return analyticsText(value, max).toLowerCase().replace(/[^a-z0-9._:-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function normalizeTelemetryBucket(value, now = Date.now()) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const event = telemetryLabel(value.event);
+  const site = TELEMETRY_SITES.get(analyticsText(value.site, 80).toLowerCase().replace(/[^a-z]/g, '')) || '';
+  const bucketStart = analyticsInteger(value.bucketStart, 0, now + ANALYTICS_FUTURE_SKEW_MS, -1);
+  if (!TELEMETRY_EVENTS.has(event) || !site || bucketStart < 0) return null;
+  if (bucketStart % TELEMETRY_BUCKET_MS !== 0 || bucketStart < now - TELEMETRY_MAX_AGE_MS) return null;
+  const count = analyticsInteger(value.count, 0, 1000000, 0);
+  if (count < 1) return null;
+  const cookieAgeSamples = analyticsInteger(value.cookieAgeSamples, 0, count, 0);
+  return {
+    bucketStart,
+    site,
+    event,
+    step: telemetryLabel(value.step),
+    shapeMethod: telemetryLabel(value.shapeMethod),
+    cookieType: telemetryLabel(value.cookieType),
+    engineVersion: analyticsText(value.engineVersion, 40),
+    appVersion: analyticsText(value.appVersion, 40),
+    count,
+    cookieAgeMsTotal: cookieAgeSamples ? analyticsInteger(value.cookieAgeMsTotal, 0, 1000000000000, 0) : 0,
+    cookieAgeSamples,
+  };
+}
+
+async function ingestTaskTelemetry(request, env) {
+  const license = await authenticatedLicense(request, env);
+  if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
+  const body = await bodyJson(request);
+  const batchId = analyticsText(body.batchId, 80);
+  if (!/^[a-z0-9-]{16,80}$/i.test(batchId)) return json({ ok: false, message: 'A telemetry batch id is required.' }, 400);
+  if (!Array.isArray(body.buckets) || body.buckets.length < 1 || body.buckets.length > TELEMETRY_BUCKETS_MAX) {
+    return json({ ok: false, message: `Submit 1-${TELEMETRY_BUCKETS_MAX} telemetry buckets.` }, 400);
+  }
+  const now = Date.now();
+  const buckets = body.buckets.map(value => normalizeTelemetryBucket(value, now));
+  if (buckets.some(bucket => !bucket)) return json({ ok: false, message: 'A telemetry bucket is invalid.' }, 400);
+
+  // The batch row is claimed first; every rollup upsert is conditional on this ingest owning the
+  // claim, so a replayed batch (lost response, client retry) adds nothing the second time.
+  const ingestId = crypto.randomUUID();
+  const statements = [env.DB.prepare(`
+    INSERT OR IGNORE INTO analytics_task_batches (user_id, batch_id, ingest_id, bucket_count, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(license.user_id, batchId, ingestId, buckets.length, now)];
+  for (const bucket of buckets) {
+    statements.push(env.DB.prepare(`
+      INSERT INTO analytics_task_rollups
+        (user_id, bucket_start, site, event, step, shape_method, cookie_type, engine_version, app_version,
+         count, cookie_age_ms_total, cookie_age_samples, updated_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM analytics_task_batches
+        WHERE user_id = ? AND batch_id = ? AND ingest_id = ?
+      )
+      ON CONFLICT(user_id, bucket_start, site, event, step, shape_method, cookie_type, engine_version, app_version)
+      DO UPDATE SET
+        count = count + excluded.count,
+        cookie_age_ms_total = cookie_age_ms_total + excluded.cookie_age_ms_total,
+        cookie_age_samples = cookie_age_samples + excluded.cookie_age_samples,
+        updated_at = excluded.updated_at
+    `).bind(
+      license.user_id, bucket.bucketStart, bucket.site, bucket.event, bucket.step, bucket.shapeMethod,
+      bucket.cookieType, bucket.engineVersion, bucket.appVersion,
+      bucket.count, bucket.cookieAgeMsTotal, bucket.cookieAgeSamples, now,
+      license.user_id, batchId, ingestId,
+    ));
+  }
+  for (let index = 0; index < statements.length; index += 50) {
+    await env.DB.batch(statements.slice(index, index + 50));
+  }
+  const claim = await env.DB.prepare(
+    'SELECT ingest_id FROM analytics_task_batches WHERE user_id = ? AND batch_id = ?',
+  ).bind(license.user_id, batchId).first();
+  const duplicate = !claim || claim.ingest_id !== ingestId;
+  return json({ ok: true, accepted: duplicate ? 0 : buckets.length, duplicate });
+}
+
+async function pruneTaskTelemetryBatches(env, now = Date.now()) {
+  await env.DB.prepare('DELETE FROM analytics_task_batches WHERE created_at < ?')
+    .bind(now - TELEMETRY_BATCH_TTL_MS).run();
+}
+
 async function ingestAnalytics(request, env) {
   const license = await authenticatedLicense(request, env);
   if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
@@ -1563,11 +1665,11 @@ async function ingestAnalytics(request, env) {
     const statements = [env.DB.prepare(`
       INSERT OR IGNORE INTO analytics_events
         (user_id, event_id, event_type, site, task_id, run_id, order_number,
-         total_cents, occurred_at, created_at, ingest_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         account, profile, total_cents, occurred_at, created_at, ingest_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       license.user_id, event.eventId, event.eventType, event.site, event.taskId, event.runId,
-      event.orderNumber, event.totalCents, event.occurredAt, now, ingestId,
+      event.orderNumber, event.account, event.profile, event.totalCents, event.occurredAt, now, ingestId,
     )];
     event.items.forEach((item, lineNumber) => {
       statements.push(env.DB.prepare(`
@@ -1655,16 +1757,17 @@ async function analyticsCheckouts(request, env, url) {
   const search = analyticsText(url.searchParams.get('search'), 120);
   const like = `%${search}%`;
   const filter = `e.user_id = ? AND e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
-    AND (? = '' OR e.site LIKE ? COLLATE NOCASE OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+    AND (? = '' OR e.site LIKE ? COLLATE NOCASE OR e.order_number LIKE ? COLLATE NOCASE
+      OR e.account LIKE ? COLLATE NOCASE OR e.profile LIKE ? COLLATE NOCASE OR EXISTS (
       SELECT 1 FROM analytics_items ai
       WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
         AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
     ))`;
-  const bindings = [license.user_id, window.from, window.to, search, like, like, like, like];
+  const bindings = [license.user_id, window.from, window.to, search, like, like, like, like, like, like];
   const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM analytics_events e WHERE ${filter}`)
     .bind(...bindings).first();
   const rows = await env.DB.prepare(`
-    SELECT e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+    SELECT e.event_id, e.site, e.order_number, e.account, e.profile, e.total_cents, e.occurred_at,
       i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
     FROM (
       SELECT e.* FROM analytics_events e WHERE ${filter}
@@ -1680,6 +1783,7 @@ async function analyticsCheckouts(request, env, url) {
     if (!checkout) {
       checkout = {
         eventId: row.event_id, site: row.site, orderNumber: row.order_number,
+        account: row.account || '', profile: row.profile || '',
         totalCents: Number(row.total_cents) || 0, occurredAt: Number(row.occurred_at) || 0, items: [],
       };
       byId.set(row.event_id, checkout);
@@ -1696,8 +1800,12 @@ async function analyticsCheckouts(request, env, url) {
 async function deleteAnalytics(request, env) {
   const license = await authenticatedLicense(request, env);
   if (!license) return json({ ok: false, message: 'A valid Zyn session is required.' }, 401);
-  const result = await env.DB.prepare('DELETE FROM analytics_events WHERE user_id = ?').bind(license.user_id).run();
-  return json({ ok: true, deleted: Number(result.meta && result.meta.changes) || 0 });
+  const [result] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM analytics_events WHERE user_id = ?').bind(license.user_id),
+    env.DB.prepare('DELETE FROM analytics_task_rollups WHERE user_id = ?').bind(license.user_id),
+    env.DB.prepare('DELETE FROM analytics_task_batches WHERE user_id = ?').bind(license.user_id),
+  ]);
+  return json({ ok: true, deleted: Number(result && result.meta && result.meta.changes) || 0 });
 }
 
 async function consumeHyperQuota(env, userId, now = Date.now()) {
@@ -2510,6 +2618,107 @@ async function adminAnalyticsDashboard(env, url) {
   });
 }
 
+const TELEMETRY_COUNT_COLUMNS = [...TELEMETRY_EVENTS].map(event =>
+  `SUM(CASE WHEN event = '${event}' THEN count ELSE 0 END) AS "${event}"`).join(',\n        ');
+
+function telemetryCounts(row) {
+  const counts = {};
+  for (const event of TELEMETRY_EVENTS) counts[event] = Number(row && row[event]) || 0;
+  return counts;
+}
+
+function telemetryRates(counts) {
+  const cartBlocks = counts.shape_block_cart + counts.shape_block_precart;
+  const attempts = counts.cart_attempt;
+  return {
+    cartBlockRate: attempts ? cartBlocks / attempts : 0,
+    cartSuccessRate: attempts ? counts.carted / attempts : 0,
+    shapeBlocks: cartBlocks + counts.shape_block_login,
+  };
+}
+
+function telemetryGroupRow(row, keys) {
+  const counts = telemetryCounts(row);
+  const samples = Number(row.cookie_age_samples) || 0;
+  const output = {
+    ...Object.fromEntries(keys.map(([field, name]) => [name, String(row[field] || '')])),
+    users: Number(row.users) || 0,
+    counts,
+    ...telemetryRates(counts),
+    avgCookieAgeMs: samples ? Math.round((Number(row.cookie_age_ms_total) || 0) / samples) : 0,
+  };
+  return output;
+}
+
+async function adminAnalyticsShape(env, url) {
+  const window = analyticsWindow(url);
+  const site = TELEMETRY_SITES.get(analyticsText(url.searchParams.get('site'), 80).toLowerCase().replace(/[^a-z]/g, '')) || '';
+  const filter = `bucket_start >= ? AND bucket_start < ? AND (? = '' OR site = ?)`;
+  const bindings = [window.from, window.to, site, site];
+  // Cookie age is only meaningful at the moment a cookie is used, so it is averaged over cart
+  // attempts rather than over every event.
+  const cookieAge = `
+        SUM(CASE WHEN event = 'cart_attempt' THEN cookie_age_ms_total ELSE 0 END) AS cookie_age_ms_total,
+        SUM(CASE WHEN event = 'cart_attempt' THEN cookie_age_samples ELSE 0 END) AS cookie_age_samples`;
+  const spanMs = Math.max(1, window.to - window.from);
+  const daily = spanMs > 3 * 24 * 60 * 60 * 1000;
+  const [summary, byMethod, byVersion, series, users] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(DISTINCT user_id) AS users, ${TELEMETRY_COUNT_COLUMNS}, ${cookieAge}
+      FROM analytics_task_rollups WHERE ${filter}
+    `).bind(...bindings).first(),
+    env.DB.prepare(`
+      SELECT shape_method, cookie_type, COUNT(DISTINCT user_id) AS users, ${TELEMETRY_COUNT_COLUMNS}, ${cookieAge}
+      FROM analytics_task_rollups WHERE ${filter}
+      GROUP BY shape_method, cookie_type ORDER BY SUM(count) DESC LIMIT 100
+    `).bind(...bindings).all(),
+    env.DB.prepare(`
+      SELECT engine_version, app_version, COUNT(DISTINCT user_id) AS users, ${TELEMETRY_COUNT_COLUMNS}, ${cookieAge}
+      FROM analytics_task_rollups WHERE ${filter}
+      GROUP BY engine_version, app_version ORDER BY SUM(count) DESC LIMIT 100
+    `).bind(...bindings).all(),
+    env.DB.prepare(`
+      SELECT ${daily ? "date(bucket_start / 1000, 'unixepoch')" : 'bucket_start'} AS period,
+        MIN(bucket_start) AS period_start, COUNT(DISTINCT user_id) AS users, ${TELEMETRY_COUNT_COLUMNS}
+      FROM analytics_task_rollups WHERE ${filter}
+      GROUP BY period ORDER BY period_start ASC LIMIT 4000
+    `).bind(...bindings).all(),
+    env.DB.prepare(`
+      SELECT r.user_id, u.email, MAX(r.updated_at) AS last_seen_at, ${TELEMETRY_COUNT_COLUMNS}, ${cookieAge}
+      FROM analytics_task_rollups r JOIN users u ON u.id = r.user_id
+      WHERE ${filter}
+      GROUP BY r.user_id ORDER BY SUM(CASE WHEN event LIKE 'shape_block_%' THEN count ELSE 0 END) DESC, SUM(count) DESC
+      LIMIT 50
+    `).bind(...bindings).all(),
+  ]);
+  const summaryCounts = telemetryCounts(summary);
+  const summarySamples = Number(summary && summary.cookie_age_samples) || 0;
+  return json({
+    ok: true,
+    window,
+    site,
+    events: [...TELEMETRY_EVENTS],
+    summary: {
+      users: Number(summary && summary.users) || 0,
+      counts: summaryCounts,
+      ...telemetryRates(summaryCounts),
+      avgCookieAgeMs: summarySamples ? Math.round((Number(summary.cookie_age_ms_total) || 0) / summarySamples) : 0,
+    },
+    byMethod: (byMethod.results || []).map(row => telemetryGroupRow(row, [['shape_method', 'shapeMethod'], ['cookie_type', 'cookieType']])),
+    byVersion: (byVersion.results || []).map(row => telemetryGroupRow(row, [['engine_version', 'engineVersion'], ['app_version', 'appVersion']])),
+    series: (series.results || []).map(row => ({
+      period: String(row.period || ''),
+      periodStart: Number(row.period_start) || 0,
+      users: Number(row.users) || 0,
+      counts: telemetryCounts(row),
+    })),
+    users: (users.results || []).map(row => ({
+      ...telemetryGroupRow(row, [['user_id', 'userId'], ['email', 'email']]),
+      lastSeenAt: Number(row.last_seen_at) || 0,
+    })),
+  });
+}
+
 async function adminAnalyticsUsers(env, url) {
   const window = analyticsWindow(url);
   const page = analyticsInteger(Number(url.searchParams.get('page')), 1, 1000000, 1);
@@ -2574,12 +2783,13 @@ async function adminAnalyticsCheckouts(env, url) {
   const like = `%${search}%`;
   const filter = `e.event_type = 'checkout' AND e.occurred_at >= ? AND e.occurred_at < ?
     AND (? = '' OR u.email LIKE ? COLLATE NOCASE OR e.site LIKE ? COLLATE NOCASE
-      OR e.order_number LIKE ? COLLATE NOCASE OR EXISTS (
+      OR e.order_number LIKE ? COLLATE NOCASE OR e.account LIKE ? COLLATE NOCASE
+      OR e.profile LIKE ? COLLATE NOCASE OR EXISTS (
         SELECT 1 FROM analytics_items ai
         WHERE ai.user_id = e.user_id AND ai.event_id = e.event_id
           AND (ai.name LIKE ? COLLATE NOCASE OR ai.sku LIKE ? COLLATE NOCASE)
       ))`;
-  const bindings = [window.from, window.to, search, like, like, like, like, like];
+  const bindings = [window.from, window.to, search, like, like, like, like, like, like, like];
   const [totalRow, rows] = await Promise.all([
     env.DB.prepare(`
       SELECT COUNT(*) AS total
@@ -2587,7 +2797,8 @@ async function adminAnalyticsCheckouts(env, url) {
       WHERE ${filter}
     `).bind(...bindings).first(),
     env.DB.prepare(`
-      SELECT e.user_id, u.email, e.event_id, e.site, e.order_number, e.total_cents, e.occurred_at,
+      SELECT e.user_id, u.email, e.event_id, e.site, e.order_number, e.account, e.profile,
+        e.total_cents, e.occurred_at,
         i.line_number, i.sku, i.name, i.image, i.product_url, i.size, i.unit_price_cents, i.quantity
       FROM (
         SELECT e.* FROM analytics_events e JOIN users u ON u.id = e.user_id
@@ -2607,7 +2818,8 @@ async function adminAnalyticsCheckouts(env, url) {
     if (!checkout) {
       checkout = {
         userId: row.user_id, email: row.email, eventId: row.event_id, site: row.site,
-        orderNumber: row.order_number, totalCents: Number(row.total_cents) || 0,
+        orderNumber: row.order_number, account: row.account || '', profile: row.profile || '',
+        totalCents: Number(row.total_cents) || 0,
         occurredAt: Number(row.occurred_at) || 0, items: [],
       };
       byId.set(key, checkout);
@@ -3138,6 +3350,7 @@ async function adminRoute(request, env, url) {
   if (url.pathname === '/api/admin/analytics/dashboard' && request.method === 'GET') return adminAnalyticsDashboard(env, url);
   if (url.pathname === '/api/admin/analytics/users' && request.method === 'GET') return adminAnalyticsUsers(env, url);
   if (url.pathname === '/api/admin/analytics/checkouts' && request.method === 'GET') return adminAnalyticsCheckouts(env, url);
+  if (url.pathname === '/api/admin/analytics/shape' && request.method === 'GET') return adminAnalyticsShape(env, url);
   if (url.pathname.startsWith('/api/admin/analytics')) return json({ ok: false, message: 'Method not allowed.' }, 405);
   if (url.pathname === '/api/admin/waitlist' && request.method === 'GET') return adminWaitlist(env);
   if (url.pathname === '/api/admin/task-types' && request.method === 'GET') return adminTaskTypes(env);
@@ -3388,6 +3601,7 @@ async function api(request, env, url) {
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env);
   if (url.pathname === '/api/backups' && request.method === 'GET') return listBackups(request, env);
   if (url.pathname === '/api/analytics/events' && request.method === 'POST') return ingestAnalytics(request, env);
+  if (url.pathname === '/api/analytics/task-telemetry' && request.method === 'POST') return ingestTaskTelemetry(request, env);
   if (url.pathname === '/api/analytics/dashboard' && request.method === 'GET') return analyticsDashboard(request, env, url);
   if (url.pathname === '/api/analytics/checkouts' && request.method === 'GET') return analyticsCheckouts(request, env, url);
   if (url.pathname === '/api/analytics' && request.method === 'DELETE') return deleteAnalytics(request, env);
@@ -3464,5 +3678,7 @@ export default {
     const result = await refreshPolarUpstreamVersion(env);
     if (!result.ok) console.error('polar version refresh failed', result.reason || result.status || '');
     await notifyPokemonQueueRelay(env);
+    try { await pruneTaskTelemetryBatches(env); }
+    catch (error) { console.error('telemetry batch prune failed', error && error.message); }
   },
 };

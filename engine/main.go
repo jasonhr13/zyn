@@ -12,7 +12,6 @@ import (
 
 	"zynbot.app/engine/analytics"
 	"zynbot.app/engine/bot-base/alert"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/safego"
 	"zynbot.app/engine/bot-base/siteconfig"
 	"zynbot.app/engine/bot-base/task"
@@ -74,11 +73,9 @@ func configureIdentity(key string) {
 
 func configureOptionalServices(development bool) {
 	if development {
-		datadog.Init("", "")
 		alert.SetWebhookURL("")
 		security.SetAlertWebhookURL("")
 	} else {
-		datadog.Init(os.Getenv("POLAR_DATADOG_TOKEN"), envOrDefault("POLAR_DATADOG_SITE", "us5.datadoghq.com"))
 		alert.SetWebhookURL(strings.TrimSpace(os.Getenv("POLAR_ALERT_WEBHOOK_URL")))
 		security.SetAlertWebhookURL(strings.TrimSpace(os.Getenv("POLAR_SECURITY_WEBHOOK_URL")))
 	}
@@ -120,6 +117,7 @@ func watchParentAlive() {
 }
 
 func shutdown() {
+	task.FlushTelemetry()
 	analytics.Stop()
 	serverclient.CloseConnection()
 	os.Exit(0)

@@ -45,6 +45,7 @@ assert.deepEqual(contract.parseEnvelope(Buffer.from(JSON.stringify(wire))), wire
 assert.throws(() => contract.createEnvelope('stop-tasks', { id: 'pc-1' }), /must be an array/);
 assert.throws(() => contract.parseEnvelope('{"type":"stop-tasks"}'), /must be an array/);
 assert.equal(contract.FROM_ENGINE.includes('analytics-event'), true);
+assert.equal(contract.FROM_ENGINE.includes('task-telemetry'), true);
 assert.equal(contract.FROM_ENGINE.includes('monitor-bandwidth'), true);
 
 const monitorBandwidth = {
@@ -172,6 +173,8 @@ assert.match(captcha, /"type": "solve-captcha"/);
 assert.match(captcha, /"taskId":\s+solve\.TaskID/);
 assert.match(taskSchema, /type AnalyticsEventMessage struct/);
 assert.match(taskSchema, /TotalCents\s+int64\s+`json:"totalCents"`/);
+assert.match(taskSchema, /Account\s+string\s+`json:"account,omitempty"`/);
+assert.match(taskSchema, /Profile\s+string\s+`json:"profile,omitempty"`/);
 assert.match(monitorFrontend, /"status":\s+"Cloud Disconnected",[\s\S]{0,100}"running":\s+false/,
   'a rejected monitor start must emit terminal liveness so the launcher can retry it');
 assert.match(frontendFunctions, /"status":\s+"Idle",[\s\S]{0,100}"running":\s+false/,

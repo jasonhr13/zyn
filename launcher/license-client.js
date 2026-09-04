@@ -315,6 +315,17 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
         headers: { 'x-rcart-device-id': deviceId },
       });
     },
+    taskTelemetry(token, batch = {}) {
+      return requestApi(apiBase, '/api/analytics/task-telemetry', {
+        method: 'POST',
+        body: {
+          batchId: String(batch.batchId || ''),
+          buckets: Array.isArray(batch.buckets) ? batch.buckets : [],
+        },
+        token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
     analyticsDashboard(token, query = {}) {
       return requestApi(apiBase, analyticsQuery('/api/analytics/dashboard', query), {
         token, headers: { 'x-rcart-device-id': deviceId },

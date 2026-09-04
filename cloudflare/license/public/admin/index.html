@@ -247,6 +247,53 @@
             <div id="analytics-chart" class="analytics-chart" aria-live="polite"></div>
           </section>
 
+          <section class="card analytics-table-card analytics-shape-card">
+            <div class="table-heading analytics-table-heading">
+              <div>
+                <h2>Shape performance</h2>
+                <p id="analytics-shape-updated">Cart attempts, blocks and cookie sources across every user</p>
+              </div>
+              <div class="analytics-metrics" aria-label="Shape site">
+                <button type="button" class="secondary active" data-analytics-shape-site="">All sites</button>
+                <button type="button" class="secondary" data-analytics-shape-site="target">Target</button>
+                <button type="button" class="secondary" data-analytics-shape-site="pokemoncenter">Pokemon Center</button>
+              </div>
+            </div>
+            <div class="stats analytics-stats analytics-shape-stats">
+              <article><span>Cart attempts</span><strong id="analytics-shape-attempts">0</strong></article>
+              <article><span>Carted</span><strong id="analytics-shape-carted">0</strong></article>
+              <article><span>Cart block rate</span><strong id="analytics-shape-block-rate">0%</strong></article>
+              <article><span>Login blocks</span><strong id="analytics-shape-login-blocks">0</strong></article>
+              <article><span>Soft blocks</span><strong id="analytics-shape-soft-blocks">0</strong></article>
+              <article><span>DCO rate limited</span><strong id="analytics-shape-dco">0</strong></article>
+              <article><span>Shape unavailable</span><strong id="analytics-shape-unavailable">0</strong></article>
+              <article><span>Avg cookie age at cart</span><strong id="analytics-shape-cookie-age">–</strong></article>
+            </div>
+            <div class="table-heading analytics-table-heading"><div><h2>By cookie source</h2><p>Where cookies came from and how they held up</p></div></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Source</th><th>Type</th><th>Users</th><th>Attempts</th><th>Carted</th><th>Cart blocks</th><th>Precart</th><th>Login blocks</th><th>Soft</th><th>Block rate</th><th>Avg age</th></tr></thead>
+                <tbody id="analytics-shape-methods"></tbody>
+              </table>
+            </div>
+            <p id="analytics-shape-methods-empty" class="empty hidden">No task telemetry in this range.</p>
+            <div class="table-heading analytics-table-heading"><div><h2>By version</h2><p>Compare engine and app builds</p></div></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Engine</th><th>App</th><th>Users</th><th>Attempts</th><th>Carted</th><th>Cart blocks</th><th>Login blocks</th><th>Checkouts</th><th>Declines</th><th>Block rate</th></tr></thead>
+                <tbody id="analytics-shape-versions"></tbody>
+              </table>
+            </div>
+            <div class="table-heading analytics-table-heading"><div><h2>Most blocked users</h2><p>Users with the most Shape blocks in this range</p></div></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>User</th><th>Attempts</th><th>Carted</th><th>Cart blocks</th><th>Login blocks</th><th>Soft</th><th>Block rate</th><th>Avg age</th><th>Last seen</th></tr></thead>
+                <tbody id="analytics-shape-users"></tbody>
+              </table>
+            </div>
+            <p id="analytics-shape-users-empty" class="empty hidden">No task telemetry in this range.</p>
+          </section>
+
           <section class="card analytics-table-card">
             <div class="table-heading analytics-table-heading">
               <div><h2>User analytics</h2><p id="analytics-users-count">0 users with activity</p></div>
@@ -269,11 +316,11 @@
           <section class="card analytics-table-card">
             <div class="table-heading analytics-table-heading">
               <div><h2>Global checkout history</h2><p id="analytics-history-count">0 checkouts</p></div>
-              <input id="analytics-checkout-search" class="analytics-search" type="search" placeholder="Search user, item, SKU or order" autocomplete="off">
+              <input id="analytics-checkout-search" class="analytics-search" type="search" placeholder="Search user, account, item, SKU or order" autocomplete="off">
             </div>
             <div class="table-scroll">
               <table>
-                <thead><tr><th>User</th><th>Item</th><th>Site</th><th>Date</th><th>Order</th><th>Total</th></tr></thead>
+                <thead><tr><th>User</th><th>Item</th><th>Account</th><th>Site</th><th>Date</th><th>Order</th><th>Total</th></tr></thead>
                 <tbody id="analytics-history"></tbody>
               </table>
             </div>

@@ -171,3 +171,9 @@ tr:last-child td { border-bottom: 0; }
   .analytics-ranges { flex-wrap: wrap; }
   .analytics-search { width: 100%; }
 }
+.analytics-shape-card .stats { padding: 18px 22px 4px; margin-bottom: 0; }
+.analytics-shape-card .stats article { padding: 16px; }
+.analytics-shape-card .stats strong { font-size: 22px; }
+.analytics-shape-card .table-heading + .table-scroll { border-bottom: 1px solid var(--line); }
+.analytics-rate-warn { color: #fb8ca3; font-weight: 750; }
+.analytics-rate-ok { color: #ffad70; font-weight: 750; }

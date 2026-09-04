@@ -3711,6 +3711,13 @@ function handleEngineMessage(data, connection) {
         }
       }
       break;
+    case 'task-telemetry':
+      // Counters only (cart attempts, Shape blocks, ...). No product or account data.
+      for (const m of items) {
+        if (!m || typeof m !== 'object') continue;
+        analyticsRecorder.recordTelemetry({ ...m, engineVersion: m.engineVersion || runningEngineVersion });
+      }
+      break;
     case 'task-notification':
       for (const m of items) {
         if (!m || typeof m === 'string') { log('[notify] ' + String(m || '')); continue; }

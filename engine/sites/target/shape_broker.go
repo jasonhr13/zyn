@@ -91,9 +91,11 @@ func (t *TargetTask) applyShapeResponse(response ShapeAPIResponse) {
 	if t.ShapeMethod == "" {
 		t.ShapeMethod = siteconfig.ShapeMethod()
 	}
+	t.ShapeCreatedAt = response.Cookie.CreatedAt
 	if !t.ShapeHeaders.Valid() {
 		t.ShapeHeaders = ShapeHeaders{}
 		t.ShapeProxy = ""
 		t.ShapeMethod = ""
+		t.ShapeCreatedAt = 0
 	}
 }

@@ -427,6 +427,20 @@ function createLicenseAuthority({
         return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
       }
     },
+    async recordTaskTelemetry(batch = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      try {
+        const result = await licenseApi.taskTelemetry(licenseToken, batch);
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] telemetry upload unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Analytics service is unavailable.' };
+      }
+    },
     async analyticsDashboard(query = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) {

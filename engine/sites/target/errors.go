@@ -8,7 +8,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"zynbot.app/engine/bot-base/alert"
-	"zynbot.app/engine/bot-base/datadog"
+	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 )
 
@@ -117,7 +117,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.SleepTask(5000)
 	case isDcoRateLimit(errText):
 		t.UpdateStatus("DCO Rate Limited", constants.Colors.YELLOW)
-		datadog.Info("DCO_Rate_Limited", map[string]interface{}{"event": "dco_rate_limited", "site": "Target", "step": step, "task_id": t.ID, "name": t.Profile.ProfileName})
+		t.telemetry(task.TelemetryDcoRateLimited, step)
 		t.sleepCheckoutRateLimit(true)
 	case containsAnyText(errText, "shape-block-ccart", "precart"):
 		// // ignore since clear cart doesnt need shape
@@ -141,6 +141,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.NextStep = "get-session"
 	case containsAnyText(errText, "429"):
 		t.UpdateStatus("Ratelimited (429)", constants.Colors.RED)
+		t.telemetry(task.TelemetryRateLimited429, step)
 		if shouldSwapProxyOn429(step) {
 			t.BaseTask.SwapProxy("Target")
 			t.SleepTask(generic429SleepMs)
@@ -148,9 +149,11 @@ func (t *TargetTask) HandleErrors(step string) bool {
 			t.sleepCheckoutRateLimit(false)
 		}
 	case containsAnyText(errText, "Shape Block (Login)"):
+		t.telemetry(task.TelemetryShapeBlockLogin, step)
 		t.StepAfterSolve = step
 		t.NextStep = "get-shape"
 		if t.ShapeBlockCount >= 3 {
+			t.telemetry(task.TelemetryShapeSoftBlock, step)
 			t.UpdateStatus("Shape Soft Block", constants.Colors.RED)
 			t.SleepTask(60000)
 		} else {
@@ -160,8 +163,10 @@ func (t *TargetTask) HandleErrors(step string) bool {
 			t.SleepTask(t.ErrorDelay)
 		}
 	case containsAnyText(errText, "Shape Block (Cart)"):
+		t.telemetry(task.TelemetryShapeBlockCart, step)
 		t.StepAfterSolve = step
 		if t.ShapeBlockCount >= 3 {
+			t.telemetry(task.TelemetryShapeSoftBlock, step)
 			t.UpdateStatus("Shape Soft Block", constants.Colors.RED)
 			t.SleepTask(60000)
 			if step == "add-to-cart" {
@@ -194,6 +199,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.SleepTask(t.ErrorDelay)
 		t.bailToRestock()
 	case containsAnyText(errText, "Shape Block (Precart)"):
+		t.telemetry(task.TelemetryShapeBlockPreCart, step)
 		t.PreCartShapeBlockCount++
 		if t.PreCartShapeBlockCount >= 3 {
 			t.UpdateStatus("Using Alternate Cart Flow", constants.Colors.RED)

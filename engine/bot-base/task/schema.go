@@ -153,6 +153,8 @@ type AnalyticsEventMessage struct {
 	TaskID      string                 `json:"taskId,omitempty"`
 	RunID       string                 `json:"runId,omitempty"`
 	OrderNumber string                 `json:"orderNumber,omitempty"`
+	Account     string                 `json:"account,omitempty"`
+	Profile     string                 `json:"profile,omitempty"`
 	TotalCents  int64                  `json:"totalCents"`
 	Items       []AnalyticsProductItem `json:"items"`
 	OccurredAt  int64                  `json:"occurredAt"`

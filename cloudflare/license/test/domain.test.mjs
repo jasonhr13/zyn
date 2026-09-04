@@ -263,7 +263,7 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
 });
 
 test('ships the Zyn-branded admin assets and both custom domains', async () => {
-  const [html, css, javascript, wrangler, migration, analyticsIndexes, deviceLimits, versionState, source] = await Promise.all([
+  const [html, css, javascript, wrangler, migration, analyticsIndexes, deviceLimits, versionState, analyticsAccount, source] = await Promise.all([
     readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.css', import.meta.url), 'utf8'),
     readFile(new URL('../public/admin.js', import.meta.url), 'utf8'),
@@ -272,6 +272,7 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
     readFile(new URL('../migrations/0009_global_analytics_indexes.sql', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0010_active_device_limits.sql', import.meta.url), 'utf8'),
     readFile(new URL('../migrations/0011_polar_upstream_version.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../migrations/0014_analytics_account.sql', import.meta.url), 'utf8'),
     readFile(new URL('../src/index.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /Zyn License Admin/);
@@ -313,6 +314,10 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(html, /id="refresh-proxies"/);
   assert.match(html, /Active users/);
   assert.match(html, /Global checkout history/);
+  assert.match(html, /<th>Account<\/th>/);
+  assert.match(javascript, /checkout\.account/);
+  assert.match(analyticsAccount, /ADD COLUMN account TEXT NOT NULL DEFAULT ''/);
+  assert.match(analyticsAccount, /ADD COLUMN profile TEXT NOT NULL DEFAULT ''/);
   assert.match(javascript, /\/api\/admin\/analytics\/dashboard/);
   assert.match(javascript, /\/api\/admin\/analytics\/users/);
   assert.match(javascript, /\/api\/admin\/analytics\/checkouts/);
@@ -356,7 +361,7 @@ test('keeps global analytics behind the admin session boundary', async () => {
   }
 });
 
-test('normalizes analytics without accepting identity or payment fields', () => {
+test('normalizes analytics with checkout account fields and drops payment data', () => {
   const event = __test.normalizeAnalyticsEvent({
     eventId: '0123456789abcdef0123456789abcdef',
     eventType: 'checkout',
@@ -364,6 +369,8 @@ test('normalizes analytics without accepting identity or payment fields', () => 
     taskId: 'task-1',
     runId: 'run-1',
     orderNumber: 'order-1',
+    account: 'target-account@example.com',
+    profile: 'Target Main',
     totalCents: 2500,
     occurredAt: 100000,
     email: 'must-not-store@example.com',
@@ -372,8 +379,11 @@ test('normalizes analytics without accepting identity or payment fields', () => 
   }, 100000);
   assert.equal(event.site, 'Pokemon Center US');
   assert.equal(event.totalCents, 2500);
+  assert.equal(event.account, 'target-account@example.com');
+  assert.equal(event.profile, 'Target Main');
   assert.equal(event.items[0].quantity, 2);
   assert.equal(Object.hasOwn(event, 'email'), false);
+  assert.equal(JSON.stringify(event).includes('must-not-store@example.com'), false);
   assert.equal(JSON.stringify(event).includes('4111111111111111'), false);
   assert.equal(__test.normalizeAnalyticsEvent({ ...event, eventId: 'short' }, 100000), null);
 });

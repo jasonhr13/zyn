@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"zynbot.app/engine/bot-base/captcha"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/profiles"
 	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/task"
@@ -366,10 +365,10 @@ func (t *PokemonCenterTask) HandleTask() {
 					t.TaskState = constants.StatusSteps.Carted
 					task.SendCartedAnalytics(task.ProductWebhookData{
 						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
-						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						Email: t.Profile.Email, ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
 						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
 					})
-					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
+					task.Telemetry(task.TaskTelemetryEvent{Event: task.TelemetryCarted, Site: t.Site, Step: "add-to-cart", TaskID: t.ID, RunID: t.RunID})
 					t.NextStep = "submit-email"
 					break
 				}
@@ -378,10 +377,10 @@ func (t *PokemonCenterTask) HandleTask() {
 					t.TaskState = constants.StatusSteps.Carted
 					task.SendCartedAnalytics(task.ProductWebhookData{
 						CheckoutProducts: t.BuildProductWebhookItems(), Site: t.Site,
-						ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
+						Email: t.Profile.Email, ProfileName: t.Profile.ProfileName, ProxyGroup: t.ProxyGroup,
 						TaskID: t.RunID, ClientTaskID: t.ID, RunID: t.RunID,
 					})
-					datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "PokemonCenter", "task_id": t.RunID, "name": t.Profile.ProfileName})
+					task.Telemetry(task.TaskTelemetryEvent{Event: task.TelemetryCarted, Site: t.Site, Step: "add-to-cart", TaskID: t.ID, RunID: t.RunID})
 					t.NextStep = "submit-email"
 					break
 				}
@@ -632,7 +631,7 @@ func (t *PokemonCenterTask) HandleTask() {
 					break
 				}
 				if t.PassedQueue {
-					datadog.Info("Passed_Queue", map[string]interface{}{"event": "passed_queue", "site": "PokemonCenter", "task_id": t.ID, "name": t.Profile.ProfileName})
+					task.Telemetry(task.TaskTelemetryEvent{Event: task.TelemetryPassedQueue, Site: t.Site, Step: "poll-queue", TaskID: t.ID, RunID: t.RunID})
 					t.NextStep = t.StepAfterSolve
 				} else {
 					t.InQueue = true

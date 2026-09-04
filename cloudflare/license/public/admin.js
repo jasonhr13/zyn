@@ -22,6 +22,7 @@ const analyticsState = {
   historyPageSize: 20,
   historyTotal: 0,
   checkoutSearch: '',
+  shapeSite: '',
 };
 
 function toast(message, error = false) {
@@ -706,6 +707,10 @@ function analyticsCheckoutRow(checkout) {
   item.textContent = `${first.name || first.sku || 'Checkout'}${items.length > 1 ? ` +${items.length - 1} more` : ''}`;
   item.title = items.map(value => value.name || value.sku).filter(Boolean).join(', ');
   cell(row, item);
+  const account = document.createElement('div');
+  account.textContent = checkout.account || '—';
+  account.title = [checkout.account, checkout.profile].filter(Boolean).join(' · ');
+  cell(row, account);
   cell(row, checkout.site || '—');
   cell(row, formatDate(checkout.occurredAt));
   cell(row, checkout.orderNumber || '—');
@@ -726,13 +731,113 @@ function renderAnalyticsHistory(result) {
   $('#analytics-history-next').disabled = analyticsState.historyPage >= pages;
 }
 
+function formatPercent(value) {
+  return `${(Math.max(0, Number(value) || 0) * 100).toFixed(1)}%`;
+}
+
+function formatDuration(ms) {
+  const seconds = Math.round((Number(ms) || 0) / 1000);
+  if (!seconds) return '–';
+  if (seconds < 90) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes}m`;
+  return `${(minutes / 60).toFixed(1)}h`;
+}
+
+function rateCell(row, value) {
+  const element = cell(row, formatPercent(value));
+  element.className = Number(value) >= 0.25 ? 'analytics-rate-warn' : 'analytics-rate-ok';
+  return element;
+}
+
+function renderAnalyticsShape(result) {
+  const summary = result.summary || {};
+  const counts = summary.counts || {};
+  const number = value => Number(value || 0).toLocaleString();
+  $('#analytics-shape-attempts').textContent = number(counts.cart_attempt);
+  $('#analytics-shape-carted').textContent = number(counts.carted);
+  $('#analytics-shape-block-rate').textContent = formatPercent(summary.cartBlockRate);
+  $('#analytics-shape-login-blocks').textContent = number(counts.shape_block_login);
+  $('#analytics-shape-soft-blocks').textContent = number(counts.shape_soft_block);
+  $('#analytics-shape-dco').textContent = number(counts.dco_rate_limited);
+  $('#analytics-shape-unavailable').textContent = number(counts.shape_unavailable);
+  $('#analytics-shape-cookie-age').textContent = formatDuration(summary.avgCookieAgeMs);
+  $('#analytics-shape-updated').textContent = `${number(summary.users)} users reporting · updated ${new Date().toLocaleTimeString()}`;
+
+  const methods = $('#analytics-shape-methods');
+  methods.replaceChildren();
+  for (const group of result.byMethod || []) {
+    const row = document.createElement('tr');
+    const c = group.counts || {};
+    cell(row, group.shapeMethod || '(unknown)');
+    cell(row, group.cookieType || '–');
+    cell(row, number(group.users));
+    cell(row, number(c.cart_attempt));
+    cell(row, number(c.carted)).className = 'analytics-value-good';
+    cell(row, number(c.shape_block_cart)).className = 'analytics-value-bad';
+    cell(row, number(c.shape_block_precart));
+    cell(row, number(c.shape_block_login));
+    cell(row, number(c.shape_soft_block));
+    rateCell(row, group.cartBlockRate);
+    cell(row, formatDuration(group.avgCookieAgeMs));
+    methods.append(row);
+  }
+  $('#analytics-shape-methods-empty').classList.toggle('hidden', (result.byMethod || []).length > 0);
+
+  const versions = $('#analytics-shape-versions');
+  versions.replaceChildren();
+  for (const group of result.byVersion || []) {
+    const row = document.createElement('tr');
+    const c = group.counts || {};
+    cell(row, group.engineVersion || '(unknown)');
+    cell(row, group.appVersion || '–');
+    cell(row, number(group.users));
+    cell(row, number(c.cart_attempt));
+    cell(row, number(c.carted)).className = 'analytics-value-good';
+    cell(row, number(c.shape_block_cart + c.shape_block_precart)).className = 'analytics-value-bad';
+    cell(row, number(c.shape_block_login));
+    cell(row, number(c.checkout));
+    cell(row, number(c.decline));
+    rateCell(row, group.cartBlockRate);
+    versions.append(row);
+  }
+
+  const users = $('#analytics-shape-users');
+  users.replaceChildren();
+  for (const user of result.users || []) {
+    const row = document.createElement('tr');
+    const c = user.counts || {};
+    cell(row, user.email || user.userId || '');
+    cell(row, number(c.cart_attempt));
+    cell(row, number(c.carted)).className = 'analytics-value-good';
+    cell(row, number(c.shape_block_cart + c.shape_block_precart)).className = 'analytics-value-bad';
+    cell(row, number(c.shape_block_login));
+    cell(row, number(c.shape_soft_block));
+    rateCell(row, user.cartBlockRate);
+    cell(row, formatDuration(user.avgCookieAgeMs));
+    cell(row, formatDate(user.lastSeenAt));
+    users.append(row);
+  }
+  $('#analytics-shape-users-empty').classList.toggle('hidden', (result.users || []).length > 0);
+}
+
+async function loadAnalyticsShape() {
+  try {
+    renderAnalyticsShape(await request(analyticsPath('/api/admin/analytics/shape', { site: analyticsState.shapeSite })));
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else toast(error.message, true);
+  }
+}
+
 async function loadAnalytics() {
   const refresh = $('#analytics-refresh');
   refresh.disabled = true;
   refresh.textContent = 'Loading…';
   try {
-    const [dashboard, users, history] = await Promise.all([
+    const [dashboard, shape, users, history] = await Promise.all([
       request(analyticsPath('/api/admin/analytics/dashboard')),
+      request(analyticsPath('/api/admin/analytics/shape', { site: analyticsState.shapeSite })),
       request(analyticsPath('/api/admin/analytics/users', {
         page: analyticsState.usersPage, pageSize: analyticsState.usersPageSize, search: analyticsState.userSearch,
       })),
@@ -741,6 +846,7 @@ async function loadAnalytics() {
       })),
     ]);
     renderAnalyticsDashboard(dashboard);
+    renderAnalyticsShape(shape);
     renderAnalyticsUsers(users);
     renderAnalyticsHistory(history);
     analyticsLoaded = true;
@@ -837,6 +943,16 @@ document.querySelectorAll('[data-analytics-metric]').forEach(element => {
       candidate.classList.toggle('active', candidate === element);
     });
     renderAnalyticsChart();
+  });
+});
+
+document.querySelectorAll('[data-analytics-shape-site]').forEach(element => {
+  element.addEventListener('click', () => {
+    analyticsState.shapeSite = element.dataset.analyticsShapeSite;
+    document.querySelectorAll('[data-analytics-shape-site]').forEach(candidate => {
+      candidate.classList.toggle('active', candidate === element);
+    });
+    loadAnalyticsShape();
   });
 });
 

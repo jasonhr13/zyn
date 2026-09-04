@@ -199,11 +199,12 @@ export default class Dashboard extends Component {
   exportCsv = async () => {
     const result = await ipcRenderer.invoke('analyticsCheckouts', { ...this.query(), page: 1, pageSize: 100 });
     if (!result || !result.ok) return;
-    const rows = [['Date', 'Site', 'Product', 'SKU', 'Quantity', 'Unit price', 'Order total', 'Order number']];
+    const rows = [['Date', 'Site', 'Account', 'Profile', 'Product', 'SKU', 'Quantity', 'Unit price', 'Order total', 'Order number']];
     for (const checkout of (result.checkouts || [])) {
       const items = checkout.items && checkout.items.length ? checkout.items : [{}];
       for (const item of items) rows.push([
-        new Date(checkout.occurredAt).toLocaleString(), checkout.site, item.name || '', item.sku || '',
+        new Date(checkout.occurredAt).toLocaleString(), checkout.site, checkout.account || '',
+        checkout.profile || '', item.name || '', item.sku || '',
         item.quantity || 1, currency(item.unitPriceCents), currency(checkout.totalCents), checkout.orderNumber || '',
       ]);
     }
@@ -277,22 +278,28 @@ export default class Dashboard extends Component {
                 <button className="btn btn-sm btn-icon" type="button" onClick={() => this.load()} title="Refresh"><Icon name="refresh" size={14} /></button>
                 <button className="btn btn-sm btn-icon" type="button" onClick={this.exportCsv} title="Export CSV"><Icon name="download" size={14} /></button>
                 <label className="analytics-search"><Icon name="search" size={13} />
-                  <input value={this.state.search} onChange={this.setSearch} placeholder="Search checkouts" />
+                  <input value={this.state.search} onChange={this.setSearch} placeholder="Search account, product, order" />
                 </label>
               </div>
             </header>
-            <div className="analytics-checkout-head"><span>Item</span><span>Site</span><span>Date</span><span>Order</span></div>
+            <div className="analytics-checkout-head"><span>Item</span><span>Account</span><span>Site</span><span>Date</span><span>Order</span></div>
             <div className="analytics-checkout-list">
               {this.state.loading && !checkouts.length ? <div className="analytics-list-empty">Loading analytics…</div>
                 : !checkouts.length ? <div className="analytics-list-empty">No checkouts in this range.</div>
                   : checkouts.map(checkout => {
                     const items = Array.isArray(checkout.items) ? checkout.items : [];
                     const item = items[0] || {};
+                    const account = String(checkout.account || '').trim();
+                    const profile = String(checkout.profile || '').trim();
                     return <div className="analytics-checkout-row" key={checkout.eventId}>
                       <div className="analytics-product-cell">
                         <span className="analytics-product-image">{item.image ? <img src={item.image} alt="" /> : <Icon name="cart" size={14} />}</span>
                         <span><strong>{item.name || item.sku || 'Checkout'}</strong><small>{item.quantity ? `${item.quantity}×` : ''}{items.length > 1 ? ` +${items.length - 1} more` : ''} · {currency(checkout.totalCents)}</small></span>
                       </div>
+                      <span className="analytics-account-cell" title={[account, profile].filter(Boolean).join(' · ')}>
+                        <span>{account || '—'}</span>
+                        {profile && profile !== account ? <small>{profile}</small> : null}
+                      </span>
                       <span>{checkout.site}</span>
                       <span>{new Date(checkout.occurredAt).toLocaleDateString()}</span>
                       <span title={checkout.orderNumber || ''}>{checkout.orderNumber || '—'}</span>

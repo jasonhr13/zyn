@@ -86,7 +86,7 @@
 .tone-red { --card-tone: rgba(127,29,29,.32); --card-line: #BE123C; }
 .tone-gold { --card-tone: rgba(251,191,36,.24); --card-line: #FBBF24; }
 .tone-orange { --card-tone: rgba(249,115,22,.27); --card-line: #F97316; }
-.analytics-grid { display: grid; grid-template-columns: minmax(460px, 1.55fr) minmax(390px, 1fr); gap: 12px; min-height: 440px; flex: 1; }
+.analytics-grid { display: grid; grid-template-columns: minmax(420px, 1.4fr) minmax(430px, 1.1fr); gap: 12px; min-height: 440px; flex: 1; }
 .analytics-panel {
   display: flex;
   flex-direction: column;
@@ -119,7 +119,7 @@
 .analytics-table-actions { display: flex; gap: 5px; align-items: center; }
 .analytics-search {
   height: 30px;
-  width: 150px;
+  width: 196px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -132,7 +132,7 @@
 .analytics-search:focus-within { border-color: var(--accent-border); box-shadow: var(--shadow-focus); }
 .analytics-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 11px; }
 .analytics-search input::placeholder { color: var(--dim); }
-.analytics-checkout-head, .analytics-checkout-row { display: grid; grid-template-columns: minmax(160px, 1.65fr) minmax(90px, .8fr) 76px minmax(74px, .65fr); gap: 10px; align-items: center; }
+.analytics-checkout-head, .analytics-checkout-row { display: grid; grid-template-columns: minmax(128px, 1.25fr) minmax(108px, 1fr) minmax(68px, .62fr) 68px minmax(62px, .52fr); gap: 8px; align-items: center; }
 .analytics-checkout-head {
   min-height: 36px;
   padding: 0 12px;
@@ -145,6 +145,19 @@
 .analytics-checkout-row { min-height: 58px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); color: var(--text2); font-size: 11px; }
 .analytics-checkout-row:hover { background: var(--panel-hover); }
 .analytics-checkout-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-account-cell { display: flex; flex-direction: column; min-width: 0; white-space: normal; }
+.analytics-account-cell > span,
+.analytics-account-cell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.analytics-account-cell small {
+  margin-top: 3px;
+  color: var(--dim);
+  font-size: 9px;
+  font-family: var(--font-mono);
+}
 .analytics-product-cell { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .analytics-product-cell > span:last-child { min-width: 0; }
 .analytics-product-cell strong, .analytics-product-cell small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

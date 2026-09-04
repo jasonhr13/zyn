@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"zynbot.app/engine/antibots/tmx"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/imapcode"
 	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/safego"
@@ -492,6 +491,7 @@ func (t *TargetTask) HandleTask() {
 				}}
 				task.SendCartedAnalytics(task.ProductWebhookData{
 					CheckoutProducts: t.BuildProductWebhookItems(),
+					Email:            t.Account.Username,
 					Site:             "Target",
 					ProfileName:      t.Profile.ProfileName,
 					ProxyGroup:       t.ProxyGroup,
@@ -501,7 +501,7 @@ func (t *TargetTask) HandleTask() {
 					GrandTotal:       t.CartToalPrice,
 				})
 				t.AddLog(fmt.Sprintf("Carted %dx %s - $%.2f w shape: %s", productQty, productName, t.CartToalPrice, t.ShapeMethod))
-				datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "Target", "task_id": t.RunID, "shapeMethod": t.ShapeMethod})
+				t.telemetry(task.TelemetryCarted, "add-to-cart")
 				t.PassedCartErrors = 0
 				t.CheckoutRateLimitCount = 0
 				t.NextStep = "submit-payment"

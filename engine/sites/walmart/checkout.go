@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"zynbot.app/engine/antibots/tmx"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/imapcode"
 	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/safego"
@@ -432,7 +431,7 @@ func (t *WalmartTask) HandleTask() {
 					break
 				}
 				if t.QueuePassed {
-					datadog.Info("Passed_Queue", map[string]interface{}{"event": "passed_queue", "site": "Walmart", "task_id": t.ID, "name": t.Profile.ProfileName})
+					task.Telemetry(task.TaskTelemetryEvent{Event: task.TelemetryPassedQueue, Site: t.Site, Step: "poll-queue", TaskID: t.ID, RunID: t.RunID})
 					t.NextStep = "add-to-cart"
 				} else {
 					status, color := queueStatusWithETA(t.ExpectedQueueTime)
@@ -461,7 +460,7 @@ func (t *WalmartTask) HandleTask() {
 				}
 				t.TaskState = constants.StatusSteps.Carted
 				safego.Go(func() { task.SendCartedEvent(t.RunID) })
-				datadog.Info("Carted", map[string]interface{}{"event": "carted", "site": "Walmart", "task_id": t.RunID, "name": t.Profile.ProfileName})
+				task.Telemetry(task.TaskTelemetryEvent{Event: task.TelemetryCarted, Site: t.Site, Step: "add-to-cart", TaskID: t.ID, RunID: t.RunID})
 				t.NextStep = "get-cart-checkout"
 
 			case "get-cart-checkout":

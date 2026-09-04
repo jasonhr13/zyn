@@ -668,6 +668,7 @@ function installAnalytics(authority) {
     const service = createAnalyticsService({
       dataDirectory: app.getPath('userData'),
       authority,
+      appVersion: app.getVersion(),
       ipcMain,
       onUpdated: pushAnalyticsUpdated,
       logger: console,

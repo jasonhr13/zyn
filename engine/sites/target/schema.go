@@ -17,6 +17,8 @@ type TargetTask struct {
 	ShapeHeaders           ShapeHeaders
 	ShapeProxy             string
 	ShapeMethod            string
+	ShapeCookieType        string
+	ShapeCreatedAt         int64
 	StepAfterSolve         string
 	RedirectLocation       string
 	CartID                 string

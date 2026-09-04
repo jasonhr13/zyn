@@ -11,7 +11,6 @@ import (
 	"syscall"
 
 	"zynbot.app/engine/bot-base/alert"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/safego"
 	"zynbot.app/engine/bot-base/siteconfig"
 	"zynbot.app/engine/bot-base/task"
@@ -38,7 +37,6 @@ func main() {
 	// services and does not embed credentials for them.
 	siteconfig.SetLicenseKey("")
 	siteconfig.SetUsername("")
-	datadog.Init("", "")
 	alert.SetWebhookURL("")
 	task.SetCloudConnectedCheck(func() bool { return true })
 
@@ -55,12 +53,14 @@ func waitForShutdown() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	<-signals
+	task.FlushTelemetry()
 	os.Exit(0)
 }
 
 func watchParentAlive() {
 	buffer := make([]byte, 1)
 	if _, err := os.Stdin.Read(buffer); err != nil {
+		task.FlushTelemetry()
 		os.Exit(0)
 	}
 }

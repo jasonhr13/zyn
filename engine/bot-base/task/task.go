@@ -15,7 +15,6 @@ import (
 	http "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
 	"zynbot.app/engine/bot-base/accounts"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/profiles"
 	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/safego"
@@ -67,18 +66,7 @@ func SendProductWebhook(data ProductWebhookData) {
 	if data.Success {
 		proxy.RecordProxyResult(proxyResultTaskID(data), true)
 	}
-	eventName, message := "checkout_decline", "Declined"
-	if data.Success {
-		eventName, message = "checkout_success", "Successful Checkout"
-	}
-	datadog.Info(message, map[string]interface{}{
-		"event":        eventName,
-		"site":         data.Site,
-		"task_id":      data.TaskID,
-		"order_number": data.OrderNumber,
-		"grand_total":  data.GrandTotal,
-		"name":         data.ProfileName,
-	})
+	Telemetry(outcomeTelemetry(data))
 
 	if fn := sendProductWebhook; fn != nil {
 		safego.Go(func() { fn(data) })
@@ -152,6 +140,8 @@ func emitAnalyticsEvent(eventType string, data ProductWebhookData) {
 		TaskID:      taskID,
 		RunID:       runID,
 		OrderNumber: data.OrderNumber,
+		Account:     strings.TrimSpace(data.Email),
+		Profile:     strings.TrimSpace(data.ProfileName),
 		TotalCents:  totalCents,
 		Items:       items,
 		OccurredAt:  time.Now().UnixMilli(),
@@ -193,7 +183,7 @@ func sendServerEvents(data ProductWebhookData) {
 
 	products := data.CheckoutProducts
 	if len(products) == 0 {
-		// Still report the success/decline so Datadog and polar-ws stay aligned
+		// Still report the success/decline so analytics and polar-ws stay aligned
 		// even when product details failed to populate.
 		products = []ProductWebhookItem{{}}
 	}

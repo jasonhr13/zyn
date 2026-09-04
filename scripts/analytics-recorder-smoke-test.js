@@ -32,6 +32,7 @@ async function main() {
   const event = {
     eventId: '0123456789abcdef0123456789abcdef', eventType: 'checkout', site: 'Target',
     taskId: 'task-1', runId: 'run-1', totalCents: 1999, occurredAt: Date.now(),
+    account: 'target-account@example.com', profile: 'Target Main',
     profileEmail: 'must-not-persist@example.com', cardNumber: '4111111111111111',
     items: [{ sku: '123', name: 'Item', quantity: 1, unitPriceCents: 1999 }],
   };
@@ -42,6 +43,7 @@ async function main() {
   assert.equal(raw.includes('one@example.com'), false);
   assert.equal(raw.includes('must-not-persist@example.com'), false);
   assert.equal(raw.includes('4111111111111111'), false);
+  assert.equal(raw.includes('target-account@example.com'), true);
 
   email = 'two@example.com';
   online = true;
@@ -50,6 +52,9 @@ async function main() {
   email = 'one@example.com';
   await service.flush();
   assert.equal(uploaded.length, 1);
+  assert.equal(uploaded[0].account, 'target-account@example.com');
+  assert.equal(uploaded[0].profile, 'Target Main');
+  assert.equal(Object.hasOwn(uploaded[0], 'profileEmail'), false);
   assert.equal(service.pending(), 0);
   const onlineView = await service.dashboard({ range: '30d', from: 10, to: 20 });
   assert.equal(onlineView.summary.checkouts, 1);

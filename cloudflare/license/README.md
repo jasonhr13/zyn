@@ -195,6 +195,19 @@ daily chart, per-user results, and global checkout history. The global indexes i
 keep range queries from depending on a user-prefixed index. These endpoints remain inside the
 HttpOnly admin-cookie boundary and do not expose analytics through the public or desktop APIs.
 
+Task telemetry (migration 0015) tracks how tasks fare against site protections: cart attempts,
+carted, Shape blocks by login, cart and precart, soft blocks, DCO and 429 rate limits, Shape cookie
+availability, queue passes, and checkout outcomes. The engine tags every event with the Shape cookie
+source, cookie type, and cookie age at the moment it was used. Because a single user can produce
+hundreds of cart attempts a minute, the desktop rolls events up locally into hourly buckets keyed
+by site, event, step, cookie source, cookie type, engine version, and app version, then uploads
+the counters once a minute to `POST /api/analytics/task-telemetry`. Each upload carries a batch id
+that is claimed in `analytics_task_batches` before any counter is added, so a replayed batch whose
+response was lost is applied once; claims older than seven days are pruned by the cron. Buckets
+never carry task ids, accounts, profiles, products, or order numbers. The admin Analytics tab reads
+`GET /api/admin/analytics/shape` for global totals, block rates and average cookie age by cookie
+source, by engine and app version, an hourly or daily series, and the most blocked users.
+
 ## Operations
 
 From the repository root:

@@ -12,8 +12,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
-	"zynbot.app/engine/bot-base/datadog"
 	"zynbot.app/engine/bot-base/safego"
+	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	"zynbot.app/engine/client"
 )
@@ -81,13 +81,16 @@ func (t *TargetTask) GetSession() {
 }
 
 func (t *TargetTask) GetShape(CookieType string) {
+	t.ShapeCookieType = CookieType
 	if brokerURL := zynShapeBrokerURL(); brokerURL != "" {
 		responseBody, err := fetchZynShape(t.TaskContext.CTX, brokerURL, os.Getenv("ZYN_SHAPE_TOKEN"), CookieType, nil)
 		if err != nil {
 			log.Printf("[GetShape] Zyn broker error: %v", err)
+			t.telemetry(task.TelemetryShapeUnavailable, "get-shape")
 			return
 		}
 		t.applyShapeResponse(responseBody)
+		t.telemetry(task.TelemetryShapeReady, "get-shape")
 		return
 	}
 
@@ -2100,7 +2103,7 @@ func (t *TargetTask) AddToCart(Tcin string, Qty int, PreCart bool) {
 		},
 	}
 	if !PreCart {
-		datadog.Info("cartAttempt", map[string]interface{}{"event": "cartAttempt", "site": "Target", "task_id": t.RunID, "shapeMethod": t.ShapeMethod})
+		t.telemetry(task.TelemetryCartAttempt, "add-to-cart")
 		h := t.ShapeHeaders
 		Request.Headers = map[string][]string{
 			"sec-ch-ua-platform": {h.SecChUAPlatform},
