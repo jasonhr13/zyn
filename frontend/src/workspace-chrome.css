@@ -1,10 +1,5 @@
 /* Workspace chrome shared by every desktop route. */
 .title-bar-caption { position: absolute; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 10px; letter-spacing: .03em; }
-.sidebar-workspace { display: flex; align-items: center; gap: 11px; padding: 4px 9px 22px; }
-.sidebar-workspace-mark { width: 39px; height: 39px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--panel-border-strong); background: var(--panel); border-radius: 12px; box-shadow: var(--shadow-panel); }
-.sidebar-workspace-mark img { width: 30px; height: 30px; object-fit: contain; }
-.sidebar-workspace strong { display: block; color: var(--text); font-size: 21px; letter-spacing: -.7px; font-weight: 650; }
-.sidebar-workspace small { display: block; margin-top: 3px; color: var(--dim); font-size: 10px; }
 .sidebar-bottom { padding-top: 24px; }
 .sidebar-account { display: flex; gap: 9px; align-items: center; padding: 12px 7px; border-top: 1px solid var(--panel-border); }
 .sidebar-account > span:nth-child(2) { min-width: 0; flex: 1; }
@@ -43,8 +38,8 @@
 .form-label { color: var(--text2); }
 .profile-groups-sidebar { background: var(--app-bg); }
 @media (max-width: 1100px) { .sidebar { width: 188px; padding-inline: 9px; } .sidebar-label { font-size: 12px; } .page-header { padding-inline: 22px; } .page-content { padding-inline: 22px; } }
-@media (max-width: 800px) { .sidebar { width: 166px; } .sidebar-workspace { padding-inline: 5px; gap: 8px; } .page-header { padding-inline: 16px; } .page-content { padding: 20px 16px; } .title-bar-caption { display: none; } }
-@media (max-height: 650px) { .sidebar-workspace { padding-bottom: 14px; } .sidebar-section-label { padding-top: 14px; } .sidebar-bottom { padding-top: 16px; } }
+@media (max-width: 800px) { .sidebar { width: 166px; } .page-header { padding-inline: 16px; } .page-content { padding: 20px 16px; } .title-bar-caption { display: none; } }
+@media (max-height: 650px) { .sidebar-section-label { padding-top: 14px; } .sidebar-bottom { padding-top: 16px; } }
 
 @media (max-width: 1100px) {
   .task-group-r2-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity actions" "stats runtime"; }

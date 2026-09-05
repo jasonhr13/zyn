@@ -77,10 +77,6 @@ class Sidebar extends Component {
     const navItems = NAV_ITEMS.filter(item => !item.taskType || taskTypes[item.taskType] === true);
     return (
       <div className="sidebar">
-        <div className="sidebar-workspace">
-          <span className="sidebar-workspace-mark"><img src={`${process.env.PUBLIC_URL}/zyn-icon.png`} alt="" /></span>
-          <span><strong>Zyn<span className="aio-mark">AIO</span></strong><small>Your workspace</small></span>
-        </div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
           {navItems.map(({ to, icon, label, section, activeRoutes }) => {
             const heading = section && section !== lastSection

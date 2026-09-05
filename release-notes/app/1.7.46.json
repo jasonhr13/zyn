@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.46",
+  "notes": [
+    "Removed the duplicate Zyn logo and workspace heading from the sidebar.",
+    "Zyn branding now appears once, in the title bar.",
+    "Sidebar navigation starts higher, leaving more room for menu items."
+  ]
+}

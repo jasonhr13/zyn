@@ -4,7 +4,7 @@ Branch: `codex/zyn-ui-refresh`
 
 This direction pairs graphite surfaces with a warm coral accent. Light mode uses cool white surfaces and a darker coral for readable controls. Success, warnings, errors, and informational states have distinct colors. Native system fonts replace the remote display/body fonts.
 
-The shared shell has a workspace identity and a single sidebar for page navigation, filtered by module permissions. Settings has one navigation entry; the account footer shows the signed-in identity.
+The shared shell keeps Zyn branding in the title bar and uses a single sidebar for page navigation, filtered by module permissions. Settings has one navigation entry; the account footer shows the signed-in identity.
 
 The dashboard shows summary metrics, a full-width activity chart, and checkout history. Its chart sizes to the available space, uses readable tick intervals, and retains real analytics filters, search, pagination, and export. Task groups, account/profile rows, forms, and dialogs share the refreshed type and surface treatment. Reduced-motion preferences are respected.
 
