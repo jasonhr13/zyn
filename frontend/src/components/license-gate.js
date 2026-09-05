@@ -1,4 +1,5 @@
 import React, { Component } from 'react';
+import Icon from './icon';
 const { ipcRenderer } = window.require('electron');
 
 // Main owns the bearer/reset tokens and every checkout spawn is enforced there; this component
@@ -87,7 +88,7 @@ class LicenseGate extends Component {
     return (
       <div className="license-gate-r4">
         <form onSubmit={mode === 'login' ? this.signIn : this.resetPassword} className="license-gate-card">
-          <div className="license-gate-mark"><i className={mode === 'login' ? 'ion-md-lock' : 'ion-md-key'} /></div>
+          <div className="license-gate-mark"><Icon name="key" size={24} /></div>
           <div className="license-gate-badge">ZYN<span className="aio-mark">AIO</span></div>
           <div className="license-gate-title">{mode === 'login' ? 'Sign in to ZynAIO' : 'Choose a new password'}</div>
           <div className="license-gate-copy">
@@ -99,19 +100,19 @@ class LicenseGate extends Component {
           {mode === 'login' ? (
             <>
               <input className="form-input" style={inputStyle} type="email" autoComplete="username"
-                placeholder="Email" value={email} onChange={event => this.setState({ email: event.target.value })}
+                placeholder="Email" aria-label="Email" value={email} onChange={event => this.setState({ email: event.target.value })}
                 disabled={busy} autoFocus />
               <input className="form-input" style={inputStyle} type="password" autoComplete="current-password"
-                placeholder="Password" value={password} onChange={event => this.setState({ password: event.target.value })}
+                placeholder="Password" aria-label="Password" value={password} onChange={event => this.setState({ password: event.target.value })}
                 disabled={busy} />
             </>
           ) : (
             <>
               <input className="form-input" style={inputStyle} type="password" autoComplete="new-password"
-                placeholder="New password (10+ characters)" value={newPassword}
+                placeholder="New password (10+ characters)" aria-label="New password" value={newPassword}
                 onChange={event => this.setState({ newPassword: event.target.value })} disabled={busy} autoFocus />
               <input className="form-input" style={inputStyle} type="password" autoComplete="new-password"
-                placeholder="Confirm new password" value={confirmPassword}
+                placeholder="Confirm new password" aria-label="Confirm new password" value={confirmPassword}
                 onChange={event => this.setState({ confirmPassword: event.target.value })} disabled={busy} />
             </>
           )}

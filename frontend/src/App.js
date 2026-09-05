@@ -3,6 +3,7 @@ import { Provider } from 'react-redux';
 import Store from './components/store';
 import PageHandler from './components/page-handler';
 import './App.css';
+import './workspace-chrome.css';
 
 class App extends Component {
   render() {

@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { NavLink, withRouter } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { connect } from 'react-redux';
 import Icon from './icon';
 
@@ -77,6 +77,10 @@ class Sidebar extends Component {
     const navItems = NAV_ITEMS.filter(item => !item.taskType || taskTypes[item.taskType] === true);
     return (
       <div className="sidebar">
+        <div className="sidebar-workspace">
+          <span className="sidebar-workspace-mark"><img src={`${process.env.PUBLIC_URL}/zyn-icon.png`} alt="" /></span>
+          <span><strong>Zyn<span className="aio-mark">AIO</span></strong><small>Your workspace</small></span>
+        </div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
           {navItems.map(({ to, icon, label, section, activeRoutes }) => {
             const heading = section && section !== lastSection
@@ -105,6 +109,10 @@ class Sidebar extends Component {
         </nav>
         <div className="sidebar-bottom">
           {this.renderUpdate()}
+          <div className="sidebar-account" title={this.props.email || 'Your account'}>
+            <span className="sidebar-avatar">{(this.props.email || 'Z').slice(0, 1).toUpperCase()}</span>
+            <span><strong>{(this.props.email || 'Your account').split('@')[0]}</strong><small>Signed in</small></span>
+          </div>
           <div className="sidebar-version">
             <div>{APP_VERSION ? `App v${APP_VERSION}` : 'Zyn'}</div>
             {this.renderEngineVersion()}
@@ -115,4 +123,4 @@ class Sidebar extends Component {
   }
 }
 
-export default withRouter(connect(state => ({ update: state.update, runtime: state.runtime }))(Sidebar));
+export default connect(state => ({ update: state.update, runtime: state.runtime }))(Sidebar);

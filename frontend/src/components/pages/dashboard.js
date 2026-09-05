@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { Component, useEffect, useRef, useState } from 'react';
 import Icon from '../icon';
 import './dashboard.css';
 
@@ -63,39 +63,48 @@ function shortBucketLabel(key, interval) {
   return new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-function MetricChart({ series, interval, metric }) {
+function MetricChart({ series, interval, metric, loading }) {
   const rows = chartRows(series, interval, metric);
-  const width = 760;
-  const height = 290;
+  const canvas = useRef(null);
+  const [width, setWidth] = useState(760);
+  const height = 230;
+  useEffect(() => {
+    const observer = new ResizeObserver(entries => setWidth(Math.max(280, entries[0].contentRect.width)));
+    observer.observe(canvas.current);
+    return () => observer.disconnect();
+  }, []);
   const left = 48;
   const right = 18;
   const top = 18;
   const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const max = Math.max(1, ...rows.map(row => row.value));
+  const peak = Math.max(1, ...rows.map(row => row.value));
+  const magnitude = Math.pow(10, Math.floor(Math.log10(peak / 4)));
+  const step = Math.max(1, [1, 2, 5, 10].find(value => value * magnitude >= peak / 4) * magnitude);
+  const max = Math.ceil(peak / step) * step;
+  const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, index) => index * step);
   const points = rows.map((row, index) => ({
     ...row,
     x: left + (rows.length <= 1 ? plotWidth / 2 : index * plotWidth / (rows.length - 1)),
     y: top + plotHeight - row.value / max * plotHeight,
   }));
   const pointString = points.map(point => `${point.x},${point.y}`).join(' ');
-  const area = points.length
-    ? `${left},${top + plotHeight} ${pointString} ${left + plotWidth},${top + plotHeight}` : '';
+  const area = points.length > 1
+    ? `${points[0].x},${top + plotHeight} ${pointString} ${points[points.length - 1].x},${top + plotHeight}` : '';
   const labelStep = Math.max(1, Math.ceil(points.length / 7));
   return (
-    <div className="analytics-chart-canvas">
+    <div className="analytics-chart-canvas" ref={canvas} aria-busy={loading}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metric} analytics chart`}>
         <defs>
           <linearGradient id="zyn-chart-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--accent)" stopOpacity=".24" />
-            <stop offset="1" stopColor="var(--run)" stopOpacity=".02" />
+            <stop offset="0" stopColor="var(--accent)" stopOpacity=".18" />
+            <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {[0, .25, .5, .75, 1].map(mark => {
-          const y = top + plotHeight - mark * plotHeight;
-          const value = max * mark;
-          return <g key={mark}>
+        {ticks.map(value => {
+          const y = top + plotHeight - value / max * plotHeight;
+          return <g key={value}>
             <line className="analytics-grid-line" x1={left} x2={left + plotWidth} y1={y} y2={y} />
             <text className="analytics-axis-label" x={left - 9} y={y + 4} textAnchor="end">
               {metric === 'spent' ? `$${Math.round(value)}` : Math.round(value)}
@@ -105,14 +114,20 @@ function MetricChart({ series, interval, metric }) {
         {area && <polygon className="analytics-chart-area" points={area} />}
         {pointString && <polyline className="analytics-chart-line" points={pointString} />}
         {points.map((point, index) => <React.Fragment key={point.key}>
-          <circle className="analytics-chart-point" cx={point.x} cy={point.y} r="3.5" />
+          <circle className="analytics-chart-point" cx={point.x} cy={point.y} r="3.5">
+            <title>{shortBucketLabel(point.key, interval)}: {metric === 'spent' ? currency(point.value * 100) : point.value}</title>
+          </circle>
           {(index % labelStep === 0 || index === points.length - 1) &&
             <text className="analytics-axis-label" x={point.x} y={height - 13} textAnchor="middle">
               {shortBucketLabel(point.key, interval)}
             </text>}
         </React.Fragment>)}
       </svg>
-      {!rows.length && <div className="analytics-chart-empty">Your activity will appear here after the first cart or checkout.</div>}
+      {!rows.length && <div className="analytics-chart-empty">
+        {loading
+          ? <p role="status">Loading activity…</p>
+          : <><span><Icon name="activity" size={22} /></span><strong>A fresh start</strong><p>Your activity will appear here after the first cart or checkout.</p></>}
+      </div>}
     </div>
   );
 }
@@ -222,25 +237,26 @@ export default class Dashboard extends Component {
     const series = dashboard && dashboard.series ? dashboard.series : [];
     const maxPage = Math.max(1, Math.ceil(total / pageSize));
     const cards = [
-      { label: 'Checkouts', value: summary.checkouts, tone: 'rose', hint: RANGE_LABELS[range] },
-      { label: 'Declines', value: summary.declines, tone: 'red', hint: RANGE_LABELS[range] },
-      { label: 'Total Spent', value: currency(summary.totalSpentCents), tone: 'gold', hint: RANGE_LABELS[range] },
-      { label: 'Stuck In Cart', value: summary.stuckInCart, tone: 'orange', hint: 'No later checkout or decline' },
+      { label: 'Checkouts', value: summary.checkouts, tone: 'rose', icon: 'check', hint: 'Successful orders' },
+      { label: 'Total Spent', value: currency(summary.totalSpentCents), tone: 'gold', icon: 'cart', hint: 'Across your checkouts' },
+      { label: 'Declines', value: summary.declines, tone: 'red', icon: 'close', hint: 'Declined checkouts' },
+      { label: 'Stuck In Cart', value: summary.stuckInCart, tone: 'orange', icon: 'layers', hint: 'No checkout or decline yet' },
     ];
     return <div className="analytics-page">
       <div className="page-header analytics-page-header">
         <div className="page-title"><span className="page-title-dot" /> Dashboard</div>
-        <div className="analytics-clock">{clock.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</div>
+        <div className="analytics-clock"><Icon name="calendar" size={14} />{clock.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}<span />{clock.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
       </div>
       <div className="page-content analytics-content">
         <section className="analytics-hero">
           <div>
+            <span className="analytics-eyebrow">Your workspace, at a glance</span>
             <h1>{greeting(clock)}, {accountName(this.props.email)}</h1>
-            <p>Your Zyn checkout activity, synced across your signed-in devices.</p>
+            <p>Every drop. Every checkout. All in one place.</p>
           </div>
           <div className="analytics-ranges">
             {Object.entries(RANGE_LABELS).map(([key, label]) => <button type="button" key={key}
-              className={range === key ? 'active' : ''} onClick={() => this.setRange(key)}>{label}</button>)}
+              className={range === key ? 'active' : ''} aria-pressed={range === key} onClick={() => this.setRange(key)}>{label}</button>)}
           </div>
         </section>
 
@@ -252,40 +268,40 @@ export default class Dashboard extends Component {
 
         <div className="analytics-cards">
           {cards.map(card => <article className={`analytics-card tone-${card.tone}`} key={card.label}>
-            <span>{card.label}</span><strong>{card.value}</strong><small>{card.hint}</small><i />
+            <div className="analytics-card-label"><span>{card.label}</span><span className="analytics-card-icon"><Icon name={card.icon} size={16} /></span></div>
+            <strong>{this.state.loading && !dashboard ? '—' : card.value}</strong><small>{card.hint}</small>
           </article>)}
         </div>
 
-        <div className="analytics-grid">
           <section className="analytics-panel analytics-overview">
             <header>
-              <div><h2>My Overview</h2><div className="analytics-tabs">
-                {[['checkouts', 'Checkouts'], ['spent', 'Total Spent'], ['declines', 'Declines']].map(([key, label]) =>
-                  <button type="button" className={metric === key ? 'active' : ''} key={key} onClick={() => this.setMetric(key)}>{label}</button>)}
-              </div></div>
+              <div><h2>Activity overview</h2><p className="analytics-panel-subtitle">{RANGE_LABELS[range]} · Your checkout performance</p></div>
               <div className="analytics-intervals">
                 {['day', 'week', 'month', 'year'].map(key => <button type="button" key={key}
-                  className={interval === key ? 'active' : ''} onClick={() => this.setInterval(key)}>{key[0].toUpperCase() + key.slice(1)}</button>)}
+                  className={interval === key ? 'active' : ''} aria-pressed={interval === key} onClick={() => this.setInterval(key)}>{key[0].toUpperCase() + key.slice(1)}</button>)}
               </div>
             </header>
-            <MetricChart series={series} interval={interval} metric={metric} />
+            <div className="analytics-chart-toolbar"><div className="analytics-tabs">
+                {[['checkouts', 'Checkouts'], ['spent', 'Total Spent'], ['declines', 'Declines']].map(([key, label]) =>
+                  <button type="button" className={metric === key ? 'active' : ''} aria-pressed={metric === key} key={key} onClick={() => this.setMetric(key)}>{label}</button>)}
+              </div><span className="analytics-chart-legend"><i />{metric === 'spent' ? 'Total Spent' : metric === 'declines' ? 'Declines' : 'Checkouts'}</span></div>
+            <MetricChart series={series} interval={interval} metric={metric} loading={this.state.loading && !dashboard} />
           </section>
-
           <section className="analytics-panel analytics-checkouts">
             <header>
-              <h2>Checkouts <span>({total})</span></h2>
+              <h2>Recent checkouts <span>{total}</span></h2>
               <div className="analytics-table-actions">
-                <button className="btn btn-sm btn-icon" type="button" onClick={() => this.load()} title="Refresh"><Icon name="refresh" size={14} /></button>
-                <button className="btn btn-sm btn-icon" type="button" onClick={this.exportCsv} title="Export CSV"><Icon name="download" size={14} /></button>
                 <label className="analytics-search"><Icon name="search" size={13} />
-                  <input value={this.state.search} onChange={this.setSearch} placeholder="Search account, product, order" />
+                  <input value={this.state.search} onChange={this.setSearch} placeholder="Search account, product, order" aria-label="Search checkouts" />
                 </label>
+                <button className="btn btn-sm btn-icon" type="button" onClick={() => this.load()} title="Refresh" aria-label="Refresh analytics"><Icon name="refresh" size={14} /></button>
+                <button className="btn btn-sm" type="button" onClick={this.exportCsv} title="Export CSV"><Icon name="download" size={14} />Export</button>
               </div>
             </header>
             <div className="analytics-checkout-head"><span>Item</span><span>Account</span><span>Site</span><span>Date</span><span>Order</span></div>
             <div className="analytics-checkout-list">
               {this.state.loading && !checkouts.length ? <div className="analytics-list-empty">Loading analytics…</div>
-                : !checkouts.length ? <div className="analytics-list-empty">No checkouts in this range.</div>
+                : !checkouts.length ? <div className="analytics-list-empty"><Icon name="cart" size={22} /><strong>{this.state.search ? 'No matching checkouts' : 'Your checkouts will land here'}</strong><span>{this.state.search ? 'Try another account, product, or order.' : 'Completed orders appear here automatically.'}</span></div>
                   : checkouts.map(checkout => {
                     const items = Array.isArray(checkout.items) ? checkout.items : [];
                     const item = items[0] || {};
@@ -300,19 +316,19 @@ export default class Dashboard extends Component {
                         <span>{account || '—'}</span>
                         {profile && profile !== account ? <small>{profile}</small> : null}
                       </span>
-                      <span>{checkout.site}</span>
+                      <span><span className={`analytics-site analytics-site-${checkout.site}`}>{checkout.site === 'pokemoncenter' ? 'Pokémon Center' : checkout.site === 'target' ? 'Target' : checkout.site === 'walmart' ? 'Walmart' : checkout.site}</span></span>
                       <span>{new Date(checkout.occurredAt).toLocaleDateString()}</span>
                       <span title={checkout.orderNumber || ''}>{checkout.orderNumber || '—'}</span>
                     </div>;
                   })}
             </div>
             <footer>
-              <div><button type="button" disabled={page <= 1} onClick={() => this.setPage(page - 1)}>‹</button>
+              <span>{total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total} checkouts` : '0 checkouts'}</span>
+              <div><button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => this.setPage(page - 1)}>‹</button>
                 <span>{page} / {maxPage}</span>
-                <button type="button" disabled={page >= maxPage} onClick={() => this.setPage(page + 1)}>›</button></div>
+                <button type="button" aria-label="Next page" disabled={page >= maxPage} onClick={() => this.setPage(page + 1)}>›</button></div>
             </footer>
           </section>
-        </div>
       </div>
     </div>;
   }

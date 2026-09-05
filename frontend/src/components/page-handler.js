@@ -214,7 +214,7 @@ class PageHandler extends Component {
         <TitleBar />
         <RuntimeBanner />
         <div className="body-wrapper">
-          <Sidebar taskTypes={license.taskTypes || {}} />
+          <Sidebar taskTypes={license.taskTypes || {}} email={license.email || ''} />
           <div className="page-area">
             <ErrorBoundary>
               <Switch>

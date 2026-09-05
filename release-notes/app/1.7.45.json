@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.45",
+  "notes": [
+    "Enjoy a refreshed desktop interface with polished dark and light themes, clearer controls, and simpler navigation.",
+    "The redesigned dashboard gives your activity chart more room and makes checkout history easier to scan.",
+    "The dashboard now loads without briefly flashing an oversized icon.",
+    "The harvester's ATC per task input is wider and easier to edit.",
+    "Zyn now remembers its window position and size, and brings it back on screen when a monitor is disconnected."
+  ]
+}

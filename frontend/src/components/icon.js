@@ -40,6 +40,7 @@ const PATHS = {
   eye: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
   eyeOff: <><path d="m4 4 16 16M9.7 6.3A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a17.2 17.2 0 0 1-2.1 2.8M14.1 14.1a3 3 0 0 1-4.2-4.2M6.3 8.1A17 17 0 0 0 2.5 12s3.5 6 9.5 6a10.8 10.8 0 0 0 2.3-.3"/></>,
   chevronDown: <path d="m7 9.5 5 5 5-5"/>,
+  calendar: <><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 10h16M8 14h2M14 14h2M8 17h2"/></>,
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, className = '', title }) {

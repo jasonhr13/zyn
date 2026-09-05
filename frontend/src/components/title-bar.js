@@ -50,6 +50,7 @@ class TitleBar extends Component {
           <span className="title-bar-name" aria-label="ZynAIO">Zyn<span className="aio-mark">AIO</span></span>
           {IS_DEV && <span className="title-bar-dev">DEV DATA</span>}
         </div>
+        <div className="title-bar-caption" aria-hidden="true">Personal workspace</div>
         <div className="title-bar-controls">
           <button
             type="button"

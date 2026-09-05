@@ -36,8 +36,8 @@ assert.match(dashboard, /Search account, product, order/);
 assert.match(dashboard, /checkout\.account/);
 assert.match(dashboard, /<span>Account<\/span>/);
 assert.match(dashboard, /<MetricChart/);
-assert.match(dashboardCss, /--card-line: #e11d48/i);
-assert.match(dashboardCss, /--card-line: #f97316/i);
+assert.match(dashboardCss, /--card-line: var\(--ok\)/);
+assert.match(dashboardCss, /--card-line: var\(--run\)/);
 assert.doesNotMatch(`${dashboard}\n${dashboardCss}`, /\bPolar\b/i);
 
 assert.match(worker, /authenticatedLicense\(request, env\)/);

@@ -2075,7 +2075,7 @@ class TaskGroups extends Component {
           {this.renderMetrics()}
           {this.renderLoginHarvesterPanel()}
           <div className="workspace-section-heading">
-            <div><h2>Target task groups</h2><p>Organize shared watch lists and account tasks without changing the checkout engine.</p></div>
+            <div><h2>Target task groups</h2><p>Your watch lists, accounts, and tasks. Ready when you are.</p></div>
             {this.state.groups.length > 0 && (
               <input className="form-input task-filter" placeholder="Filter groups…" value={this.state.groupFilter} onChange={event => this.setState({ groupFilter: event.target.value })} />
             )}
@@ -2083,8 +2083,8 @@ class TaskGroups extends Component {
           {this.state.groups.length === 0 ? (
             <div className="task-groups-empty panel">
               <span className="empty-orbit"><Icon name="layers" size={25} /></span>
-              <h3>Create the first task group</h3>
-              <p>Each group owns one Target watch list and the accounts that should act on it. Your legacy Target workspace remains available separately.</p>
+              <h3>Your next drop starts here</h3>
+              <p>Create a group to bring a Target watch list and its accounts together. Add your products, assign your tasks, and get ready.</p>
               <button className="btn btn-primary" onClick={this.openNewGroup}><Icon name="plus" size={13} /> Create Task Group</button>
             </div>
           ) : visible.length ? (

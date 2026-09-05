@@ -10,7 +10,7 @@ const path = require('path');
 const { fileURLToPath } = require('url');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { APP_RELEASE, FEATURES } = require('./feature-flags');
-const { MIN_WINDOW_SIZE, loadWindowSize, saveWindowSize } = require('./window-size-state');
+const { installWindowStatePersistence } = require('./window-size-state');
 const { createTaskGroupStore } = require('./task-group-store');
 const { createTaskGroupScheduler } = require('./task-group-scheduler');
 const { evaluateTargetReadiness } = require('./target-readiness');
@@ -239,43 +239,11 @@ function preserveMacHardwareAcceleration() {
 
 function installWindowSizePersistence() {
   if (!FEATURES.designShell) return;
-  let attached = false;
-
-  // The original main process still owns BrowserWindow construction. Its main window starts hidden,
-  // so this event can restore validated dimensions before the first paint without replacing or
-  // patching Electron's constructor. Only the first top-level window is Zyn's primary window.
-  app.on('browser-window-created', (_event, window) => {
-    if (attached || window.getParentWindow()) return;
-    attached = true;
-
-    try {
-      const { screen } = require('electron');
-      const statePath = path.join(app.getPath('userData'), 'window-size.json');
-      const display = screen.getDisplayMatching(window.getBounds());
-      const size = loadWindowSize(statePath, display && display.workAreaSize);
-      window.setMinimumSize(MIN_WINDOW_SIZE.width, MIN_WINDOW_SIZE.height);
-      window.setSize(size.width, size.height, false);
-
-      let saveTimer = null;
-      const persist = () => {
-        if (window.isDestroyed()) return;
-        saveWindowSize(statePath, window.getNormalBounds());
-      };
-      window.on('resize', () => {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-          saveTimer = null;
-          try { persist(); } catch (error) { console.error(`Could not save Zyn window size: ${error.message}`); }
-        }, 250);
-      });
-      window.once('close', () => {
-        clearTimeout(saveTimer);
-        try { persist(); } catch (error) { console.error(`Could not save Zyn window size: ${error.message}`); }
-      });
-      window.once('closed', () => clearTimeout(saveTimer));
-    } catch (error) {
-      console.error(`Could not restore Zyn window size: ${error.message}`);
-    }
+  installWindowStatePersistence({
+    app,
+    screen: require('electron').screen,
+    // Keep the existing file so saved sizes from earlier builds migrate in place.
+    statePath: path.join(app.getPath('userData'), 'window-size.json'),
   });
 }
 
