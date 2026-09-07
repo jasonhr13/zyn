@@ -79,7 +79,9 @@ class Sidebar extends Component {
       if (item.taskType && taskTypes[item.taskType] !== true) return false;
       if (harvesterOnly && !['/task-groups', '/proxies', '/settings'].includes(item.to)) return false;
       return true;
-    });
+    }).map(item => (harvesterOnly && item.to === '/task-groups'
+      ? { ...item, label: 'Harvesters', section: 'Harvest', icon: 'cookie' }
+      : item));
     return (
       <div className="sidebar">
         <nav className="sidebar-nav" aria-label="Primary navigation">

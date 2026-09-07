@@ -93,8 +93,7 @@ function createCompanionHarvesterBridge({
       catch { cookie = null; }
       if (!cookie || !cookie.headers) continue;
       if (!String(cookie.proxy || '').trim()) {
-        activity.lastError = 'local harvest cookie had no proxy; not sending';
-        continue;
+        logger.warn?.('[remote-harvester] sending cookie without a harvest proxy — checkout must use the same egress');
       }
       const sent = send({
         type: 'capture',
@@ -110,6 +109,9 @@ function createCompanionHarvesterBridge({
       if (sent) {
         activity.lastSentAt = timestamp();
         activity.sentCount += 1;
+        activity.lastError = '';
+      } else {
+        activity.lastError = 'harvest room is not connected';
       }
     }
   };
@@ -130,7 +132,6 @@ function createCompanionHarvesterBridge({
     activity.lastSeenAt = timestamp();
     if (message.type === 'registered' || message.type === 'peer-state' || message.type === 'hello') {
       activity.connected = true;
-      send({ type: 'hello', role: 'companion', hostname: os.hostname().slice(0, 100) });
       return;
     }
     if (message.type === 'demand' || message.type === 'start') {
@@ -173,7 +174,8 @@ function createCompanionHarvesterBridge({
             activity.connected = true;
             activity.lastError = '';
             activity.roomId = room;
-            send({ type: 'hello', role: 'companion' });
+            send({ type: 'hello', role: 'companion', hostname: os.hostname().slice(0, 100) });
+            logger.info?.(`[remote-harvester] joined room ${room}`);
             scheduleDrain();
           },
           close: () => {
@@ -221,6 +223,7 @@ function createCompanionHarvesterBridge({
         return;
       }
       activity.lastError = String(result && result.message || 'Waiting for a Full Engine Zyn.');
+      logger.warn?.(`[remote-harvester] ${activity.lastError}`);
       scheduleReconnect();
     }).catch((error) => {
       activity.lastError = error.message;
@@ -239,6 +242,7 @@ function createCompanionHarvesterBridge({
 
   return {
     snapshot: () => ({
+      role: 'companion',
       enabled: available(),
       connected: activity.connected === true,
       roomId: activity.roomId,

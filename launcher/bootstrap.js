@@ -428,6 +428,39 @@ function installCompanionHarvester(authority) {
       applyDemand: demand => targetEngine.setRemoteCookieDemand?.(demand),
       logger: console,
     });
+    const { ipcMain } = require('electron');
+    ipcMain.handle('remoteHarvesterStatus', () => ({
+      sessionKind: authority.cached?.().sessionKind || 'engine',
+      host: mobileHarvesterBridge && typeof mobileHarvesterBridge.snapshot === 'function'
+        ? mobileHarvesterBridge.snapshot() : null,
+      companion: bridge.snapshot(),
+    }));
+    if (typeof targetEngine.getCookieBank === 'function') {
+      const getCookieBank = targetEngine.getCookieBank.bind(targetEngine);
+      targetEngine.getCookieBank = async (...args) => {
+        const bank = await getCookieBank(...args);
+        if (!bank || typeof bank !== 'object') return bank;
+        const harvestOnly = authority.cached?.().sessionKind === 'harvester';
+        if (harvestOnly) {
+          return { ...bank, remoteHarvester: { role: 'companion', ...bridge.snapshot() } };
+        }
+        const host = mobileHarvesterBridge && typeof mobileHarvesterBridge.snapshot === 'function'
+          ? mobileHarvesterBridge.snapshot()
+          : {};
+        return {
+          ...bank,
+          remoteHarvester: {
+            role: 'host',
+            enabled: host.enabled === true,
+            connected: host.connected === true,
+            companionCount: Math.max(0, Number(host.companionCount) || 0),
+            lastSavedAt: Number(host.lastSavedAt) || 0,
+            savedCount: Math.max(0, Number(host.savedCount) || 0),
+            lastError: String(host.lastError || '').slice(0, 240),
+          },
+        };
+      };
+    }
     app.whenReady().then(() => {
       if (authority.cached?.().sessionKind === 'harvester') bridge.start();
     });
@@ -442,7 +475,11 @@ function installCompanionHarvester(authority) {
 function syncTargetGroupCookieStandby(groups) {
   try {
     const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
-    targetEngine.setTargetCookieStandbyTasks?.('task-groups', targetGroupStandbyTaskCount(groups));
+    const harvestOnly = lastLicenseSessionKind === 'harvester';
+    targetEngine.setTargetCookieStandbyTasks?.(
+      'task-groups',
+      harvestOnly ? 0 : targetGroupStandbyTaskCount(groups),
+    );
   } catch (error) {
     console.error(`Could not update Target cookie-bank standby demand: ${error.message}`);
   }
@@ -1355,8 +1392,18 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
           stopAllRunningForLicense();
         }
         lastLicenseSessionKind = status && status.ok === true ? kind : '';
-        if (status && status.ok === true && kind === 'harvester') companionHarvesterBridge?.start();
-        else companionHarvesterBridge?.stop();
+        if (status && status.ok === true && kind === 'harvester') {
+          companionHarvesterBridge?.start();
+          try {
+            const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+            targetEngine.setTargetCookieStandbyTasks?.('task-groups', 0);
+          } catch {}
+        } else {
+          companionHarvesterBridge?.stop();
+          if (status && status.ok === true && taskGroupStore) {
+            syncTargetGroupCookieStandby(taskGroupStore.load());
+          }
+        }
       } catch (error) { console.warn(`[remote-harvester] status: ${error.message}`); }
       if (status && status.ok === true) {
         startRuntimeUpdatePolling();

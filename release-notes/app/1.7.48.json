@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.48",
+  "notes": [
+    "Harvest-only Windows and Mac apps now send Shape cookies to the Full Engine on this account.",
+    "Full Engine Target shows how many remote harvester apps are connected and ready.",
+    "Harvester-only mode only starts and stops harvesters. Checkout tasks stay on Full Engine.",
+    "Remote harvesters keep farming standby cookies instead of stopping when no checkout is waiting.",
+    "The Full Engine harvest room reconnects even if mobile harvesting is turned off."
+  ]
+}

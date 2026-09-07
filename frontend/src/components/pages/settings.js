@@ -132,7 +132,7 @@ class Settings extends Component {
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       mobileHarvesterEnabled: false, mobileHarvester: null, mobileBusy: false, mobileError: '',
-      licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '',
+      licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '', remoteHarvester: null,
       pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
@@ -190,6 +190,9 @@ class Settings extends Component {
       ...(status.ok === true ? {} : { cloudBackups: [], cloudListLoaded: false, cloudListError: '' }),
     });
     if (status.ok === true) this.loadCloudBackups();
+    ipcRenderer.invoke('remoteHarvesterStatus').then(remoteHarvester => {
+      if (remoteHarvester) this.setState({ remoteHarvester });
+    }).catch(() => {});
   };
 
   applyCloudBackupStatus = (eventOrStatus, pushedStatus) => {
@@ -205,6 +208,9 @@ class Settings extends Component {
     ipcRenderer.invoke('cloudBackupStatus').then(this.applyCloudBackupStatus).catch(() => {});
     ipcRenderer.invoke('mobileHarvesterStatus').then(mobileHarvester => {
       if (mobileHarvester) this.setState({ mobileHarvester });
+    }).catch(() => {});
+    ipcRenderer.invoke('remoteHarvesterStatus').then(remoteHarvester => {
+      if (remoteHarvester) this.setState({ remoteHarvester });
     }).catch(() => {});
   }
   componentWillUnmount() {
@@ -793,6 +799,28 @@ class Settings extends Component {
             {sessionKindBusy && (
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>Updating session mode…</div>
             )}
+            {(() => {
+              const remote = this.state.remoteHarvester || {};
+              const host = remote.host || {};
+              const companion = remote.companion || {};
+              if (sessionKind === 'harvester') {
+                return (
+                  <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>
+                    {companion.connected
+                      ? `Sending cookies to Full Engine${companion.sentCount ? ` · ${companion.sentCount} sent` : ''}.`
+                      : (companion.lastError || 'Waiting for a Full Engine Zyn on this account.')}
+                  </div>
+                );
+              }
+              return (
+                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>
+                  {host.connected
+                    ? `Hosting remote harvesters${host.companionCount ? ` · ${host.companionCount} connected` : ' · waiting for harvest machines'}.`
+                    : 'This Full Engine hosts a harvest room for Harvester-only machines on the same account.'}
+                  {host.lastError ? ` ${host.lastError}` : ''}
+                </div>
+              );
+            })()}
             <div className={`license-subscription license-subscription-${subscription.tone}`} data-license-subscription="active">
               <div>
                 <span>Subscription</span>
@@ -1037,6 +1065,7 @@ class Settings extends Component {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
+              {sessionKind !== 'harvester' && (
               <div className="form-group" style={{ flex: 1 }}>
                 <FieldLabel help="Ready add-to-cart cookies kept for each active Target task, or configured standby task before a run. Zyn scales the total automatically. Set 0 for no bank limit.">
                   ATC cookies per task
@@ -1048,6 +1077,7 @@ class Settings extends Component {
                   onChange={e => this.set('targetAtcCookiesPerTask', e.target.value)}
                 />
               </div>
+              )}
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">Harvest workers</label>
                 <input

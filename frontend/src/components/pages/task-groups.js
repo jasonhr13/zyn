@@ -4,6 +4,7 @@ import Icon from '../icon';
 import { proxyFolderRef, proxyLabel, proxyLabelForRef, proxyRef } from '../proxy-options';
 import {
   formatBandwidth,
+  remoteHarvesterSummary,
   sameTargetBank,
   targetBandwidthSummary,
   targetBankPresentation,
@@ -116,6 +117,37 @@ const HARVESTER_BROWSERS = [
   ['opera', 'Opera'],
   ['chromium', 'Bundled Chromium'],
 ];
+
+const remoteHarvesterCopy = remote => {
+  const count = remote && remote.count ? remote.count : 0;
+  if (count === 1) {
+    return {
+      headline: '1 harvest-only app connected',
+      detail: 'Cookies from that machine land in this bank as they farm.',
+      rail: '1 remote harvester connected',
+    };
+  }
+  if (count > 1) {
+    return {
+      headline: `${count} harvest-only apps connected`,
+      detail: 'Cookies from those machines land in this bank as they farm.',
+      rail: `${count} remote harvesters connected`,
+    };
+  }
+  if (remote && remote.connected) {
+    return {
+      headline: 'No harvest-only apps connected',
+      detail: 'Sign in as Harvester only on another Windows or Mac with this account. It shows here when that app is online.',
+      rail: 'No remote harvesters connected',
+    };
+  }
+  return {
+    headline: 'Waiting for harvest-only apps',
+    detail: (remote && remote.lastError)
+      || 'This Full Engine hosts a harvest room for Harvester-only machines on the same account.',
+    rail: 'No remote harvesters connected',
+  };
+};
 
 const HARVESTER_DRAWER_STORAGE_KEY = 'zyn.targetHarvesterDrawer';
 const initialHarvesterDrawerOpen = () => {
@@ -1870,6 +1902,110 @@ class TaskGroups extends Component {
     );
   }
 
+  harvestOnly = () => this.props.harvestOnly === true;
+
+  renderRemoteHarvestStatus() {
+    const remote = (this.state.bank && this.state.bank.remoteHarvester) || {};
+    const connected = remote.connected === true;
+    const error = String(remote.lastError || '').trim();
+    const sent = Math.max(0, Number(remote.sentCount) || 0);
+    return (
+      <section className={`cookie-bank cookie-bank-prominent cookie-bank-${connected ? 'ready' : 'paused'}`} aria-label="Full Engine link">
+        <span className="cookie-bank-copy">
+          <small>Full Engine</small>
+          <strong>{connected ? 'Sending cookies to Full Engine' : 'Waiting for Full Engine'}</strong>
+          <em>{connected
+            ? `This machine farms Shape cookies and forwards them to the signed-in Full Engine Zyn.${sent ? ` ${sent} sent this session.` : ''}`
+            : (error || 'Sign in as Full Engine on the machine that runs checkout. Harvest-only does not keep a local cookie bank for tasks.')}</em>
+        </span>
+      </section>
+    );
+  }
+
+  renderHarvestWorkspace() {
+    const userHarvesters = this.userHarvesters();
+    const availableHarvesters = userHarvesters.map(harvester =>
+      this.harvesterProxyAvailable(harvester) ? harvester : { ...harvester, enabled: false });
+    const bank = targetBankPresentation(this.state.bank, availableHarvesters, {
+      now: this.state.bankCheckedAt || Date.now(),
+      brokerStartRequestedAt: this.state.brokerStartRequestedAt,
+      checkoutRunning: false,
+      atcPerTask: this.state.atcCookiesPerTask,
+      externalAtcHarvesterEnabled: false,
+    });
+    const total = userHarvesters.length;
+    const list = !total ? (
+      <div className="target-harvester-empty">
+        <Icon name="cookie" size={20} />
+        <span>No harvesters configured</span>
+        <small>Create an ATC or Automatic harvester. Cookies are sent to your Full Engine Zyn, not used for checkout here.</small>
+      </div>
+    ) : (
+      <div className="target-harvester-list">
+        {userHarvesters.map(harvester => {
+          const runtime = this.harvesterRuntimeFor(harvester.id);
+          const state = this.harvesterState(harvester, runtime);
+          const produced = (runtime && runtime.produced) || {};
+          const workerValue = state.kind === 'running'
+            ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
+            : `${harvester.workers} configured`;
+          const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
+          const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
+          const modeLabel = harvesterModeLabel(harvester.engine);
+          return (
+            <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
+              <div className="target-harvester-identity">
+                <span className="target-harvester-state-dot" />
+                <span>
+                  <strong>{harvester.name}</strong>
+                  <small>{typeLabel} · {modeLabel} · {proxyLabelForRef(this.proxyLists(), harvester.proxyListName, 'Local')}</small>
+                </span>
+              </div>
+              <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
+              <div className="target-harvester-meta">
+                <span><small>Workers</small><strong>{workerValue}</strong></span>
+                <span><small>Produced</small><strong>{Number(produced.login) || 0} login · {Number(produced.atc) || 0} ATC</strong></span>
+              </div>
+              <div className="target-harvester-actions">
+                <button className={harvester.enabled ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'} onClick={() => this.toggleHarvester(harvester)}>
+                  <Icon name={harvester.enabled ? 'stop' : 'play'} size={11} /> {harvester.enabled ? 'Stop' : 'Start'}
+                </button>
+                <button className="icon-action" title="Edit harvester" onClick={() => this.openEditHarvester(harvester)}><Icon name="settings" size={12} /></button>
+                <button className="icon-action icon-action-danger" title="Delete harvester" onClick={() => this.deleteHarvester(harvester)}><Icon name="trash" size={12} /></button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+    return (
+      <div className="tasks-workspace">
+        <div className="page-header">
+          <div className="page-title"><span className="page-title-dot" /> Cookie Harvesters</div>
+          <div className="page-actions">
+            <button className="btn btn-primary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={13} /> New Harvester</button>
+          </div>
+        </div>
+        <div className="page-content task-groups-content">
+          {this.renderRemoteHarvestStatus()}
+          <section className={`cookie-bank cookie-bank-prominent cookie-bank-${bank.state}`} title={bank.description} aria-label="Local harvest pool">
+            <span className="cookie-bank-copy">
+              <small>Local harvest pool</small>
+              <strong>{bank.login} login · {bank.atc} ATC waiting to send</strong>
+              <em>These cookies leave for the Full Engine as soon as that Zyn is online. Checkout tasks are not available in Harvester only.</em>
+            </span>
+          </section>
+          {this.renderLoginHarvesterPanel(true)}
+          <div className="workspace-section-heading">
+            <div><h2>Harvesters</h2><p>Start workers on this machine. They feed the Full Engine cookie bank, not local tasks.</p></div>
+          </div>
+          {list}
+        </div>
+        {this.renderHarvesterModal()}
+      </div>
+    );
+  }
+
   renderHarvesterDrawer() {
     const userHarvesters = this.userHarvesters();
     const availableHarvesters = userHarvesters.map(harvester =>
@@ -1882,6 +2018,8 @@ class TaskGroups extends Component {
       externalAtcHarvesterEnabled: this.extensionHarvesterConfigured(),
     });
     const total = userHarvesters.length;
+    const remote = remoteHarvesterSummary(this.state.bank);
+    const remoteCopy = remoteHarvesterCopy(remote);
     const open = this.state.harvesterDrawerOpen;
     const configuredHarvesterIds = new Set(userHarvesters.map(item => String(item.id)));
     configuredHarvesterIds.add(LOGIN_HARVESTER_ID);
@@ -1901,7 +2039,7 @@ class TaskGroups extends Component {
       offline: 'Offline',
       stopped: 'Stopped',
     }[bank.state] || bank.label;
-    const drawerTitle = `${bank.activeHarvesters} of ${total} harvester${total === 1 ? '' : 's'} running · ${bank.login} login · ${bank.atc} ATC`;
+    const drawerTitle = `${bank.activeHarvesters} of ${total} harvester${total === 1 ? '' : 's'} running · ${bank.login} login · ${bank.atc} ATC · ${remoteCopy.rail}`;
     const list = !total ? (
       <div className="target-harvester-empty">
         <Icon name="cookie" size={20} />
@@ -1969,6 +2107,11 @@ class TaskGroups extends Component {
             <span className="target-harvester-rail-divider" />
             <span className="target-harvester-rail-metric"><strong>{bank.login}</strong><small>Login</small></span>
             <span className="target-harvester-rail-metric"><strong>{bank.atc}</strong><small>ATC</small></span>
+            <span className="target-harvester-rail-divider" />
+            <span className={`target-harvester-rail-metric${remote.count > 0 ? ' target-harvester-rail-metric-ok' : ''}`}>
+              <strong>{remote.count}</strong>
+              <small>Remote</small>
+            </span>
             <Icon name="chevronDown" size={13} className="target-harvester-rail-open-icon" />
           </button>
         )}
@@ -1984,6 +2127,10 @@ class TaskGroups extends Component {
               <div className="target-harvester-drawer-summary" aria-label="Harvester progress">
                 <span><strong>{bank.activeHarvesters}/{total}</strong><small>Running</small></span>
                 <span><strong>{bank.activeWorkers}</strong><small>Active workers</small></span>
+                <span className={remote.count > 0 ? 'target-harvester-drawer-summary-ok' : undefined}>
+                  <strong>{remote.count}</strong>
+                  <small>Remote apps</small>
+                </span>
               </div>
               <section className={`cookie-bank cookie-bank-prominent cookie-bank-${bank.state}`} title={bank.description} aria-label="Shared Target cookie bank">
                 <span className="cookie-bank-copy">
@@ -2017,6 +2164,17 @@ class TaskGroups extends Component {
                   />
                   <small id="target-atc-demand-formula">{bank.demandLabel}</small>
                 </label>
+              </section>
+              <section
+                className={`cookie-bank cookie-bank-prominent cookie-bank-${remote.count > 0 ? 'ready' : 'paused'}`}
+                title={remoteCopy.detail}
+                aria-label="Remote harvest machines"
+              >
+                <span className="cookie-bank-copy">
+                  <small>Remote harvesters</small>
+                  <strong>{remoteCopy.headline}</strong>
+                  <small>{remoteCopy.detail}</small>
+                </span>
               </section>
               <section className="target-harvester-bandwidth-summary" aria-label="Proxy bandwidth telemetry"
                 title="Browser-level transfer. Your proxy provider may report slightly more for tunnel and TLS overhead.">
@@ -2666,6 +2824,7 @@ class TaskGroups extends Component {
 
   render() {
     if (!this.state.loaded) return <div className="task-workspace-loading"><Icon name="activity" size={20} /> Loading task groups…</div>;
+    if (this.harvestOnly()) return this.renderHarvestWorkspace();
     const group = this.selectedGroup();
     if (!group) return this.renderOverview();
     const task = this.selectedTask(group);

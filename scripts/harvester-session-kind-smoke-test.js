@@ -34,7 +34,32 @@ assert.match(mobile, /engine_required/);
 assert.match(mobile, /harvester_required/);
 assert.match(bootstrap, /sessionKind !== 'harvester'/);
 assert.match(bootstrap, /createCompanionHarvesterBridge/);
+assert.match(bootstrap, /remoteHarvesterStatus/);
+assert.match(bootstrap, /role: 'host'/);
+assert.match(bootstrap, /companionCount/);
 assert.match(companion, /role: 'companion'/);
 assert.match(companion, /source: 'remote'/);
+const taskGroups = read('frontend/src/components/pages/task-groups.js');
+assert.match(taskGroups, /harvestOnly/);
+assert.match(taskGroups, /Cookie Harvesters/);
+assert.match(taskGroups, /Checkout tasks are not available in Harvester only/);
+assert.doesNotMatch(
+  taskGroups.slice(taskGroups.indexOf('renderHarvestWorkspace()'), taskGroups.indexOf('renderHarvesterDrawer() {')),
+  /ATC per task/,
+);
+const harvestWorkspace = taskGroups.slice(
+  taskGroups.indexOf('renderHarvestWorkspace()'),
+  taskGroups.indexOf('renderHarvesterDrawer() {'),
+);
+assert.doesNotMatch(harvestWorkspace, /<small>Remote<\/small>/);
+const drawer = taskGroups.slice(taskGroups.indexOf('renderHarvesterDrawer() {'));
+assert.match(drawer, /<small>Remote<\/small>/);
+assert.match(drawer, /Remote apps/);
+assert.match(drawer, /Remote harvest machines/);
+assert.match(taskGroups, /harvest-only app/);
+assert.match(taskGroups, /remoteHarvesterSummary/);
+assert.match(taskGroups, /remoteHarvesterCopy/);
+const pageHandler = read('frontend/src/components/page-handler.js');
+assert.match(pageHandler, /harvestOnly=\{license\.sessionKind === 'harvester'\}/);
 
 console.log(JSON.stringify({ ok: true, sessionKind: true, remoteHarvest: true }, null, 2));

@@ -470,3 +470,31 @@ export function sameTargetBank(a, b) {
   if (!a || !b) return false;
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+export function remoteHarvesterSummary(bank) {
+  const remote = (bank && bank.remoteHarvester && typeof bank.remoteHarvester === 'object')
+    ? bank.remoteHarvester
+    : {};
+  const mobile = (bank && bank.mobileHarvester && typeof bank.mobileHarvester === 'object')
+    ? bank.mobileHarvester
+    : {};
+  if (String(remote.role || '') === 'companion') {
+    return {
+      role: 'companion',
+      connected: remote.connected === true,
+      count: 0,
+      lastError: String(remote.lastError || '').trim(),
+      lastSavedAt: 0,
+      savedCount: count(remote.sentCount),
+    };
+  }
+  const countSource = remote.companionCount != null ? remote.companionCount : mobile.companionCount;
+  return {
+    role: 'host',
+    connected: remote.connected === true || mobile.connected === true,
+    count: count(countSource),
+    lastError: String(remote.lastError || '').trim(),
+    lastSavedAt: Number(remote.lastSavedAt || mobile.lastSavedAt) || 0,
+    savedCount: count(remote.savedCount != null ? remote.savedCount : mobile.savedCount),
+  };
+}

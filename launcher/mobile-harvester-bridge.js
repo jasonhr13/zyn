@@ -196,10 +196,13 @@ function createMobileHarvesterBridge({
     const mapped = extensionStatus(status);
     const waitingAtc = Number(mapped.waiting && mapped.waiting.atc) || 0;
     const demand = status && status.demand && typeof status.demand === 'object' ? status.demand : {};
+    const atcTarget = demand.targets && demand.targets.atc == null
+      ? null
+      : Number(demand.targets && demand.targets.atc);
     const payload = {
       type: 'demand',
       atc: mapped.atc,
-      atcTarget: waitingAtc,
+      atcTarget: Number.isFinite(atcTarget) ? atcTarget : waitingAtc,
       waitingAtc,
       login: Number(mapped.login) || 0,
       basis: String(demand.basis || ''),
@@ -209,15 +212,16 @@ function createMobileHarvesterBridge({
       loginTasks: Number(demand.targets && demand.targets.login) || 0,
       demand,
     };
-    const key = `${payload.atc}:${payload.waitingAtc}:${payload.basis}:${payload.activeTasks}:${payload.standbyTasks}:${payload.atcPerTask}:${payload.loginTasks}`;
+    const paused = payload.basis === 'paused';
+    const key = `${payload.atc}:${payload.atcTarget}:${payload.waitingAtc}:${payload.basis}:${payload.activeTasks}:${payload.standbyTasks}:${payload.atcPerTask}:${payload.loginTasks}`;
     if (!force && key === lastDemandKey && activity.connected) {
-      if (waitingAtc <= 0) send({ type: 'stop', site: 'target' });
+      if (paused) send({ type: 'stop', site: 'target' });
       return payload;
     }
     lastDemandKey = key;
     send(payload);
     send(proxyPayload({ includeLines: false }));
-    if (waitingAtc <= 0) send({ type: 'stop', site: 'target' });
+    if (paused) send({ type: 'stop', site: 'target' });
     return payload;
   };
 
@@ -255,9 +259,6 @@ function createMobileHarvesterBridge({
     try { configuredTtl = cookieTtlMs(); } catch {}
     const remote = String(message && message.source || '').toLowerCase() === 'remote'
       || String(message && message.role || '').toLowerCase() === 'companion';
-    if (remote && !String(message && message.proxy || '').trim()) {
-      throw new Error('remote harvest capture is missing the harvest proxy');
-    }
     const cookie = extensionCookie({
       type: message.cookieType === 'login' ? 'login' : 'atc',
       headers: remote ? (message.headers || {}) : completeMobileHeaders(message),
@@ -300,7 +301,6 @@ function createMobileHarvesterBridge({
       return;
     }
     if (message.type === 'hello') {
-      send({ type: 'hello', role: 'desktop', appVersion: 'zyn' });
       await publishDemand({ force: true });
       return;
     }
@@ -336,16 +336,20 @@ function createMobileHarvesterBridge({
 
   const ensureDesktopRoom = async () => {
     const existing = loadPair();
-    if (existing && existing.roomId) return existing;
     if (typeof authority.ensureHarvestRoom !== 'function') return existing;
     const result = await authority.ensureHarvestRoom();
-    if (!result || result.ok !== true || !result.roomId) return existing;
+    if (!result || result.ok !== true || !result.roomId) {
+      activity.lastError = String(result && result.message || 'Could not host a harvest room.');
+      logger.warn?.(`[remote-harvester] host room: ${activity.lastError}`);
+      return existing;
+    }
     persistPair({
       roomId: result.roomId,
       joinToken: existing && existing.joinToken || '',
       pairingUrl: existing && existing.pairingUrl || '',
       expiresAt: Number(result.expiresAt) || 0,
     });
+    logger.info?.(`[remote-harvester] hosting room ${result.roomId}`);
     return loadPair();
   };
 
@@ -406,7 +410,7 @@ function createMobileHarvesterBridge({
   };
 
   const scheduleReconnect = () => {
-    if (!started || !settingOn() || reconnectTimer) return;
+    if (!started || (!settingOn() && !remoteHostOn()) || reconnectTimer) return;
     const delay = Math.min(MAX_RECONNECT_MS, 1000 * (2 ** Math.min(5, reconnectAttempt)));
     reconnectAttempt += 1;
     reconnectTimer = scheduleTimeout(() => {
@@ -461,9 +465,10 @@ function createMobileHarvesterBridge({
     start() {
       started = true;
       loadPair();
-      if (remoteHostOn() && !(loadPair() && loadPair().roomId)) {
+      if (remoteHostOn()) {
         ensureDesktopRoom().then(() => connect()).catch((error) => {
           activity.lastError = error.message;
+          logger.warn?.(`[remote-harvester] host start: ${error.message}`);
           scheduleReconnect();
         });
       } else {
@@ -484,6 +489,13 @@ function createMobileHarvesterBridge({
       if (!available()) {
         detach();
         scheduleReconnect();
+        return snapshot();
+      }
+      if (remoteHostOn() && !socket) {
+        ensureDesktopRoom().then(() => connect()).catch((error) => {
+          activity.lastError = error.message;
+          scheduleReconnect();
+        });
         return snapshot();
       }
       if (!socket) connect();

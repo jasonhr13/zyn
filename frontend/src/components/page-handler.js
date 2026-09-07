@@ -228,9 +228,12 @@ class PageHandler extends Component {
                 {license.sessionKind === 'harvester' && <Redirect from="/walmart" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/profiles" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/accounts" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/target" to="/task-groups" />}
                 <Route exact path="/dashboard" render={() => <Dashboard email={license.email || ''} />} />
                 <Route exact path="/modules" render={() => <Modules taskTypes={license.taskTypes || {}} />} />
-                <Route path="/task-groups" component={TaskGroups} />
+                <Route path="/task-groups" render={props => (
+                  <TaskGroups {...props} harvestOnly={license.sessionKind === 'harvester'} />
+                )} />
                 <Route path="/target" component={Target} />
                 <Route path="/pokemoncenter" render={() => license.taskTypes && license.taskTypes.pokemoncenter
                   ? <PokemonCenter /> : <Redirect to="/modules" />} />

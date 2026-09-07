@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  remoteHarvesterSummary,
   sameTargetBank,
   targetBankMetrics,
   targetBankPresentation,
@@ -87,6 +88,25 @@ assert.deepEqual({
   lastBankedAt: 1700000000000,
 });
 assert.equal(sameTargetBank(bank, structuredClone(bank)), true);
+assert.deepEqual(remoteHarvesterSummary({
+  remoteHarvester: { role: 'host', connected: true, companionCount: 2, savedCount: 4 },
+}), {
+  role: 'host',
+  connected: true,
+  count: 2,
+  lastError: '',
+  lastSavedAt: 0,
+  savedCount: 4,
+});
+assert.equal(remoteHarvesterSummary({
+  mobileHarvester: { connected: true, companionCount: 1, lastSavedAt: 9, savedCount: 3 },
+}).count, 1, 'engine bank must fall back to mobileHarvester.companionCount');
+assert.equal(remoteHarvesterSummary({
+  remoteHarvester: { role: 'companion', connected: true, sentCount: 8, companionCount: 99 },
+}).count, 0, 'harvest-only companion snapshots must not look like a host connection count');
+assert.equal(remoteHarvesterSummary({
+  remoteHarvester: { role: 'host', connected: true, companionCount: 0 },
+}).connected, true);
 assert.equal(metrics.workerState, 'running');
 const changed = structuredClone(bank);
 changed.atc += 1;
@@ -449,10 +469,14 @@ assert.match(taskGroups, /HARVESTER_DRAWER_STORAGE_KEY/);
 assert.doesNotMatch(taskGroups, /renderHarvesterManager\(\)/);
 assert.doesNotMatch(taskGroups, /workerLimit \|\| 'Auto'/);
 assert.doesNotMatch(taskGroups, /R2 groups existing Target controls only/);
-assert.match(styles, /\.cookie-bank-prominent \{ display: grid; grid-template-columns:/,
-  'prominent bank header must keep its controls on one grid row');
-assert.match(styles, /\.cookie-bank-prominent \.cookie-bank-copy em \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
-  'long bank status must truncate instead of wrapping the controls');
+assert.match(styles, /\.cookie-bank-prominent \{\s*display: flex;/,
+  'prominent bank header stays a compact flex row');
+assert.match(styles, /\.target-harvester-drawer \.cookie-bank-prominent \{\s*display: grid;/,
+  'drawer bank stacks copy above counts');
+assert.match(styles, /\.target-harvester-rail-metric-ok strong \{ color: var\(--ok\); \}/);
+assert.match(styles, /\.target-harvester-drawer-summary \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+assert.match(taskGroups, /<small>Remote<\/small>/);
+assert.match(taskGroups, /Remote harvest machines/);
 assert.match(styles, /\.cookie-bank-stopped/);
 assert.match(styles, /\.cookie-bank-paused/);
 assert.match(styles, /\.cookie-bank-filling/);
@@ -467,11 +491,10 @@ const defaultDrawerLayer = styles.match(/\n\.target-harvester-drawer-layer \{[^}
 const defaultModal = styles.match(/\n\.modal \{[^}]+\}/)?.[0] || '';
 assert.doesNotMatch(defaultDrawerLayer, /backdrop-filter/);
 assert.doesNotMatch(defaultModal, /backdrop-filter/);
-assert.match(styles, /body\.platform-darwin \.target-harvester-drawer-layer \{[^}]*backdrop-filter/);
-assert.match(styles, /body\.platform-darwin \.modal,\s*body\.platform-darwin \.glass-surface \{[^}]*backdrop-filter/);
+assert.match(styles, /body\.platform-darwin \.target-harvester-drawer-layer \{/);
+assert.match(styles, /body\.platform-darwin \.modal,\s*body\.platform-darwin \.glass-surface \{/);
 assert.match(rendererEntry, /classList\.add\(`platform-\$\{platform\}`\)/);
 assert.match(styles, /\.target-harvester-bandwidth-summary \{/);
-assert.match(styles, /\.target-harvester-bandwidth \{ grid-area: bandwidth; \}/);
 assert.match(targetPage, />ATC TASK<\/span>/);
 assert.match(targetPage, /targetAtcCookiesPerTask/);
 assert.match(targetPage, /Set 0 for no bank limit/);

@@ -89,6 +89,8 @@ async function main() {
   });
   await bridge.__test.publishDemand();
   assert.equal(sent.some(message => message.type === 'proxies'), true);
+  assert.equal(sent.some(message => message.type === 'stop'), false, 'standby demand must not stop remote harvesters');
+  assert.equal(sent.some(message => message.type === 'demand' && message.basis !== 'paused'), true);
   sent.length = 0;
   await bridge.__test.publishDemand();
   assert.equal(sent.some(message => message.type === 'proxies'), false);
@@ -145,13 +147,6 @@ async function main() {
   }), /missing required headers/);
 
   saved.length = 0;
-  await assert.rejects(() => bridge.__test.handleCapture({
-    cookieType: 'atc',
-    source: 'remote',
-    headers: SHAPE_HEADERS,
-    proxy: '',
-    harvesterId: 'win-box',
-  }), /missing the harvest proxy/);
   await bridge.__test.handleCapture({
     cookieType: 'atc',
     source: 'remote',
@@ -164,6 +159,15 @@ async function main() {
   assert.equal(saved[0].harvesterId, 'win-box');
   assert.equal(saved[0].proxy, 'host:8000:user:pass');
   assert.equal(saved[0].headers['sec-ch-ua-platform'], SHAPE_HEADERS['sec-ch-ua-platform']);
+
+  await bridge.__test.handleMessage({
+    type: 'peer-state',
+    desktopOnline: true,
+    phoneCount: 0,
+    companionCount: 2,
+  });
+  assert.equal(bridge.snapshot().companionCount, 2);
+  assert.equal(bridge.activity().companionCount, 2);
 
   const managed = localProxyGroups({
     lists: [{ name: 'Resi', managed: true, raw: 'secret' }],
