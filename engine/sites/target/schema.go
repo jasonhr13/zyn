@@ -55,6 +55,10 @@ type TargetTask struct {
 	PreCartShapeBlockCount int
 	UsedAlternateCartFlow  bool
 	FillerOrders           []*FillerOrderState
+	FillerOrderRefs        []string
+	OrderHistory           []OrderHistoryEntry
+	FillerOrderRetries     int
+	FillerNeedsRetry       bool
 	NeedCancelFiller       bool
 	CanceledFillerItem     bool
 	PassedCartErrors       int

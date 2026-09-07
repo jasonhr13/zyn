@@ -2455,11 +2455,16 @@ func (t *TargetTask) SubmitOrder() {
 				}
 				if isRealOrder {
 					t.CheckoutData = checkout
+					if t.UseFillerItem {
+						t.rememberFillerRef(checkout.ReferenceId)
+						t.rememberFillerRef(checkout.OrderID)
+					}
 				} else {
 					qty := 0
 					if len(checkout.CartItems) > 0 {
 						qty = checkout.CartItems[0].Quantity
 					}
+					t.rememberFillerRef(checkout.ReferenceId)
 					t.FillerOrders = append(t.FillerOrders, &FillerOrderState{ReferenceId: checkout.ReferenceId, ItemQty: qty})
 				}
 			}
@@ -2542,6 +2547,7 @@ func (t *TargetTask) RemovePaymentMethod() {
 }
 
 func (t *TargetTask) recordFillerOrderLine(referenceId string, line OrderLine) {
+	t.rememberFillerRef(referenceId)
 	for _, fo := range t.FillerOrders {
 		if fo.ReferenceId == referenceId {
 			fo.OrderLineId = line.OrderLineId
@@ -2662,15 +2668,88 @@ func (t *TargetTask) CheckOrder(orderNum string, isFillerOrder bool) {
 	}
 }
 
+func (t *TargetTask) GetOrders() {
+	Request := client.RequestStruct{
+		CTX: t.TaskContext.CTX,
+		Req: client.ReqStruct{
+			Method: "GET",
+			URL:    "https://api.target.com/guest_order_aggregations/v1/order_history?page_number=1&page_size=10&order_purchase_type=ONLINE&pending_order=true&shipt_status=true",
+		},
+		Headers: map[string][]string{
+			"sec-ch-ua-platform": {t.Requests.UserAgent.Platform},
+			"trishool":           {"true"},
+			"user-agent":         {t.Requests.UserAgent.Useragent},
+			"accept":             {"application/json"},
+			"sec-ch-ua":          {t.Requests.UserAgent.Sec_ua},
+			"x-api-key":          {"ff457966e64d5e877fdbad070f276d18ecec4a01"},
+			"sec-ch-ua-mobile":   {"?0"},
+			"origin":             {"https://www.target.com"},
+			"sec-fetch-site":     {"same-site"},
+			"sec-fetch-mode":     {"cors"},
+			"sec-fetch-dest":     {"empty"},
+			"referer":            {"https://www.target.com/orders"},
+			"accept-encoding":    {"gzip, deflate, br, zstd"},
+			"accept-language":    {"en-US,en;q=0.9"},
+			"priority":           {"u=1, i"},
+			"header-order":       {"sec-ch-ua-platform", "trishool", "user-agent", "accept", "sec-ch-ua", "x-api-key", "sec-ch-ua-mobile", "origin", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "referer", "accept-encoding", "accept-language", "cookie", "priority"},
+		},
+	}
+	response, body, err := client.MakeRequest(Request, t.Requests.Client, &t.ClientID)
+	if err != nil {
+		log.Printf("[getOrders] ERROR: %s", err)
+		t.Error = fmt.Errorf("Proxy Failed")
+		t.BaseTask.MaybeRotateProxy("Target", err)
+		return
+	}
+	log.Printf("[ID:'%s' | Request Status: %s]", t.ID, response.Status)
+	t.Requests.Referer = Request.Req.URL
+	switch response.StatusCode {
+	case 200, 201:
+		var responseBody OrderHistoryResponse
+		if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
+			log.Printf("Error parsing JSON response: %v", err)
+			t.Error = err
+			return
+		}
+		t.OrderHistory = responseBody.Orders
+		if t.OrderHistory == nil {
+			t.OrderHistory = []OrderHistoryEntry{}
+		}
+	case 429:
+		if strings.Contains(body, "DCO_RATE_LIMITED") {
+			t.Error = fmt.Errorf("DCO_RATE_LIMITED")
+		} else {
+			t.Error = fmt.Errorf("get-orders (%d)", response.StatusCode)
+		}
+	default:
+		t.AddUnkownResponse(Request.Req.URL, *response, body)
+		t.Error = fmt.Errorf("get-orders (%d)", response.StatusCode)
+	}
+}
+
 func (t *TargetTask) RemoveFillerItem() {
+	if len(t.FillerOrders) == 0 {
+		t.pendingFillerRetry()
+		return
+	}
 	allCanceled := true
+	pending := false
 	for _, fo := range t.FillerOrders {
-		if fo.Canceled || fo.OrderLineId == "" {
+		if fo.Canceled {
+			continue
+		}
+		if strings.TrimSpace(fo.OrderLineId) == "" {
+			pending = true
+			allCanceled = false
 			continue
 		}
 		if !t.cancelFillerOrder(fo) {
 			allCanceled = false
 		}
+	}
+	if pending && t.Error == nil {
+		t.pendingFillerRetry()
+		return
 	}
 	if allCanceled {
 		t.CanceledFillerItem = true
@@ -2737,6 +2816,14 @@ func (t *TargetTask) cancelFillerOrder(fo *FillerOrderState) bool {
 	case 200, 201:
 		fo.Canceled = true
 		return true
+	case 400:
+		if strings.Contains(strings.ToLower(body), "not eligible for cancellation") {
+			t.pendingFillerRetry()
+			return false
+		}
+		t.AddUnkownResponse(Request.Req.URL, *response, body)
+		t.Error = fmt.Errorf("cancel-filler (%d)", response.StatusCode)
+		return false
 	default:
 		t.AddUnkownResponse(Request.Req.URL, *response, body)
 		t.Error = fmt.Errorf("cancel-filler (%d)", response.StatusCode)

@@ -167,6 +167,41 @@ type Cancellation struct {
 	CancelReasonText string `json:"cancel_reason_text"`
 }
 
+type OrderHistoryResponse struct {
+	Orders []OrderHistoryEntry `json:"orders"`
+}
+
+type OrderHistoryEntry struct {
+	OrderNumber string             `json:"order_number"`
+	PlacedDate  string             `json:"placed_date"`
+	OrderLines  []OrderHistoryLine `json:"order_lines"`
+}
+
+type OrderHistoryLine struct {
+	OrderLineKey     string                  `json:"order_line_key"`
+	OrderLineID      string                  `json:"order_line_id"`
+	OriginalQuantity int                     `json:"original_quantity"`
+	Item             OrderHistoryItem        `json:"item"`
+	FulfillmentSpec  OrderHistoryFulfillment `json:"fulfillment_spec"`
+}
+
+type OrderHistoryItem struct {
+	TCIN string `json:"tcin"`
+}
+
+type OrderHistoryFulfillment struct {
+	Status OrderHistoryStatus `json:"status"`
+}
+
+type OrderHistoryStatus struct {
+	Key        string                `json:"key"`
+	Operations OrderHistoryStatusOps `json:"operations"`
+}
+
+type OrderHistoryStatusOps struct {
+	IsCancellable bool `json:"is_cancellable"`
+}
+
 type ProductStockResponse struct {
 	Data   Data                `json:"data"`
 	Errors []ProductStockError `json:"errors"`

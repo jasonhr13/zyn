@@ -597,38 +597,14 @@ func (t *TargetTask) HandleTask() {
 				if t.Error != nil {
 					if t.shouldAssumeCheckout(t.Error) {
 						t.assumeCheckout()
-						t.NextStep = "checkout"
-						break
-					}
-					if t.HandleErrors("check-order") {
+					} else if t.HandleErrors("check-order") {
 						break
 					}
 				} else {
 					t.CheckOrderAttempts = 0
 				}
-				fillerCheckFailed := false
-				for _, fo := range t.FillerOrders {
-					if fo.Canceled || fo.OrderLineId != "" {
-						continue
-					}
-					t.CheckOrder(fo.ReferenceId, true)
-					if t.Error == nil {
-						continue
-					}
-					if t.Checkout {
-						t.Error = nil
-						break
-					}
-					if t.shouldAssumeCheckout(t.Error) {
-						t.assumeCheckout()
-						break
-					}
-					if t.HandleErrors("check-order") {
-						fillerCheckFailed = true
-						break
-					}
-				}
-				if fillerCheckFailed {
+				if t.Checkout && t.UseFillerItem {
+					t.NextStep = "get-orders"
 					break
 				}
 				if t.NeedCancelFiller {
@@ -641,9 +617,46 @@ func (t *TargetTask) HandleTask() {
 					t.NextStep = "decline"
 				}
 
+			case "get-orders":
+				t.UpdateStatus("Getting Order Status", constants.Colors.YELLOW)
+				t.GetOrders()
+				if t.HandleErrors("get-orders") {
+					break
+				}
+				if t.FindFillerOrder() {
+					t.NextStep = "cancel-filler"
+					break
+				}
+				if t.CanceledFillerItem {
+					t.NextStep = "checkout"
+					break
+				}
+				if t.FillerNeedsRetry {
+					t.pendingFillerRetry()
+					if t.HandleErrors("get-orders") {
+						break
+					}
+					break
+				}
+				if t.Checkout {
+					t.NextStep = "checkout"
+				} else if t.Decline {
+					t.NextStep = "decline"
+				}
+
 			case "cancel-filler":
 				t.UpdateStatus("Removing Filler Item", constants.Colors.BLUE)
 				t.RemoveFillerItem()
+				if t.HandleErrors("cancel-filler") {
+					break
+				}
+				if t.FillerNeedsRetry {
+					t.pendingFillerRetry()
+					if t.HandleErrors("cancel-filler") {
+						break
+					}
+					break
+				}
 				if t.Checkout {
 					t.NextStep = "checkout"
 				} else if t.Decline {

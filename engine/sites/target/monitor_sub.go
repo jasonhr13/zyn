@@ -95,7 +95,7 @@ func (t *TargetTask) checkoutCommitted() bool {
 		return true
 	}
 	switch t.NextStep {
-	case "submit-order", "oos-check-cart", "remove-payment", "wait-to-check", "check-order", "cancel-filler", "checkout", "decline", "stop":
+	case "submit-order", "oos-check-cart", "remove-payment", "wait-to-check", "check-order", "get-orders", "cancel-filler", "checkout", "decline", "stop":
 		return true
 	default:
 		return false

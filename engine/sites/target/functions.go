@@ -2,6 +2,7 @@ package target
 
 import (
 	crand "crypto/rand"
+	"fmt"
 	"math/big"
 	"math/rand"
 	randv2 "math/rand/v2"
@@ -204,6 +205,10 @@ func (t *TargetTask) resetCheckoutState() {
 	t.Products = []Product{}
 	t.CartedItems = []CartItem{}
 	t.FillerOrders = nil
+	t.FillerOrderRefs = nil
+	t.OrderHistory = nil
+	t.FillerOrderRetries = 0
+	t.FillerNeedsRetry = false
 	t.NeedCancelFiller = false
 	t.CanceledFillerItem = false
 	t.CheckOrderAttempts = 0
@@ -275,6 +280,156 @@ func (t *TargetTask) fraudStatusIsSuccess(status string) bool {
 }
 
 const checkOrderVerifyRetries = 6
+const fillerOrderRetryLimit = 20
+const fillerOrderRetryDelayMs = 3000
+const fillerPendingError = "cancel-filler order not finished processing"
+
+func fillerStatusCanceled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "canceled", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *TargetTask) rememberFillerRef(id string) {
+	id = strings.TrimSpace(id)
+	if t == nil || id == "" {
+		return
+	}
+	for _, existing := range t.FillerOrderRefs {
+		if strings.EqualFold(existing, id) {
+			return
+		}
+	}
+	t.FillerOrderRefs = append(t.FillerOrderRefs, id)
+}
+
+func (t *TargetTask) checkoutOrderRefs() []string {
+	if t == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	add := func(id string) {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" {
+			return
+		}
+		seen[id] = struct{}{}
+	}
+	add(t.CheckoutData.ReferenceId)
+	add(t.CheckoutData.OrderID)
+	add(t.OrderNumber)
+	for _, id := range t.FillerOrderRefs {
+		add(id)
+	}
+	for _, fo := range t.FillerOrders {
+		if fo != nil {
+			add(fo.ReferenceId)
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	return out
+}
+
+func (t *TargetTask) historyOrderInCheckout(order OrderHistoryEntry) bool {
+	num := strings.ToLower(strings.TrimSpace(order.OrderNumber))
+	if num == "" {
+		return false
+	}
+	for _, ref := range t.checkoutOrderRefs() {
+		if num == ref {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) markFillerCanceled(orderNumber string) {
+	orderNumber = strings.TrimSpace(orderNumber)
+	for _, fo := range t.FillerOrders {
+		if fo != nil && strings.EqualFold(fo.ReferenceId, orderNumber) {
+			fo.Canceled = true
+		}
+	}
+}
+
+// FindFillerOrder inspects the latest order-history page for this checkout's
+// filler SKU. Polar waited until Target marked the line cancellable; we do the
+// same, but only on order numbers captured from this task's submit-order /
+// check-order path so another in-flight checkout on the same account cannot
+// be selected.
+func (t *TargetTask) FindFillerOrder() bool {
+	if t == nil {
+		return false
+	}
+	t.FillerNeedsRetry = false
+	t.NeedCancelFiller = false
+
+	cancellable := []*FillerOrderState{}
+	pending := false
+	foundAny := false
+	foundActive := false
+
+	for _, order := range t.OrderHistory {
+		if !t.historyOrderInCheckout(order) {
+			continue
+		}
+		t.rememberFillerRef(order.OrderNumber)
+		for _, line := range order.OrderLines {
+			if strings.TrimSpace(line.Item.TCIN) != FillerItem {
+				continue
+			}
+			foundAny = true
+			if fillerStatusCanceled(line.FulfillmentSpec.Status.Key) {
+				t.markFillerCanceled(order.OrderNumber)
+				continue
+			}
+			foundActive = true
+			if line.FulfillmentSpec.Status.Operations.IsCancellable && strings.TrimSpace(line.OrderLineID) != "" {
+				cancellable = append(cancellable, &FillerOrderState{
+					ReferenceId:  strings.TrimSpace(order.OrderNumber),
+					ItemQty:      line.OriginalQuantity,
+					OrderLineId:  line.OrderLineID,
+					OrderLineKey: line.OrderLineKey,
+				})
+				continue
+			}
+			pending = true
+		}
+	}
+
+	if len(cancellable) > 0 {
+		t.FillerOrders = cancellable
+		t.NeedCancelFiller = true
+		t.FillerNeedsRetry = pending
+		return true
+	}
+	if foundAny && !foundActive {
+		t.CanceledFillerItem = true
+		return false
+	}
+	t.FillerNeedsRetry = t.UseFillerItem || pending
+	return false
+}
+
+func (t *TargetTask) pendingFillerRetry() {
+	if t == nil {
+		return
+	}
+	t.FillerOrderRetries++
+	if t.FillerOrderRetries >= fillerOrderRetryLimit {
+		t.Error = nil
+		t.NextStep = "checkout"
+		return
+	}
+	t.Error = fmt.Errorf("%s", fillerPendingError)
+	t.NextStep = "get-orders"
+}
 
 func isCheckOrderVerifyFailure(err error) bool {
 	if err == nil {

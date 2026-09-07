@@ -46,7 +46,7 @@ func isDcoRateLimit(errText string) bool {
 
 func isPostCartStep(step string) bool {
 	switch step {
-	case "submit-payment", "submit-order", "get-cart", "oos-check-cart", "check-order":
+	case "submit-payment", "submit-order", "get-cart", "oos-check-cart", "check-order", "get-orders", "cancel-filler":
 		return true
 	default:
 		return false
@@ -112,9 +112,12 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		}
 		t.UpdateStatus("Out Of Stock", constants.Colors.RED)
 		t.bailToRestock()
-	case containsAnyText(errText, "cancel-filler order not finished processing"):
+	case containsAnyText(errText, fillerPendingError):
 		t.UpdateStatus("Order Not Finished Processing", constants.Colors.YELLOW)
-		t.SleepTask(5000)
+		t.SleepTask(fillerOrderRetryDelayMs)
+		if t.UseFillerItem && t.NextStep != "checkout" {
+			t.NextStep = "get-orders"
+		}
 	case isDcoRateLimit(errText):
 		t.UpdateStatus("DCO Rate Limited", constants.Colors.YELLOW)
 		t.telemetry(task.TelemetryDcoRateLimited, step)
