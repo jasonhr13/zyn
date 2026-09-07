@@ -3,7 +3,9 @@
 const os = require('os');
 
 const MAX_RECONNECT_MS = 30000;
-const DRAIN_MS = 750;
+const DRAIN_MS = 50;
+const DRAIN_BATCH = 12;
+const SEND_RATE_WINDOW_MS = 2000;
 const ROOM_POLL_MS = 4000;
 
 function createCompanionHarvesterBridge({
@@ -38,6 +40,7 @@ function createCompanionHarvesterBridge({
     sentCount: 0,
     lastError: '',
   };
+  let sendMarks = [];
 
   const timestamp = () => {
     try { return Math.max(0, Number(clock()) || 0); }
@@ -84,14 +87,33 @@ function createCompanionHarvesterBridge({
     });
   };
 
-  const drainOnce = async () => {
-    if (typeof takeCookie !== 'function') return;
-    try { await ensureBroker(); } catch {}
-    for (const type of ['atc', 'login']) {
+  const noteSend = () => {
+    const now = timestamp();
+    sendMarks.push(now);
+    const cutoff = now - SEND_RATE_WINDOW_MS;
+    if (sendMarks.length > 400 || sendMarks[0] <= cutoff) {
+      sendMarks = sendMarks.filter(mark => mark > cutoff);
+    }
+  };
+
+  const sendRate = () => {
+    const now = timestamp();
+    const cutoff = now - SEND_RATE_WINDOW_MS;
+    sendMarks = sendMarks.filter(mark => mark > cutoff);
+    return sendMarks.length / (SEND_RATE_WINDOW_MS / 1000);
+  };
+
+  const drainType = async (type) => {
+    let forwarded = 0;
+    for (let index = 0; index < DRAIN_BATCH; index += 1) {
+      if (!socket || socket.readyState !== 1) {
+        activity.lastError = 'harvest room is not connected';
+        break;
+      }
       let cookie;
       try { cookie = await takeCookie(type); }
       catch { cookie = null; }
-      if (!cookie || !cookie.headers) continue;
+      if (!cookie || !cookie.headers) break;
       if (!String(cookie.proxy || '').trim()) {
         logger.warn?.('[remote-harvester] sending cookie without a harvest proxy — checkout must use the same egress');
       }
@@ -106,14 +128,24 @@ function createCompanionHarvesterBridge({
         harvesterId: cookie.harvesterId || os.hostname().slice(0, 64),
         deviceId: cookie.harvesterId || os.hostname().slice(0, 64),
       });
-      if (sent) {
-        activity.lastSentAt = timestamp();
-        activity.sentCount += 1;
-        activity.lastError = '';
-      } else {
+      if (!sent) {
         activity.lastError = 'harvest room is not connected';
+        break;
       }
+      activity.lastSentAt = timestamp();
+      activity.sentCount += 1;
+      activity.lastError = '';
+      noteSend();
+      forwarded += 1;
     }
+    return forwarded;
+  };
+
+  const drainOnce = async () => {
+    if (typeof takeCookie !== 'function') return;
+    try { await ensureBroker(); } catch {}
+    await drainType('atc');
+    await drainType('login');
   };
 
   const scheduleDrain = () => {
@@ -249,8 +281,19 @@ function createCompanionHarvesterBridge({
       lastSeenAt: activity.lastSeenAt,
       lastSentAt: activity.lastSentAt,
       sentCount: activity.sentCount,
+      sendRate: sendRate(),
       lastError: String(activity.lastError || '').slice(0, 240),
     }),
+    __test: {
+      drainOnce,
+      DRAIN_MS,
+      DRAIN_BATCH,
+      setSocket(next) {
+        socket = next;
+        started = true;
+        activity.connected = true;
+      },
+    },
     start() {
       if (started) {
         if (!activity.connected) lookupRoom();
@@ -279,4 +322,8 @@ function createCompanionHarvesterBridge({
   };
 }
 
-module.exports = { createCompanionHarvesterBridge };
+module.exports = {
+  createCompanionHarvesterBridge,
+  DRAIN_MS,
+  DRAIN_BATCH,
+};

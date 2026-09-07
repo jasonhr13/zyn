@@ -995,6 +995,43 @@ body.theme-night .form-select {
 .target-harvester-meta strong { overflow: hidden; color: var(--text2); font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .target-harvester-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .target-harvester-actions .btn { flex: 1; justify-content: center; min-height: 30px; }
+
+.harvest-workspace .task-groups-content { max-width: 1080px; }
+.harvest-workspace .target-harvester-card {
+  grid-template-columns: minmax(180px, 1.5fr) minmax(210px, 1.1fr) auto auto;
+  grid-template-areas: "identity meta status actions";
+  padding: 11px 14px;
+}
+.harvest-workspace .target-harvester-meta {
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 4px 22px;
+}
+.harvest-workspace .target-harvester-actions { justify-content: flex-end; }
+.harvest-workspace .target-harvester-actions .btn {
+  flex: 0 0 auto;
+  min-width: 88px;
+}
+.harvest-workspace .target-login-harvester-compact .target-login-harvester-fields {
+  grid-template-columns: minmax(160px, 240px) repeat(3, minmax(110px, 148px));
+  justify-content: start;
+}
+.harvest-workspace .cookie-bank-prominent {
+  justify-content: space-between;
+}
+@media (max-width: 880px) {
+  .harvest-workspace .target-harvester-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "identity status"
+      "meta meta"
+      "actions actions";
+  }
+  .harvest-workspace .target-login-harvester-compact .target-login-harvester-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .harvest-workspace .target-harvester-actions .btn { flex: 1; }
+}
 .target-harvester-empty { min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--dim); text-align: center; }
 .target-harvester-empty span { margin-top: 7px; color: var(--text2); font-size: 11px; }
 .target-harvester-empty small { max-width: 250px; margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.45; }

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.49",
+  "notes": [
+    "Harvest-only Target layout stays compact on wide screens instead of stretching Start buttons.",
+    "Harvest-only apps send Shape cookies in batches so waiting-to-send pools drain faster.",
+    "Harvest-only Full Engine status shows cookies sent this session and the live send rate.",
+    "Full Engine absorbs remote cookie bursts without spamming harvest-room demand updates."
+  ]
+}

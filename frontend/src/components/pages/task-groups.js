@@ -1909,6 +1909,8 @@ class TaskGroups extends Component {
     const connected = remote.connected === true;
     const error = String(remote.lastError || '').trim();
     const sent = Math.max(0, Number(remote.sentCount) || 0);
+    const rate = Math.max(0, Number(remote.sendRate) || 0);
+    const rateLabel = rate < 0.05 ? '0' : (rate < 10 ? rate.toFixed(1) : String(Math.round(rate)));
     return (
       <section className={`cookie-bank cookie-bank-prominent cookie-bank-${connected ? 'ready' : 'paused'}`} aria-label="Full Engine link">
         <span className="cookie-bank-copy">
@@ -1917,6 +1919,10 @@ class TaskGroups extends Component {
           <em>{connected
             ? `This machine farms Shape cookies and forwards them to the signed-in Full Engine Zyn.${sent ? ` ${sent} sent this session.` : ''}`
             : (error || 'Sign in as Full Engine on the machine that runs checkout. Harvest-only does not keep a local cookie bank for tasks.')}</em>
+        </span>
+        <span className="cookie-bank-counts">
+          <span><strong>{sent}</strong><small>Sent</small></span>
+          <span><strong>{rateLabel}</strong><small>Per sec</small></span>
         </span>
       </section>
     );
@@ -1979,7 +1985,7 @@ class TaskGroups extends Component {
       </div>
     );
     return (
-      <div className="tasks-workspace">
+      <div className="tasks-workspace harvest-workspace">
         <div className="page-header">
           <div className="page-title"><span className="page-title-dot" /> Cookie Harvesters</div>
           <div className="page-actions">
@@ -1991,8 +1997,12 @@ class TaskGroups extends Component {
           <section className={`cookie-bank cookie-bank-prominent cookie-bank-${bank.state}`} title={bank.description} aria-label="Local harvest pool">
             <span className="cookie-bank-copy">
               <small>Local harvest pool</small>
-              <strong>{bank.login} login · {bank.atc} ATC waiting to send</strong>
+              <strong>Waiting to send</strong>
               <em>These cookies leave for the Full Engine as soon as that Zyn is online. Checkout tasks are not available in Harvester only.</em>
+            </span>
+            <span className="cookie-bank-counts">
+              <span><strong>{bank.login}</strong><small>Login</small></span>
+              <span><strong>{bank.atc}</strong><small>ATC</small></span>
             </span>
           </section>
           {this.renderLoginHarvesterPanel(true)}

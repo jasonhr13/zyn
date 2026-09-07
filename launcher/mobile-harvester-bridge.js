@@ -68,6 +68,7 @@ function createMobileHarvesterBridge({
   let reconnectAttempt = 0;
   let started = false;
   let lastDemandKey = '';
+  let demandFlushTimer = null;
   const activity = {
     connected: false,
     phoneCount: 0,
@@ -280,7 +281,12 @@ function createMobileHarvesterBridge({
     activity.lastSavedType = cookie.type;
     activity.savedCount += saved;
     send({ type: 'capture-ack', ok: true, saved });
-    await publishDemand({ force: true });
+    if (!demandFlushTimer) {
+      demandFlushTimer = scheduleTimeout(() => {
+        demandFlushTimer = null;
+        publishDemand({ force: true }).catch(() => {});
+      }, 250);
+    }
     return saved;
   };
 
@@ -327,6 +333,8 @@ function createMobileHarvesterBridge({
     generation += 1;
     if (reconnectTimer) cancelTimeout(reconnectTimer);
     reconnectTimer = null;
+    if (demandFlushTimer) cancelTimeout(demandFlushTimer);
+    demandFlushTimer = null;
     const previous = socket;
     socket = null;
     activity.connected = false;
