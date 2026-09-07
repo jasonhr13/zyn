@@ -604,6 +604,13 @@ func (t *TargetTask) HandleTask() {
 					t.CheckOrderAttempts = 0
 				}
 				if t.Checkout && t.UseFillerItem {
+					t.fillerLog("checkout confirmed, looking for filler to cancel")
+					t.refreshFillerOrderDetails()
+					if t.hasCancellableFiller() {
+						t.fillerLog("canceling filler from this order's line ids")
+						t.NextStep = "cancel-filler"
+						break
+					}
 					t.NextStep = "get-orders"
 					break
 				}
@@ -618,7 +625,7 @@ func (t *TargetTask) HandleTask() {
 				}
 
 			case "get-orders":
-				t.UpdateStatus("Getting Order Status", constants.Colors.YELLOW)
+				t.UpdateStatus(fmt.Sprintf("Getting Order Status (%d/%d)", t.FillerOrderRetries+1, fillerOrderRetryLimit), constants.Colors.YELLOW)
 				t.GetOrders()
 				if t.HandleErrors("get-orders") {
 					break
@@ -665,7 +672,15 @@ func (t *TargetTask) HandleTask() {
 
 			case "checkout":
 				t.TaskState = constants.StatusSteps.CheckedOut
-				t.UpdateStatus("Successful", constants.Colors.GREEN)
+				if t.UseFillerItem && !t.CanceledFillerItem {
+					t.UpdateStatus("Could not cancel filler item", constants.Colors.RED)
+					if t.FillerCancelNote == "" {
+						t.FillerCancelNote = "not canceled"
+					}
+					t.fillerLog("reporting checkout with filler still in the order: " + t.FillerCancelNote)
+				} else {
+					t.UpdateStatus("Successful", constants.Colors.GREEN)
+				}
 				if len(t.Products) > 0 {
 					t.SendCheckoutDeclineNoti(t.Products[0].ProductName, t.Products[0].ProductImage, true, t.notificationDetails())
 				}
@@ -675,6 +690,9 @@ func (t *TargetTask) HandleTask() {
 				}
 				if t.UseFillerItem {
 					extraFields["Canceled Filler Item"] = strconv.FormatBool(t.CanceledFillerItem)
+					if t.FillerCancelNote != "" {
+						extraFields["Filler Cancel"] = t.FillerCancelNote
+					}
 				}
 
 				task.SendProductWebhook(task.ProductWebhookData{

@@ -211,6 +211,7 @@ func (t *TargetTask) resetCheckoutState() {
 	t.FillerNeedsRetry = false
 	t.NeedCancelFiller = false
 	t.CanceledFillerItem = false
+	t.FillerCancelNote = ""
 	t.CheckOrderAttempts = 0
 	t.tmxStartedForCheckout = false
 }
@@ -293,6 +294,88 @@ func fillerStatusCanceled(key string) bool {
 	}
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if s := strings.TrimSpace(value); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func (e OrderHistoryEntry) number() string {
+	return firstNonEmpty(e.OrderNumber, e.OrderNumberCamel, e.OrderID, e.OrderIDCamel)
+}
+
+func (e OrderHistoryEntry) lines() []OrderHistoryLine {
+	if len(e.OrderLines) > 0 {
+		return e.OrderLines
+	}
+	return e.OrderLinesCamel
+}
+
+func (line OrderHistoryLine) lineID() string {
+	return firstNonEmpty(line.OrderLineID, line.OrderLineIDCamel)
+}
+
+func (line OrderHistoryLine) lineKey() string {
+	return firstNonEmpty(line.OrderLineKey, line.OrderLineKeyCamel)
+}
+
+func (line OrderHistoryLine) tcin() string {
+	return firstNonEmpty(line.Item.TCIN, line.Item.TCINUpper)
+}
+
+func (line OrderHistoryLine) qty() int {
+	if line.OriginalQuantity > 0 {
+		return line.OriginalQuantity
+	}
+	return line.Quantity
+}
+
+func (line OrderHistoryLine) fulfillment() OrderHistoryFulfillment {
+	if line.FulfillmentSpec.Status.Key != "" || line.FulfillmentSpec.Status.Operations.cancellable() {
+		return line.FulfillmentSpec
+	}
+	return line.FulfillmentCamel
+}
+
+func (ops OrderHistoryStatusOps) cancellable() bool {
+	return ops.IsCancellable || ops.IsCancellableCamel
+}
+
+func (t *TargetTask) fillerLog(msg string) {
+	if t == nil || strings.TrimSpace(msg) == "" {
+		return
+	}
+	t.AddLog("[filler] " + msg)
+}
+
+func (t *TargetTask) hasCancellableFiller() bool {
+	for _, fo := range t.FillerOrders {
+		if fo == nil || fo.Canceled {
+			continue
+		}
+		id := strings.TrimSpace(fo.OrderLineId)
+		if id != "" && id != strings.TrimSpace(fo.OrderLineKey) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) refreshFillerOrderDetails() {
+	t.rememberFillerRef(t.OrderNumber)
+	t.rememberFillerRef(t.CheckoutData.ReferenceId)
+	t.rememberFillerRef(t.CheckoutData.OrderID)
+	for _, fo := range t.FillerOrders {
+		if fo == nil || fo.Canceled || strings.TrimSpace(fo.OrderLineId) != "" {
+			continue
+		}
+		t.CheckOrder(fo.ReferenceId, true)
+	}
+}
+
 func (t *TargetTask) rememberFillerRef(id string) {
 	id = strings.TrimSpace(id)
 	if t == nil || id == "" {
@@ -327,6 +410,7 @@ func (t *TargetTask) checkoutOrderRefs() []string {
 	for _, fo := range t.FillerOrders {
 		if fo != nil {
 			add(fo.ReferenceId)
+			add(fo.OrderNumber)
 		}
 	}
 	out := make([]string, 0, len(seen))
@@ -337,7 +421,7 @@ func (t *TargetTask) checkoutOrderRefs() []string {
 }
 
 func (t *TargetTask) historyOrderInCheckout(order OrderHistoryEntry) bool {
-	num := strings.ToLower(strings.TrimSpace(order.OrderNumber))
+	num := strings.ToLower(order.number())
 	if num == "" {
 		return false
 	}
@@ -349,10 +433,44 @@ func (t *TargetTask) historyOrderInCheckout(order OrderHistoryEntry) bool {
 	return false
 }
 
+func (t *TargetTask) historyOrderHasThisProduct(order OrderHistoryEntry) bool {
+	sku := strings.TrimSpace(t.RestockTCIN)
+	if sku == "" {
+		return false
+	}
+	for _, line := range order.lines() {
+		if strings.TrimSpace(line.tcin()) == sku {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) scopedHistoryOrders() []OrderHistoryEntry {
+	matched := make([]OrderHistoryEntry, 0, len(t.OrderHistory))
+	for _, order := range t.OrderHistory {
+		if t.historyOrderInCheckout(order) {
+			matched = append(matched, order)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	for _, order := range t.OrderHistory {
+		if t.historyOrderHasThisProduct(order) {
+			matched = append(matched, order)
+		}
+	}
+	if len(matched) > 0 {
+		t.fillerLog("order history did not match submit-order ids; matching filler by purchased SKU " + strings.TrimSpace(t.RestockTCIN))
+	}
+	return matched
+}
+
 func (t *TargetTask) markFillerCanceled(orderNumber string) {
 	orderNumber = strings.TrimSpace(orderNumber)
 	for _, fo := range t.FillerOrders {
-		if fo != nil && strings.EqualFold(fo.ReferenceId, orderNumber) {
+		if fo != nil && (strings.EqualFold(fo.ReferenceId, orderNumber) || strings.EqualFold(fo.OrderNumber, orderNumber)) {
 			fo.Canceled = true
 		}
 	}
@@ -374,28 +492,29 @@ func (t *TargetTask) FindFillerOrder() bool {
 	pending := false
 	foundAny := false
 	foundActive := false
+	scoped := t.scopedHistoryOrders()
+	t.fillerLog(fmt.Sprintf("order history has %d orders, %d match this checkout", len(t.OrderHistory), len(scoped)))
 
-	for _, order := range t.OrderHistory {
-		if !t.historyOrderInCheckout(order) {
-			continue
-		}
-		t.rememberFillerRef(order.OrderNumber)
-		for _, line := range order.OrderLines {
-			if strings.TrimSpace(line.Item.TCIN) != FillerItem {
+	for _, order := range scoped {
+		t.rememberFillerRef(order.number())
+		for _, line := range order.lines() {
+			if strings.TrimSpace(line.tcin()) != FillerItem {
 				continue
 			}
 			foundAny = true
-			if fillerStatusCanceled(line.FulfillmentSpec.Status.Key) {
-				t.markFillerCanceled(order.OrderNumber)
+			status := line.fulfillment().Status
+			if fillerStatusCanceled(status.Key) {
+				t.markFillerCanceled(order.number())
 				continue
 			}
 			foundActive = true
-			if line.FulfillmentSpec.Status.Operations.IsCancellable && strings.TrimSpace(line.OrderLineID) != "" {
+			if status.Operations.cancellable() && strings.TrimSpace(line.lineID()) != "" {
 				cancellable = append(cancellable, &FillerOrderState{
-					ReferenceId:  strings.TrimSpace(order.OrderNumber),
-					ItemQty:      line.OriginalQuantity,
-					OrderLineId:  line.OrderLineID,
-					OrderLineKey: line.OrderLineKey,
+					ReferenceId:  order.number(),
+					OrderNumber:  order.number(),
+					ItemQty:      line.qty(),
+					OrderLineId:  line.lineID(),
+					OrderLineKey: line.lineKey(),
 				})
 				continue
 			}
@@ -407,11 +526,21 @@ func (t *TargetTask) FindFillerOrder() bool {
 		t.FillerOrders = cancellable
 		t.NeedCancelFiller = true
 		t.FillerNeedsRetry = pending
+		t.fillerLog(fmt.Sprintf("found %d cancellable filler line(s)", len(cancellable)))
 		return true
 	}
 	if foundAny && !foundActive {
 		t.CanceledFillerItem = true
+		t.FillerCancelNote = "already canceled in order history"
+		t.fillerLog(t.FillerCancelNote)
 		return false
+	}
+	if pending {
+		t.fillerLog("filler is in this checkout but Target has not marked it cancellable yet")
+	} else if len(scoped) == 0 {
+		t.fillerLog("no order-history row matched this checkout's submit-order ids or purchased SKU")
+	} else {
+		t.fillerLog("matched checkout in order history but no filler SKU " + FillerItem + " yet")
 	}
 	t.FillerNeedsRetry = t.UseFillerItem || pending
 	return false
@@ -423,6 +552,8 @@ func (t *TargetTask) pendingFillerRetry() {
 	}
 	t.FillerOrderRetries++
 	if t.FillerOrderRetries >= fillerOrderRetryLimit {
+		t.FillerCancelNote = fmt.Sprintf("gave up after %d order-history checks", fillerOrderRetryLimit)
+		t.fillerLog(t.FillerCancelNote)
 		t.Error = nil
 		t.NextStep = "checkout"
 		return

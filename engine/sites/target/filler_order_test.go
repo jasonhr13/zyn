@@ -142,6 +142,60 @@ func TestPendingFillerRetryCapsOutToCheckout(t *testing.T) {
 	if targetTask.Error != nil {
 		t.Fatalf("Error = %v, want nil after retry cap", targetTask.Error)
 	}
+	if targetTask.FillerCancelNote == "" {
+		t.Fatal("retry cap must record why filler was not canceled")
+	}
+}
+
+func TestHasCancellableFillerUsesCheckOrderLineIds(t *testing.T) {
+	targetTask := &TargetTask{
+		FillerOrders: []*FillerOrderState{{
+			ReferenceId: "ref-real", OrderLineId: "line-1", OrderLineKey: "key-1",
+		}},
+	}
+	if !targetTask.hasCancellableFiller() {
+		t.Fatal("expected CheckOrder line ids to be cancellable without order history")
+	}
+}
+
+func TestFindFillerOrderFallsBackToPurchasedSKU(t *testing.T) {
+	targetTask := &TargetTask{
+		BaseTask:    &task.BaseTask{UseFillerItem: true},
+		RestockTCIN: "11111111",
+		OrderNumber: "submit-ref-that-will-not-match",
+		OrderHistory: []OrderHistoryEntry{{
+			OrderNumber: "guest-order-9",
+			OrderLines: []OrderHistoryLine{
+				fillerHistoryLine("11111111", "SUCCESS", false, "real-1", "real-k", 1),
+				fillerHistoryLine(FillerItem, "PENDING", true, "fill-1", "fill-k", 1),
+			},
+		}},
+	}
+	if !targetTask.FindFillerOrder() {
+		t.Fatal("expected filler match via purchased SKU when submit-order ids differ from history")
+	}
+	if targetTask.FillerOrders[0].OrderLineId != "fill-1" {
+		t.Fatalf("filler line = %#v", targetTask.FillerOrders[0])
+	}
+}
+
+func TestParseOrderHistoryAcceptsCamelCase(t *testing.T) {
+	body := []byte(`{"orders":[{"orderNumber":"ord-1","orderLines":[{"orderLineId":"line-1","orderLineKey":"key-1","item":{"tcin":"84704409"},"fulfillmentSpec":{"status":{"key":"PENDING","operations":{"isCancellable":true}}}}]}]}`)
+	orders := parseOrderHistory(body)
+	if len(orders) != 1 || orders[0].number() != "ord-1" {
+		t.Fatalf("orders = %#v", orders)
+	}
+	line := orders[0].lines()[0]
+	if line.lineID() != "line-1" || line.tcin() != FillerItem || !line.fulfillment().Status.Operations.cancellable() {
+		t.Fatalf("line = %#v", line)
+	}
+}
+
+func TestFillerOrderStatePrefersGuestOrderNumberForCancel(t *testing.T) {
+	fo := &FillerOrderState{ReferenceId: "ref-1", OrderNumber: "T123"}
+	if fo.cancelID() != "T123" {
+		t.Fatalf("cancelID = %q", fo.cancelID())
+	}
 }
 
 func TestRemoveFillerItemEmptyLineIdIsPending(t *testing.T) {
@@ -181,9 +235,10 @@ func TestResetCheckoutStateClearsFillerPolling(t *testing.T) {
 		FillerNeedsRetry:   true,
 		NeedCancelFiller:   true,
 		CanceledFillerItem: true,
+		FillerCancelNote:   "gave up",
 	}
 	targetTask.resetCheckoutState()
-	if targetTask.FillerOrderRetries != 0 || targetTask.FillerNeedsRetry || targetTask.NeedCancelFiller || targetTask.CanceledFillerItem {
+	if targetTask.FillerOrderRetries != 0 || targetTask.FillerNeedsRetry || targetTask.NeedCancelFiller || targetTask.CanceledFillerItem || targetTask.FillerCancelNote != "" {
 		t.Fatalf("polling flags survived reset: %+v", targetTask)
 	}
 	if len(targetTask.FillerOrderRefs) != 0 || len(targetTask.OrderHistory) != 0 {

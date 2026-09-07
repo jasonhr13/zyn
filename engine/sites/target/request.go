@@ -2619,6 +2619,18 @@ func (t *TargetTask) CheckOrder(orderNum string, isFillerOrder bool) {
 			fraudStatus := strings.TrimSpace(responseBody.FraudStatus)
 
 			if isFillerOrder {
+				t.rememberFillerRef(orderNum)
+				t.rememberFillerRef(responseBody.OrderNumber)
+				for _, fo := range t.FillerOrders {
+					if fo == nil {
+						continue
+					}
+					if fo.ReferenceId == orderNum || strings.EqualFold(fo.ReferenceId, responseBody.OrderNumber) {
+						if strings.TrimSpace(responseBody.OrderNumber) != "" {
+							fo.OrderNumber = responseBody.OrderNumber
+						}
+					}
+				}
 				for _, pkg := range responseBody.Packages {
 					for _, item := range pkg.OrderLines {
 						if item.OrderLineId != item.OrderLineKey {
@@ -2632,6 +2644,7 @@ func (t *TargetTask) CheckOrder(orderNum string, isFillerOrder bool) {
 			t.FraudStatus = fraudStatus
 			if t.fraudStatusIsSuccess(t.FraudStatus) {
 				t.OrderNumber = responseBody.OrderNumber
+				t.rememberFillerRef(responseBody.OrderNumber)
 				t.Checkout = true
 				t.Decline = false
 				if t.UseFillerItem {
@@ -2668,12 +2681,49 @@ func (t *TargetTask) CheckOrder(orderNum string, isFillerOrder bool) {
 	}
 }
 
-func (t *TargetTask) GetOrders() {
+func parseOrderHistory(body []byte) []OrderHistoryEntry {
+	var direct OrderHistoryResponse
+	if err := jsoniter.Unmarshal(body, &direct); err == nil && len(direct.Orders) > 0 {
+		return direct.Orders
+	}
+	var wrapped struct {
+		Data         OrderHistoryResponse `json:"data"`
+		OrderHistory []OrderHistoryEntry  `json:"order_history"`
+		OrdersCamel  []OrderHistoryEntry  `json:"Orders"`
+	}
+	if err := jsoniter.Unmarshal(body, &wrapped); err == nil {
+		if len(wrapped.Data.Orders) > 0 {
+			return wrapped.Data.Orders
+		}
+		if len(wrapped.OrderHistory) > 0 {
+			return wrapped.OrderHistory
+		}
+		if len(wrapped.OrdersCamel) > 0 {
+			return wrapped.OrdersCamel
+		}
+	}
+	return direct.Orders
+}
+
+func (t *TargetTask) orderHistoryLooksRelevant() bool {
+	for _, order := range t.OrderHistory {
+		if t.historyOrderInCheckout(order) || t.historyOrderHasThisProduct(order) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TargetTask) fetchOrderHistory(pendingOnly bool) {
+	historyURL := "https://api.target.com/guest_order_aggregations/v1/order_history?page_number=1&page_size=10&order_purchase_type=ONLINE&shipt_status=true"
+	if pendingOnly {
+		historyURL += "&pending_order=true"
+	}
 	Request := client.RequestStruct{
 		CTX: t.TaskContext.CTX,
 		Req: client.ReqStruct{
 			Method: "GET",
-			URL:    "https://api.target.com/guest_order_aggregations/v1/order_history?page_number=1&page_size=10&order_purchase_type=ONLINE&pending_order=true&shipt_status=true",
+			URL:    historyURL,
 		},
 		Headers: map[string][]string{
 			"sec-ch-ua-platform": {t.Requests.UserAgent.Platform},
@@ -2705,13 +2755,7 @@ func (t *TargetTask) GetOrders() {
 	t.Requests.Referer = Request.Req.URL
 	switch response.StatusCode {
 	case 200, 201:
-		var responseBody OrderHistoryResponse
-		if err := jsoniter.Unmarshal([]byte(body), &responseBody); err != nil {
-			log.Printf("Error parsing JSON response: %v", err)
-			t.Error = err
-			return
-		}
-		t.OrderHistory = responseBody.Orders
+		t.OrderHistory = parseOrderHistory([]byte(body))
 		if t.OrderHistory == nil {
 			t.OrderHistory = []OrderHistoryEntry{}
 		}
@@ -2724,11 +2768,28 @@ func (t *TargetTask) GetOrders() {
 	default:
 		t.AddUnkownResponse(Request.Req.URL, *response, body)
 		t.Error = fmt.Errorf("get-orders (%d)", response.StatusCode)
+		t.fillerLog(fmt.Sprintf("order history %s", response.Status))
+	}
+}
+
+func (t *TargetTask) GetOrders() {
+	t.fetchOrderHistory(true)
+	if t.Error != nil {
+		return
+	}
+	if t.UseFillerItem && !t.orderHistoryLooksRelevant() {
+		previous := t.OrderHistory
+		t.fetchOrderHistory(false)
+		if t.Error != nil {
+			t.Error = nil
+			t.OrderHistory = previous
+		}
 	}
 }
 
 func (t *TargetTask) RemoveFillerItem() {
 	if len(t.FillerOrders) == 0 {
+		t.fillerLog("no filler order lines to cancel yet")
 		t.pendingFillerRetry()
 		return
 	}
@@ -2748,11 +2809,14 @@ func (t *TargetTask) RemoveFillerItem() {
 		}
 	}
 	if pending && t.Error == nil {
+		t.fillerLog("filler line id is still empty; waiting for Target")
 		t.pendingFillerRetry()
 		return
 	}
 	if allCanceled {
 		t.CanceledFillerItem = true
+		t.FillerCancelNote = "canceled"
+		t.fillerLog("canceled filler item")
 	}
 }
 
@@ -2762,6 +2826,7 @@ func (t *TargetTask) cancelFillerOrder(fo *FillerOrderState) bool {
 		qtyValue = 1
 	}
 	qty := strconv.Itoa(qtyValue)
+	cancelID := fo.cancelID()
 	data := map[string]interface{}{
 		"order_lines": []map[string]interface{}{
 			{
@@ -2779,11 +2844,12 @@ func (t *TargetTask) cancelFillerOrder(fo *FillerOrderState) bool {
 		t.Error = fmt.Errorf("marshal submit-order body: %w", err)
 		return false
 	}
+	t.fillerLog(fmt.Sprintf("canceling filler on order %s line %s", cancelID, fo.OrderLineId))
 	Request := client.RequestStruct{
 		CTX: t.TaskContext.CTX,
 		Req: client.ReqStruct{
 			Method: "POST",
-			URL:    fmt.Sprintf("https://api.target.com/post_order_support/v1/orders/%s/cancellations", fo.ReferenceId),
+			URL:    fmt.Sprintf("https://api.target.com/post_order_support/v1/orders/%s/cancellations", cancelID),
 			Data:   string(payloadBytes),
 		},
 		Headers: map[string][]string{
@@ -2792,7 +2858,7 @@ func (t *TargetTask) cancelFillerOrder(fo *FillerOrderState) bool {
 			"content-type":       {"application/json"},
 			"origin":             {"https://www.target.com"},
 			"priority":           {"u=1, i"},
-			"referer":            {fmt.Sprintf("https://www.target.com/orders/%s", fo.ReferenceId)},
+			"referer":            {fmt.Sprintf("https://www.target.com/orders/%s", cancelID)},
 			"sec-ch-ua":          {t.Requests.UserAgent.Sec_ua},
 			"sec-ch-ua-mobile":   {"?0"},
 			"sec-ch-ua-platform": {t.Requests.UserAgent.Platform},
@@ -2815,18 +2881,22 @@ func (t *TargetTask) cancelFillerOrder(fo *FillerOrderState) bool {
 	switch response.StatusCode {
 	case 200, 201:
 		fo.Canceled = true
+		t.fillerLog("Target accepted filler cancellation")
 		return true
 	case 400:
 		if strings.Contains(strings.ToLower(body), "not eligible for cancellation") {
+			t.fillerLog("Target says filler is not eligible for cancellation yet")
 			t.pendingFillerRetry()
 			return false
 		}
 		t.AddUnkownResponse(Request.Req.URL, *response, body)
 		t.Error = fmt.Errorf("cancel-filler (%d)", response.StatusCode)
+		t.fillerLog(fmt.Sprintf("cancel-filler HTTP %d", response.StatusCode))
 		return false
 	default:
 		t.AddUnkownResponse(Request.Req.URL, *response, body)
 		t.Error = fmt.Errorf("cancel-filler (%d)", response.StatusCode)
+		t.fillerLog(fmt.Sprintf("cancel-filler HTTP %d", response.StatusCode))
 		return false
 	}
 }

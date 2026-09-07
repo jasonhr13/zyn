@@ -1,6 +1,7 @@
 package target
 
 import (
+	"strings"
 	"time"
 
 	"zynbot.app/engine/bot-base/imapcode"
@@ -61,6 +62,7 @@ type TargetTask struct {
 	FillerNeedsRetry       bool
 	NeedCancelFiller       bool
 	CanceledFillerItem     bool
+	FillerCancelNote       string
 	PassedCartErrors       int
 	CheckOrderAttempts     int
 	emailCodeWaiter        *imapcode.Waiter
@@ -69,10 +71,21 @@ type TargetTask struct {
 
 type FillerOrderState struct {
 	ReferenceId  string
+	OrderNumber  string
 	ItemQty      int
 	OrderLineId  string
 	OrderLineKey string
 	Canceled     bool
+}
+
+func (fo *FillerOrderState) cancelID() string {
+	if fo == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(fo.OrderNumber); id != "" {
+		return id
+	}
+	return strings.TrimSpace(fo.ReferenceId)
 }
 
 type TargetMonitorTask struct {

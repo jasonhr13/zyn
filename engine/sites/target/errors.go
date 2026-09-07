@@ -1,6 +1,7 @@
 package target
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"runtime/debug"
 	"strings"
@@ -113,7 +114,7 @@ func (t *TargetTask) HandleErrors(step string) bool {
 		t.UpdateStatus("Out Of Stock", constants.Colors.RED)
 		t.bailToRestock()
 	case containsAnyText(errText, fillerPendingError):
-		t.UpdateStatus("Order Not Finished Processing", constants.Colors.YELLOW)
+		t.UpdateStatus(fmt.Sprintf("Order Not Finished Processing (%d/%d)", t.FillerOrderRetries, fillerOrderRetryLimit), constants.Colors.YELLOW)
 		t.SleepTask(fillerOrderRetryDelayMs)
 		if t.UseFillerItem && t.NextStep != "checkout" {
 			t.NextStep = "get-orders"

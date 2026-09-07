@@ -172,21 +172,30 @@ type OrderHistoryResponse struct {
 }
 
 type OrderHistoryEntry struct {
-	OrderNumber string             `json:"order_number"`
-	PlacedDate  string             `json:"placed_date"`
-	OrderLines  []OrderHistoryLine `json:"order_lines"`
+	OrderNumber      string             `json:"order_number"`
+	OrderNumberCamel string             `json:"orderNumber"`
+	OrderID          string             `json:"order_id"`
+	OrderIDCamel     string             `json:"orderId"`
+	PlacedDate       string             `json:"placed_date"`
+	OrderLines       []OrderHistoryLine `json:"order_lines"`
+	OrderLinesCamel  []OrderHistoryLine `json:"orderLines"`
 }
 
 type OrderHistoryLine struct {
-	OrderLineKey     string                  `json:"order_line_key"`
-	OrderLineID      string                  `json:"order_line_id"`
-	OriginalQuantity int                     `json:"original_quantity"`
-	Item             OrderHistoryItem        `json:"item"`
-	FulfillmentSpec  OrderHistoryFulfillment `json:"fulfillment_spec"`
+	OrderLineKey      string                  `json:"order_line_key"`
+	OrderLineKeyCamel string                  `json:"orderLineKey"`
+	OrderLineID       string                  `json:"order_line_id"`
+	OrderLineIDCamel  string                  `json:"orderLineId"`
+	OriginalQuantity  int                     `json:"original_quantity"`
+	Quantity          int                     `json:"quantity"`
+	Item              OrderHistoryItem        `json:"item"`
+	FulfillmentSpec   OrderHistoryFulfillment `json:"fulfillment_spec"`
+	FulfillmentCamel  OrderHistoryFulfillment `json:"fulfillmentSpec"`
 }
 
 type OrderHistoryItem struct {
-	TCIN string `json:"tcin"`
+	TCIN      string `json:"tcin"`
+	TCINUpper string `json:"TCIN"`
 }
 
 type OrderHistoryFulfillment struct {
@@ -199,7 +208,8 @@ type OrderHistoryStatus struct {
 }
 
 type OrderHistoryStatusOps struct {
-	IsCancellable bool `json:"is_cancellable"`
+	IsCancellable      bool `json:"is_cancellable"`
+	IsCancellableCamel bool `json:"isCancellable"`
 }
 
 type ProductStockResponse struct {
