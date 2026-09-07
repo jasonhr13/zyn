@@ -13,12 +13,16 @@ assert.equal(DRAIN_BATCH, 12);
 
 const remaining = { atc: 20, login: 3 };
 const sent = [];
+let brokerCalls = 0;
+const demands = [];
 const bridge = createCompanionHarvesterBridge({
   authority: {
     cached: () => ({ ok: true, sessionKind: 'harvester' }),
     getHarvestRoom: async () => ({ ok: true, roomId: 'zynm_abcdefghijklmnop' }),
     openHarvestRoomEvents: () => ({ readyState: 1, send() {}, close() {} }),
   },
+  ensureBroker: () => { brokerCalls += 1; },
+  applyDemand: demand => { demands.push(demand); },
   takeCookie: async (type) => {
     if (!remaining[type]) return null;
     remaining[type] -= 1;
@@ -40,6 +44,7 @@ async function main() {
   });
 
   await bridge.__test.drainOnce();
+  assert.equal(brokerCalls, 0, 'cookie drain must not resync harvester producers on the main thread');
   const atc = sent.filter(item => item.cookieType === 'atc');
   const login = sent.filter(item => item.cookieType === 'login');
   assert.equal(atc.length, 12, 'one drain must forward a batch of ATC cookies');

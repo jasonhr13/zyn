@@ -41,6 +41,12 @@ assert.match(companion, /role: 'companion'/);
 assert.match(companion, /source: 'remote'/);
 assert.match(companion, /DRAIN_BATCH = 12/);
 assert.match(companion, /sendRate/);
+assert.doesNotMatch(
+  companion.slice(companion.indexOf('const drainOnce'), companion.indexOf('const scheduleDrain')),
+  /ensureBroker/,
+);
+const hostBridge = read('launcher/mobile-harvester-bridge.js');
+assert.match(hostBridge, /companionsJoined/);
 const taskGroups = read('frontend/src/components/pages/task-groups.js');
 assert.match(taskGroups, /harvest-workspace/);
 assert.match(taskGroups, /Per sec/);

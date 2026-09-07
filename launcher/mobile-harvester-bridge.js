@@ -293,6 +293,7 @@ function createMobileHarvesterBridge({
   const handleMessage = async (message) => {
     activity.lastSeenAt = timestamp();
     if (message.type === 'registered' || message.type === 'peer-state') {
+      const previousCompanions = activity.companionCount;
       activity.connected = true;
       activity.phoneCount = Number(message.phoneCount ?? (message.peer && message.peer.phoneCount)) || activity.phoneCount;
       if (message.peer && typeof message.peer.phoneCount === 'number') {
@@ -302,8 +303,9 @@ function createMobileHarvesterBridge({
       if (message.peer && typeof message.peer.companionCount === 'number') {
         activity.companionCount = message.peer.companionCount;
       }
+      const companionsJoined = message.type === 'peer-state' && activity.companionCount > previousCompanions;
       const phoneJoined = message.type === 'peer-state' && activity.phoneCount > 0;
-      await publishDemand({ force: phoneJoined });
+      await publishDemand({ force: companionsJoined || phoneJoined || message.type === 'registered' });
       return;
     }
     if (message.type === 'hello') {

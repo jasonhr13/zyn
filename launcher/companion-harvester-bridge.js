@@ -68,7 +68,10 @@ function createCompanionHarvesterBridge({
       applyDemand(null);
       return;
     }
-    const demand = message.demand && typeof message.demand === 'object' ? message.demand : message;
+    const nested = message.demand && typeof message.demand === 'object' ? message.demand : null;
+    const demand = nested && (nested.basis || nested.targets || nested.activeTasks || nested.standbyTasks)
+      ? nested
+      : message;
     applyDemand({
       mode: 'per-task',
       basis: String(demand.basis || (Number(demand.activeTasks) > 0 ? 'active' : 'standby')),
@@ -143,7 +146,6 @@ function createCompanionHarvesterBridge({
 
   const drainOnce = async () => {
     if (typeof takeCookie !== 'function') return;
-    try { await ensureBroker(); } catch {}
     await drainType('atc');
     await drainType('login');
   };
@@ -184,7 +186,6 @@ function createCompanionHarvesterBridge({
     const previous = socket;
     socket = null;
     activity.connected = false;
-    try { applyDemand?.(null); } catch {}
     if (!previous) return;
     try { previous.close(1000); } catch {}
   };

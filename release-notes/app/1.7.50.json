@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.50",
+  "notes": [
+    "Harvest-only workers keep farming instead of sitting at zero cookies after the faster send path.",
+    "Full Engine republishes harvest demand when a harvest-only app joins.",
+    "Harvest-only machines keep their last farm target across a brief reconnect."
+  ]
+}
