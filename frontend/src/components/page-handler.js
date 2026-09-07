@@ -214,10 +214,20 @@ class PageHandler extends Component {
         <TitleBar />
         <RuntimeBanner />
         <div className="body-wrapper">
-          <Sidebar taskTypes={license.taskTypes || {}} email={license.email || ''} />
+          <Sidebar
+            taskTypes={license.taskTypes || {}}
+            email={license.email || ''}
+            sessionKind={license.sessionKind || 'engine'}
+          />
           <div className="page-area">
             <ErrorBoundary>
               <Switch>
+                {license.sessionKind === 'harvester' && <Redirect from="/dashboard" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/modules" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/pokemoncenter" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/walmart" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/profiles" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/accounts" to="/task-groups" />}
                 <Route exact path="/dashboard" render={() => <Dashboard email={license.email || ''} />} />
                 <Route exact path="/modules" render={() => <Modules taskTypes={license.taskTypes || {}} />} />
                 <Route path="/task-groups" component={TaskGroups} />
@@ -230,7 +240,7 @@ class PageHandler extends Component {
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />
                 <Route path="/settings" component={Settings} />
-                <Redirect to="/dashboard" />
+                <Redirect to={license.sessionKind === 'harvester' ? '/task-groups' : '/dashboard'} />
               </Switch>
             </ErrorBoundary>
           </div>

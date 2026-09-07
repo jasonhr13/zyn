@@ -119,12 +119,14 @@ test('validates active-device limits and builds an atomic per-device mint plan',
     1000, 'user-1', '0123456789abcdef', 'user-1', 'authenticated-password-hash',
   ]);
   assert.match(statements[2].sql, /INSERT INTO licenses/);
+  assert.match(statements[2].sql, /session_kind/);
   assert.match(statements[2].sql, /active = 1 AND must_reset_password = 0 AND password_hash = \?/);
   assert.deepEqual(statements[2].bindings, [
-    'license-new', 'token-hash', '0123456789abcdef', 'Mac', 1000, 1000, 2000,
+    'license-new', 'token-hash', '0123456789abcdef', 'Mac', 'engine', 1000, 1000, 2000,
     'user-1', 'authenticated-password-hash',
   ]);
   assert.match(statements[3].sql, /revoked_reason = \?/);
+  assert.match(statements[3].sql, /COALESCE\(session_kind, 'engine'\) = 'engine'/);
   assert.match(statements[3].sql, /last_validated_at DESC, created_at DESC, id DESC/);
   assert.match(statements[3].sql, /SELECT max_active_devices FROM users/);
   assert.deepEqual(statements[3].bindings, [
@@ -148,6 +150,27 @@ test('validates active-device limits and builds an atomic per-device mint plan',
   assert.deepEqual(deviceLimitStatements[1].bindings, [
     3000, 'device_limit_reduced', 'user-1', 'user-1', 3000, '', 'user-1',
   ]);
+
+  const harvestMint = __test.mintLicenseStatements(db, {
+    userId: 'user-1',
+    authenticatedPasswordHash: 'authenticated-password-hash',
+    licenseId: 'license-harvest',
+    tokenHash: 'token-hash',
+    deviceId: '0123456789abcdef',
+    deviceName: 'Win-harvest',
+    sessionKind: 'harvester',
+    now: 1000,
+    expiresAt: 2000,
+  });
+  assert.equal(harvestMint.length, 4);
+  assert.match(harvestMint[2].sql, /session_kind/);
+  assert.deepEqual(harvestMint[2].bindings, [
+    'license-harvest', 'token-hash', '0123456789abcdef', 'Win-harvest', 'harvester', 1000, 1000, 2000,
+    'user-1', 'authenticated-password-hash',
+  ]);
+  assert.match(harvestMint[3].sql, /UPDATE users SET last_login_at/);
+  assert.equal(__test.normalizeSessionKind('Harvester'), 'harvester');
+  assert.equal(__test.normalizeSessionKind(''), 'engine');
 });
 
 test('executes the active-device lifecycle against SQLite', async (context) => {
@@ -175,7 +198,9 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
     return `${sql};`;
   };
   const transaction = statements => `BEGIN;\n${statements.map(boundSql).join('\n')}\nCOMMIT;`;
-  const mint = ({ id, deviceId, now, expiresAt = 10_000, passwordHash = 'hash' }) => transaction(
+  const mint = ({
+    id, deviceId, now, expiresAt = 10_000, passwordHash = 'hash', sessionKind = 'engine',
+  }) => transaction(
     __test.mintLicenseStatements(recordingDb(), {
       userId: 'user-1',
       authenticatedPasswordHash: passwordHash,
@@ -183,6 +208,7 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
       tokenHash: `token-${id}`,
       deviceId,
       deviceName: deviceId,
+      sessionKind,
       now,
       expiresAt,
     }),
@@ -200,9 +226,11 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
 
   const initial = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
   const deviceLimits = await readFile(new URL('../migrations/0010_active_device_limits.sql', import.meta.url), 'utf8');
+  const sessionKind = await readFile(new URL('../migrations/0016_session_kind.sql', import.meta.url), 'utf8');
   const script = `
     ${initial}
     ${deviceLimits}
+    ${sessionKind}
     INSERT INTO users
       (id, email, password_hash, password_salt, password_iterations,
        must_reset_password, active, created_at, updated_at)
@@ -230,6 +258,16 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
     ${activeIds('expired-cleanup')}
     SELECT 'expired-reason:' || revoked_reason FROM licenses WHERE id = 'expired';
 
+    ${mint({ id: 'harvest-a', deviceId: 'HA', now: 710, sessionKind: 'harvester' })}
+    ${mint({ id: 'harvest-b', deviceId: 'HB', now: 720, sessionKind: 'harvester' })}
+    ${activeIds('harvest-extra')}
+    SELECT 'harvest-engine:' || COALESCE(group_concat(id, ','), '') FROM (
+      SELECT id FROM licenses
+      WHERE user_id = 'user-1' AND revoked_at IS NULL AND expires_at > 0
+        AND session_kind = 'engine'
+      ORDER BY id
+    );
+
     ${setLimit(1, 800)}
     ${activeIds('reduced')}
     SELECT 'reduced-count:' || COUNT(*) FROM licenses
@@ -254,7 +292,9 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
     'same-device:c,d2,e',
     'expired-cleanup:d2,e,g',
     'expired-reason:expired',
-    'reduced:g',
+    'harvest-extra:d2,e,g,harvest-a,harvest-b',
+    'harvest-engine:d2,e,g',
+    'reduced:g,harvest-a,harvest-b',
     'reduced-count:2',
     'disabled-insert:0',
     'stale-password-insert:0',

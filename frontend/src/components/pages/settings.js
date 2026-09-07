@@ -132,7 +132,8 @@ class Settings extends Component {
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       mobileHarvesterEnabled: false, mobileHarvester: null, mobileBusy: false, mobileError: '',
-      licenseEmail: '', licenseOffline: false, pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
+      licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '',
+      pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -178,6 +179,7 @@ class Settings extends Component {
     this.setState({
       licenseEmail: status.email || '',
       licenseOffline: status.offline === true,
+      sessionKind: String(status.sessionKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine',
       pokemonCenterAccess: !!(status.taskTypes && status.taskTypes.pokemoncenter),
       walmartAccess: !!(status.taskTypes && status.taskTypes.walmart),
       proxyAccess: status.proxyAccess === true,
@@ -355,6 +357,35 @@ class Settings extends Component {
     this.setState({ signingOut: true });
     try { await ipcRenderer.invoke('logoutLicense'); }
     catch { this.setState({ signingOut: false }); }
+  };
+
+  setSessionKind = async (nextKind) => {
+    const sessionKind = String(nextKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine';
+    if (sessionKind === this.state.sessionKind || this.state.sessionKindBusy) return;
+    if (sessionKind === 'harvester' && !window.confirm(
+      'Switch this machine to Harvester only?\n\nCheckout tasks will stop here. Remote harvesters need a Full Engine Zyn online to bank cookies.',
+    )) return;
+    if (sessionKind === 'engine' && !window.confirm(
+      'Switch this machine to Full Engine?\n\nThis uses an active-device seat. If that limit is full, the least recently active Full Engine session is signed out.',
+    )) return;
+    this.setState({ sessionKindBusy: true, sessionKindError: '' });
+    try {
+      const status = await ipcRenderer.invoke('setLicenseSessionKind', sessionKind);
+      if (!status || status.ok !== true) {
+        this.setState({
+          sessionKindBusy: false,
+          sessionKindError: (status && status.reason) || 'Unable to change session mode.',
+        });
+        return;
+      }
+      this.setState({
+        sessionKind: status.sessionKind === 'harvester' ? 'harvester' : 'engine',
+        sessionKindBusy: false,
+        sessionKindError: '',
+      });
+    } catch {
+      this.setState({ sessionKindBusy: false, sessionKindError: 'Unable to change session mode.' });
+    }
   };
 
   clearAnalytics = async () => {
@@ -675,7 +706,8 @@ class Settings extends Component {
       targetCapturesPerLoad, targetLoadsPerBrowser, targetBlockHeavyResources,
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
       mobileHarvesterEnabled, mobileHarvester, mobileBusy, mobileError,
-      licenseEmail, licenseOffline, pokemonCenterAccess, walmartAccess, proxyAccess, managedProxyCount,
+      licenseEmail, licenseOffline, sessionKind, sessionKindBusy, sessionKindError,
+      pokemonCenterAccess, walmartAccess, proxyAccess, managedProxyCount,
       billingStatus, accessUntil, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -735,6 +767,32 @@ class Settings extends Component {
                 {signingOut ? 'Signing out…' : 'Sign out'}
               </button>
             </div>
+            <div className="license-gate-modes" style={{ marginTop: 12, maxWidth: 520 }}>
+              <button
+                type="button"
+                className={`license-gate-mode${sessionKind !== 'harvester' ? ' selected' : ''}`}
+                disabled={sessionKindBusy}
+                onClick={() => this.setSessionKind('engine')}
+              >
+                <strong>Full Engine</strong>
+                <span>Run checkout tasks on this machine. Uses your assigned active-device limit.</span>
+              </button>
+              <button
+                type="button"
+                className={`license-gate-mode${sessionKind === 'harvester' ? ' selected' : ''}`}
+                disabled={sessionKindBusy}
+                onClick={() => this.setSessionKind('harvester')}
+              >
+                <strong>Harvester only</strong>
+                <span>Farm Shape cookies for a Full Engine Zyn signed in on another machine. Does not use a device seat.</span>
+              </button>
+            </div>
+            {sessionKindError && (
+              <div role="alert" style={{ color: 'var(--danger)', fontSize: 10, marginTop: 8 }}>{sessionKindError}</div>
+            )}
+            {sessionKindBusy && (
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>Updating session mode…</div>
+            )}
             <div className={`license-subscription license-subscription-${subscription.tone}`} data-license-subscription="active">
               <div>
                 <span>Subscription</span>

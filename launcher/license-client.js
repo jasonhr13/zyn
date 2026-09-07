@@ -175,11 +175,42 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
   return {
     get deviceId() { return deviceId; },
     setDeviceId,
-    login(email, password) {
-      return post(apiBase, '/api/auth/login', { email, password, deviceId, deviceName });
+    login(email, password, sessionKind = 'engine') {
+      return post(apiBase, '/api/auth/login', {
+        email, password, deviceId, deviceName,
+        sessionKind: String(sessionKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine',
+      });
     },
-    resetPassword(resetToken, newPassword) {
-      return post(apiBase, '/api/auth/reset-password', { resetToken, newPassword, deviceId, deviceName });
+    resetPassword(resetToken, newPassword, sessionKind = 'engine') {
+      return post(apiBase, '/api/auth/reset-password', {
+        resetToken, newPassword, deviceId, deviceName,
+        sessionKind: String(sessionKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine',
+      });
+    },
+    setSessionKind(token, sessionKind) {
+      return requestApi(apiBase, '/api/license/session-kind', {
+        method: 'POST',
+        body: {
+          sessionKind: String(sessionKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine',
+        },
+        token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    ensureHarvestRoom(token) {
+      return requestApi(apiBase, '/api/harvester/room', {
+        method: 'POST',
+        body: {},
+        token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
+    getHarvestRoom(token) {
+      return requestApi(apiBase, '/api/harvester/room', {
+        method: 'GET',
+        token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
     },
     validate(token, proxyRevision = '') {
       return post(apiBase, '/api/license/validate', { deviceId, deviceName, proxyRevision }, token);
@@ -216,15 +247,19 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
         headers: { 'x-rcart-device-id': deviceId },
       });
     },
-    mobileHarvesterEvents(token, { roomId, handlers = {}, maxPayload = MAX_QUEUE_EVENT_BYTES } = {}) {
+    harvestRoomEvents(token, { roomId, role = 'desktop', handlers = {}, maxPayload = MAX_QUEUE_EVENT_BYTES } = {}) {
       const room = String(roomId || '');
+      const peer = String(role || 'desktop').trim().toLowerCase();
       if (!/^zynm_[A-Za-z0-9_-]{16,64}$/.test(room)) {
-        throw new Error('mobile harvester room is required');
+        throw new Error('harvest room is required');
+      }
+      if (peer !== 'desktop' && peer !== 'companion') {
+        throw new Error('harvest room role is invalid');
       }
       const target = new URL('/api/mobile/ws', `${apiBase.replace(/\/$/, '')}/`);
       target.protocol = target.protocol === 'http:' ? 'ws:' : 'wss:';
       target.searchParams.set('room', room);
-      target.searchParams.set('role', 'desktop');
+      target.searchParams.set('role', peer);
       const socket = new WebSocket(target, {
         headers: {
           authorization: `Bearer ${String(token || '')}`,
@@ -242,6 +277,41 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
         socket.on('message', (data) => {
           const bytes = Buffer.from(data);
           if (bytes.length > Math.max(MAX_QUEUE_EVENT_BYTES, Number(maxPayload) || 0)) return;
+          let message;
+          try { message = JSON.parse(bytes.toString('utf8')); } catch { return; }
+          if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);
+        });
+      }
+      return socket;
+    },
+    mobileHarvesterEvents(token, options = {}) {
+      const room = String((options && options.roomId) || '');
+      const peer = 'desktop';
+      if (!/^zynm_[A-Za-z0-9_-]{16,64}$/.test(room)) {
+        throw new Error('mobile harvester room is required');
+      }
+      const target = new URL('/api/mobile/ws', `${apiBase.replace(/\/$/, '')}/`);
+      target.protocol = target.protocol === 'http:' ? 'ws:' : 'wss:';
+      target.searchParams.set('room', room);
+      target.searchParams.set('role', peer);
+      const socket = new WebSocket(target, {
+        headers: {
+          authorization: `Bearer ${String(token || '')}`,
+          'x-rcart-device-id': deviceId,
+        },
+        followRedirects: false,
+        handshakeTimeout: 15000,
+        maxPayload: Math.max(MAX_QUEUE_EVENT_BYTES, Number((options && options.maxPayload) || 0) || MAX_QUEUE_EVENT_BYTES),
+        perMessageDeflate: false,
+      });
+      const handlers = (options && options.handlers) || {};
+      if (typeof handlers.open === 'function') socket.on('open', handlers.open);
+      if (typeof handlers.close === 'function') socket.on('close', handlers.close);
+      if (typeof handlers.error === 'function') socket.on('error', handlers.error);
+      if (typeof handlers.message === 'function') {
+        socket.on('message', (data) => {
+          const bytes = Buffer.from(data);
+          if (bytes.length > Math.max(MAX_QUEUE_EVENT_BYTES, Number((options && options.maxPayload) || 0) || 0)) return;
           let message;
           try { message = JSON.parse(bytes.toString('utf8')); } catch { return; }
           if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);

@@ -144,6 +144,27 @@ async function main() {
     proxy: '',
   }), /missing required headers/);
 
+  saved.length = 0;
+  await assert.rejects(() => bridge.__test.handleCapture({
+    cookieType: 'atc',
+    source: 'remote',
+    headers: SHAPE_HEADERS,
+    proxy: '',
+    harvesterId: 'win-box',
+  }), /missing the harvest proxy/);
+  await bridge.__test.handleCapture({
+    cookieType: 'atc',
+    source: 'remote',
+    headers: SHAPE_HEADERS,
+    proxy: 'host:8000:user:pass',
+    harvesterId: 'win-box',
+  });
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].source, 'remote');
+  assert.equal(saved[0].harvesterId, 'win-box');
+  assert.equal(saved[0].proxy, 'host:8000:user:pass');
+  assert.equal(saved[0].headers['sec-ch-ua-platform'], SHAPE_HEADERS['sec-ch-ua-platform']);
+
   const managed = localProxyGroups({
     lists: [{ name: 'Resi', managed: true, raw: 'secret' }],
   });

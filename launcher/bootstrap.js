@@ -254,6 +254,8 @@ let pokemonQueueEvents = null;
 let analyticsService = null;
 let harvesterExtensionBridge = null;
 let mobileHarvesterBridge = null;
+let companionHarvesterBridge = null;
+let lastLicenseSessionKind = '';
 let cloudBackupManager = null;
 
 function disarmPersistedTargetHarvesters() {
@@ -369,6 +371,7 @@ function installMobileHarvesterCompanion(authority) {
       dataDirectory: app.getPath('userData'),
       authority,
       enabled,
+      hostRemote: () => authority.cached?.().ok === true && authority.cached?.().sessionKind !== 'harvester',
       ensureBroker: () => targetEngine.ensureHarvesterBroker?.(),
       getCookieBank: () => (typeof targetEngine.getCookieBank === 'function'
         ? targetEngine.getCookieBank() : {}),
@@ -407,6 +410,31 @@ function installMobileHarvesterCompanion(authority) {
     return bridge;
   } catch (error) {
     console.warn(`[mobile-harvester] companion unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+function installCompanionHarvester(authority) {
+  if (!authority) return null;
+  try {
+    const { createCompanionHarvesterBridge } = require('./companion-harvester-bridge');
+    const targetEngine = require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js'));
+    const bridge = createCompanionHarvesterBridge({
+      authority,
+      enabled: () => authority.cached?.().ok === true && authority.cached?.().sessionKind === 'harvester',
+      ensureBroker: () => targetEngine.ensureHarvesterBroker?.(),
+      takeCookie: type => (typeof targetEngine.takeBankCookie === 'function'
+        ? targetEngine.takeBankCookie(type) : Promise.resolve(null)),
+      applyDemand: demand => targetEngine.setRemoteCookieDemand?.(demand),
+      logger: console,
+    });
+    app.whenReady().then(() => {
+      if (authority.cached?.().sessionKind === 'harvester') bridge.start();
+    });
+    app.once('will-quit', () => bridge.stop());
+    return bridge;
+  } catch (error) {
+    console.warn(`[remote-harvester] companion unavailable: ${error.message}`);
     return null;
   }
 }
@@ -677,7 +705,7 @@ function installTaskGroupScheduling(authority, managedProxyControl) {
     getProfiles: () => dataManager.getProfiles?.() || [],
     getReadiness: group => targetReadinessForGroup(group, undefined, { includeBank: false }),
     isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
-    canStart: () => (!authority || authority.cached().ok === true)
+    canStart: () => (!authority || (authority.cached().ok === true && authority.cached().sessionKind !== 'harvester'))
       && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),
     startTarget: config => {
       validateScheduledTargetProxies(config, dataManager, managedProxyControl);
@@ -989,6 +1017,7 @@ async function launchTargetAfterRuntime(original, args, authority) {
 
 function guardTaskHelpers(authority) {
   const allowed = () => authority.cached().ok === true;
+  const engineAllowed = () => allowed() && authority.cached().sessionKind !== 'harvester';
   const TASK_TYPE_METHODS = Object.freeze({
     startRound1: 'round1', startPokemonCenter: 'pokemoncenter', startWalmart: 'walmart',
   });
@@ -1038,6 +1067,10 @@ function guardTaskHelpers(authority) {
       const original = engine[method].bind(engine);
       engine[method] = (...args) => {
         if (!allowed()) { blocked(method); return undefined; }
+        if (!engineAllowed()) {
+          blocked(method);
+          return undefined;
+        }
         if (taskType && !entitled(taskType)) { blocked(method, taskType); return undefined; }
         if (method === 'startTarget' && runtimeManager.enabled) {
           return launchTargetAfterRuntime(original, args, authority);
@@ -1316,6 +1349,15 @@ function installReplacementLicenseEnforcement(managedProxyControl) {
       try { analyticsService?.sessionChanged(); } catch (error) { console.error(`[analytics] session: ${error.message}`); }
       try { pokemonQueueEvents?.update(status); } catch (error) { console.error(`[queue-monitor] status: ${error.message}`); }
       try { mobileHarvesterBridge?.update(); } catch (error) { console.warn(`[mobile-harvester] status: ${error.message}`); }
+      try {
+        const kind = status && status.sessionKind === 'harvester' ? 'harvester' : 'engine';
+        if (status && status.ok === true && kind === 'harvester' && lastLicenseSessionKind === 'engine') {
+          stopAllRunningForLicense();
+        }
+        lastLicenseSessionKind = status && status.ok === true ? kind : '';
+        if (status && status.ok === true && kind === 'harvester') companionHarvesterBridge?.start();
+        else companionHarvesterBridge?.stop();
+      } catch (error) { console.warn(`[remote-harvester] status: ${error.message}`); }
       if (status && status.ok === true) {
         startRuntimeUpdatePolling();
         try { taskGroupScheduler?.resume?.(); } catch (error) { console.error(`[schedule] sync: ${error.message}`); }
@@ -1534,6 +1576,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   if (!licenseAuthority) setTargetHarvestAuthorization(true);
   harvesterExtensionBridge = installHarvesterExtensionCompatibility(licenseAuthority);
   mobileHarvesterBridge = installMobileHarvesterCompanion(licenseAuthority);
+  companionHarvesterBridge = installCompanionHarvester(licenseAuthority);
   analyticsService = installAnalytics(licenseAuthority);
   installNativeHyperAuthority(licenseAuthority);
   pokemonQueueEvents = installPokemonQueueEventStream(licenseAuthority);

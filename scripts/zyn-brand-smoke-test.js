@@ -32,6 +32,8 @@ assert.doesNotMatch(rendered, /control[ -]plane/i, 'rendered shell still contain
 assert.doesNotMatch(licenseGate, /one active sign-in/i, 'license gate still promises a single active sign-in');
 assert.match(licenseGate, /assigned active-device limit/i, 'license gate does not explain the account device limit');
 assert.match(licenseGate, /least recently active session/i, 'license gate does not explain session replacement at the limit');
+assert.match(licenseGate, /Harvester only/i, 'license gate does not offer harvester-only sign-in');
+assert.match(licenseGate, /does not use a device seat/i, 'license gate does not explain harvester-only device-limit exemption');
 for (const color of ['#450A0A', '#7F1D1D', '#BE123C', '#E11D48', '#F97316', '#FBBF24']) {
   assert.match(read('frontend/src/index.css'), new RegExp(color, 'i'), `theme omits ${color}`);
 }
@@ -39,7 +41,7 @@ for (const color of ['#450A0A', '#7F1D1D', '#BE123C', '#E11D48', '#F97316', '#FB
 const contract = JSON.parse(read('config/runtime-contract.json'));
 assert.equal(contract.product.name, 'Zyn');
 assert.equal(contract.product.bundleIdentifier, 'com.thwebco.zyn');
-assert.equal(contract.appRelease, 'R8.56');
+assert.equal(contract.appRelease, 'R8.57');
 assert.ok(fs.statSync(path.join(project, 'assets/brand/Zyn.icns')).size > 100_000, 'Zyn icon is missing');
 assert.ok(fs.statSync(path.join(project, 'frontend/public/zyn-icon.png')).size > 100_000, 'renderer icon is missing');
 

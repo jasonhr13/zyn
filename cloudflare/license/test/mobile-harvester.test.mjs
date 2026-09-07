@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from '../src/index.js';
 import {
+  MOBILE_MAX_COMPANIONS,
   MOBILE_MAX_PHONES,
   allowedMobileMessageType,
   canAcceptMobilePeer,
@@ -56,10 +57,16 @@ class MemoryD1 {
         device_id: license.device_id,
         device_name: license.device_name,
         expires_at: license.expires_at,
+        session_kind: license.session_kind || 'engine',
         user_id: user.id,
         email: user.email,
         active: user.active,
       };
+    }
+    if (sql.includes('FROM mobile_rooms') && sql.includes('WHERE user_id = ?')) {
+      const [userId, now] = bindings;
+      return this.rooms.find(row => row.user_id === userId && row.revoked_at == null
+        && Number(row.expires_at) > Number(now || 0)) || null;
     }
     if (sql.includes('FROM mobile_rooms') && sql.includes('WHERE room_id = ?')) {
       const [roomId] = bindings;
@@ -109,6 +116,7 @@ async function environment(overrides = {}) {
     device_name: 'Mac A',
     expires_at: Date.now() + 60_000,
     revoked_at: null,
+    session_kind: 'engine',
   });
   const wsCalls = [];
   return {
@@ -159,8 +167,11 @@ test('mobile message allowlist is role-scoped', () => {
   assert.equal(allowedMobileMessageType('phone', 'demand'), false);
   assert.equal(allowedMobileMessageType('desktop', 'demand'), true);
   assert.equal(allowedMobileMessageType('desktop', 'capture'), false);
+  assert.equal(allowedMobileMessageType('companion', 'capture'), true);
+  assert.equal(allowedMobileMessageType('companion', 'demand'), false);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'phone').ok, true);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'desktop').ok, false);
+  assert.equal(parseMobileClientMessage('{"type":"capture"}', 'companion').ok, true);
   assert.equal(parseMobileClientMessage('not-json', 'phone').code, 'invalid_json');
 });
 
@@ -169,6 +180,10 @@ test('room occupancy rejects a second desktop and extra phones', () => {
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: 0 }, 'desktop'), false);
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: MOBILE_MAX_PHONES - 1 }, 'phone'), true);
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: MOBILE_MAX_PHONES }, 'phone'), false);
+  assert.equal(canAcceptMobilePeer({ desktopOnline: true, companionCount: 0 }, 'companion'), true);
+  assert.equal(canAcceptMobilePeer({
+    desktopOnline: true, companionCount: MOBILE_MAX_COMPANIONS,
+  }, 'companion'), false);
 });
 
 test('pairing requires a live license session', async () => {
@@ -271,4 +286,56 @@ test('phone websocket accepts the join token and rejects a bad token without hit
   assert.equal(env.wsCalls.length, 1);
   assert.match(env.wsCalls[0].url, /role=phone/);
   assert.doesNotMatch(env.wsCalls[0].url, /token=/);
+});
+
+test('Full Engine hosts a harvest room that harvester-only companions can join', async () => {
+  const env = await environment();
+  const deniedCompanionHost = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env);
+  const engineHost = await deniedCompanionHost.json();
+  assert.equal(deniedCompanionHost.status, 200);
+  assert.equal(engineHost.ok, true);
+  assert.match(engineHost.roomId, /^zynm_/);
+  assert.equal(engineHost.created, true);
+
+  const reused = await (await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env)).json();
+  assert.equal(reused.created, false);
+  assert.equal(reused.roomId, engineHost.roomId);
+
+  env.DB.licenses[0].session_kind = 'harvester';
+  const harvesterHost = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env);
+  assert.equal(harvesterHost.status, 403);
+  assert.equal((await harvesterHost.json()).code, 'engine_required');
+
+  const found = await (await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'GET',
+    headers: licenseHeaders(),
+  }), env)).json();
+  assert.equal(found.ok, true);
+  assert.equal(found.roomId, engineHost.roomId);
+
+  env.DB.licenses[0].session_kind = 'engine';
+  const engineCompanionDenied = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${engineHost.roomId}&role=companion`,
+    { headers: { ...licenseHeaders(), upgrade: 'websocket' } },
+  ), env);
+  assert.equal(engineCompanionDenied.status, 403);
+  assert.equal((await engineCompanionDenied.json()).code, 'harvester_required');
+
+  env.DB.licenses[0].session_kind = 'harvester';
+  const companion = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${engineHost.roomId}&role=companion`,
+    { headers: { ...licenseHeaders(), upgrade: 'websocket' } },
+  ), env);
+  assert.equal(companion.status, 200);
+  assert.match(env.wsCalls.at(-1).url, /role=companion/);
+  assert.doesNotMatch(env.wsCalls.at(-1).url, /token=/);
 });

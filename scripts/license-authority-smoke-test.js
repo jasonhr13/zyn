@@ -42,13 +42,14 @@ const silentLogger = { warn() {} };
     const proxyRevision = 'a'.repeat(64);
     const accountId = '11111111-1111-4111-8111-111111111111';
     const api = {
-      async login(email, password) {
-        calls.push({ method: 'login', email, password });
+      async login(email, password, sessionKind) {
+        calls.push({ method: 'login', email, password, sessionKind });
         return {
           ok: true,
           licenseToken: 'authoritative-bearer',
           userId: accountId,
           email,
+          sessionKind: sessionKind || 'engine',
           expiresAt: now + 30 * 24 * 60 * 60 * 1000,
           taskTypes: { pokemoncenter: true, round1: false },
           billingPlan: 'zyn-standard',
@@ -122,6 +123,8 @@ const silentLogger = { warn() {} };
     const signedIn = await authority.login({ email: ' OWNER@EXAMPLE.COM ', password: 'account-password' });
     assert.equal(signedIn.ok, true);
     assert.equal(signedIn.email, 'owner@example.com');
+    assert.equal(signedIn.sessionKind, 'engine');
+    assert.equal(calls.find(call => call.method === 'login').sessionKind, 'engine');
     assert.equal(signedIn.storage, 'encrypted');
     assert.equal(signedIn.managedProxyCount, 3);
     assert.equal(signedIn.userId, undefined, 'stable account identifier leaked to renderer status');
@@ -255,10 +258,11 @@ const silentLogger = { warn() {} };
         async login() {
           return { ok: false, status: 403, code: 'password_reset_required', message: 'Choose a password.', resetToken: 'main-only-reset', email: 'reset@example.com' };
         },
-        async resetPassword(resetToken, password) {
+        async resetPassword(resetToken, password, sessionKind) {
           serverResetToken = resetToken;
           assert.equal(password, 'replacement-password');
-          return { ok: true, licenseToken: 'reset-bearer', email: 'reset@example.com' };
+          assert.equal(sessionKind, 'engine');
+          return { ok: true, licenseToken: 'reset-bearer', email: 'reset@example.com', sessionKind };
         },
       },
     });
@@ -300,6 +304,34 @@ const silentLogger = { warn() {} };
     assert.equal(logoutToken, 'logout-bearer');
     assert.equal(logoutLocks, 1);
     assert.equal((await logoutAuthority.listBackups()).status, 401);
+
+    const harvestCalls = [];
+    const harvestAuthority = createLicenseAuthority({
+      dataDirectory: temporary(), safeStorage, now: () => now, logger: silentLogger,
+      api: {
+        async login(email, password, sessionKind) {
+          harvestCalls.push({ method: 'login', sessionKind });
+          return {
+            ok: true, licenseToken: 'harvest-bearer', email, sessionKind,
+            userId: accountId, expiresAt: now + 5000,
+          };
+        },
+        async setSessionKind(token, sessionKind) {
+          harvestCalls.push({ method: 'setSessionKind', token, sessionKind });
+          return { ok: true, email: 'harvest@example.com', sessionKind, expiresAt: now + 5000 };
+        },
+      },
+    });
+    const harvestSignIn = await harvestAuthority.login({
+      email: 'harvest@example.com', password: 'password', sessionKind: 'harvester',
+    });
+    assert.equal(harvestSignIn.ok, true);
+    assert.equal(harvestSignIn.sessionKind, 'harvester');
+    assert.equal(harvestCalls[0].sessionKind, 'harvester');
+    const switched = await harvestAuthority.setSessionKind('engine');
+    assert.equal(switched.sessionKind, 'engine');
+    assert.equal(harvestCalls.find(call => call.method === 'setSessionKind').token, 'harvest-bearer');
+    assert.equal(harvestAuthority.preferredSessionKind(), 'engine');
 
     assert.ok(statuses.length >= 1);
     console.log(JSON.stringify({

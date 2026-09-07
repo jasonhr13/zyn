@@ -2,6 +2,7 @@ const encoder = new TextEncoder();
 
 export const MOBILE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const MOBILE_MAX_PHONES = 3;
+export const MOBILE_MAX_COMPANIONS = 8;
 export const MOBILE_MAX_MESSAGE_BYTES = 256 * 1024;
 export const MOBILE_BINDING = 'MOBILE_HARVESTER';
 
@@ -9,6 +10,7 @@ const ROOM_ID_PATTERN = /^zynm_[A-Za-z0-9_-]{16,64}$/;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
 const PHONE_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error']);
+const COMPANION_TYPES = new Set(['hello', 'capture', 'log', 'status', 'error']);
 const DESKTOP_TYPES = new Set([
   'hello', 'demand', 'proxies', 'start', 'stop', 'capture-ack', 'log', 'error',
 ]);
@@ -75,12 +77,17 @@ function validDeviceId(value) {
 
 function normalizeRole(value) {
   const role = String(value || '').trim().toLowerCase();
-  return role === 'desktop' || role === 'phone' ? role : '';
+  return role === 'desktop' || role === 'phone' || role === 'companion' ? role : '';
+}
+
+function normalizeSessionKind(value) {
+  return String(value || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine';
 }
 
 export function allowedMobileMessageType(role, type) {
   const name = String(type || '');
   if (role === 'phone') return PHONE_TYPES.has(name);
+  if (role === 'companion') return COMPANION_TYPES.has(name);
   if (role === 'desktop') return DESKTOP_TYPES.has(name);
   return false;
 }
@@ -109,9 +116,22 @@ export function parseMobileClientMessage(raw, role, maxBytes = MOBILE_MAX_MESSAG
 export function canAcceptMobilePeer(stats, role) {
   const desktopOnline = Boolean(stats && stats.desktopOnline);
   const phoneCount = Math.max(0, Number(stats && stats.phoneCount) || 0);
+  const companionCount = Math.max(0, Number(stats && stats.companionCount) || 0);
   if (role === 'desktop') return !desktopOnline;
   if (role === 'phone') return phoneCount < MOBILE_MAX_PHONES;
+  if (role === 'companion') return companionCount < MOBILE_MAX_COMPANIONS;
   return false;
+}
+
+async function activeRoomForUser(env, userId) {
+  const now = Date.now();
+  return env.DB.prepare(`
+    SELECT room_id, user_id, license_id, token_hash, created_at, expires_at, revoked_at
+    FROM mobile_rooms
+    WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).bind(userId, now).first();
 }
 
 async function activeRoomById(env, roomId) {
@@ -156,6 +176,66 @@ export async function pairMobileRoom(request, env, { authenticate } = {}) {
   });
 }
 
+export async function ensureHarvestRoom(request, env, { authenticate } = {}) {
+  if (request.method !== 'POST') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to host remote harvesters.' }, 401);
+  }
+  if (normalizeSessionKind(identity.session_kind) !== 'engine') {
+    return json({
+      ok: false,
+      code: 'engine_required',
+      message: 'Only Full Engine Zyn can host the cookie bank for remote harvesters.',
+    }, 403);
+  }
+  const existing = await activeRoomForUser(env, identity.user_id);
+  if (existing) {
+    return json({
+      ok: true,
+      roomId: existing.room_id,
+      expiresAt: Number(existing.expires_at) || 0,
+      created: false,
+    });
+  }
+  const now = Date.now();
+  const roomId = `zynm_${randomToken(18)}`;
+  const joinToken = randomToken(32);
+  const tokenHash = await sha256Hex(joinToken);
+  const expiresAt = now + MOBILE_ROOM_TTL_MS;
+  await env.DB.prepare(`
+    INSERT INTO mobile_rooms (room_id, user_id, license_id, token_hash, created_at, expires_at, revoked_at)
+    VALUES (?, ?, ?, ?, ?, ?, NULL)
+  `).bind(roomId, identity.user_id, identity.license_id, tokenHash, now, expiresAt).run();
+  return json({
+    ok: true,
+    roomId,
+    expiresAt,
+    created: true,
+  });
+}
+
+export async function getHarvestRoom(request, env, { authenticate } = {}) {
+  if (request.method !== 'GET') return json({ ok: false, message: 'Method not allowed.' }, 405);
+  const identity = await authenticate(request, env);
+  if (!identity) {
+    return json({ ok: false, code: 'license_invalid', message: 'Sign in again to join a harvest room.' }, 401);
+  }
+  const room = await activeRoomForUser(env, identity.user_id);
+  if (!room) {
+    return json({
+      ok: false,
+      code: 'room_not_found',
+      message: 'No Full Engine Zyn is hosting a harvest room. Sign in as Full Engine on the machine that runs tasks.',
+    }, 404);
+  }
+  return json({
+    ok: true,
+    roomId: room.room_id,
+    expiresAt: Number(room.expires_at) || 0,
+  });
+}
+
 export async function resetMobileRoom(request, env, { authenticate } = {}) {
   if (request.method !== 'POST') return json({ ok: false, message: 'Method not allowed.' }, 405);
   const identity = await authenticate(request, env);
@@ -192,10 +272,31 @@ export async function connectMobileWebSocket(request, env, url, { authenticate }
     return json({ ok: false, code: 'room_not_found', message: 'Pairing expired. Generate a new QR code in Zyn.' }, 404);
   }
 
-  if (role === 'desktop') {
+  if (role === 'desktop' || role === 'companion') {
     const identity = await authenticate(request, env);
     if (!identity || identity.user_id !== room.user_id) {
-      return json({ ok: false, code: 'license_invalid', message: 'Sign in again to connect this desktop.' }, 401);
+      return json({
+        ok: false,
+        code: 'license_invalid',
+        message: role === 'companion'
+          ? 'Sign in again to send cookies to this Zyn account.'
+          : 'Sign in again to connect this desktop.',
+      }, 401);
+    }
+    const kind = normalizeSessionKind(identity.session_kind);
+    if (role === 'desktop' && kind !== 'engine') {
+      return json({
+        ok: false,
+        code: 'engine_required',
+        message: 'Only Full Engine Zyn can host the cookie bank.',
+      }, 403);
+    }
+    if (role === 'companion' && kind !== 'harvester') {
+      return json({
+        ok: false,
+        code: 'harvester_required',
+        message: 'Sign in as Harvester only to send cookies to another Zyn.',
+      }, 403);
     }
     deviceId = String(identity.device_id || deviceId);
   } else {
@@ -246,6 +347,15 @@ export async function handleMobileRoutes(request, env, url, dependencies) {
   if (url.pathname === '/api/mobile/ws') {
     return connectMobileWebSocket(request, env, url, dependencies);
   }
+  if (url.pathname === '/api/harvester/room' && request.method === 'POST') {
+    return ensureHarvestRoom(request, env, dependencies);
+  }
+  if (url.pathname === '/api/harvester/room' && request.method === 'GET') {
+    return getHarvestRoom(request, env, dependencies);
+  }
+  if (url.pathname === '/api/harvester/room') {
+    return json({ ok: false, message: 'Method not allowed.' }, 405);
+  }
   return null;
 }
 
@@ -270,12 +380,14 @@ export class MobileHarvesterRoom {
   peerState() {
     let desktopOnline = false;
     let phoneCount = 0;
+    let companionCount = 0;
     for (const socket of this.sockets()) {
       const role = this.attachment(socket).role;
       if (role === 'desktop') desktopOnline = true;
       else if (role === 'phone') phoneCount += 1;
+      else if (role === 'companion') companionCount += 1;
     }
-    return { desktopOnline, phoneCount };
+    return { desktopOnline, phoneCount, companionCount };
   }
 
   send(socket, payload) {
@@ -306,7 +418,9 @@ export class MobileHarvesterRoom {
         code: role === 'desktop' ? 'desktop_connected' : 'phone_limit',
         message: role === 'desktop'
           ? 'Another Zyn desktop is already connected to this room.'
-          : 'This pairing already has the maximum number of phones.',
+          : role === 'companion'
+            ? 'This account already has the maximum number of remote harvesters.'
+            : 'This pairing already has the maximum number of phones.',
       }, 409);
     }
     const [client, server] = Object.values(new WebSocketPair());
@@ -341,8 +455,11 @@ export class MobileHarvesterRoom {
       this.send(socket, { type: 'error', code: parsed.code, message: 'Message rejected.' });
       return;
     }
-    const targetRole = role === 'desktop' ? 'phone' : 'desktop';
-    this.broadcast(parsed.message, (peer) => peer.role === targetRole);
+    if (role === 'desktop') {
+      this.broadcast(parsed.message, (peer) => peer.role === 'phone' || peer.role === 'companion');
+    } else {
+      this.broadcast(parsed.message, (peer) => peer.role === 'desktop');
+    }
   }
 
   async webSocketClose() {

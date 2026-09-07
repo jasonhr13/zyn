@@ -12,13 +12,20 @@ const { normalizeTaskTypeAccess, removedTaskTypes } = require('./task-type-acces
 
 const SESSION_FILE = 'license-session.json';
 const OBSERVER_SESSION_FILE = 'license-observer-session.json';
-const LICENSE_CHECK_MS = 5 * 60 * 1000;
-const LICENSE_OFFLINE_GRACE_MS = 15 * 60 * 1000;
+const SESSION_KIND_FILE = 'session-kind.json';
 const IPC = Object.freeze({
   login: 'loginLicense',
   reset: 'resetLicensePassword',
   logout: 'logoutLicense',
+  setSessionKind: 'setLicenseSessionKind',
+  preferredSessionKind: 'getPreferredSessionKind',
 });
+
+function normalizeSessionKind(value) {
+  return String(value || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine';
+}
+const LICENSE_CHECK_MS = 5 * 60 * 1000;
+const LICENSE_OFFLINE_GRACE_MS = 15 * 60 * 1000;
 
 const normalizeTaskTypes = normalizeTaskTypeAccess;
 
@@ -74,6 +81,34 @@ function createLicenseAuthority({
   let validationInFlight = null;
   let timer = null;
 
+  const sessionKindPath = path.join(dataDirectory, SESSION_KIND_FILE);
+
+  const readPreferredSessionKind = () => {
+    try {
+      const stored = JSON.parse(fs.readFileSync(sessionKindPath, 'utf8'));
+      return normalizeSessionKind(stored && stored.sessionKind);
+    } catch {
+      return 'engine';
+    }
+  };
+
+  const persistPreferredSessionKind = (sessionKind) => {
+    const kind = normalizeSessionKind(sessionKind);
+    try {
+      atomicWrite(sessionKindPath, { sessionKind: kind });
+    } catch (error) {
+      logger.warn?.(`[license] save session kind: ${error.message}`);
+    }
+    return kind;
+  };
+
+  const launchSessionKind = () => {
+    try {
+      if (process.argv.some(arg => String(arg) === '--harvester')) return 'harvester';
+    } catch {}
+    return '';
+  };
+
   const rendererStatus = () => ({
     ok: licenseState.ok === true,
     reason: String(licenseState.reason || '').slice(0, 240),
@@ -85,6 +120,7 @@ function createLicenseAuthority({
     billingPlan: String(licenseState.billingPlan || ''),
     billingStatus: String(licenseState.billingStatus || ''),
     accessUntil: Number(licenseState.accessUntil) || 0,
+    sessionKind: normalizeSessionKind(licenseState.sessionKind || readPreferredSessionKind()),
     taskTypes: normalizeTaskTypes(licenseState.taskTypes),
     requiresPasswordReset: licenseState.requiresPasswordReset === true,
     storage: ['encrypted', 'memory', 'none'].includes(licenseState.storage)
@@ -123,6 +159,7 @@ function createLicenseAuthority({
         deviceId: String(stored.deviceId || licenseApi.deviceId || ''),
         validatedAt: Number(stored.validatedAt) || 0,
         expiresAt: Number(stored.expiresAt) || 0,
+        sessionKind: normalizeSessionKind(stored.sessionKind),
         taskTypes: normalizeTaskTypes(stored.taskTypes),
         proxyAccess: stored.proxyAccess === true,
         managedProxyCount: Math.max(0, Number.parseInt(stored.managedProxyCount, 10) || 0),
@@ -147,6 +184,7 @@ function createLicenseAuthority({
         accountId: saved.accountId,
         email: saved.email,
         expiresAt: saved.expiresAt,
+        sessionKind: saved.sessionKind,
         taskTypes: saved.taskTypes,
         proxyAccess: saved.proxyAccess,
         managedProxyCount: saved.managedProxyCount,
@@ -188,6 +226,7 @@ function createLicenseAuthority({
         token: encrypted,
         deviceId: typeof licenseApi.deviceId === 'string' ? licenseApi.deviceId : '',
         validatedAt: Number(licenseValidatedAt) || now(),
+        sessionKind: normalizeSessionKind(licenseState.sessionKind),
         taskTypes: normalizeTaskTypes(licenseState.taskTypes),
         billingPlan: String(licenseState.billingPlan || ''),
         billingStatus: String(licenseState.billingStatus || ''),
@@ -238,6 +277,7 @@ function createLicenseAuthority({
       billingPlan: String(result.billingPlan || ''),
       billingStatus: String(result.billingStatus || ''),
       accessUntil: Number(result.accessUntil) || 0,
+      sessionKind: persistPreferredSessionKind(result.sessionKind || licenseState.sessionKind),
       taskTypes: nextTaskTypes,
       requiresPasswordReset: false,
       storage: 'memory',
@@ -258,6 +298,7 @@ function createLicenseAuthority({
       reason: String(reason || 'Your Zyn session ended. Sign in again to continue.').slice(0, 240),
       accountId: clear ? '' : cleanAccountId(licenseState.accountId),
       email: clear ? '' : cleanEmail(licenseState.email),
+      sessionKind: normalizeSessionKind(licenseState.sessionKind || readPreferredSessionKind()),
       taskTypes: normalizeTaskTypes(),
       proxyAccess: false,
       managedProxyCount: 0,
@@ -353,9 +394,10 @@ function createLicenseAuthority({
       loadSession();
       const email = cleanEmail(credentials.email);
       const password = String(credentials.password || '').slice(0, 256);
+      const sessionKind = persistPreferredSessionKind(credentials.sessionKind || launchSessionKind() || 'engine');
       if (!email || !password) return { ...rendererStatus(), reason: 'Enter your email and password.' };
       try {
-        const result = await licenseApi.login(email, password);
+        const result = await licenseApi.login(email, password, sessionKind);
         if (result.ok && result.licenseToken) return acceptLicense(result, result.licenseToken);
         if (result.code === 'password_reset_required' && result.resetToken) {
           pendingResetToken = String(result.resetToken).slice(0, 256);
@@ -382,7 +424,10 @@ function createLicenseAuthority({
           : 'This password reset has expired. Sign in again.' };
       }
       try {
-        const result = await licenseApi.resetPassword(pendingResetToken, newPassword);
+        const sessionKind = persistPreferredSessionKind(
+          payload.sessionKind || licenseState.sessionKind || readPreferredSessionKind(),
+        );
+        const result = await licenseApi.resetPassword(pendingResetToken, newPassword, sessionKind);
         if (result.ok && result.licenseToken) return acceptLicense(result, result.licenseToken);
         if (result.status === 401 || result.status === 403) pendingResetToken = '';
         return { ...rendererStatus(), reason: String(result.message || 'Unable to reset password.').slice(0, 240), code: result.code };
@@ -390,6 +435,75 @@ function createLicenseAuthority({
         logger.warn?.(`[license] password reset unavailable: ${error.message}`);
         return { ...rendererStatus(), reason: 'Cannot reach the license server. Check your connection and try again.' };
       }
+    },
+    async setSessionKind(sessionKind) {
+      loadSession();
+      const kind = persistPreferredSessionKind(sessionKind);
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ...rendererStatus(), sessionKind: kind };
+      }
+      if (typeof licenseApi.setSessionKind !== 'function') {
+        return { ...rendererStatus(), reason: 'This Zyn build cannot change session mode.' };
+      }
+      try {
+        const result = await licenseApi.setSessionKind(licenseToken, kind);
+        await revalidateUnauthorized(result);
+        if (result.ok) return acceptLicense({ ...result, sessionKind: kind }, licenseToken);
+        return {
+          ...rendererStatus(),
+          reason: String(result.message || 'Unable to change session mode.').slice(0, 240),
+          code: result.code,
+        };
+      } catch (error) {
+        logger.warn?.(`[license] session kind unavailable: ${error.message}`);
+        return { ...rendererStatus(), reason: 'Cannot reach the license server. Check your connection and try again.' };
+      }
+    },
+    preferredSessionKind: () => launchSessionKind() || readPreferredSessionKind(),
+    async ensureHarvestRoom() {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      if (typeof licenseApi.ensureHarvestRoom !== 'function') {
+        return { ok: false, status: 501, message: 'Remote harvest rooms are unavailable.' };
+      }
+      try {
+        const result = await licenseApi.ensureHarvestRoom(licenseToken);
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] harvest room unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Harvest room service is unavailable.' };
+      }
+    },
+    async getHarvestRoom() {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, message: 'A valid Zyn session is required.' };
+      }
+      if (typeof licenseApi.getHarvestRoom !== 'function') {
+        return { ok: false, status: 501, message: 'Remote harvest rooms are unavailable.' };
+      }
+      try {
+        const result = await licenseApi.getHarvestRoom(licenseToken);
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] harvest room lookup unavailable: ${error.message}`);
+        return { ok: false, status: 0, message: 'Harvest room service is unavailable.' };
+      }
+    },
+    openHarvestRoomEvents(roomId, { role = 'desktop', handlers = {} } = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');
+      if (typeof licenseApi.harvestRoomEvents === 'function') {
+        return licenseApi.harvestRoomEvents(licenseToken, { roomId, role, handlers, maxPayload: 1024 * 1024 });
+      }
+      if (role === 'desktop') {
+        return licenseApi.mobileHarvesterEvents(licenseToken, { roomId, handlers, maxPayload: 1024 * 1024 });
+      }
+      throw new Error('Remote harvester sessions are unavailable.');
     },
     async hyper(operation, payload = {}) {
       loadSession();
@@ -528,6 +642,11 @@ function createLicenseAuthority({
     openMobileHarvesterEvents(roomId, handlers = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');
+      if (typeof licenseApi.harvestRoomEvents === 'function') {
+        return licenseApi.harvestRoomEvents(licenseToken, {
+          roomId, role: 'desktop', handlers, maxPayload: 1024 * 1024,
+        });
+      }
       return licenseApi.mobileHarvesterEvents(licenseToken, { roomId, handlers, maxPayload: 1024 * 1024 });
     },
     openPokemonQueueEvents(handlers = {}) {
@@ -571,6 +690,8 @@ function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_
   ipcMain.handle(IPC.login, (_event, credentials) => authority.login(credentials));
   ipcMain.handle(IPC.reset, (_event, payload) => authority.reset(payload));
   ipcMain.handle(IPC.logout, () => authority.logout());
+  ipcMain.handle(IPC.setSessionKind, (_event, sessionKind) => authority.setSessionKind(sessionKind));
+  ipcMain.handle(IPC.preferredSessionKind, () => authority.preferredSessionKind());
   app.whenReady().then(() => authority.start());
   app.once('will-quit', () => authority.dispose());
   return authority;
@@ -578,6 +699,8 @@ function installLicenseAuthority({ app, ipcMain, safeStorage, apiBase = DEFAULT_
 
 module.exports = {
   SESSION_FILE,
+  SESSION_KIND_FILE,
+  normalizeSessionKind,
   LICENSE_CHECK_MS,
   LICENSE_OFFLINE_GRACE_MS,
   IPC,

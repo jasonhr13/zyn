@@ -1183,6 +1183,7 @@ const targetCookieStandbySources = new Map();
 // active session. Task-group bootstrap runs before that authority exists, so default-deny here is
 // what prevents saved harvesters from consuming local/proxy bandwidth while signed out.
 let targetHarvestAuthorized = false;
+let remoteCookieDemand = null;
 let targetCookieDemandRetryTimer = null;
 let targetCookieDemandInFlight = false;
 let lastTargetCookieDemandKey = '';
@@ -1202,7 +1203,58 @@ function targetAtcCookiesPerTask() {
     : TARGET_ATC_COOKIES_PER_TASK_DEFAULT;
 }
 
+function setRemoteCookieDemand(next) {
+  if (!next || typeof next !== 'object') {
+    remoteCookieDemand = null;
+  } else {
+    const activeTasks = Math.max(0, Number(next.activeTasks) || 0);
+    const standbyTasks = Math.max(0, Number(next.standbyTasks) || 0);
+    const atcPerTask = next.atcPerTask == null ? 3 : Number(next.atcPerTask);
+    const basis = !targetHarvestAuthorized
+      ? 'paused'
+      : String(next.basis || (activeTasks ? 'active' : standbyTasks ? 'standby' : 'paused'));
+    const effectiveTasks = basis === 'paused' ? 0 : activeTasks || standbyTasks;
+    const loginTasks = Number(next.loginTasks) || 0;
+    const targets = next.targets && typeof next.targets === 'object'
+      ? {
+        login: basis === 'paused' ? 0 : Number(next.targets.login) || 0,
+        atc: basis === 'paused' ? 0 : (next.targets.atc === null ? null : Number(next.targets.atc) || 0),
+      }
+      : {
+        login: basis === 'paused' ? 0 : loginTasks,
+        atc: basis === 'paused'
+          ? 0
+          : (effectiveTasks > 0 && atcPerTask === 0 ? null : effectiveTasks * (Number.isFinite(atcPerTask) ? atcPerTask : 3)),
+      };
+    remoteCookieDemand = {
+      mode: 'per-task',
+      basis,
+      activeTasks,
+      standbyTasks,
+      effectiveTasks,
+      atcPerTask: Number.isFinite(atcPerTask) ? atcPerTask : 3,
+      targets,
+    };
+  }
+  lastTargetCookieDemandKey = '';
+  return syncTargetCookieBankDemand();
+}
+
 function targetCookieDemand() {
+  if (remoteCookieDemand) {
+    if (!targetHarvestAuthorized) {
+      return {
+        ...remoteCookieDemand,
+        basis: 'paused',
+        effectiveTasks: 0,
+        targets: { login: 0, atc: 0 },
+      };
+    }
+    return {
+      ...remoteCookieDemand,
+      targets: { ...remoteCookieDemand.targets },
+    };
+  }
   const activeTasks = Math.min(TARGET_COOKIE_TASK_MAX, targetCookieActiveTaskIds.size);
   // Once the Task Groups store has loaded, it is authoritative even at zero. Its initial migration
   // leaves the old target-tasks.json in place, so taking max forever would make deleted groups spring
@@ -1363,6 +1415,36 @@ try {
   const count = Array.isArray(legacy && legacy.tasks) ? legacy.tasks.length : 0;
   if (count > 0) targetCookieStandbySources.set('legacy-migrated', normalizeTargetCookieTaskCount(count));
 } catch {}
+
+function takeBankCookie(type) {
+  const cookieType = String(type || '').toLowerCase() === 'login' ? 'login' : 'atc';
+  return new Promise((resolve, reject) => {
+    const req = http.get({
+      host: '127.0.0.1',
+      port: SHAPE_PORT,
+      path: `/cookie?type=${cookieType}&wait=0`,
+      timeout: 1200,
+      headers: { 'x-zyn-token': SHAPE_TOKEN },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = JSON.parse(body || '{}'); } catch {
+          reject(new Error('cookie broker returned invalid JSON'));
+          return;
+        }
+        if (!parsed || parsed.ok !== true || !parsed.cookie || !parsed.cookie.headers) {
+          resolve(null);
+          return;
+        }
+        resolve(parsed.cookie);
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
 
 function saveHarvesterCookie(cookie) {
   ensureHarvesterBroker();
@@ -4396,4 +4478,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };

@@ -74,7 +74,12 @@ class Sidebar extends Component {
   render() {
     let lastSection = null;
     const taskTypes = this.props.taskTypes || {};
-    const navItems = NAV_ITEMS.filter(item => !item.taskType || taskTypes[item.taskType] === true);
+    const harvesterOnly = this.props.sessionKind === 'harvester';
+    const navItems = NAV_ITEMS.filter(item => {
+      if (item.taskType && taskTypes[item.taskType] !== true) return false;
+      if (harvesterOnly && !['/task-groups', '/proxies', '/settings'].includes(item.to)) return false;
+      return true;
+    });
     return (
       <div className="sidebar">
         <nav className="sidebar-nav" aria-label="Primary navigation">
@@ -107,11 +112,14 @@ class Sidebar extends Component {
           {this.renderUpdate()}
           <div className="sidebar-account" title={this.props.email || 'Your account'}>
             <span className="sidebar-avatar">{(this.props.email || 'Z').slice(0, 1).toUpperCase()}</span>
-            <span><strong>{(this.props.email || 'Your account').split('@')[0]}</strong><small>Signed in</small></span>
+            <span>
+              <strong>{(this.props.email || 'Your account').split('@')[0]}</strong>
+              <small>{this.props.sessionKind === 'harvester' ? 'Harvester only' : 'Signed in'}</small>
+            </span>
           </div>
           <div className="sidebar-version">
             <div>{APP_VERSION ? `App v${APP_VERSION}` : 'Zyn'}</div>
-            {this.renderEngineVersion()}
+            {this.props.sessionKind === 'harvester' ? <div>Harvester only</div> : this.renderEngineVersion()}
           </div>
         </div>
       </div>

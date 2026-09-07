@@ -930,6 +930,10 @@ function maxActiveDevicesForUser(user) {
   return validMaxActiveDevices(value) ? value : MIN_ACTIVE_DEVICES;
 }
 
+function normalizeSessionKind(value) {
+  return String(value || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine';
+}
+
 function apiHeaders(extra = {}) {
   return {
     'cache-control': 'no-store',
@@ -1109,6 +1113,7 @@ function pruneExcessLicensesStatement(db, {
     WHERE user_id = ? AND revoked_at IS NULL AND id IN (
       SELECT id FROM licenses
       WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
+        AND COALESCE(session_kind, 'engine') = 'engine'
       ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END,
         last_validated_at DESC, created_at DESC, id DESC
       LIMIT -1 OFFSET (
@@ -1125,10 +1130,12 @@ function mintLicenseStatements(db, {
   tokenHash,
   deviceId,
   deviceName,
+  sessionKind = 'engine',
   now,
   expiresAt,
 }) {
-  return [
+  const kind = normalizeSessionKind(sessionKind);
+  const statements = [
     db.prepare(`
       UPDATE licenses SET revoked_at = ?, revoked_reason = 'expired'
       WHERE user_id = ? AND revoked_at IS NULL AND expires_at <= ?
@@ -1143,24 +1150,27 @@ function mintLicenseStatements(db, {
     `).bind(now, userId, deviceId, userId, authenticatedPasswordHash),
     db.prepare(`
       INSERT INTO licenses
-        (id, user_id, token_hash, device_id, device_name, created_at, last_validated_at, expires_at)
-      SELECT ?, id, ?, ?, ?, ?, ?, ? FROM users
+        (id, user_id, token_hash, device_id, device_name, session_kind, created_at, last_validated_at, expires_at)
+      SELECT ?, id, ?, ?, ?, ?, ?, ?, ? FROM users
       WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
     `).bind(
-      licenseId, tokenHash, deviceId, deviceName, now, now, expiresAt,
+      licenseId, tokenHash, deviceId, deviceName, kind, now, now, expiresAt,
       userId, authenticatedPasswordHash,
     ),
-    pruneExcessLicensesStatement(db, {
+  ];
+  if (kind === 'engine') {
+    statements.push(pruneExcessLicensesStatement(db, {
       userId,
       now,
       reason: 'device_limit',
       preserveLicenseId: licenseId,
-    }),
-    db.prepare(`
-      UPDATE users SET last_login_at = ?, updated_at = ?
-      WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
-    `).bind(now, now, userId, authenticatedPasswordHash),
-  ];
+    }));
+  }
+  statements.push(db.prepare(`
+    UPDATE users SET last_login_at = ?, updated_at = ?
+    WHERE id = ? AND active = 1 AND must_reset_password = 0 AND password_hash = ?
+  `).bind(now, now, userId, authenticatedPasswordHash));
+  return statements;
 }
 
 function activeDeviceLimitStatements(db, { userId, maxActiveDevices, now }) {
@@ -1179,7 +1189,8 @@ function activeDeviceLimitStatements(db, { userId, maxActiveDevices, now }) {
   ];
 }
 
-async function mintLicense(env, user, deviceId, deviceName) {
+async function mintLicense(env, user, deviceId, deviceName, sessionKind = 'engine') {
+  const kind = normalizeSessionKind(sessionKind);
   const now = Date.now();
   const token = randomToken(32);
   const tokenHash = await sha256(token);
@@ -1191,6 +1202,7 @@ async function mintLicense(env, user, deviceId, deviceName) {
     tokenHash,
     deviceId,
     deviceName,
+    sessionKind: kind,
     now,
     expiresAt,
   }));
@@ -1201,6 +1213,7 @@ async function mintLicense(env, user, deviceId, deviceName) {
     userId: user.id,
     email: user.email,
     expiresAt,
+    sessionKind: kind,
     ...billingPublicFields(user),
     ...await licenseEntitlements(env, user),
   };
@@ -1212,6 +1225,7 @@ async function login(request, env) {
   const password = String(body.password || '');
   const deviceId = String(body.deviceId || '');
   const deviceName = String(body.deviceName || '').slice(0, 100);
+  const sessionKind = normalizeSessionKind(body.sessionKind);
   if (!email || !password || password.length > 256 || !validDeviceId(deviceId)) {
     return json({ ok: false, code: 'invalid_credentials', message: 'Invalid email or password.' }, 401);
   }
@@ -1254,7 +1268,7 @@ async function login(request, env) {
     }, 403);
   }
 
-  const license = await mintLicense(env, user, deviceId, deviceName);
+  const license = await mintLicense(env, user, deviceId, deviceName, sessionKind);
   if (!license) {
     return json({
       ok: false,
@@ -1271,6 +1285,7 @@ async function resetPassword(request, env) {
   const password = String(body.newPassword || '');
   const deviceId = String(body.deviceId || '');
   const deviceName = String(body.deviceName || '').slice(0, 100);
+  const sessionKind = normalizeSessionKind(body.sessionKind);
   if (resetToken.length < 32 || password.length < 10 || password.length > 256 || !validDeviceId(deviceId)) {
     return json({ ok: false, code: 'invalid_reset', message: 'Use a password of at least 10 characters.' }, 400);
   }
@@ -1301,7 +1316,7 @@ async function resetPassword(request, env) {
     ...row,
     password_hash: record.hash,
     must_reset_password: 0,
-  }, deviceId, deviceName);
+  }, deviceId, deviceName, sessionKind);
   if (!license) {
     return json({
       ok: false,
@@ -1402,6 +1417,7 @@ async function validateLicense(request, env) {
   const now = Date.now();
   const row = await env.DB.prepare(`
     SELECT l.id AS license_id, l.device_id, l.device_name, l.expires_at, l.revoked_at, l.revoked_reason,
+      l.session_kind,
       u.id AS user_id, u.email, u.active, u.proxy_access, u.access_until,
       u.billing_plan, u.billing_status
     FROM licenses l JOIN users u ON u.id = l.user_id
@@ -1434,8 +1450,54 @@ async function validateLicense(request, env) {
     userId: row.user_id,
     email: row.email,
     expiresAt,
+    sessionKind: normalizeSessionKind(row.session_kind),
     ...billingPublicFields(row),
     ...await licenseEntitlements(env, row, knownProxyRevision),
+  });
+}
+
+async function setLicenseSessionKind(request, env) {
+  const identity = await authenticatedLicense(request, env);
+  if (!identity) return json({ ok: false, code: 'license_invalid' }, 401);
+  const body = await bodyJson(request);
+  const sessionKind = normalizeSessionKind(body.sessionKind);
+  const now = Date.now();
+  const expiresAt = now + LICENSE_TTL_MS;
+  const statements = [
+    env.DB.prepare(`
+      UPDATE licenses SET session_kind = ?, last_validated_at = ?, expires_at = ?
+      WHERE id = ? AND revoked_at IS NULL
+    `).bind(sessionKind, now, expiresAt, identity.license_id),
+  ];
+  if (sessionKind === 'engine') {
+    statements.push(pruneExcessLicensesStatement(env.DB, {
+      userId: identity.user_id,
+      now,
+      reason: 'device_limit',
+      preserveLicenseId: identity.license_id,
+    }));
+  }
+  await env.DB.batch(statements);
+  const row = await env.DB.prepare(`
+    SELECT l.id AS license_id, l.device_id, l.session_kind, l.expires_at, l.revoked_at,
+      u.id AS user_id, u.email, u.active, u.proxy_access, u.access_until,
+      u.billing_plan, u.billing_status
+    FROM licenses l JOIN users u ON u.id = l.user_id
+    WHERE l.id = ?
+  `).bind(identity.license_id).first();
+  const failure = licenseFailure(row, identity.device_id, now) || paidAccessFailure(row, now);
+  if (failure) {
+    const status = failure.code === SUBSCRIPTION_EXPIRED.code ? 402 : 401;
+    return json({ ok: false, ...failure }, status);
+  }
+  return json({
+    ok: true,
+    userId: row.user_id,
+    email: row.email,
+    expiresAt,
+    sessionKind: normalizeSessionKind(row.session_kind),
+    ...billingPublicFields(row),
+    ...await licenseEntitlements(env, row),
   });
 }
 
@@ -1482,7 +1544,7 @@ async function authenticatedLicense(request, env) {
   const tokenHash = await sha256(token);
   const now = Date.now();
   const row = await env.DB.prepare(`
-    SELECT l.id AS license_id, l.device_id, l.device_name, l.expires_at,
+    SELECT l.id AS license_id, l.device_id, l.device_name, l.expires_at, l.session_kind,
       u.id AS user_id, u.email, u.active
     FROM licenses l JOIN users u ON u.id = l.user_id
     WHERE l.token_hash = ? AND l.revoked_at IS NULL
@@ -3598,6 +3660,9 @@ async function api(request, env, url) {
   if (url.pathname === '/api/auth/login' && request.method === 'POST') return login(request, env);
   if (url.pathname === '/api/auth/reset-password' && request.method === 'POST') return resetPassword(request, env);
   if (url.pathname === '/api/license/validate' && request.method === 'POST') return validateLicense(request, env);
+  if (url.pathname === '/api/license/session-kind' && request.method === 'POST') {
+    return setLicenseSessionKind(request, env);
+  }
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env);
   if (url.pathname === '/api/backups' && request.method === 'GET') return listBackups(request, env);
   if (url.pathname === '/api/analytics/events' && request.method === 'POST') return ingestAnalytics(request, env);
@@ -3650,6 +3715,7 @@ export const __test = Object.freeze({
   canRebindLicense,
   maxActiveDevicesForUser,
   mintLicenseStatements,
+  normalizeSessionKind,
   pokemonQueueCredentialInput,
   pokemonQueueUpstreamUrl,
   refreshPolarUpstreamVersion,

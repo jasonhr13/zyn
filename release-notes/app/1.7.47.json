@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.47",
+  "notes": [
+    "Sign in as Full Engine or Harvester only so extra harvest machines do not use a device seat.",
+    "Switch this machine between Full Engine and Harvester only later from Settings.",
+    "Remote Windows and Mac harvesters send Target cookies to the Full Engine Zyn on your account.",
+    "Harvester-only machines hide checkout pages and cannot start tasks.",
+    "Remote harvest cookies keep the proxy they were farmed on so checkout uses the same IP."
+  ]
+}

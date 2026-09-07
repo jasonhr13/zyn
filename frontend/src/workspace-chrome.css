@@ -8,7 +8,9 @@
 .sidebar-avatar { display: grid; place-items: center; width: 31px; height: 31px; flex-shrink: 0; border: 1px solid var(--accent-border); border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 600; }
 .sidebar-version { display: flex; flex-wrap: wrap; gap: 3px 10px; padding: 3px 8px; font-family: var(--font-body); font-size: 9px; }
 .license-gate-r4 { background: radial-gradient(ellipse at 50% 30%, var(--accent-soft), transparent 60%), var(--app-bg); }
-.license-gate-card { width: min(420px, 100%); padding: 36px; border-radius: 20px; gap: 16px; }
+.license-gate-card { width: min(460px, 100%); padding: 36px; border-radius: 20px; gap: 16px; }
+.license-gate-modes { gap: 10px; }
+.license-gate-mode { border-radius: 14px; padding: 12px 13px; }
 .license-gate-mark { width: 54px; height: 54px; border-radius: 16px; }
 .license-gate-badge { border: 0; background: none; font-size: 13px; letter-spacing: 1px; color: var(--text2); }
 .license-gate-title { font-size: 24px; letter-spacing: -.75px; }

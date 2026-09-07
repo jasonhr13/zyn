@@ -11,6 +11,7 @@ const targetCookieStandbySources = new Map();
 // active session. Task-group bootstrap runs before that authority exists, so default-deny here is
 // what prevents saved harvesters from consuming local/proxy bandwidth while signed out.
 let targetHarvestAuthorized = false;
+let remoteCookieDemand = null;
 let targetCookieDemandRetryTimer = null;
 let targetCookieDemandInFlight = false;
 let lastTargetCookieDemandKey = '';
@@ -30,7 +31,33 @@ function targetAtcCookiesPerTask() {
     : TARGET_ATC_COOKIES_PER_TASK_DEFAULT;
 }
 
+function setRemoteCookieDemand(next) {
+  if (!next || typeof next !== 'object') {
+    remoteCookieDemand = null;
+  } else {
+    remoteCookieDemand = {
+      mode: 'per-task',
+      basis: String(next.basis || 'standby'),
+      activeTasks: Math.max(0, Number(next.activeTasks) || 0),
+      standbyTasks: Math.max(0, Number(next.standbyTasks) || 0),
+      effectiveTasks: Math.max(0, Number(next.effectiveTasks) || 0),
+      atcPerTask: next.atcPerTask == null ? 3 : Number(next.atcPerTask) || 0,
+      targets: next.targets && typeof next.targets === 'object'
+        ? { login: next.targets.login, atc: next.targets.atc }
+        : { login: 0, atc: 0 },
+    };
+  }
+  lastTargetCookieDemandKey = '';
+  return syncTargetCookieBankDemand();
+}
+
 function targetCookieDemand() {
+  if (remoteCookieDemand) {
+    if (!targetHarvestAuthorized) {
+      return { ...remoteCookieDemand, basis: 'paused', effectiveTasks: 0, targets: { login: 0, atc: 0 } };
+    }
+    return { ...remoteCookieDemand, targets: { ...remoteCookieDemand.targets } };
+  }
   const activeTasks = Math.min(TARGET_COOKIE_TASK_MAX, targetCookieActiveTaskIds.size);
   // Once the Task Groups store has loaded, it is authoritative even at zero. Its initial migration
   // leaves the old target-tasks.json in place, so taking max forever would make deleted groups spring
