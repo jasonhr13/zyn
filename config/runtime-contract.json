@@ -35,7 +35,7 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "66d78b74700415fb3af9635beb7be9574e7f0042a757b39ff28a7e3e297f03b65"
+      "sha256": "6d78b74700415fb3af9635beb7be9574e7f0042a757b39ff28a7e3e297f03b65"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
