@@ -30,7 +30,7 @@
     send() {},
     sendSync(channel, payload) {
       if (channel === 'getAppVersion') return '1.7.46';
-      if (channel === 'getEngineInfo') return { installed: '1.2.7', running: '1.2.7' };
+      if (channel === 'getEngineInfo') return { installed: '1.2.8', running: '1.2.8' };
       if (channel === 'getChannel') return 'preview';
       if (channel.startsWith('get') && channel.slice(3) in data) return data[channel.slice(3)];
       if (channel.startsWith('save') && channel.slice(4) in data) { data[channel.slice(4)] = payload; return payload; }
