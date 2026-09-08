@@ -724,6 +724,22 @@ ipcMain.on('maximize', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win) win.isMaximized() ? win.unmaximize() : win.maximize();
 });
+ipcMain.on('restoreRendererFocus', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  if (!win || win.isDestroyed()) return;
+  try { win.webContents.focus(); } catch {}
+  try { win.focus(); } catch {}
+  // Native confirm/alert on a frameless Windows window can leave Chromium stuck so
+  // inputs ignore clicks until relaunch. Bounce enable to cancel that drag/focus trap.
+  if (process.platform === 'win32') {
+    try {
+      win.setEnabled(false);
+      win.setEnabled(true);
+      win.focus();
+      win.webContents.focus();
+    } catch {}
+  }
+});
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────────
 ipcMain.on('getTasks', (e) => { e.returnValue = dm.getTasks(); });

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.53",
+  "notes": [
+    "Windows text fields stay clickable after Delete and other confirm dialogs.",
+    "You no longer need to restart Zyn to type into proxy lists or task schedules.",
+    "Inputs stay outside the title-bar drag region so clicks reach the field."
+  ]
+}

@@ -178,6 +178,9 @@ body {
 }
 
 button, input, textarea, select { font: inherit; }
+input, textarea, select, button, a {
+  -webkit-app-region: no-drag;
+}
 input, textarea {
   user-select: text;
   -webkit-user-select: text;
