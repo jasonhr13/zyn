@@ -132,7 +132,7 @@ class Settings extends Component {
       targetCapturesPerLoad: '1', targetLoadsPerBrowser: '3', targetBlockHeavyResources: true,
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       mobileHarvesterEnabled: false, mobileHarvester: null, mobileBusy: false, mobileError: '',
-      licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '', remoteHarvester: null,
+      licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '', remoteHarvester: null, harvestReconnectBusy: false,
       pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
@@ -363,6 +363,20 @@ class Settings extends Component {
     this.setState({ signingOut: true });
     try { await ipcRenderer.invoke('logoutLicense'); }
     catch { this.setState({ signingOut: false }); }
+  };
+
+  reconnectHarvestRoom = async () => {
+    if (this.state.harvestReconnectBusy) return;
+    this.setState({ harvestReconnectBusy: true, sessionKindError: '' });
+    try {
+      await ipcRenderer.invoke('remoteHarvesterReconnect');
+      const remoteHarvester = await ipcRenderer.invoke('remoteHarvesterStatus');
+      if (remoteHarvester) this.setState({ remoteHarvester });
+    } catch (error) {
+      this.setState({ sessionKindError: error.message || 'Could not reconnect the harvest room.' });
+    } finally {
+      this.setState({ harvestReconnectBusy: false });
+    }
   };
 
   setSessionKind = async (nextKind) => {
@@ -803,12 +817,18 @@ class Settings extends Component {
               const remote = this.state.remoteHarvester || {};
               const host = remote.host || {};
               const companion = remote.companion || {};
+              const busy = this.state.harvestReconnectBusy === true;
               if (sessionKind === 'harvester') {
                 return (
                   <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>
                     {companion.connected
                       ? `Sending cookies to Full Engine${companion.sentCount ? ` · ${companion.sentCount} sent` : ''}.`
                       : (companion.lastError || 'Waiting for a Full Engine Zyn on this account.')}
+                    <div style={{ marginTop: 8 }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={this.reconnectHarvestRoom} disabled={busy}>
+                        {busy ? 'Reconnecting…' : 'Reconnect'}
+                      </button>
+                    </div>
                   </div>
                 );
               }
@@ -818,6 +838,11 @@ class Settings extends Component {
                     ? `Hosting remote harvesters${host.companionCount ? ` · ${host.companionCount} connected` : ' · waiting for harvest machines'}.`
                     : 'This Full Engine hosts a harvest room for Harvester-only machines on the same account.'}
                   {host.lastError ? ` ${host.lastError}` : ''}
+                  <div style={{ marginTop: 8 }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={this.reconnectHarvestRoom} disabled={busy}>
+                      {busy ? 'Reconnecting…' : 'Reconnect'}
+                    </button>
+                  </div>
                 </div>
               );
             })()}

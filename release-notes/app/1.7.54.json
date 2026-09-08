@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.54",
+  "notes": [
+    "Harvest-only apps reconnect to Full Engine on their own if the cookie pipe drops.",
+    "Full Engine and harvest machines keep the harvest room alive instead of going silent.",
+    "Use Reconnect on the harvester card if a machine still does not show as Remote.",
+    "Harvester-only no longer says it is sending cookies until Full Engine is actually online."
+  ]
+}

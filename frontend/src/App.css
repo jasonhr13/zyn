@@ -1019,6 +1019,14 @@ body.theme-night .form-select {
 .harvest-workspace .cookie-bank-prominent {
   justify-content: space-between;
 }
+.cookie-bank-reconnect {
+  flex: 0 0 auto;
+  margin-left: 4px;
+}
+.target-harvester-drawer .cookie-bank-reconnect {
+  margin: 0;
+  justify-self: start;
+}
 @media (max-width: 880px) {
   .harvest-workspace .target-harvester-card {
     grid-template-columns: minmax(0, 1fr) auto;

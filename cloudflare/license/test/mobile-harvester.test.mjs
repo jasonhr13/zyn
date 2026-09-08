@@ -10,6 +10,7 @@ import {
   mobilePairingUrl,
   parseMobileClientMessage,
   parseMobilePairingUrl,
+  shouldReplaceMobilePeer,
 } from '../src/mobile-harvester.js';
 
 const DEVICE_A = 'aaaaaaaaaaaaaaaa';
@@ -173,11 +174,25 @@ test('mobile message allowlist is role-scoped', () => {
   assert.equal(allowedMobileMessageType('extension', 'capture'), true);
   assert.equal(allowedMobileMessageType('extension', 'need-proxies'), true);
   assert.equal(allowedMobileMessageType('extension', 'demand'), false);
+  assert.equal(allowedMobileMessageType('companion', 'ping'), true);
+  assert.equal(allowedMobileMessageType('desktop', 'ping'), true);
+  assert.equal(allowedMobileMessageType('phone', 'ping'), true);
+  assert.equal(allowedMobileMessageType('extension', 'ping'), true);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'phone').ok, true);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'extension').ok, true);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'desktop').ok, false);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'companion').ok, true);
+  assert.equal(parseMobileClientMessage('{"type":"ping"}', 'companion').ok, true);
   assert.equal(parseMobileClientMessage('not-json', 'phone').code, 'invalid_json');
+});
+
+test('same-device reconnects replace the stale socket instead of occupying a second slot', () => {
+  assert.equal(shouldReplaceMobilePeer({ role: 'desktop', deviceId: 'abc' }, 'desktop', 'abc'), true);
+  assert.equal(shouldReplaceMobilePeer({ role: 'desktop', deviceId: 'abc' }, 'desktop', 'def'), false);
+  assert.equal(shouldReplaceMobilePeer({ role: 'companion', deviceId: 'win-1' }, 'companion', 'win-1'), true);
+  assert.equal(shouldReplaceMobilePeer({ role: 'companion', deviceId: 'win-1' }, 'companion', 'mac-2'), false);
+  assert.equal(shouldReplaceMobilePeer({ role: 'desktop', deviceId: 'unknown' }, 'desktop', 'unknown'), false);
+  assert.equal(shouldReplaceMobilePeer({ role: 'companion', deviceId: 'win-1' }, 'desktop', 'win-1'), false);
 });
 
 test('room occupancy rejects a second desktop and extra phones', () => {

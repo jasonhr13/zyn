@@ -639,6 +639,7 @@ class TaskGroups extends Component {
     readinessIntent: '',
     readinessGroupId: '',
     readinessTaskIds: [],
+    harvestReconnectBusy: false,
   };
 
   componentDidMount() {
@@ -715,6 +716,15 @@ class TaskGroups extends Component {
         ? selectedTaskId : '',
       selectedTaskIds: selectedTaskIds.filter(id => groups.some(group => (group.tasks || []).some(task => task.id === id))),
     }));
+  };
+
+  reconnectHarvestRoom = () => {
+    if (this.state.harvestReconnectBusy) return;
+    this.setState({ harvestReconnectBusy: true });
+    ipcRenderer.invoke('remoteHarvesterReconnect')
+      .then(() => this.pollBank())
+      .catch(() => {})
+      .finally(() => this.setState({ harvestReconnectBusy: false }));
   };
 
   pollBank = () => {
@@ -1915,6 +1925,7 @@ class TaskGroups extends Component {
     const sent = Math.max(0, Number(remote.sentCount) || 0);
     const rate = Math.max(0, Number(remote.sendRate) || 0);
     const rateLabel = rate < 0.05 ? '0' : (rate < 10 ? rate.toFixed(1) : String(Math.round(rate)));
+    const busy = this.state.harvestReconnectBusy === true;
     return (
       <section className={`cookie-bank cookie-bank-prominent cookie-bank-${connected ? 'ready' : 'paused'}`} aria-label="Full Engine link">
         <span className="cookie-bank-copy">
@@ -1928,6 +1939,14 @@ class TaskGroups extends Component {
           <span><strong>{sent}</strong><small>Sent</small></span>
           <span><strong>{rateLabel}</strong><small>Per sec</small></span>
         </span>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm cookie-bank-reconnect"
+          onClick={this.reconnectHarvestRoom}
+          disabled={busy}
+        >
+          <Icon name="refresh" size={11} /> {busy ? 'Reconnecting…' : 'Reconnect'}
+        </button>
       </section>
     );
   }
@@ -2189,6 +2208,14 @@ class TaskGroups extends Component {
                   <strong>{remoteCopy.headline}</strong>
                   <small>{remoteCopy.detail}</small>
                 </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm cookie-bank-reconnect"
+                  onClick={this.reconnectHarvestRoom}
+                  disabled={this.state.harvestReconnectBusy === true}
+                >
+                  <Icon name="refresh" size={11} /> {this.state.harvestReconnectBusy ? 'Reconnecting…' : 'Reconnect'}
+                </button>
               </section>
               <section className="target-harvester-bandwidth-summary" aria-label="Proxy bandwidth telemetry"
                 title="Browser-level transfer. Your proxy provider may report slightly more for tunnel and TLS overhead.">

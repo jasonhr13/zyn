@@ -235,6 +235,39 @@ async function main() {
   assert.equal(opens, 1, 'desktop must join the room once the license session is ready');
   fs.rmSync(retryDir, { recursive: true, force: true });
 
+  const repairDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-mobile-bridge-health-'));
+  let hostedRoom = 'zynm_oldroomabcdefghijkl';
+  let hostOpens = 0;
+  const hostOpened = [];
+  const hostAuthority = fakeAuthority({
+    cached: () => ({ ok: true, sessionKind: 'engine' }),
+    ensureHarvestRoom: async () => ({ ok: true, roomId: hostedRoom, expiresAt: Date.now() + 60_000 }),
+    openMobileHarvesterEvents: (roomId) => {
+      hostOpens += 1;
+      hostOpened.push(roomId);
+      return { readyState: 1, send() {}, close() {} };
+    },
+  });
+  const hostBridge = createMobileHarvesterBridge({
+    dataDirectory: repairDir,
+    authority: hostAuthority,
+    enabled: () => true,
+    hostRemote: () => true,
+    getCookieBank: async () => ({ pools: { atc: 0, login: 0 }, demand: { targets: { login: 0, atc: 2 } } }),
+    scheduleTimeout: () => 1,
+    cancelTimeout() {},
+    logger: { warn() {}, info() {} },
+  });
+  hostBridge.start();
+  for (let i = 0; i < 10 && !hostOpened.length; i += 1) await Promise.resolve();
+  assert.equal(hostOpened[0], 'zynm_oldroomabcdefghijkl');
+  hostedRoom = 'zynm_newhostroomabcdefg';
+  await hostBridge.__test.healthOnce();
+  assert.equal(hostOpened.at(-1), 'zynm_newhostroomabcdefg', 'host must move to the current harvest room');
+  const reconnected = await hostBridge.reconnect();
+  assert.equal(reconnected.roomId, 'zynm_newhostroomabcdefg');
+  fs.rmSync(repairDir, { recursive: true, force: true });
+
   console.log('mobile harvester bridge smoke test passed');
 }
 

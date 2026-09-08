@@ -160,6 +160,24 @@ function analyticsQuery(pathname, query = {}) {
   return suffix ? `${pathname}?${suffix}` : pathname;
 }
 
+const SOCKET_KEEPALIVE_MS = 15000;
+
+function attachSocketKeepalive(socket, ms = SOCKET_KEEPALIVE_MS) {
+  if (!socket || typeof socket.ping !== 'function') return socket;
+  const timer = setInterval(() => {
+    if (!socket || socket.readyState !== 1) {
+      clearInterval(timer);
+      return;
+    }
+    try { socket.ping(); }
+    catch { clearInterval(timer); }
+  }, Math.max(5000, Number(ms) || SOCKET_KEEPALIVE_MS));
+  const stop = () => clearInterval(timer);
+  try { socket.once('close', stop); } catch {}
+  try { socket.once('error', stop); } catch {}
+  return socket;
+}
+
 function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId: initialDeviceId = '' } = {}) {
   let deviceId = validDeviceId(initialDeviceId)
     ? String(initialDeviceId).toLowerCase()
@@ -282,7 +300,7 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
           if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);
         });
       }
-      return socket;
+      return attachSocketKeepalive(socket);
     },
     mobileHarvesterEvents(token, options = {}) {
       const room = String((options && options.roomId) || '');
@@ -317,7 +335,7 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
           if (message && typeof message === 'object' && !Array.isArray(message)) handlers.message(message);
         });
       }
-      return socket;
+      return attachSocketKeepalive(socket);
     },
     queueEvents(token, handlers = {}) {
       const target = new URL('/api/services/pokemon-center/queue-events', `${apiBase.replace(/\/$/, '')}/`);

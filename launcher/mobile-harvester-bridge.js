@@ -14,6 +14,8 @@ const { remainingHarvestTargets } = require('./harvest-room-demand');
 
 const PAIR_FILE = 'mobile-harvester-pair.json';
 const MAX_RECONNECT_MS = 30000;
+const HEALTH_MS = 8000;
+const PONG_STALE_MS = 25000;
 const ANDROID_DOWNLOAD_URL = 'https://updates.zynbot.app/download/android';
 
 function harvesterIdForDevice(deviceId) {
@@ -65,11 +67,14 @@ function createMobileHarvesterBridge({
   let pairRecord = null;
   let socket = null;
   let reconnectTimer = null;
+  let healthTimer = null;
   let generation = 0;
   let reconnectAttempt = 0;
   let started = false;
   let lastDemandKey = '';
   let demandFlushTimer = null;
+  let lastPongAt = 0;
+  let hostedRoomId = '';
   const activity = {
     connected: false,
     phoneCount: 0,
@@ -98,6 +103,7 @@ function createMobileHarvesterBridge({
 
   const persistPair = (record) => {
     pairRecord = record;
+    hostedRoomId = String((record && record.roomId) || hostedRoomId);
     const temporary = `${pairPath}.${process.pid}.tmp`;
     fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
     fs.writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
@@ -107,6 +113,7 @@ function createMobileHarvesterBridge({
 
   const clearPairFile = () => {
     pairRecord = null;
+    hostedRoomId = '';
     try { fs.unlinkSync(pairPath); } catch {}
   };
 
@@ -306,6 +313,8 @@ function createMobileHarvesterBridge({
 
   const handleMessage = async (message) => {
     activity.lastSeenAt = timestamp();
+    lastPongAt = timestamp();
+    if (message.type === 'pong' || message.type === 'ping') return;
     if (message.type === 'registered' || message.type === 'peer-state') {
       const previousCompanions = activity.companionCount;
       const previousExtensions = activity.extensionCount;
@@ -380,6 +389,7 @@ function createMobileHarvesterBridge({
       pairingUrl: existing && existing.pairingUrl || '',
       expiresAt: Number(result.expiresAt) || 0,
     });
+    hostedRoomId = String(result.roomId);
     logger.info?.(`[remote-harvester] hosting room ${result.roomId}`);
     return loadPair();
   };
@@ -412,8 +422,10 @@ function createMobileHarvesterBridge({
           reconnectAttempt = 0;
           activity.connected = true;
           activity.lastError = '';
+          lastPongAt = timestamp();
+          hostedRoomId = String(record.roomId || hostedRoomId);
           send({ type: 'hello', role: 'desktop' });
-          publishDemand().catch(() => {});
+          publishDemand({ force: true }).catch(() => {});
         },
         close: () => {
           if (current !== generation) return;
@@ -450,6 +462,53 @@ function createMobileHarvesterBridge({
     }, delay);
   };
 
+  const healthOnce = async () => {
+    if (!started || (!settingOn() && !remoteHostOn())) return;
+    if (!available()) {
+      scheduleReconnect();
+      return;
+    }
+    const now = timestamp();
+    const socketLive = socket && socket.readyState === 1 && activity.connected;
+    if (socketLive) send({ type: 'ping' });
+    if (socketLive && lastPongAt && now - lastPongAt > PONG_STALE_MS) {
+      activity.lastError = 'Harvest room went silent. Reconnecting.';
+      logger.warn?.(`[remote-harvester] ${activity.lastError}`);
+      connect();
+      return;
+    }
+    if (remoteHostOn()) {
+      const previousId = hostedRoomId || (loadPair() && loadPair().roomId) || '';
+      try {
+        const record = await ensureDesktopRoom();
+        const nextId = String((record && record.roomId) || '');
+        if (nextId && nextId === previousId && socketLive) {
+          await publishDemand({ force: true });
+          return;
+        }
+        connect();
+      } catch (error) {
+        activity.lastError = error.message;
+        scheduleReconnect();
+      }
+      return;
+    }
+    if (!socketLive) connect();
+  };
+
+  const scheduleHealth = () => {
+    if (healthTimer) return;
+    healthTimer = scheduleTimeout(() => {
+      healthTimer = null;
+      if (!started) return;
+      healthOnce().catch((error) => {
+        activity.lastError = error.message;
+      }).finally(() => {
+        if (started) scheduleHealth();
+      });
+    }, HEALTH_MS);
+  };
+
   return {
     ANDROID_DOWNLOAD_URL,
     snapshot,
@@ -484,6 +543,7 @@ function createMobileHarvesterBridge({
         pairingUrl: result.pairingUrl,
         expiresAt: result.expiresAt,
       });
+      hostedRoomId = String(result.roomId);
       if (started) connect();
       return { ok: true, ...snapshot() };
     },
@@ -506,10 +566,28 @@ function createMobileHarvesterBridge({
       } else {
         connect();
       }
+      scheduleHealth();
+      return snapshot();
+    },
+    async reconnect() {
+      started = true;
+      lastDemandKey = '';
+      activity.lastError = '';
+      reconnectAttempt = 0;
+      detach();
+      try {
+        if (remoteHostOn()) await ensureDesktopRoom();
+      } catch (error) {
+        activity.lastError = error.message;
+      }
+      connect();
+      scheduleHealth();
       return snapshot();
     },
     stop() {
       started = false;
+      if (healthTimer) cancelTimeout(healthTimer);
+      healthTimer = null;
       detach();
     },
     update() {
@@ -540,11 +618,13 @@ function createMobileHarvesterBridge({
       proxyPayload,
       sendSelectedProxyLists,
       publishDemand,
+      healthOnce,
       harvesterIdForDevice,
       setSocket(next) {
         socket = next;
         started = true;
         activity.connected = true;
+        lastPongAt = timestamp();
       },
     },
   };
@@ -552,6 +632,7 @@ function createMobileHarvesterBridge({
 
 module.exports = {
   ANDROID_DOWNLOAD_URL,
+  HEALTH_MS,
   createMobileHarvesterBridge,
   harvesterIdForDevice,
   publicPairing,

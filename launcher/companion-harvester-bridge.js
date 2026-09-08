@@ -8,6 +8,9 @@ const DRAIN_MS = 50;
 const DRAIN_BATCH = 12;
 const SEND_RATE_WINDOW_MS = 2000;
 const ROOM_POLL_MS = 4000;
+const ENGINE_MISSING_MS = 12000;
+const ENGINE_STALE_MS = 20000;
+const PONG_STALE_MS = 25000;
 
 function createCompanionHarvesterBridge({
   authority,
@@ -33,11 +36,14 @@ function createCompanionHarvesterBridge({
   let reconnectAttempt = 0;
   let started = false;
   let roomId = '';
+  let lastPongAt = 0;
   const activity = {
-    connected: false,
+    socketOpen: false,
+    engineOnline: false,
     roomId: '',
     lastSeenAt: 0,
     lastSentAt: 0,
+    socketOpenedAt: 0,
     sentCount: 0,
     lastError: '',
   };
@@ -56,6 +62,8 @@ function createCompanionHarvesterBridge({
     catch { return false; }
   };
 
+  const linked = () => activity.socketOpen === true && activity.engineOnline === true;
+
   const send = (payload) => {
     if (!socket || socket.readyState !== 1) return false;
     try {
@@ -64,6 +72,12 @@ function createCompanionHarvesterBridge({
     } catch {
       return false;
     }
+  };
+
+  const parkDemand = () => {
+    harvestRoom = { login: 0, atc: 0 };
+    activity.engineOnline = false;
+    if (typeof applyDemand === 'function') applyDemand(null);
   };
 
   const applyRemoteDemand = (message) => {
@@ -94,6 +108,8 @@ function createCompanionHarvesterBridge({
         targets: absoluteTargets,
       });
     harvestRoom = room;
+    activity.engineOnline = true;
+    activity.lastError = '';
     if (typeof applyDemand !== 'function') return;
     applyDemand({
       mode: 'per-task',
@@ -123,7 +139,7 @@ function createCompanionHarvesterBridge({
   };
 
   const drainType = async (type) => {
-    if (!hasHarvestRoom(harvestRoom, type)) return 0;
+    if (!linked() || !hasHarvestRoom(harvestRoom, type)) return 0;
     let forwarded = 0;
     for (let index = 0; index < DRAIN_BATCH; index += 1) {
       if (!socket || socket.readyState !== 1) {
@@ -174,15 +190,41 @@ function createCompanionHarvesterBridge({
       drainOnce().catch((error) => {
         activity.lastError = error.message;
       }).finally(() => {
-        if (started && activity.connected) scheduleDrain();
+        if (started && activity.socketOpen) scheduleDrain();
       });
     }, DRAIN_MS);
   };
 
+  const markAlive = (engine = false) => {
+    const now = timestamp();
+    activity.lastSeenAt = now;
+    lastPongAt = now;
+    if (engine) {
+      activity.engineOnline = true;
+      if (activity.lastError === 'Waiting for Full Engine to join the harvest room.') {
+        activity.lastError = '';
+      }
+    }
+  };
+
   const handleMessage = (message) => {
-    activity.lastSeenAt = timestamp();
-    if (message.type === 'registered' || message.type === 'peer-state' || message.type === 'hello') {
-      activity.connected = true;
+    markAlive(false);
+    if (message.type === 'pong') return;
+    if (message.type === 'registered' || message.type === 'peer-state') {
+      activity.socketOpen = true;
+      const desktop = message.desktopOnline === true
+        || (message.peer && message.peer.desktopOnline === true);
+      activity.engineOnline = desktop;
+      if (!desktop) {
+        harvestRoom = { login: 0, atc: 0 };
+        if (typeof applyDemand === 'function') applyDemand(null);
+        activity.lastError = 'Waiting for Full Engine to join the harvest room.';
+      }
+      return;
+    }
+    if (message.type === 'hello') {
+      activity.engineOnline = true;
+      activity.lastError = '';
       return;
     }
     if (message.type === 'demand' || message.type === 'start') {
@@ -202,7 +244,8 @@ function createCompanionHarvesterBridge({
     drainTimer = null;
     const previous = socket;
     socket = null;
-    activity.connected = false;
+    activity.socketOpen = false;
+    parkDemand();
     if (!previous) return;
     try { previous.close(1000); } catch {}
   };
@@ -221,21 +264,30 @@ function createCompanionHarvesterBridge({
           open: () => {
             if (current !== generation) return;
             reconnectAttempt = 0;
-            activity.connected = true;
-            activity.lastError = '';
+            activity.socketOpen = true;
+            activity.socketOpenedAt = timestamp();
+            lastPongAt = timestamp();
+            activity.lastError = 'Waiting for Full Engine to join the harvest room.';
             activity.roomId = room;
-            send({ type: 'hello', role: 'companion', hostname: os.hostname().slice(0, 100) });
+            try {
+              nextSocket.send(JSON.stringify({
+                type: 'hello',
+                role: 'companion',
+                hostname: os.hostname().slice(0, 100),
+              }));
+            } catch {}
             logger.info?.(`[remote-harvester] joined room ${room}`);
             scheduleDrain();
           },
           close: () => {
             if (current !== generation) return;
-            activity.connected = false;
+            activity.socketOpen = false;
+            parkDemand();
             scheduleReconnect();
           },
           error: () => {
             if (current !== generation) return;
-            activity.connected = false;
+            activity.socketOpen = false;
           },
           message: (message) => {
             if (current !== generation) return;
@@ -268,7 +320,7 @@ function createCompanionHarvesterBridge({
       if (result && result.ok === true && result.roomId) {
         roomId = result.roomId;
         activity.roomId = roomId;
-        activity.lastError = '';
+        if (!activity.lastError) activity.lastError = '';
         connect(roomId);
         return;
       }
@@ -281,48 +333,121 @@ function createCompanionHarvesterBridge({
     });
   };
 
+  const healthOnce = async () => {
+    if (!started || !available()) return;
+    const now = timestamp();
+    if (activity.socketOpen && socket && socket.readyState === 1) {
+      send({ type: 'ping' });
+      if (lastPongAt && now - lastPongAt > PONG_STALE_MS) {
+        activity.lastError = 'Harvest room went silent. Reconnecting.';
+        connect(roomId);
+        return;
+      }
+      if (activity.engineOnline && activity.lastSeenAt && now - activity.lastSeenAt > ENGINE_STALE_MS) {
+        activity.lastError = 'Full Engine went silent. Reconnecting.';
+        connect(roomId);
+        return;
+      }
+    }
+    let result;
+    try { result = await authority.getHarvestRoom(); }
+    catch (error) {
+      if (!activity.socketOpen) {
+        activity.lastError = error.message;
+        scheduleReconnect();
+      }
+      return;
+    }
+    if (!started) return;
+    if (result && result.ok === true && result.roomId) {
+      const nextId = String(result.roomId);
+      const sameRoom = nextId === roomId;
+      const socketLive = activity.socketOpen && socket && socket.readyState === 1;
+      activity.roomId = nextId;
+      if (!sameRoom) {
+        roomId = nextId;
+        connect(nextId);
+        return;
+      }
+      if (!socketLive) {
+        roomId = nextId;
+        connect(nextId);
+        return;
+      }
+      if (!activity.engineOnline && activity.socketOpenedAt
+        && now - activity.socketOpenedAt >= ENGINE_MISSING_MS) {
+        connect(nextId);
+      }
+      return;
+    }
+    if (!activity.engineOnline) {
+      activity.lastError = String(result && result.message || 'Waiting for a Full Engine Zyn.');
+      if (!activity.socketOpen) scheduleReconnect();
+    }
+  };
+
   const scheduleRoomPoll = () => {
     if (roomTimer) return;
     roomTimer = scheduleTimeout(() => {
       roomTimer = null;
-      if (started && available() && !activity.connected) lookupRoom();
-      if (started) scheduleRoomPoll();
+      if (!started) return;
+      Promise.resolve(healthOnce()).catch((error) => {
+        activity.lastError = error.message;
+      }).finally(() => {
+        if (started) scheduleRoomPoll();
+      });
     }, ROOM_POLL_MS);
   };
 
+  const snapshot = () => ({
+    role: 'companion',
+    enabled: available(),
+    connected: linked(),
+    socketOpen: activity.socketOpen === true,
+    engineOnline: activity.engineOnline === true,
+    roomId: activity.roomId,
+    lastSeenAt: activity.lastSeenAt,
+    lastSentAt: activity.lastSentAt,
+    sentCount: activity.sentCount,
+    sendRate: sendRate(),
+    lastError: String(activity.lastError || '').slice(0, 240),
+  });
+
   return {
-    snapshot: () => ({
-      role: 'companion',
-      enabled: available(),
-      connected: activity.connected === true,
-      roomId: activity.roomId,
-      lastSeenAt: activity.lastSeenAt,
-      lastSentAt: activity.lastSentAt,
-      sentCount: activity.sentCount,
-      sendRate: sendRate(),
-      lastError: String(activity.lastError || '').slice(0, 240),
-    }),
+    snapshot,
     __test: {
       drainOnce,
       applyRemoteDemand,
+      handleMessage,
+      healthOnce,
       harvestRoom: () => ({ ...harvestRoom }),
       DRAIN_MS,
       DRAIN_BATCH,
+      ENGINE_MISSING_MS,
       setSocket(next) {
         socket = next;
         started = true;
-        activity.connected = true;
+        activity.socketOpen = true;
+        activity.socketOpenedAt = timestamp();
+        lastPongAt = timestamp();
       },
     },
     start() {
       if (started) {
-        if (!activity.connected) lookupRoom();
-        return this.snapshot();
+        if (!activity.socketOpen) lookupRoom();
+        return snapshot();
       }
       started = true;
       lookupRoom();
       scheduleRoomPoll();
-      return this.snapshot();
+      return snapshot();
+    },
+    reconnect() {
+      if (!started) return this.start();
+      activity.lastError = '';
+      reconnectAttempt = 0;
+      lookupRoom();
+      return snapshot();
     },
     stop() {
       started = false;
@@ -331,13 +456,13 @@ function createCompanionHarvesterBridge({
       detach();
     },
     update() {
-      if (!started) return this.snapshot();
+      if (!started) return snapshot();
       if (!available()) {
         detach();
-        return this.snapshot();
+        return snapshot();
       }
       if (!socket) lookupRoom();
-      return this.snapshot();
+      return snapshot();
     },
   };
 }
@@ -346,6 +471,8 @@ module.exports = {
   createCompanionHarvesterBridge,
   DRAIN_MS,
   DRAIN_BATCH,
+  ROOM_POLL_MS,
+  ENGINE_MISSING_MS,
   remainingHarvestTargets,
   hasHarvestRoom,
 };

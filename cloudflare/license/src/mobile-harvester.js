@@ -10,11 +10,11 @@ export const MOBILE_BINDING = 'MOBILE_HARVESTER';
 const ROOM_ID_PATTERN = /^zynm_[A-Za-z0-9_-]{16,64}$/;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
-const PHONE_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error']);
-const COMPANION_TYPES = new Set(['hello', 'capture', 'log', 'status', 'error']);
-const EXTENSION_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error']);
+const PHONE_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error', 'ping']);
+const COMPANION_TYPES = new Set(['hello', 'capture', 'log', 'status', 'error', 'ping']);
+const EXTENSION_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error', 'ping']);
 const DESKTOP_TYPES = new Set([
-  'hello', 'demand', 'proxies', 'start', 'stop', 'capture-ack', 'log', 'error',
+  'hello', 'demand', 'proxies', 'start', 'stop', 'capture-ack', 'log', 'error', 'ping',
 ]);
 
 export function mobilePairingUrl(origin, roomId, joinToken) {
@@ -115,6 +115,16 @@ export function parseMobileClientMessage(raw, role, maxBytes = MOBILE_MAX_MESSAG
     return { ok: false, code: 'type_not_allowed' };
   }
   return { ok: true, message: parsed, type };
+}
+
+export function shouldReplaceMobilePeer(meta, role, deviceId) {
+  const current = String((meta && meta.role) || '');
+  const incoming = String(role || '');
+  if (!current || current !== incoming) return false;
+  const existingId = String((meta && meta.deviceId) || '');
+  const nextId = String(deviceId || '');
+  if (!existingId || !nextId || existingId === 'unknown' || nextId === 'unknown') return false;
+  return existingId === nextId;
 }
 
 export function canAcceptMobilePeer(stats, role) {
@@ -395,19 +405,28 @@ export class MobileHarvesterRoom {
     }
   }
 
-  peerState() {
+  peerState(exclude) {
     let desktopOnline = false;
     let phoneCount = 0;
     let companionCount = 0;
     let extensionCount = 0;
     for (const socket of this.sockets()) {
-      const role = this.attachment(socket).role;
+      const meta = this.attachment(socket);
+      if (typeof exclude === 'function' && exclude(meta, socket)) continue;
+      const role = meta.role;
       if (role === 'desktop') desktopOnline = true;
       else if (role === 'phone') phoneCount += 1;
       else if (role === 'companion') companionCount += 1;
       else if (role === 'extension') extensionCount += 1;
     }
     return { desktopOnline, phoneCount, companionCount, extensionCount };
+  }
+
+  replaceMatchingPeers(role, deviceId) {
+    for (const socket of this.sockets()) {
+      if (!shouldReplaceMobilePeer(this.attachment(socket), role, deviceId)) continue;
+      try { socket.close(4000, 'replaced'); } catch {}
+    }
   }
 
   send(socket, payload) {
@@ -431,7 +450,8 @@ export class MobileHarvesterRoom {
     const role = normalizeRole(url.searchParams.get('role'));
     const deviceId = String(url.searchParams.get('deviceId') || 'unknown').slice(0, 128);
     if (!role) return new Response('Invalid role.', { status: 400 });
-    const stats = this.peerState();
+    this.replaceMatchingPeers(role, deviceId);
+    const stats = this.peerState(meta => shouldReplaceMobilePeer(meta, role, deviceId));
     if (!canAcceptMobilePeer(stats, role)) {
       return json({
         ok: false,
@@ -475,6 +495,10 @@ export class MobileHarvesterRoom {
     const parsed = parseMobileClientMessage(raw, role);
     if (!parsed.ok) {
       this.send(socket, { type: 'error', code: parsed.code, message: 'Message rejected.' });
+      return;
+    }
+    if (parsed.type === 'ping') {
+      this.send(socket, { type: 'pong' });
       return;
     }
     if (role === 'desktop') {

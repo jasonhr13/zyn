@@ -435,6 +435,23 @@ function installCompanionHarvester(authority) {
         ? mobileHarvesterBridge.snapshot() : null,
       companion: bridge.snapshot(),
     }));
+    ipcMain.handle('remoteHarvesterReconnect', async () => {
+      const harvestOnly = authority.cached?.().sessionKind === 'harvester';
+      if (harvestOnly) {
+        return {
+          ok: true,
+          sessionKind: 'harvester',
+          companion: typeof bridge.reconnect === 'function' ? bridge.reconnect() : bridge.start(),
+        };
+      }
+      let host = null;
+      if (mobileHarvesterBridge && typeof mobileHarvesterBridge.reconnect === 'function') {
+        host = await mobileHarvesterBridge.reconnect();
+      } else if (mobileHarvesterBridge && typeof mobileHarvesterBridge.update === 'function') {
+        host = mobileHarvesterBridge.update();
+      }
+      return { ok: true, sessionKind: 'engine', host };
+    });
     if (typeof targetEngine.getCookieBank === 'function') {
       const getCookieBank = targetEngine.getCookieBank.bind(targetEngine);
       targetEngine.getCookieBank = async (...args) => {

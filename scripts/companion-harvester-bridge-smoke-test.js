@@ -149,12 +149,52 @@ async function main() {
   await bridge.__test.drainOnce();
   assert.equal(sent.length, sentAtCap, 'a later cap must stop draining leftover local cookies');
 
+  let rooms = 0;
+  let currentRoom = 'zynm_abcdefghijklmnop';
+  const opened = [];
+  const repair = createCompanionHarvesterBridge({
+    authority: {
+      cached: () => ({ ok: true, sessionKind: 'harvester' }),
+      getHarvestRoom: async () => {
+        rooms += 1;
+        return { ok: true, roomId: currentRoom };
+      },
+      openHarvestRoomEvents: (roomId) => {
+        opened.push(roomId);
+        return { readyState: 1, send() {}, close() {} };
+      },
+    },
+    enabled: () => true,
+    logger: { warn() {}, info() {} },
+    scheduleTimeout: () => 1,
+    cancelTimeout() {},
+  });
+  repair.start();
+  for (let i = 0; i < 10 && !opened.length; i += 1) await Promise.resolve();
+  assert.equal(opened[0], 'zynm_abcdefghijklmnop');
+  assert.equal(repair.snapshot().connected, false, 'socket open is not a Full Engine link');
+  repair.__test.handleMessage({
+    type: 'peer-state',
+    desktopOnline: true,
+    companionCount: 1,
+    peer: { desktopOnline: true, companionCount: 1 },
+  });
+  assert.equal(repair.snapshot().connected, true);
+  assert.equal(repair.snapshot().engineOnline, true);
+  currentRoom = 'zynm_newroomabcdefghijk';
+  await repair.__test.healthOnce();
+  assert.equal(opened.at(-1), 'zynm_newroomabcdefghijk', 'companion must follow the live Full Engine room');
+  repair.__test.handleMessage({ type: 'peer-state', desktopOnline: false, peer: { desktopOnline: false } });
+  assert.equal(repair.snapshot().connected, false);
+  assert.equal(repair.snapshot().engineOnline, false);
+
   console.log(JSON.stringify({
     ok: true,
     drainMs: DRAIN_MS,
     drainBatch: DRAIN_BATCH,
     sent: bridge.snapshot().sentCount,
     sendRate: bridge.snapshot().sendRate,
+    rooms,
   }, null, 2));
 }
 
