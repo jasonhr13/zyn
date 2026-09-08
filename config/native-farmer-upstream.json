@@ -20,8 +20,8 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "32c18be7acb343feeae9a74bc8fd5837d05c9045094b7797362eee48c0354943",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling."
+      "sha256": "8d0eb4ade4876124dc3dd04a997e781238e00ce2f899e2d917b4f3b899d4f660",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling. Producer bank refresh is 1s so remotes park when Full Engine remaining room hits zero."
     },
     "shape-atc-replay.mjs": {
       "sha256": "0d1bf73d818e03bf642c5e7333c4c283636055ab66e067259f19937da6383e83",
@@ -33,8 +33,8 @@
       "adaptation": "The automatic Target Login harvester continuously replenishes its login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
     },
     "shape-bank-demand.mjs": {
-      "sha256": "3f11b7b17855d8605bf39905de954c656881b78d5ad4dea0bf78063d68833622",
-      "adaptation": "Authenticated active/standby Target task demand translated into separate Login and ATC bank targets, including an explicit login-task count so standby ATC prefarm does not keep a login producer alive, plus uncapped ATC mode, without discarding valid over-target cookies."
+      "sha256": "4be8f92e8b93b0106ab098fcde51109b5389c9c64a6927c6729a437147378b3f",
+      "adaptation": "Authenticated active/standby Target task demand translated into separate Login and ATC bank targets, including an explicit login-task count so standby ATC prefarm does not keep a login producer alive, plus uncapped ATC mode, without discarding valid over-target cookies. Explicit remaining-room targets park remote prewarm at the engine cap."
     },
     "shape-harvest-health.mjs": {
       "sha256": "41188ab05c16518f6ea81b3779049be3aa70527e0ba063f02af305c2cbc9c7ea",
