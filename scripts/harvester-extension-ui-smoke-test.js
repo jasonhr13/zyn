@@ -36,6 +36,7 @@ const coupledIds = [
   'scheduleStartAmPm', 'scheduleEndHour', 'scheduleEndMinute', 'scheduleEndAmPm',
   'scheduleStartLabel', 'scheduleEndLabel', 'loginCookieCount', 'atcCookieCount',
   'botConnectionBadge', 'botStatusLabel', 'botConnectionState',
+  'remotePairInput', 'remotePairSave', 'remotePairClear', 'remotePairStatus',
 ];
 for (const id of coupledIds) {
   assert.equal(document.querySelectorAll(`#${id}`).length, 1, `expected exactly one #${id}`);
@@ -86,7 +87,8 @@ for (const node of document.querySelectorAll('link[href], script[src], img[src]'
   assert.ok(fs.existsSync(path.join(extension, reference)), `missing UI asset: ${reference}`);
 }
 assert.deepEqual([...document.querySelectorAll('script[src]')].map(node => node.getAttribute('src')),
-  ['client-identity.js', 'index.js'], 'client identity must load before the popup bridge client');
+  ['remote-harvest-bridge.js', 'client-identity.js', 'remote-pair-ui.js', 'index.js'],
+  'remote harvest room must load before client identity and the popup bridge client');
 
 const popup = read('index.js');
 assert.match(popup, /function wsBotRequest/,
@@ -105,8 +107,14 @@ assert.ok(versionParts.some(part => part !== '0') && versionParts.every(part => 
 )), 'extension version must follow Chrome numeric version rules');
 assert.equal(manifest.action.default_title, 'Zyn Harvester');
 assert.ok(fs.existsSync(path.join(extension, manifest.background.service_worker)));
-assert.match(background, /import '\.\.\/client-identity\.js';\s*$/,
-  'service worker must load the shared client identity module');
+assert.equal(manifest.background.service_worker, 'src/sw.js');
+const serviceWorker = read('src/sw.js');
+assert.match(serviceWorker, /import '\.\.\/remote-harvest-bridge\.js';/,
+  'service worker must load the remote harvest-room bridge first');
+assert.match(serviceWorker, /import '\.\/background\.js';/,
+  'service worker must still load the harvest background');
+assert.match(background, /import '\.\.\/client-identity\.js';/,
+  'harvest background must load the shared client identity module');
 for (const icon of Object.values(manifest.icons)) assert.ok(fs.existsSync(path.join(extension, icon)));
 for (const rules of manifest.declarative_net_request.rule_resources) {
   assert.ok(fs.existsSync(path.join(extension, rules.path)));
@@ -118,6 +126,8 @@ assert.match(css, /linear-gradient\(135deg,\s*#be123c,\s*#e11d48\s+56%,\s*#f9731
 assert.match(css, /\.scheduleGroup\.is-active/);
 assert.match(css, /\.actionButton\.is-harvesting/);
 assert.match(css, /\.status\.is-disconnected/);
+assert.match(css, /\.remotePair/);
+assert.match(css, /\.remotePairStatus\.is-ok/);
 assert.match(css, /#enableProxyToggle:checked/);
 assert.match(css, /\.routeModeOption--local/);
 assert.match(css, /\.routeModeOption--proxy/);

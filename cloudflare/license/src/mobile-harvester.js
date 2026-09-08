@@ -3,6 +3,7 @@ const encoder = new TextEncoder();
 export const MOBILE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const MOBILE_MAX_PHONES = 3;
 export const MOBILE_MAX_COMPANIONS = 8;
+export const MOBILE_MAX_EXTENSIONS = 8;
 export const MOBILE_MAX_MESSAGE_BYTES = 256 * 1024;
 export const MOBILE_BINDING = 'MOBILE_HARVESTER';
 
@@ -11,6 +12,7 @@ const DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
 const PHONE_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error']);
 const COMPANION_TYPES = new Set(['hello', 'capture', 'log', 'status', 'error']);
+const EXTENSION_TYPES = new Set(['hello', 'need-proxies', 'capture', 'log', 'status', 'error']);
 const DESKTOP_TYPES = new Set([
   'hello', 'demand', 'proxies', 'start', 'stop', 'capture-ack', 'log', 'error',
 ]);
@@ -77,7 +79,8 @@ function validDeviceId(value) {
 
 function normalizeRole(value) {
   const role = String(value || '').trim().toLowerCase();
-  return role === 'desktop' || role === 'phone' || role === 'companion' ? role : '';
+  return role === 'desktop' || role === 'phone' || role === 'companion' || role === 'extension'
+    ? role : '';
 }
 
 function normalizeSessionKind(value) {
@@ -88,6 +91,7 @@ export function allowedMobileMessageType(role, type) {
   const name = String(type || '');
   if (role === 'phone') return PHONE_TYPES.has(name);
   if (role === 'companion') return COMPANION_TYPES.has(name);
+  if (role === 'extension') return EXTENSION_TYPES.has(name);
   if (role === 'desktop') return DESKTOP_TYPES.has(name);
   return false;
 }
@@ -117,9 +121,11 @@ export function canAcceptMobilePeer(stats, role) {
   const desktopOnline = Boolean(stats && stats.desktopOnline);
   const phoneCount = Math.max(0, Number(stats && stats.phoneCount) || 0);
   const companionCount = Math.max(0, Number(stats && stats.companionCount) || 0);
+  const extensionCount = Math.max(0, Number(stats && stats.extensionCount) || 0);
   if (role === 'desktop') return !desktopOnline;
   if (role === 'phone') return phoneCount < MOBILE_MAX_PHONES;
   if (role === 'companion') return companionCount < MOBILE_MAX_COMPANIONS;
+  if (role === 'extension') return extensionCount < MOBILE_MAX_EXTENSIONS;
   return false;
 }
 
@@ -272,7 +278,19 @@ export async function connectMobileWebSocket(request, env, url, { authenticate }
     return json({ ok: false, code: 'room_not_found', message: 'Pairing expired. Generate a new QR code in Zyn.' }, 404);
   }
 
-  if (role === 'desktop' || role === 'companion') {
+  if (role === 'extension') {
+    const token = String(url.searchParams.get('token') || '');
+    if (!token) {
+      return json({ ok: false, code: 'join_required', message: 'Extension join token is required.' }, 401);
+    }
+    const tokenHash = await sha256Hex(token);
+    if (tokenHash !== room.token_hash) {
+      return json({ ok: false, code: 'join_invalid', message: 'This pairing code is no longer valid.' }, 403);
+    }
+    if (!validDeviceId(deviceId)) {
+      return json({ ok: false, code: 'invalid_request', message: 'Extension device id is required.' }, 400);
+    }
+  } else if (role === 'desktop' || role === 'companion') {
     const identity = await authenticate(request, env);
     if (!identity || identity.user_id !== room.user_id) {
       return json({
@@ -381,13 +399,15 @@ export class MobileHarvesterRoom {
     let desktopOnline = false;
     let phoneCount = 0;
     let companionCount = 0;
+    let extensionCount = 0;
     for (const socket of this.sockets()) {
       const role = this.attachment(socket).role;
       if (role === 'desktop') desktopOnline = true;
       else if (role === 'phone') phoneCount += 1;
       else if (role === 'companion') companionCount += 1;
+      else if (role === 'extension') extensionCount += 1;
     }
-    return { desktopOnline, phoneCount, companionCount };
+    return { desktopOnline, phoneCount, companionCount, extensionCount };
   }
 
   send(socket, payload) {
@@ -420,6 +440,8 @@ export class MobileHarvesterRoom {
           ? 'Another Zyn desktop is already connected to this room.'
           : role === 'companion'
             ? 'This account already has the maximum number of remote harvesters.'
+            : role === 'extension'
+              ? 'This pairing already has the maximum number of browser extensions.'
             : 'This pairing already has the maximum number of phones.',
       }, 409);
     }
@@ -456,7 +478,9 @@ export class MobileHarvesterRoom {
       return;
     }
     if (role === 'desktop') {
-      this.broadcast(parsed.message, (peer) => peer.role === 'phone' || peer.role === 'companion');
+      this.broadcast(parsed.message, (peer) => (
+        peer.role === 'phone' || peer.role === 'companion' || peer.role === 'extension'
+      ));
     } else {
       this.broadcast(parsed.message, (peer) => peer.role === 'desktop');
     }

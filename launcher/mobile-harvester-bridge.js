@@ -74,6 +74,7 @@ function createMobileHarvesterBridge({
     connected: false,
     phoneCount: 0,
     companionCount: 0,
+    extensionCount: 0,
     lastSeenAt: 0,
     lastSavedAt: 0,
     lastSavedType: '',
@@ -130,6 +131,7 @@ function createMobileHarvesterBridge({
     connected: activity.connected === true,
     phoneCount: Math.max(0, Number(activity.phoneCount) || 0),
     companionCount: Math.max(0, Number(activity.companionCount) || 0),
+    extensionCount: Math.max(0, Number(activity.extensionCount) || 0),
     lastSeenAt: Number(activity.lastSeenAt) || 0,
     lastSavedAt: Number(activity.lastSavedAt) || 0,
     lastSavedType: String(activity.lastSavedType || ''),
@@ -306,6 +308,7 @@ function createMobileHarvesterBridge({
     activity.lastSeenAt = timestamp();
     if (message.type === 'registered' || message.type === 'peer-state') {
       const previousCompanions = activity.companionCount;
+      const previousExtensions = activity.extensionCount;
       activity.connected = true;
       activity.phoneCount = Number(message.phoneCount ?? (message.peer && message.peer.phoneCount)) || activity.phoneCount;
       if (message.peer && typeof message.peer.phoneCount === 'number') {
@@ -315,9 +318,14 @@ function createMobileHarvesterBridge({
       if (message.peer && typeof message.peer.companionCount === 'number') {
         activity.companionCount = message.peer.companionCount;
       }
+      if (typeof message.extensionCount === 'number') activity.extensionCount = message.extensionCount;
+      if (message.peer && typeof message.peer.extensionCount === 'number') {
+        activity.extensionCount = message.peer.extensionCount;
+      }
       const companionsJoined = message.type === 'peer-state' && activity.companionCount > previousCompanions;
+      const extensionsJoined = message.type === 'peer-state' && activity.extensionCount > previousExtensions;
       const phoneJoined = message.type === 'peer-state' && activity.phoneCount > 0;
-      await publishDemand({ force: companionsJoined || phoneJoined || message.type === 'registered' });
+      await publishDemand({ force: companionsJoined || extensionsJoined || phoneJoined || message.type === 'registered' });
       return;
     }
     if (message.type === 'hello') {
@@ -449,6 +457,7 @@ function createMobileHarvesterBridge({
       connected: activity.connected === true,
       phoneCount: activity.phoneCount,
       companionCount: activity.companionCount,
+      extensionCount: activity.extensionCount,
       lastSeenAt: activity.lastSeenAt,
       lastSavedAt: activity.lastSavedAt,
       lastSavedType: activity.lastSavedType,

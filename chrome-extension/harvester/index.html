@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Zyn Harvester</title>
     <link rel="stylesheet" href="index.css">
+    <script src="remote-harvest-bridge.js" defer></script>
     <script src="client-identity.js" defer></script>
+    <script src="remote-pair-ui.js" defer></script>
     <script src="index.js" defer></script>
 </head>
 
@@ -154,6 +156,19 @@
                     <span class="boxSubHeader">Zyn Bridge</span>
                 </div>
             </div>
+
+            <section class="remotePair" aria-label="Remote Full Engine pairing">
+                <div class="remotePairCopy">
+                    <strong>Remote cookie bank</strong>
+                    <small>Paste a Full Engine pairing URL to harvest from this browser into that Zyn. Leave empty to use a local Zyn on this machine.</small>
+                </div>
+                <textarea id="remotePairInput" class="remotePairInput" spellcheck="false" rows="2" placeholder="zyn://pair?room=…&amp;token=…&amp;origin=…"></textarea>
+                <div class="remotePairActions">
+                    <button id="remotePairSave" class="importBtn" type="button">Save pairing</button>
+                    <button id="remotePairClear" class="deleteBtn" type="button">Clear</button>
+                    <span id="remotePairStatus" class="remotePairStatus">Not paired.</span>
+                </div>
+            </section>
 
             <section class="proxyWorkspace" aria-label="Proxy workspace">
                 <div class="routeNotice" role="status" aria-live="polite">

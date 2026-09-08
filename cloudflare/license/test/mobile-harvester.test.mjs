@@ -3,6 +3,7 @@ import test from 'node:test';
 import worker from '../src/index.js';
 import {
   MOBILE_MAX_COMPANIONS,
+  MOBILE_MAX_EXTENSIONS,
   MOBILE_MAX_PHONES,
   allowedMobileMessageType,
   canAcceptMobilePeer,
@@ -169,7 +170,11 @@ test('mobile message allowlist is role-scoped', () => {
   assert.equal(allowedMobileMessageType('desktop', 'capture'), false);
   assert.equal(allowedMobileMessageType('companion', 'capture'), true);
   assert.equal(allowedMobileMessageType('companion', 'demand'), false);
+  assert.equal(allowedMobileMessageType('extension', 'capture'), true);
+  assert.equal(allowedMobileMessageType('extension', 'need-proxies'), true);
+  assert.equal(allowedMobileMessageType('extension', 'demand'), false);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'phone').ok, true);
+  assert.equal(parseMobileClientMessage('{"type":"capture"}', 'extension').ok, true);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'desktop').ok, false);
   assert.equal(parseMobileClientMessage('{"type":"capture"}', 'companion').ok, true);
   assert.equal(parseMobileClientMessage('not-json', 'phone').code, 'invalid_json');
@@ -184,6 +189,10 @@ test('room occupancy rejects a second desktop and extra phones', () => {
   assert.equal(canAcceptMobilePeer({
     desktopOnline: true, companionCount: MOBILE_MAX_COMPANIONS,
   }, 'companion'), false);
+  assert.equal(canAcceptMobilePeer({ desktopOnline: true, extensionCount: 0 }, 'extension'), true);
+  assert.equal(canAcceptMobilePeer({
+    desktopOnline: true, extensionCount: MOBILE_MAX_EXTENSIONS,
+  }, 'extension'), false);
 });
 
 test('pairing requires a live license session', async () => {
@@ -285,6 +294,29 @@ test('phone websocket accepts the join token and rejects a bad token without hit
   assert.equal(good.status, 200);
   assert.equal(env.wsCalls.length, 1);
   assert.match(env.wsCalls[0].url, /role=phone/);
+  assert.doesNotMatch(env.wsCalls[0].url, /token=/);
+});
+
+test('browser extension websocket accepts the phone pairing token', async () => {
+  const env = await environment();
+  const minted = await (await worker.fetch(new Request('https://license.zynbot.app/api/mobile/pair', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env)).json();
+
+  const missingDevice = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${minted.roomId}&role=extension&token=${encodeURIComponent(minted.joinToken)}`,
+    { headers: { upgrade: 'websocket' } },
+  ), env);
+  assert.equal(missingDevice.status, 400);
+
+  const good = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${minted.roomId}&role=extension&token=${encodeURIComponent(minted.joinToken)}&deviceId=11111111-2222-4333-a444-555555555555`,
+    { headers: { upgrade: 'websocket' } },
+  ), env);
+  assert.equal(good.status, 200);
+  assert.equal(env.wsCalls.length, 1);
+  assert.match(env.wsCalls[0].url, /role=extension/);
   assert.doesNotMatch(env.wsCalls[0].url, /token=/);
 });
 

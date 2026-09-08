@@ -967,9 +967,9 @@ class Settings extends Component {
           <div className="settings-section">
             <div className="settings-section-title">Target — Mobile Harvesters</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.45 }}>
-              Pair a sideloaded Zyn phone app. Scan the QR once; the phone reconnects whenever this
-              Zyn is open. It harvests Target Shape ATC cookies and deposits them into this cookie bank.
-              Managed proxies stay on the desktop.
+              Pair a sideloaded Zyn phone app or the Zyn Harvester browser extension. Scan or paste
+              the pairing URL once; those devices reconnect whenever this Full Engine Zyn is open.
+              They harvest Target Shape cookies into this cookie bank. Managed proxies stay on the desktop.
               Download:{' '}
               <a
                 href={(mobileHarvester && mobileHarvester.downloadUrl) || 'https://updates.zynbot.app/download/android'}
@@ -1007,7 +1007,8 @@ class Settings extends Component {
                   {mobileHarvester.lastSavedAt ? ' · recently saved a cookie' : ''}
                 </div>
                 <div className="form-hint" style={{ marginTop: 6 }}>
-                  Scan this QR once in the Zyn phone app. After that it reconnects by itself.
+                  Scan this QR in the phone app, or paste the URL into the browser extension under
+                  Remote cookie bank. After that it reconnects by itself.
                 </div>
                 <PairingQr url={mobileHarvester.pairingUrl || ''} />
                 <textarea

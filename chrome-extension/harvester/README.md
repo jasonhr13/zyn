@@ -1,7 +1,8 @@
 # Zyn Harvester (browser extension)
 
 Cookie harvester companion for **Zyn**. It drives a real Chromium browser against Target, captures
-Shape-signed login/ATC headers, and banks them into Zyn over the local compatibility bridge.
+Shape-signed login/ATC headers, and banks them into Zyn — either a local Zyn on this machine, or a
+remote Full Engine cookie bank via a pairing URL.
 
 ## Install
 
@@ -28,6 +29,18 @@ can instead load `chrome-extension/harvester` directly and keep using that path.
 
 Extension harvesting is additive. It can run alongside Zyn’s in-app harvesters, and both sources feed
 the same Target cookie bank.
+
+### Remote Full Engine (other machines)
+
+To harvest from a browser that does **not** have Zyn installed:
+
+1. On the Full Engine Zyn, **Settings → Target — Mobile Harvesters → Generate pairing code**
+2. Copy the `zyn://pair?…` URL
+3. In this extension popup, paste it under **Remote cookie bank** and save
+4. Connection should show **Live** while that Full Engine is open
+
+Paired extensions deposit into the remote bank and follow Full Engine remaining-room demand (they
+stop when the ATC cap is full). Leave the pairing field empty to keep using a local Zyn on `127.0.0.1`.
 
 ### Ports
 
