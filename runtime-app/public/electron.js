@@ -1478,6 +1478,11 @@ ipcMain.on('targetSubmitOtp', (e, { email, code } = {}) => {
   e.returnValue = targetEngine.submitOtpManually(email, code);
 });
 
+ipcMain.on('targetResetTask', (e, { taskId } = {}) => {
+  try { e.returnValue = targetEngine.cancelOtpForTask(taskId, 'Target task reset'); }
+  catch { e.returnValue = false; }
+});
+
 ipcMain.on('getTargetTasks', (e) => { e.returnValue = dm.getTargetTasks(); });
 ipcMain.on('saveTargetTasks', (e, data) => {
   const saved = dm.saveTargetTasks(data || {});

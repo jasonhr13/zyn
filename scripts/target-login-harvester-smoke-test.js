@@ -93,6 +93,9 @@ assert.equal(helper.loginHarvesterShouldRun({
   statuses: { t1: 'Waiting For Restock' },
 }), false);
 
+assert.match(engine, /cancelOtpForTask\(id, 'Target task signed in'\)/);
+assert.match(engine, /addOtpWaiter/);
+assert.match(engine, /taskIds: p\.waiters/);
 assert.match(engine, /require\('\.\/target-login-harvester'\)/);
 assert.match(engine, /latchLoginHarvesterForTasks/);
 assert.match(engine, /reconcileLoginHarvester/);

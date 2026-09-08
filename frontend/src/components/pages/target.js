@@ -1236,7 +1236,7 @@ class Target extends Component {
               const st = taskStatus[t.id];
               const prof = this.profileForAccount(t.accountId);
               const accountEmail = this.accountEmail(t.accountId);
-              const otpRequest = targetOtpForTask(target.otpPending, t.id, accountEmail);
+              const otpRequest = targetOtpForTask(target.otpPending, t.id, accountEmail, st);
               const tlogs = taskLogs[t.id] || [];
               const open = expanded === t.id;
               return (

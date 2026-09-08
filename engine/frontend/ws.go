@@ -140,7 +140,7 @@ func failPendingHyper(reason string) {
 	}
 }
 
-func RequestCode(email string) {
+func RequestCode(email, taskID string) {
 	requestID := strconv.FormatUint(watcherSequence.Add(1), 10)
 	ready := make(chan struct{}, 1)
 	watcherReadyMu.Lock()
@@ -151,11 +151,13 @@ func RequestCode(email string) {
 		delete(watcherReady, requestID)
 		watcherReadyMu.Unlock()
 	}()
+	payload := map[string]any{"email": email, "requestId": requestID}
+	if id := strings.TrimSpace(taskID); id != "" {
+		payload["taskID"] = id
+	}
 	message := SentMessage{
 		Type: "request-code",
-		Messages: []any{
-			map[string]any{"email": email, "requestId": requestID},
-		},
+		Messages: []any{payload},
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {

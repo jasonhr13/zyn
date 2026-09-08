@@ -413,7 +413,7 @@ class Walmart extends Component {
     const status = this.props.walmart.taskStatus[task.id];
     const active = status && status.running !== false;
     const open = this.state.expanded === task.id;
-    const otpRequest = targetOtpForTask(otpList, task.id, account && account.email);
+    const otpRequest = targetOtpForTask(otpList, task.id, account && account.email, status);
     const picked = !!this.state.selected[task.id];
     return (
       <div key={task.id} className={`site-task-row${picked ? ' is-selected' : ''}`} style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 10 }}>

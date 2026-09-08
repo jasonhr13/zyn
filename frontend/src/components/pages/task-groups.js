@@ -36,6 +36,7 @@ import Store from '../store';
 import {
   accountForTask,
   accountHasSession,
+  targetTaskSessionCaption,
   mapGroupRuntimeState,
   mapTaskDetailState,
   mapTaskRowState,
@@ -282,6 +283,7 @@ class TaskGroupTaskRowView extends Component {
     const { group, task, selected, host, account, profile, status, otpRequest, checkouts, declines, canReset } = this.props;
     const displayStatus = this.proxyStatusFor(task) || status;
     const running = targetTaskIsRunning(status);
+    const session = targetTaskSessionCaption(account, displayStatus, otpRequest);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
       <div
@@ -309,7 +311,7 @@ class TaskGroupTaskRowView extends Component {
           <i className="task-avatar">{initial}</i>
           <span className="task-primary-copy">
             <strong>{host.accountLabel(task)}</strong>
-            {accountHasSession(account) ? <small className="task-session-signed-in">Signed in</small> : null}
+            {session ? <small className={session.className}>{session.label}</small> : null}
           </span>
         </span>
         <span onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
@@ -385,6 +387,7 @@ class TaskGroupTaskDetailView extends Component {
     const tone = targetStatusTone(displayStatus);
     const running = targetTaskIsRunning(status);
     const accountName = host.accountLabel(task);
+    const session = targetTaskSessionCaption(account, displayStatus, otpRequest);
     const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     const profileName = profile
       ? profile.name || profile.email || profile.id
@@ -431,7 +434,7 @@ class TaskGroupTaskDetailView extends Component {
             <section className="panel task-information">
               <div className="detail-panel-heading"><h3>Task Information</h3><span>{group.name}</span></div>
               <dl>
-                <div><dt>Account</dt><dd>{accountHasSession(account) ? `${accountName} · Signed in` : accountName}</dd></div>
+                <div><dt>Account</dt><dd>{session ? `${accountName} · ${session.label}` : accountName}</dd></div>
                 <div><dt>Profile</dt><dd className={profile ? '' : 'text-danger'}>{profileName}</dd></div>
                 <div><dt>Proxy</dt><dd>{proxyLabelForRef(host.proxyLists(), task.proxyListName, 'Local')}</dd></div>
                 <div><dt>Watch list</dt><dd>{watchListSummary(group)}</dd></div>
@@ -1435,6 +1438,7 @@ class TaskGroups extends Component {
       `Reset “${label}” to Idle?\n\nThis clears its completed status, checkout count, temporary OTP/proxy notices, and task log. Task settings and Target order-limit history stay unchanged.`,
     )) return;
     const account = this.accountFor(task);
+    try { ipcRenderer.sendSync('targetResetTask', { taskId: task.id }); } catch {}
     this.props.dispatch({
       type: 'targetTaskReset',
       id: task.id,

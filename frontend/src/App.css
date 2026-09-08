@@ -1648,6 +1648,7 @@ body.theme-night .form-select {
 .task-primary-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .task-primary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; }
 .task-session-signed-in { color: var(--target-status-success); font-size: 9.5px; font-weight: 600; }
+.task-session-signing-in { color: var(--run); font-size: 9.5px; font-weight: 600; }
 .task-primary-missing strong { color: var(--danger); }
 .task-avatar { width: 24px; height: 24px; display: inline-grid; place-items: center; flex: 0 0 auto; border-radius: var(--radius); color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-border); font-size: 10px; font-style: normal; font-weight: 750; }
 .task-avatar-lg { width: 30px; height: 30px; border-radius: var(--radius); font-size: 11px; }

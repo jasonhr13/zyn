@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.51",
+  "notes": [
+    "Stop leftover OTP prompts on Target tasks that already signed in and moved to restock.",
+    "Reset and Stop cancel the mailbox waiter instead of only clearing the task row.",
+    "Task rows show Signing in while a saved session is going through login or OTP again."
+  ]
+}

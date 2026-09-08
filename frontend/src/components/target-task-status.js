@@ -5,6 +5,17 @@ const textOf = (status) => [...new Set([
 
 // Runtime liveness and visual phase are deliberately separate. A retriable red error can still be
 // running, and a looping task remains running during its brief Successful status.
+export function targetTaskIsReauthenticating(status, otpRequest) {
+  if (otpRequest) return true;
+  const text = [...new Set([
+    (status && status.label) || '',
+    status && typeof status.state === 'string' ? status.state : '',
+    (status && status.detail) || '',
+  ].map(value => String(value).trim().toLowerCase()).filter(Boolean))].join(' ');
+  if (!text) return false;
+  return /\b(?:error refreshing session|bad session|logging in|requesting login code|waiting for code|submitting code|code timed out|code wait failed)\b/i.test(text);
+}
+
 export function targetTaskIsRunning(status) {
   if (!status) return false;
   if (status.running === true) return true;

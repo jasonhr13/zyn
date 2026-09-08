@@ -98,6 +98,7 @@ function emitOtpPending() {
   toRenderer('targetOtp', {
     pending: [...otpPending.values()].map(p => ({
       email: p.email, taskId: p.taskId, since: p.since,
+      taskIds: p.waiters ? [...p.waiters].filter(id => !isAnonOtpWaiter(id)) : [],
       waiting: p.waiters ? p.waiters.size : 1,
       phase: p.phase || 'starting',
       message: p.message || 'Preparing automatic email lookup…',
@@ -125,19 +126,78 @@ function abortOtpFetch(key, reason = 'OTP request cancelled') {
   return true;
 }
 
+function emailForTaskId(taskId) {
+  const accountId = taskAccountById.get(String(taskId || ''));
+  if (!accountId) return '';
+  try {
+    const accounts = dm.getAccounts() || [];
+    const account = accounts.find(item => String(item && item.id) === String(accountId));
+    return String((account && account.email) || '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isAnonOtpWaiter(id) {
+  return /^anon-\d+$/.test(String(id || ''));
+}
+
+function runningOtpTaskIdsForEmail(email) {
+  const addr = String(email || '').trim().toLowerCase();
+  if (!addr) return [];
+  const ids = [];
+  for (const id of runningTaskIds) {
+    const taskId = String(id || '');
+    if (!taskId || emailForTaskId(taskId) !== addr) continue;
+    const text = lastTargetTaskStatusText.get(taskId);
+    if (loginStatusClearsHarvester(text)) continue;
+    if (loginLatchedTaskIds.has(taskId) || loginStatusNeedsHarvester(text) || !text) ids.push(taskId);
+  }
+  return ids;
+}
+
+function addOtpWaiter(entry, taskId, email) {
+  if (!entry) return;
+  if (!entry.waiters) entry.waiters = new Set();
+  const tid = String(taskId || '');
+  if (tid) {
+    entry.waiters.add(tid);
+    if (!entry.taskId) entry.taskId = tid;
+    return;
+  }
+  const inferred = runningOtpTaskIdsForEmail(email);
+  if (inferred.length) {
+    for (const id of inferred) {
+      entry.waiters.add(id);
+      if (!entry.taskId) entry.taskId = id;
+    }
+    return;
+  }
+  entry.waiters.add(`anon-${entry.waiters.size}`);
+}
+
 function cancelOtpForTask(taskId, reason = 'Target task stopped') {
   const wanted = String(taskId || '');
   if (!wanted) return false;
+  const email = emailForTaskId(wanted);
   let changed = false;
   for (const [key, entry] of otpPending) {
-    if (!entry?.waiters?.has(wanted) && String(entry?.taskId || '') !== wanted) continue;
-    if (entry.waiters) entry.waiters.delete(wanted);
+    const waiters = entry && entry.waiters;
+    const matchesTask = String((entry && entry.taskId) || '') === wanted || (waiters && waiters.has(wanted));
+    const siblingLoginIds = email ? runningOtpTaskIdsForEmail(email).filter(id => id !== wanted) : [];
+    const matchesUntaggedEmail = Boolean(email && key === email && !matchesTask
+      && (!entry.taskId || isAnonOtpWaiter(entry.taskId))
+      && (!waiters || waiters.size === 0 || [...waiters].every(id => isAnonOtpWaiter(id) || id === wanted))
+      && siblingLoginIds.length === 0);
+    if (!matchesTask && !matchesUntaggedEmail) continue;
+    if (waiters) waiters.delete(wanted);
     changed = true;
-    if (!entry.waiters || entry.waiters.size === 0) {
+    const remaining = waiters ? [...waiters].filter(id => !isAnonOtpWaiter(id)) : [];
+    if (!waiters || waiters.size === 0 || matchesUntaggedEmail) {
       otpPending.delete(key);
       abortOtpFetch(key, reason);
-    } else if (String(entry.taskId || '') === wanted) {
-      entry.taskId = [...entry.waiters][0] || '';
+    } else if (String(entry.taskId || '') === wanted || isAnonOtpWaiter(entry.taskId)) {
+      entry.taskId = remaining[0] || [...waiters][0] || '';
     }
   }
   if (changed) emitOtpPending();
@@ -214,8 +274,7 @@ async function fetchOtpAndDeliver(email, taskId = '') {
   if (otpFetches.has(key)) {
     const open = otpPending.get(key);
     if (open) {
-      if (!open.waiters) open.waiters = new Set([open.taskId || 'anon-0']);
-      open.waiters.add(taskId || `anon-${open.waiters.size}`);
+      addOtpWaiter(open, taskId, addr);
       emitOtpPending();
     }
     log('[otp] this account already has a mailbox fetch running — this task will take the next code', taskId);
@@ -223,18 +282,17 @@ async function fetchOtpAndDeliver(email, taskId = '') {
   }
   const fetchState = { controller: new AbortController() };
   otpFetches.set(key, fetchState);
-  const open = otpPending.get(key);
-  const waiters = (open && open.waiters) || new Set();
-  waiters.add(taskId || `anon-${waiters.size}`);
-  otpPending.set(key, {
+  const open = otpPending.get(key) || {
     email: addr,
-    taskId,
+    taskId: String(taskId || ''),
     since: Date.now(),
-    waiters,
+    waiters: new Set(),
     phase: 'starting',
     message: 'Preparing automatic email lookup…',
     site: engineTaskSites.resolve({ taskID: taskId }) || engineContract.SITES.TARGET,
-  });
+  };
+  addOtpWaiter(open, taskId, addr);
+  otpPending.set(key, open);
   emitOtpPending();
   const botDir = botDirPath();
   let sourceController = null;
@@ -1096,6 +1154,7 @@ function releaseLoginHarvesterTask(taskId) {
   if (!id) return;
   loginLatchedTaskIds.delete(id);
   lastTargetTaskStatusText.delete(id);
+  cancelOtpForTask(id, 'Target task stopped');
   scheduleLoginHarvesterReconcile();
 }
 
@@ -1105,7 +1164,10 @@ function noteLoginHarvesterTaskStatus(taskId, status) {
   const text = [status && status.state, status && status.label, status && status.detail]
     .filter(Boolean).join(' ');
   lastTargetTaskStatusText.set(id, text);
-  if (loginStatusClearsHarvester(text)) loginLatchedTaskIds.delete(id);
+  if (loginStatusClearsHarvester(text)) {
+    loginLatchedTaskIds.delete(id);
+    cancelOtpForTask(id, 'Target task signed in');
+  }
   scheduleLoginHarvesterReconcile();
 }
 
@@ -3916,7 +3978,7 @@ function handleEngineMessage(data, connection) {
     case 'request-code':
       for (const m of items) {
         const email = (m && m.email) || '';
-        const tid = (m && m.taskID) || '';
+        const tid = (m && (m.taskID || m.taskId)) || '';
         // The native engine waits for this acknowledgement before it starts its own OTP timeout.
         // Acknowledge synchronously so mailbox latency cannot consume that readiness window.
         if (m && m.requestId) {
@@ -4478,4 +4540,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };
+module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, cancelOtpForTask, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };

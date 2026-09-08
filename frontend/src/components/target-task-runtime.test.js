@@ -1,6 +1,7 @@
 import { reducer } from './store';
 import {
   accountHasSession,
+  targetTaskSessionCaption,
   mapGroupRuntimeState,
   mapTaskDetailState,
   mapTaskRowState,
@@ -26,6 +27,18 @@ test('accountHasSession is true only for a saved login cookie flag', () => {
   expect(accountHasSession({ hasSession: false })).toBe(false);
   expect(accountHasSession({ cookie: 'must-not-count' })).toBe(false);
   expect(accountHasSession(null)).toBe(false);
+});
+
+test('Signed in becomes Signing in while a task reauthenticates', () => {
+  const signed = { hasSession: true };
+  expect(targetTaskSessionCaption(signed, { label: 'Waiting For Restock' }, null)).toEqual({
+    label: 'Signed in', className: 'task-session-signed-in',
+  });
+  expect(targetTaskSessionCaption(signed, { label: 'Logging In Via OTP' }, null).label).toBe('Signing in');
+  expect(targetTaskSessionCaption(signed, { label: 'Error Refreshing Session' }, null).label).toBe('Signing in');
+  expect(targetTaskSessionCaption(signed, { label: 'Waiting For Restock' }, { email: 'one@example.com' }).label).toBe('Signing in');
+  expect(targetTaskSessionCaption(signed, { label: 'Validating Login' }, null).label).toBe('Signed in');
+  expect(targetTaskSessionCaption({ hasSession: false }, { label: 'Getting Session' }, null)).toBeNull();
 });
 
 test('a sibling Target status change keeps this row’s mapped props referentially stable', () => {

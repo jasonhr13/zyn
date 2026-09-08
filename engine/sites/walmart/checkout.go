@@ -578,7 +578,7 @@ func (t *WalmartTask) HandleTask() {
 
 func (t *WalmartTask) prepareEmailCodeWaiter() error {
 	t.cancelEmailCodeWaiter()
-	waiter, err := imapcode.PrepareWait(t.Account.Username)
+	waiter, err := imapcode.PrepareWait(t.Account.Username, t.ID)
 	if err != nil {
 		return err
 	}

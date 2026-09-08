@@ -1,18 +1,35 @@
-import { targetOtpForTask, validTargetOtp } from './target-otp';
+import { targetOtpForTask, targetStatusAllowsOtp, validTargetOtp } from './target-otp';
+
+const waitingForCode = { state: 'Waiting For Code', label: 'Waiting For Code' };
+const waitingForRestock = { state: 'Waiting For Restock', label: 'Waiting For Restock' };
 
 test('selects only the login-code request owned by the task row', () => {
   const pending = [
     { email: 'one@example.com', taskId: 'task-1', since: 1 },
     { email: 'two@example.com', taskId: 'task-2', since: 2 },
   ];
-  expect(targetOtpForTask(pending, 'task-2')).toEqual(pending[1]);
-  expect(targetOtpForTask(pending, 'task-3')).toBeNull();
+  expect(targetOtpForTask(pending, 'task-2', '', waitingForCode)).toEqual(pending[1]);
+  expect(targetOtpForTask(pending, 'task-3', '', waitingForCode)).toBeNull();
+});
+
+test('shows OTP on every waiter for a shared mailbox', () => {
+  const pending = [{ email: 'one@example.com', taskId: 'task-1', taskIds: ['task-1', 'task-2'], since: 1 }];
+  expect(targetOtpForTask(pending, 'task-2', 'one@example.com', waitingForCode)).toEqual(pending[0]);
 });
 
 test('uses account email only for legacy requests without a task id', () => {
   const pending = [{ email: 'Person@Example.com', taskId: '', since: 1 }];
-  expect(targetOtpForTask(pending, 'task-1', 'person@example.com')).toEqual(pending[0]);
-  expect(targetOtpForTask(pending, 'task-1', 'different@example.com')).toBeNull();
+  expect(targetOtpForTask(pending, 'task-1', 'person@example.com', waitingForCode)).toEqual(pending[0]);
+  expect(targetOtpForTask(pending, 'task-1', 'different@example.com', waitingForCode)).toBeNull();
+});
+
+test('does not paint OTP on a task that already signed in or is idle', () => {
+  const pending = [{ email: 'one@example.com', taskId: 'task-1', since: 1 }];
+  expect(targetOtpForTask(pending, 'task-1', 'one@example.com', waitingForRestock)).toBeNull();
+  expect(targetOtpForTask(pending, 'task-1', 'one@example.com', null)).toBeNull();
+  expect(targetStatusAllowsOtp(waitingForCode)).toBe(true);
+  expect(targetStatusAllowsOtp({ state: 'Waiting for 2FA Code' })).toBe(true);
+  expect(targetStatusAllowsOtp(waitingForRestock)).toBe(false);
 });
 
 test('accepts complete numeric Target codes only', () => {

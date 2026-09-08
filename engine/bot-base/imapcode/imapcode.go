@@ -14,12 +14,13 @@ var (
 
 type Waiter struct {
 	email       string
+	taskID      string
 	ch          chan string
 	cleanupOnce sync.Once
 	requestOnce sync.Once
 }
 
-type CodeRequester func(email string)
+type CodeRequester func(email, taskID string)
 
 var (
 	requesterMu sync.RWMutex
@@ -49,10 +50,14 @@ func DeliverCode(email, code string) {
 	}
 }
 
-func PrepareWait(email string) (*Waiter, error) {
+func PrepareWait(email string, taskID ...string) (*Waiter, error) {
 	email = normalizeEmail(email)
 	if email == "" {
 		return nil, errors.New("imapcode: empty email")
+	}
+	id := ""
+	if len(taskID) > 0 {
+		id = strings.TrimSpace(taskID[0])
 	}
 
 	pendingMu.Lock()
@@ -64,7 +69,7 @@ func PrepareWait(email string) (*Waiter, error) {
 	pending[email] = ch
 	pendingMu.Unlock()
 
-	return &Waiter{email: email, ch: ch}, nil
+	return &Waiter{email: email, taskID: id, ch: ch}, nil
 }
 
 func (w *Waiter) Cancel() {
@@ -91,7 +96,7 @@ func (w *Waiter) Arm() {
 		return
 	}
 	w.requestOnce.Do(func() {
-		request(w.email)
+		request(w.email, w.taskID)
 	})
 }
 

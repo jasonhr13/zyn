@@ -72,6 +72,8 @@ assert.match(inlineOtp, /phase === 'submitting'[\s\S]*disabled=\{submitting\}/,
   'the OTP control does not distinguish automatic lookup from code submission');
 assert.match(taskGroups, /Target order-limit history stay unchanged[\s\S]*type: 'targetTaskReset'/,
   'Target task groups do not provide a safe completed-run reset');
+assert.match(taskGroups, /sendSync\('targetResetTask', \{ taskId: task\.id \}\)/,
+  'Reset must cancel the main-process OTP waiter, not only the renderer copy');
 assert.match(taskGroups, /icon-action-reset[\s\S]*Reset Task/,
   'Target reset is not available from both the task row and detail view');
 

@@ -1,4 +1,4 @@
-import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsRunning } from './target-task-status';
+import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsReauthenticating, targetTaskIsRunning } from './target-task-status';
 import { targetOtpForTask } from './target-otp';
 import { showOperatorLogs } from './operator-logs';
 
@@ -51,6 +51,16 @@ export function accountHasSession(account) {
   return Boolean(account && account.hasSession);
 }
 
+export function targetTaskSessionCaption(account, status, otpRequest) {
+  if (targetTaskIsReauthenticating(status, otpRequest)) {
+    return { label: 'Signing in', className: 'task-session-signing-in' };
+  }
+  if (accountHasSession(account)) {
+    return { label: 'Signed in', className: 'task-session-signed-in' };
+  }
+  return null;
+}
+
 export function profileForAccountId(profiles, accounts, accountId) {
   const account = accountsById(accounts).get(String(accountId));
   const email = String((account && account.email) || '').trim().toLowerCase();
@@ -85,7 +95,7 @@ export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
   const outcome = hasOutcome ? outcomes[id] : EMPTY_OUTCOME;
   const logs = (target.taskLogs || {})[id] || EMPTY_TARGET_LOGS;
   const hasLogs = logs.length > 0;
-  const otpRequest = targetOtpForTask(target.otpPending, id, accountEmail);
+  const otpRequest = targetOtpForTask(target.otpPending, id, accountEmail, status);
   return {
     status,
     proxyStatus,
