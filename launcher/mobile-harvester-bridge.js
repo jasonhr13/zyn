@@ -10,6 +10,7 @@ const {
   jsonRequest,
   localProxyGroups,
 } = require('./harvester-extension-bridge');
+const { remainingHarvestTargets } = require('./harvest-room-demand');
 
 const PAIR_FILE = 'mobile-harvester-pair.json';
 const MAX_RECONNECT_MS = 30000;
@@ -197,9 +198,19 @@ function createMobileHarvesterBridge({
     const mapped = extensionStatus(status);
     const waitingAtc = Number(mapped.waiting && mapped.waiting.atc) || 0;
     const demand = status && status.demand && typeof status.demand === 'object' ? status.demand : {};
-    const atcTarget = demand.targets && demand.targets.atc == null
+    const demandTargets = demand.targets && typeof demand.targets === 'object' ? demand.targets : {};
+    const atcTarget = demandTargets.atc == null
       ? null
-      : Number(demand.targets && demand.targets.atc);
+      : Number(demandTargets.atc);
+    const room = remainingHarvestTargets({
+      current: { login: mapped.login, atc: mapped.atc },
+      targets: {
+        login: Object.prototype.hasOwnProperty.call(demandTargets, 'login') ? demandTargets.login : 0,
+        atc: Object.prototype.hasOwnProperty.call(demandTargets, 'atc')
+          ? demandTargets.atc
+          : (Number.isFinite(atcTarget) ? atcTarget : 0),
+      },
+    });
     const payload = {
       type: 'demand',
       atc: mapped.atc,
@@ -210,11 +221,12 @@ function createMobileHarvesterBridge({
       activeTasks: Number(demand.activeTasks) || 0,
       standbyTasks: Number(demand.standbyTasks) || 0,
       atcPerTask: demand.atcPerTask == null ? 3 : Number(demand.atcPerTask) || 0,
-      loginTasks: Number(demand.targets && demand.targets.login) || 0,
+      loginTasks: Number(demandTargets.login) || 0,
+      room,
       demand,
     };
     const paused = payload.basis === 'paused';
-    const key = `${payload.atc}:${payload.atcTarget}:${payload.waitingAtc}:${payload.basis}:${payload.activeTasks}:${payload.standbyTasks}:${payload.atcPerTask}:${payload.loginTasks}`;
+    const key = `${payload.atc}:${payload.atcTarget}:${payload.waitingAtc}:${payload.basis}:${payload.activeTasks}:${payload.standbyTasks}:${payload.atcPerTask}:${payload.loginTasks}:${room.login}:${room.atc}`;
     if (!force && key === lastDemandKey && activity.connected) {
       if (paused) send({ type: 'stop', site: 'target' });
       return payload;
@@ -323,6 +335,7 @@ function createMobileHarvesterBridge({
         activity.lastError = error.message;
         logger.warn?.(`[mobile-harvester] capture: ${error.message}`);
         send({ type: 'capture-ack', ok: false, message: 'Capture was not accepted.' });
+        publishDemand({ force: true }).catch(() => {});
       }
       return;
     }

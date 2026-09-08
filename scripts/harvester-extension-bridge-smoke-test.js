@@ -694,6 +694,10 @@ function httpOptions(port, path, origin, extraHeaders = {}) {
       'macOS packaging omits the remote harvester companion');
     assert.match(windowsBuild, /companion-harvester-bridge\.js/,
       'Windows packaging omits the remote harvester companion');
+    assert.match(macBuild, /harvest-room-demand\.js/,
+      'macOS packaging omits remote harvest remaining-room demand');
+    assert.match(windowsBuild, /harvest-room-demand\.js/,
+      'Windows packaging omits remote harvest remaining-room demand');
     assert.ok(contract.requiredResources.includes(
       'Contents/Resources/app/harvester-extension-bridge.js'),
     'runtime contract omits the extension bridge');
@@ -703,6 +707,9 @@ function httpOptions(port, path, origin, extraHeaders = {}) {
     assert.ok(contract.requiredResources.includes(
       'Contents/Resources/app/companion-harvester-bridge.js'),
     'runtime contract omits the remote harvester companion');
+    assert.ok(contract.requiredResources.includes(
+      'Contents/Resources/app/harvest-room-demand.js'),
+    'runtime contract omits remote harvest remaining-room demand');
 
     const foreignServer = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });

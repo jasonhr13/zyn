@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.52",
+  "notes": [
+    "Remote Target harvesters stop farming once the Full Engine cookie bank is at its ATC cap.",
+    "Harvest machines no longer burn proxy data sending cookies the engine will refuse.",
+    "Full Engine tells remotes how many ATC cookies it still needs, not the full per-task target."
+  ]
+}

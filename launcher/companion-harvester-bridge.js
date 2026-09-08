@@ -1,6 +1,7 @@
 'use strict';
 
 const os = require('os');
+const { hasHarvestRoom, remainingHarvestTargets } = require('./harvest-room-demand');
 
 const MAX_RECONNECT_MS = 30000;
 const DRAIN_MS = 50;
@@ -41,6 +42,9 @@ function createCompanionHarvesterBridge({
     lastError: '',
   };
   let sendMarks = [];
+  // Fail closed until Full Engine publishes remaining room. Copying the absolute bank target
+  // (16×20=320) onto an empty local pool is what kept remote ATC workers minting after the cap.
+  let harvestRoom = { login: 0, atc: 0 };
 
   const timestamp = () => {
     try { return Math.max(0, Number(clock()) || 0); }
@@ -63,30 +67,42 @@ function createCompanionHarvesterBridge({
   };
 
   const applyRemoteDemand = (message) => {
-    if (typeof applyDemand !== 'function') return;
     if (!message || message.type === 'stop') {
-      applyDemand(null);
+      harvestRoom = { login: 0, atc: 0 };
+      if (typeof applyDemand === 'function') applyDemand(null);
       return;
     }
     const nested = message.demand && typeof message.demand === 'object' ? message.demand : null;
     const demand = nested && (nested.basis || nested.targets || nested.activeTasks || nested.standbyTasks)
       ? nested
       : message;
+    const atcPerTask = demand.atcPerTask == null ? 3 : Number(demand.atcPerTask) || 0;
+    const activeTasks = Number(demand.activeTasks) || 0;
+    const standbyTasks = Number(demand.standbyTasks) || 0;
+    const absoluteTargets = demand.targets && typeof demand.targets === 'object'
+      ? demand.targets
+      : {
+        login: Number(demand.loginTasks || demand.login) || 0,
+        atc: atcPerTask === 0 && (activeTasks || standbyTasks)
+          ? null
+          : Number(demand.atcTarget != null ? demand.atcTarget : 0) || 0,
+      };
+    const room = message.room && typeof message.room === 'object'
+      ? remainingHarvestTargets({ current: {}, targets: message.room })
+      : remainingHarvestTargets({
+        current: { login: message.login, atc: message.atc },
+        targets: absoluteTargets,
+      });
+    harvestRoom = room;
+    if (typeof applyDemand !== 'function') return;
     applyDemand({
       mode: 'per-task',
-      basis: String(demand.basis || (Number(demand.activeTasks) > 0 ? 'active' : 'standby')),
-      activeTasks: Number(demand.activeTasks) || 0,
-      standbyTasks: Number(demand.standbyTasks) || 0,
-      atcPerTask: demand.atcPerTask == null ? 3 : Number(demand.atcPerTask) || 0,
+      basis: String(demand.basis || (activeTasks > 0 ? 'active' : 'standby')),
+      activeTasks,
+      standbyTasks,
+      atcPerTask,
       loginTasks: Number(demand.loginTasks) || 0,
-      targets: demand.targets && typeof demand.targets === 'object'
-        ? demand.targets
-        : {
-          login: Number(demand.loginTasks || demand.login) || 0,
-          atc: demand.atcPerTask === 0 && (Number(demand.activeTasks) || Number(demand.standbyTasks))
-            ? null
-            : Number(demand.atcTarget != null ? demand.atcTarget : demand.atc) || 0,
-        },
+      targets: room,
     });
   };
 
@@ -107,6 +123,7 @@ function createCompanionHarvesterBridge({
   };
 
   const drainType = async (type) => {
+    if (!hasHarvestRoom(harvestRoom, type)) return 0;
     let forwarded = 0;
     for (let index = 0; index < DRAIN_BATCH; index += 1) {
       if (!socket || socket.readyState !== 1) {
@@ -287,6 +304,8 @@ function createCompanionHarvesterBridge({
     }),
     __test: {
       drainOnce,
+      applyRemoteDemand,
+      harvestRoom: () => ({ ...harvestRoom }),
       DRAIN_MS,
       DRAIN_BATCH,
       setSocket(next) {
@@ -327,4 +346,6 @@ module.exports = {
   createCompanionHarvesterBridge,
   DRAIN_MS,
   DRAIN_BATCH,
+  remainingHarvestTargets,
+  hasHarvestRoom,
 };

@@ -11,8 +11,9 @@
 //   1. Broker  — HTTP server on 127.0.0.1:4727 that the engine polls. Endpoints mirror the reference implementation's:
 //        GET  /cookie?type=login|atc&wait=1&timeout=ms   -> { ok, cookie: { headers, proxy } }
 //        POST /saveCookies  { type, headers, proxy }      -> inject a cookie (authenticated in-app)
-//        POST /demand       { activeTasks, standbyTasks, atcPerTask, basis }
+//        POST /demand       { activeTasks, standbyTasks, atcPerTask, basis, targets? }
 //                                                          -> update live per-task bank targets
+//                                                             (optional targets = remaining room)
 //        POST /session-ready                              -> unlock staggered ATC farming after login
 //        GET  /status                                     -> pool sizes
 //        (GET /proxies is gone — it returned the pool, credentials and all, to any local caller)
@@ -1708,7 +1709,7 @@ if (PRODUCER_MODE) {
   log(`producer ${HARVESTER_NAME} starting (type ${HARVESTER_TYPE}, engine ${HARVEST_ENGINE}, route ${ROUTE_LABEL}, proxies ${PROXIES.length})`);
   refreshProducerBank();
   publishProducerStatus();
-  setInterval(refreshProducerBank, 3000).unref?.();
+  setInterval(refreshProducerBank, 1000).unref?.();
   setInterval(publishProducerStatus, 3000).unref?.();
   startFarming(browserMode);
 } else {

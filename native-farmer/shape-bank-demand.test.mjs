@@ -49,6 +49,26 @@ const standby = dynamic.apply({ activeTasks: 0, standbyTasks: 9, atcPerTask: 4 }
 assert.equal(standby.demand.basis, 'standby', 'omitted basis selects standby while tasks are armed');
 assert.deepEqual(standby.targets,
   { login: 9, atc: 36 }, 'standby demand can prewarm configured tasks before they start');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 16, standbyTasks: 0, atcPerTask: 20, basis: 'active', loginTasks: 0,
+  targets: { login: 0, atc: 0 },
+}).targets, { login: 0, atc: 0 },
+  'explicit remaining room parks remote prewarm at the engine cap');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 16, standbyTasks: 0, atcPerTask: 20, basis: 'active', loginTasks: 0,
+  targets: { login: 0, atc: 20 },
+}).targets, { login: 0, atc: 20 },
+  'explicit remaining room must not be recomputed from per-task × tasks');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 16, standbyTasks: 0, atcPerTask: 0, basis: 'active', loginTasks: 0,
+  targets: { login: 0, atc: null },
+}).targets, { login: 0, atc: null },
+  'explicit uncapped remaining stays uncapped');
+assert.deepEqual(dynamic.apply({
+  activeTasks: 16, standbyTasks: 0, atcPerTask: 20, basis: 'paused', loginTasks: 0,
+  targets: { login: 0, atc: 20 },
+}).targets, { login: 0, atc: 0 },
+  'paused basis still zeros an explicit remaining room');
 assert.deepEqual(dynamic.apply({ activeTasks: 8, standbyTasks: 9, atcPerTask: 4, basis: 'paused' }).targets,
   { login: 0, atc: 0 }, 'paused basis explicitly pauses both lanes');
 assert.deepEqual(dynamic.apply({ activeTasks: 50000, standbyTasks: 0, atcPerTask: 50000 }).targets,

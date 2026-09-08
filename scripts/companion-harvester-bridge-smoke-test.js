@@ -6,6 +6,8 @@ const {
   createCompanionHarvesterBridge,
   DRAIN_MS,
   DRAIN_BATCH,
+  remainingHarvestTargets,
+  hasHarvestRoom,
 } = require('../launcher/companion-harvester-bridge');
 
 assert.equal(DRAIN_MS, 50, 'remote drain interval should stay tight enough to empty a filling harvest pool');
@@ -37,11 +39,83 @@ const bridge = createCompanionHarvesterBridge({
 });
 
 async function main() {
+  assert.deepEqual(remainingHarvestTargets({
+    current: { login: 0, atc: 320 },
+    targets: { login: 0, atc: 320 },
+  }), { login: 0, atc: 0 });
+  assert.deepEqual(remainingHarvestTargets({
+    current: { login: 0, atc: 300 },
+    targets: { login: 0, atc: 320 },
+  }), { login: 0, atc: 20 });
+  assert.equal(remainingHarvestTargets({
+    current: { atc: 12 },
+    targets: { login: 2, atc: null },
+  }).atc, null, 'uncapped ATC must keep remaining null');
+  assert.equal(hasHarvestRoom({ login: 0, atc: 0 }, 'atc'), false);
+  assert.equal(hasHarvestRoom({ login: 0, atc: null }, 'atc'), true);
+
   bridge.__test.setSocket({
     readyState: 1,
     send(data) { sent.push(JSON.parse(data)); },
     close() {},
   });
+
+  await bridge.__test.drainOnce();
+  assert.equal(sent.length, 0, 'drain must not forward cookies before Full Engine publishes remaining room');
+  assert.equal(remaining.atc, 20, 'local cookies must stay parked while the engine is at cap');
+
+  bridge.__test.applyRemoteDemand({
+    type: 'demand',
+    atc: 320,
+    login: 0,
+    demand: {
+      basis: 'active',
+      activeTasks: 16,
+      standbyTasks: 0,
+      atcPerTask: 20,
+      loginTasks: 0,
+      targets: { login: 0, atc: 320 },
+    },
+  });
+  assert.deepEqual(bridge.__test.harvestRoom(), { login: 0, atc: 0 });
+  assert.deepEqual(demands.at(-1).targets, { login: 0, atc: 0 },
+    'remote demand must park workers when Full Engine is at the ATC cap');
+  await bridge.__test.drainOnce();
+  assert.equal(sent.length, 0, 'drain must not burn cookies the engine will reject at the cap');
+  assert.equal(remaining.atc, 20);
+
+  bridge.__test.applyRemoteDemand({
+    type: 'demand',
+    atc: 300,
+    login: 0,
+    demand: {
+      basis: 'active',
+      activeTasks: 16,
+      standbyTasks: 0,
+      atcPerTask: 20,
+      loginTasks: 0,
+      targets: { login: 0, atc: 320 },
+    },
+  });
+  assert.deepEqual(bridge.__test.harvestRoom(), { login: 0, atc: 20 },
+    'without a room field, remaining must be absolute target minus live engine fill');
+
+  bridge.__test.applyRemoteDemand({
+    type: 'demand',
+    atc: 0,
+    login: 0,
+    room: { login: 3, atc: 20 },
+    demand: {
+      basis: 'active',
+      activeTasks: 16,
+      standbyTasks: 0,
+      atcPerTask: 20,
+      loginTasks: 0,
+      targets: { login: 0, atc: 320 },
+    },
+  });
+  assert.deepEqual(bridge.__test.harvestRoom(), { login: 3, atc: 20 });
+  assert.deepEqual(demands.at(-1).targets, { login: 3, atc: 20 });
 
   await bridge.__test.drainOnce();
   assert.equal(brokerCalls, 0, 'cookie drain must not resync harvester producers on the main thread');
@@ -59,6 +133,21 @@ async function main() {
   await bridge.__test.drainOnce();
   assert.equal(sent.filter(item => item.cookieType === 'atc').length, 20);
   assert.equal(bridge.snapshot().sentCount, 23);
+
+  bridge.__test.applyRemoteDemand({
+    type: 'demand',
+    atc: 320,
+    login: 0,
+    demand: {
+      basis: 'active',
+      activeTasks: 16,
+      atcPerTask: 20,
+      targets: { login: 0, atc: 320 },
+    },
+  });
+  const sentAtCap = sent.length;
+  await bridge.__test.drainOnce();
+  assert.equal(sent.length, sentAtCap, 'a later cap must stop draining leftover local cookies');
 
   console.log(JSON.stringify({
     ok: true,

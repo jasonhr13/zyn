@@ -32,6 +32,7 @@ const required = [
   'resources/app/harvester-extension-bridge.js',
   'resources/app/mobile-harvester-bridge.js',
   'resources/app/companion-harvester-bridge.js',
+  'resources/app/harvest-room-demand.js',
   'resources/app/cloud-backup.js',
   'resources/app/cloud-backup-data.js',
   'resources/app/target-product-history.js',

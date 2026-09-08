@@ -61,7 +61,7 @@ vm.createContext(context);
 vm.runInContext(`${source}\n;globalThis.__demandApi = {
   targetCookieDemand, setTargetCookieStandbyTasks, setTargetLoginDemandTasks,
   acceptTargetCookieTasks, releaseTargetCookieTask, clearTargetCookieTasks,
-  syncTargetCookieBankDemand, setTargetHarvestAuthorized,
+  syncTargetCookieBankDemand, setTargetHarvestAuthorized, setRemoteCookieDemand,
 };`, context, { filename: 'target-cookie-demand.fragment.js' });
 const api = context.__demandApi;
 
@@ -126,6 +126,7 @@ assert.equal(api.targetCookieDemand().basis, 'paused');
 assert.deepEqual(stoppedProducers, ['managed-atc'], 'revocation must stop every managed producer');
 assert.deepEqual(JSON.parse(requests.at(-1).body), {
   basis: 'paused', activeTasks: 0, standbyTasks: 5, atcPerTask: 4, loginTasks: 0,
+  targets: { login: 0, atc: 0 },
 }, 'revocation must push an explicit paused target to an existing broker');
 
 const ensuredBeforeReauthorize = ensured;
@@ -152,7 +153,27 @@ assert.ok(requests.length > 0, 'demand was never published');
 const last = requests.at(-1);
 assert.equal(last.options.path, '/demand');
 assert.equal(last.options.headers['x-zyn-token'], 'smoke-token');
-assert.deepEqual(JSON.parse(last.body), { basis: 'paused', activeTasks: 0, standbyTasks: 0, atcPerTask: 4, loginTasks: 0 });
+assert.deepEqual(JSON.parse(last.body), {
+  basis: 'paused', activeTasks: 0, standbyTasks: 0, atcPerTask: 4, loginTasks: 0,
+  targets: { login: 0, atc: 0 },
+});
 assert.doesNotMatch(last.body, /legacy-a|legacy-b|"a"|"b"/, 'task ids must never leave the bridge');
+
+api.setRemoteCookieDemand({
+  basis: 'active',
+  activeTasks: 16,
+  standbyTasks: 0,
+  effectiveTasks: 16,
+  atcPerTask: 20,
+  loginTasks: 0,
+  targets: { login: 0, atc: 0 },
+});
+assert.equal(api.targetCookieDemand().atcPerTask, 20);
+assert.equal(api.targetCookieDemand().targets.atc, 0,
+  'remote remaining room must not be recomputed from per-task × tasks');
+assert.deepEqual(JSON.parse(requests.at(-1).body), {
+  basis: 'active', activeTasks: 16, standbyTasks: 0, atcPerTask: 20, loginTasks: 0,
+  targets: { login: 0, atc: 0 },
+}, 'broker demand must publish remaining room as the live ATC target');
 
 console.log('Target dynamic cookie demand transitions and authenticated publication passed');

@@ -187,6 +187,16 @@ try {
     'uncapped demand must accept a batch above the retired 20-cookie ceiling');
   assert.equal((await request(port, 'GET', '/status')).body.pools.atc, 25);
 
+  const remainingZero = await request(port, 'POST', '/demand', {
+    activeTasks: 16, standbyTasks: 0, atcPerTask: 20, basis: 'active', loginTasks: 0,
+    targets: { login: 0, atc: 0 },
+  }, true);
+  assert.equal(remainingZero.status, 200);
+  assert.deepEqual(remainingZero.body.demand.targets, { login: 0, atc: 0 },
+    'explicit remaining room must park the broker even when per-task × tasks is large');
+  const overCap = await request(port, 'POST', '/saveCookies', { type: 'atc', headers, proxy: '' }, true);
+  assert.equal(overCap.body.saved, 0, 'a full engine remaining room of zero must reject new prewarm cookies');
+
   console.log('Dynamic Shape broker demand, unlimited mode, auth, downscale, and waiter behavior passed');
 } finally {
   if (producer && producer.exitCode == null) producer.kill('SIGTERM');

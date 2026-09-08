@@ -1376,6 +1376,7 @@ function publishTargetCookieDemand() {
     standbyTasks: demand.standbyTasks,
     atcPerTask: demand.atcPerTask,
     loginTasks: demand.targets.login,
+    targets: { login: demand.targets.login, atc: demand.targets.atc },
   });
   targetCookieDemandInFlight = true;
   const req = http.request({

@@ -45,6 +45,7 @@ function fakeAuthority(overrides = {}) {
 async function main() {
   const authority = fakeAuthority();
   const saved = [];
+  let bankStatus = { pools: { atc: 0, login: 0 }, demand: { targets: { login: 0, atc: 2 } } };
   const bridge = createMobileHarvesterBridge({
     dataDirectory: tmp,
     authority,
@@ -59,7 +60,7 @@ async function main() {
         { name: 'Resi', managed: true, raw: 'secret:cred@9.9.9.9:8000' },
       ],
     }),
-    getCookieBank: async () => ({ pools: { atc: 0, login: 0 }, demand: { targets: { atc: 2 } } }),
+    getCookieBank: async () => bankStatus,
     logger: { warn() {}, info() {} },
   });
 
@@ -91,6 +92,15 @@ async function main() {
   assert.equal(sent.some(message => message.type === 'proxies'), true);
   assert.equal(sent.some(message => message.type === 'stop'), false, 'standby demand must not stop remote harvesters');
   assert.equal(sent.some(message => message.type === 'demand' && message.basis !== 'paused'), true);
+  const openDemand = sent.find(message => message.type === 'demand');
+  assert.deepEqual(openDemand.room, { login: 0, atc: 2 },
+    'host demand must publish remaining ATC room, not the absolute bank target');
+  bankStatus = { pools: { atc: 2, login: 0 }, demand: { targets: { login: 0, atc: 2 } } };
+  sent.length = 0;
+  await bridge.__test.publishDemand({ force: true });
+  const cappedDemand = sent.find(message => message.type === 'demand');
+  assert.deepEqual(cappedDemand.room, { login: 0, atc: 0 },
+    'a full engine bank must publish zero remaining ATC room');
   sent.length = 0;
   await bridge.__test.publishDemand();
   assert.equal(sent.some(message => message.type === 'proxies'), false);
