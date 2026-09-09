@@ -1,11 +1,16 @@
 'use strict';
 
-// Singleton Target login harvester. Users configure proxy, cookie TTL, interval delay, and
+// Singleton Target login harvester. Users configure proxy, workers, cookie TTL, interval delay, and
 // browser refresh. Zyn hardcodes the rest and starts/stops the producer from checkout demand.
 
 const LOGIN_HARVESTER_ID = 'zyn-login';
 const LOGIN_HARVESTER_NAME = 'Login';
 const LOGIN_HARVESTER_STOP_DELAY_MS = 3000;
+const LOGIN_HARVESTER_WORKER_MAXIMUM = 20;
+
+function loginWorkerMaximum(proxyListName) {
+  return String(proxyListName || '').trim() ? LOGIN_HARVESTER_WORKER_MAXIMUM : 2;
+}
 
 function clampInteger(value, minimum, maximum, fallback) {
   const parsed = Number.parseInt(String(value == null ? '' : value), 10);
@@ -14,8 +19,10 @@ function clampInteger(value, minimum, maximum, fallback) {
 
 function normalizeTargetLoginHarvester(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  const proxyListName = String(source.proxyListName || '');
   return {
-    proxyListName: String(source.proxyListName || ''),
+    proxyListName,
+    workers: clampInteger(source.workers, 1, loginWorkerMaximum(proxyListName), 1),
     cookieTtlSec: clampInteger(source.cookieTtlSec, 30, 86400, 600),
     intervalDelaySec: clampInteger(source.intervalDelaySec, 0, 3600, 10),
     loadsPerBrowser: clampInteger(source.loadsPerBrowser, 1, 10, 3),
@@ -41,7 +48,7 @@ function buildTargetLoginHarvesterConfig(settings, enabled) {
     atcMode: 'v1',
     browser: 'auto',
     proxyListName: user.proxyListName,
-    workers: 1,
+    workers: user.workers,
     input: '',
     cookieTtlSec: user.cookieTtlSec,
     intervalDelaySec: user.intervalDelaySec,
@@ -94,6 +101,8 @@ module.exports = {
   LOGIN_HARVESTER_ID,
   LOGIN_HARVESTER_NAME,
   LOGIN_HARVESTER_STOP_DELAY_MS,
+  LOGIN_HARVESTER_WORKER_MAXIMUM,
+  loginWorkerMaximum,
   normalizeTargetLoginHarvester,
   readTargetLoginHarvesterSettings,
   buildTargetLoginHarvesterConfig,

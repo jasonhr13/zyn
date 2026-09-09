@@ -1013,7 +1013,7 @@ body.theme-night .form-select {
   min-width: 88px;
 }
 .harvest-workspace .target-login-harvester-compact .target-login-harvester-fields {
-  grid-template-columns: minmax(160px, 240px) repeat(3, minmax(110px, 148px));
+  grid-template-columns: minmax(140px, 220px) repeat(4, minmax(88px, 130px));
   justify-content: start;
 }
 .harvest-workspace .cookie-bank-prominent {
@@ -1123,7 +1123,7 @@ body.theme-night .form-select {
 .target-login-harvester-head p { margin-top: 3px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
 .target-login-harvester-fields {
   display: grid;
-  grid-template-columns: minmax(160px, 1.3fr) repeat(3, minmax(120px, 1fr));
+  grid-template-columns: minmax(160px, 1.3fr) repeat(4, minmax(100px, 1fr));
   gap: 12px;
 }
 .target-login-harvester-fields .form-group { margin-bottom: 0; }

@@ -20,8 +20,8 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "8d0eb4ade4876124dc3dd04a997e781238e00ce2f899e2d917b4f3b899d4f660",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling. Producer bank refresh is 1s so remotes park when Full Engine remaining room hits zero."
+      "sha256": "d013d9daae0c7e9c99c119b181578432acf2569bcc14504bc9f9d1a0ec722970",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling. Producer bank refresh is 1s so remotes park when Full Engine remaining room hits zero. Login harvest opens /account/signup first, skips homepage PX warmup unless the form bounces, and stops waiting once username_validations is captured. Dedicated login producers honor --workers as loginConcurrency."
     },
     "shape-atc-replay.mjs": {
       "sha256": "0d1bf73d818e03bf642c5e7333c4c283636055ab66e067259f19937da6383e83",
@@ -29,8 +29,8 @@
     },
     "shape-harvest-coordinator.mjs": {
       "upstreamSha256": "4eb3e2ef1ce5d5eb1fcf69986cfe67f296d5112c3c832de85c244ba879dd7811",
-      "sha256": "d938aab1ab8390843cc73c29931cc5192ec46b73b315781bed216298149c6224",
-      "adaptation": "The automatic Target Login harvester continuously replenishes its login pool while preserving the single in-flight login lane, with mutable per-type targets and bounded live-waiter bypass."
+      "sha256": "88f47b63d910a897dbd9509d04373eadc09bab209e8cb13cd7f887cdc89d58d2",
+      "adaptation": "The automatic Target Login harvester continuously replenishes its login pool while enforcing loginConcurrency in-flight browsers, with mutable per-type targets and bounded live-waiter bypass."
     },
     "shape-bank-demand.mjs": {
       "sha256": "4be8f92e8b93b0106ab098fcde51109b5389c9c64a6927c6729a437147378b3f",
@@ -52,8 +52,8 @@
     },
     "target-consent-overlay.mjs": "1d03320ff0c35dae0406a82778cba52a3f3b16ca98618c01af67eab468135827",
     "shape-harvester-engine.mjs": {
-      "sha256": "460873fa7dbf6f7cae284c91e8299042c932a3cac865ffb145b78abe809c408e",
-      "adaptation": "Headed harvest engine helpers: engine selection, persistent profile dirs, and Mac window minimize. Experimental proxy workers share the 100-worker ceiling."
+      "sha256": "3e03ab7a31260c55f7b2d1000108132515a6ae6843ce2ceb7feb09064f22514e",
+      "adaptation": "Headed harvest engine helpers: engine selection, persistent profile dirs, and Mac window minimize. Experimental proxy workers share the 100-worker ceiling. Login harvesters allow up to 20 proxy workers or 2 on Local."
     },
     "shape-harvest-window.mjs": {
       "sha256": "80d86f4b6f20890a2b0e7cbd773126078b60e58671b84766b67326dd8b7ec144",

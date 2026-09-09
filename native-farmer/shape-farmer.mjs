@@ -246,12 +246,19 @@ const ALLOWED = argOf('types', 'login,atc').toLowerCase().split(',').map(s => s.
 const SESSION_READY_AT_START = argOf('sessionReady', 'false') === 'true';
 const WORKER_STAGGER_MS = parseInt(argOf('workerStaggerMs', '2000'), 10);
 const INTERVAL_DELAY_MS = Math.max(0, parseInt(argOf('intervalDelayMs', '0'), 10) || 0);
+const REQUESTED_WORKERS = parseInt(argOf('workers', ''), 10);
+// Dedicated login producers used to hard-cap one in-flight browser even when --workers was
+// higher, so raising the Login panel did nothing. Mixed auto/ATC farmers still mint at most
+// one cold-login cookie; only a login-typed producer fans out.
+const LOGIN_CONCURRENCY = PRODUCER_MODE && HARVESTER_TYPE === 'login'
+  ? Math.max(1, Math.min(MAX_FARMER_WORKERS, Number.isFinite(REQUESTED_WORKERS) ? REQUESTED_WORKERS : 1))
+  : 1;
 const harvestCoordinator = createHarvestCoordinator({
   allowedTypes: ALLOWED,
   targetPool: LEGACY_TARGET_POOL,
   targetPools: runtimeTargets,
   sessionReady: SESSION_READY_AT_START,
-  loginConcurrency: 1,
+  loginConcurrency: LOGIN_CONCURRENCY,
   continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login',
   workerStaggerMs: WORKER_STAGGER_MS,
 });
@@ -944,6 +951,12 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
       const firstHeadersPromise = new Promise(firstResolve => { resolveFirstHeaders = firstResolve; });
       const finish = () => { if (!done) { done = true; resolve(bag.length ? bag : null); } };
       const deadline = setTimeout(finish, 90000);   // proxies are slow — be patient
+      const waitUntilHarvested = async (ms) => {
+        const until = Date.now() + Math.max(0, Number(ms) || 0);
+        while (!done && Date.now() < until) {
+          await page.waitForTimeout(200).catch(() => {});
+        }
+      };
 
       // Every POST the page makes during a harvest. When clicks land but no cart_items request
       // ever fires, the interesting question is where add-to-cart went instead — this turns that
@@ -1063,25 +1076,27 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
             }
             return;
           }
-          // Warm the homepage with mouse/scroll until PerimeterX cookies appear (a cold hit to the
-          // auth page gets risk-scored and bounced to the homepage — this is why /login redirected).
-          await page.goto('https://www.target.com/', { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
-          await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
-          // Behave like someone actually looking at the page until PerimeterX issues its cookies.
-          // The routine is drawn from a pool and reordered every session, so no two harvests perform
-          // the same actions in the same sequence — a fixed move-then-scroll loop repeated on every
-          // worker is itself a pattern worth scoring against.
-          const warmDeadline = Date.now() + 18000;
-          let pxSeen = false;
-          let routine = [];
-          while (Date.now() < warmDeadline) {
-            routine = await human.warmUp(2).catch(() => routine);
-            try {
-              const names = (await context.cookies()).map(c => c.name);
-              if (names.some(n => ['_px3', '_pxhd', 'pxcts', '_pxvid'].includes(n))) { pxSeen = true; break; }
-            } catch {}
-          }
-          if (DIAG) log(`  step: warm done (px cookie: ${pxSeen}) — ${persona.platform} ${persona.screen.width}x${persona.screen.height}, did [${routine.join(' > ')}]`);
+
+          const warmHomepageForPx = async () => {
+            // Behave like someone actually looking at the page until PerimeterX issues its cookies.
+            // The routine is drawn from a pool and reordered every session, so no two harvests
+            // perform the same actions in the same sequence — a fixed move-then-scroll loop
+            // repeated on every worker is itself a pattern worth scoring against.
+            await page.goto('https://www.target.com/', { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+            await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+            const warmDeadline = Date.now() + 18000;
+            let pxSeen = false;
+            let routine = [];
+            while (!done && Date.now() < warmDeadline) {
+              routine = await human.warmUp(2).catch(() => routine);
+              try {
+                const names = (await context.cookies()).map(c => c.name);
+                if (names.some(n => ['_px3', '_pxhd', 'pxcts', '_pxvid'].includes(n))) { pxSeen = true; break; }
+              } catch {}
+            }
+            if (DIAG) log(`  step: warm done (px cookie: ${pxSeen}) — ${persona.platform} ${persona.screen.width}x${persona.screen.height}, did [${routine.join(' > ')}]`);
+            return pxSeen;
+          };
 
           if (type === 'login') {
             // The /login page redirects to the homepage through proxy IPs. /account/signup (the URL
@@ -1089,10 +1104,28 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
             // form: enter email in #username, click #login ("Continue") -> Shape-signed auth POST
             // with the full header set (incl. a0). Works for existing accounts too — the first step
             // is identical for login and signup.
-            await page.goto('https://www.target.com/account/signup', { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
-            await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+            //
+            // Land on signup first. The old path always spent up to 18s mouse-warming the homepage
+            // even when the auth form was already willing to render — that was most of login
+            // harvest latency. Homepage PX warmup stays as fallback if signup bounces.
+            const openSignup = async (usernameTimeoutMs) => {
+              await page.goto('https://www.target.com/account/signup', { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+              await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+              return page.waitForSelector('#username', { timeout: usernameTimeoutMs }).catch(() => null);
+            };
+            let email = await openSignup(8000);
+            if (!email) {
+              if (DIAG) log('  step: signup form missing, warming homepage then retrying');
+              await warmHomepageForPx();
+              email = await openSignup(15000);
+            } else {
+              // Pointer motion on the auth page itself, not an 18s homepage tour. Shape signs
+              // username_validations from this document; a totally still page is how we used to
+              // mint short signatures.
+              await human.warmUp(1).catch(() => {});
+            }
             if (DIAG) {
-              await page.waitForTimeout(6000);
+              await page.waitForTimeout(done ? 0 : 6000);
               try {
                 const dir = path.join(os.tmpdir(), 'shape-debug'); fs.mkdirSync(dir, { recursive: true });
                 const shot = path.join(dir, `login-page-${Date.now()}.png`);
@@ -1102,7 +1135,6 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 log(`  step: at ${page.url().slice(0, 50)} | #username=${hasUser} #password=${hasPwd} | shot=${shot}`);
               } catch {}
             }
-            let email = await page.waitForSelector('#username', { timeout: 30000 }).catch(() => null);
             if (!email) {
               // Fallback: click a sign-in entry point to force the real form.
               if (DIAG) log('  step: #username not found, clicking sign-in entry');
@@ -1161,8 +1193,14 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 if (DIAG && !done) log('  step: otp — secure_codes never fired');
               }
             } else if (DIAG) log('  step: form never appeared');
-            await page.waitForTimeout(LOGIN_MODE === 'otp' ? 4000 : 20000);
+            // Password mode used to sleep 20s after Continue even when username_validations had
+            // already been stubbed. Poll until capture (or a short miss budget) so a successful
+            // harvest can close the page immediately.
+            await waitUntilHarvested(LOGIN_MODE === 'otp' ? 4000 : 8000);
           } else {
+            // ATC v1 still warms the homepage first: a cold PDP hit through some proxies lands in
+            // Target's waiting room or the "Something went wrong" interstitial.
+            await warmHomepageForPx();
             const url = nextAtcUrl();   // rotates through the configured in-stock harvest products
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
             await page.waitForTimeout(3000);
@@ -1525,7 +1563,7 @@ async function farmerWorker(id, initialBrowser) {
 
       if (browser) {
         if (type === 'login') {
-          log(`farmer worker ${id} [${selectedBrowser.key}]: reserved the single login lane`);
+          log(`farmer worker ${id} [${selectedBrowser.key}]: reserved a login lane (${LOGIN_CONCURRENCY} in-flight max)`);
         }
         loadsLeft -= 1;
         const result = await harvestOnce(type, proxy, selectedBrowser, browser);

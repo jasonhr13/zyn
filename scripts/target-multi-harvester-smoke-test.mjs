@@ -240,10 +240,25 @@ try {
   const first = loginCoordinator.reserve({ pools: { login: [], atc: [] } });
   assert.equal(first.type, 'login');
   assert.equal(loginCoordinator.reserve({ pools: { login: [], atc: [] } }), null,
-    'dedicated login harvesters still enforce one in-flight login worker');
+    'loginConcurrency 1 still serializes a single in-flight login worker');
   first.release({ success: true });
   assert.equal(loginCoordinator.reserve({ pools: { login: [{}], atc: [] } }).type, 'login',
     'dedicated login harvesters replenish beyond the automatic one-shot login cookie');
+
+  const parallelLogin = createHarvestCoordinator({
+    allowedTypes: ['login'], targetPool: 3, continuousLogin: true, loginConcurrency: 3,
+  });
+  const a = parallelLogin.reserve({ pools: { login: [], atc: [] } });
+  const b = parallelLogin.reserve({ pools: { login: [], atc: [] } });
+  const c = parallelLogin.reserve({ pools: { login: [], atc: [] } });
+  assert.equal(a.type, 'login');
+  assert.equal(b.type, 'login');
+  assert.equal(c.type, 'login');
+  assert.equal(parallelLogin.reserve({ pools: { login: [], atc: [] } }), null,
+    'loginConcurrency 3 allows three in-flight login browsers and no more');
+  a.release({ success: true });
+  b.release({ success: true });
+  c.release({ success: true });
 
   console.log('Target multi-harvester broker, extension tandem, telemetry, expiration, and typed login lane passed');
 } finally {

@@ -45,7 +45,7 @@ assert.match(styles, /\.inline-select-menu \{[\s\S]*z-index: 1100/);
 
 assert.match(config, /=== 'patchright' \? 'patchright' : 'playwright'/);
 assert.match(config, /id: 'zyn-login'/);
-assert.match(config, /workers: 1,/);
+assert.match(config, /loginRoute \? 20 : 2/);
 assert.match(engine, /LOGIN_HARVESTER_ID/);
 assert.match(engine, /buildTargetLoginHarvesterConfig/);
 assert.match(harvestEngine, /return proxyListName \? 100 : 2;/);

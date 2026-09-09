@@ -105,6 +105,12 @@ assert.match(farmer, /u\.pathname === '\/harvesterStatus'/,
   'the shared broker must aggregate per-harvester runtime telemetry');
 assert.match(farmer, /continuousLogin: PRODUCER_MODE && HARVESTER_TYPE === 'login'/,
   'a dedicated login harvester must replenish login cookies instead of stopping after one');
+assert.match(farmer, /loginConcurrency: LOGIN_CONCURRENCY/,
+  'a dedicated login harvester must honor --workers instead of a hardcoded one-browser cap');
+assert.match(farmer, /waitUntilHarvested/,
+  'login harvest must stop waiting once username_validations is captured');
+assert.match(farmer, /openSignup/,
+  'login harvest must open /account/signup before any homepage PX warmup');
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',

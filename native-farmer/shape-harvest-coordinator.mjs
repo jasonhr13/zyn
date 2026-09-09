@@ -80,8 +80,8 @@ export function createHarvestCoordinator({
       prewarm = true;
     } else if (type === 'login' && allowed.has(type) && continuousLogin) {
       // A dedicated Target Login harvester is an automatic producer lane, not the automatic
-      // farmer's one-shot cold-login helper. Keep its login bank topped up while still enforcing a
-      // single in-flight login browser.
+      // farmer's one-shot cold-login helper. Keep its login bank topped up while still
+      // enforcing loginConcurrency in-flight browsers.
       prewarm = true;
     } else if (
       type === 'login'

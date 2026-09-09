@@ -74,7 +74,7 @@ function managedHarvesterConfigs() {
       atcMode: 'v1',
       browser: 'auto',
       proxyListName: loginRoute,
-      workers: 1,
+      workers: Math.max(1, Math.min(loginRoute ? 20 : 2, parseInt(loginRaw.workers, 10) || 1)),
       input: '',
       cookieTtlSec: Math.max(30, Math.min(86400, parseInt(loginRaw.cookieTtlSec, 10) || 600)),
       intervalDelaySec: Math.max(0, Math.min(3600, parseInt(loginRaw.intervalDelaySec, 10) || 0)),

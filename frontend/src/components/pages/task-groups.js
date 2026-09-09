@@ -81,18 +81,25 @@ const EMPTY_HARVESTER = Object.freeze({
 });
 
 const LOGIN_HARVESTER_ID = 'zyn-login';
+const LOGIN_HARVESTER_WORKER_MAXIMUM = 20;
 const EMPTY_LOGIN_HARVESTER = Object.freeze({
   proxyListName: '',
+  workers: '1',
   cookieTtlSec: '600',
   intervalDelaySec: '10',
   loadsPerBrowser: '3',
 });
-const normalizeLoginHarvester = raw => ({
-  proxyListName: String((raw && raw.proxyListName) || ''),
-  cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
-  intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
-  loadsPerBrowser: clampInteger(raw && raw.loadsPerBrowser, 1, 10, 3),
-});
+const loginWorkerMaximum = proxyListName => (String(proxyListName || '').trim() ? LOGIN_HARVESTER_WORKER_MAXIMUM : 2);
+const normalizeLoginHarvester = raw => {
+  const proxyListName = String((raw && raw.proxyListName) || '');
+  return {
+    proxyListName,
+    workers: clampInteger(raw && raw.workers, 1, loginWorkerMaximum(proxyListName), 1),
+    cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
+    intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
+    loadsPerBrowser: clampInteger(raw && raw.loadsPerBrowser, 1, 10, 3),
+  };
+};
 const isUserHarvester = harvester => harvester
   && harvester.type !== 'login'
   && String(harvester.id) !== LOGIN_HARVESTER_ID;
@@ -104,7 +111,7 @@ const HARVESTER_ENGINES = [
 const harvesterEngineOf = raw => (raw === 'patchright' ? 'patchright' : 'playwright');
 const harvesterModeLabel = engine => (engine === 'patchright' ? 'Experimental' : 'Default');
 const harvesterWorkerMaximum = ({ type, proxyListName }) => {
-  if (type === 'login') return 1;
+  if (type === 'login') return loginWorkerMaximum(proxyListName);
   return proxyListName ? 100 : 2;
 };
 
@@ -192,7 +199,7 @@ const normalizeHarvester = (raw, index = 0) => {
     atcMode: raw && raw.atcMode === 'v2' ? 'v2' : 'v1',
     browser: HARVESTER_BROWSERS.some(([value]) => value === (raw && raw.browser)) ? raw.browser : 'auto',
     proxyListName,
-    workers: type === 'login' ? 1 : clampInteger(raw && raw.workers, 1, harvesterWorkerMaximum({ type, engine, proxyListName }), 1),
+    workers: clampInteger(raw && raw.workers, 1, harvesterWorkerMaximum({ type, engine, proxyListName }), 1),
     input: String((raw && raw.input) || ''),
     cookieTtlSec: clampInteger(raw && raw.cookieTtlSec, 30, 86400, 600),
     intervalDelaySec: clampInteger(raw && raw.intervalDelaySec, 0, 3600, 10),
@@ -794,6 +801,7 @@ class TaskGroups extends Component {
     try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
     const current = normalizeLoginHarvester(settings.targetLoginHarvester);
     const unchanged = current.proxyListName === normalized.proxyListName
+      && current.workers === normalized.workers
       && current.cookieTtlSec === normalized.cookieTtlSec
       && current.intervalDelaySec === normalized.intervalDelaySec
       && current.loadsPerBrowser === normalized.loadsPerBrowser;
@@ -1873,6 +1881,19 @@ class TaskGroups extends Component {
             />
           </div>
           <div className="form-group">
+            <label className="form-label">Workers</label>
+            <input
+              className="form-input"
+              type="number"
+              min="1"
+              max={loginWorkerMaximum(draft.proxyListName)}
+              value={draft.workers}
+              onChange={event => this.setLoginHarvesterDraft({ workers: event.target.value })}
+              onBlur={event => this.saveLoginHarvesterField('workers', event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+            />
+          </div>
+          <div className="form-group">
             <label className="form-label">Cookie expiration (seconds)</label>
             <input
               className="form-input"
@@ -2526,8 +2547,10 @@ class TaskGroups extends Component {
               </div>
               <div className="form-group">
                 <label className="form-label">Workers</label>
-                <input className="form-input" type="number" min="1" max={workerMaximum} disabled={draft.type === 'login'} value={draft.type === 'login' ? '1' : draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
-                <div className="form-hint">Local is capped at 2; proxy harvesters allow up to 100.</div>
+                <input className="form-input" type="number" min="1" max={workerMaximum} value={draft.workers} onChange={event => setDraft({ workers: event.target.value })} />
+                <div className="form-hint">{draft.type === 'login'
+                  ? 'Local is capped at 2; proxy login harvesters allow up to 20.'
+                  : 'Local is capped at 2; proxy harvesters allow up to 100.'}</div>
               </div>
             </div>
             <div className="form-row">

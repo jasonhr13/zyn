@@ -19,10 +19,16 @@ const styles = read('frontend/src/App.css');
 assert.equal(helper.LOGIN_HARVESTER_ID, 'zyn-login');
 assert.deepEqual(helper.normalizeTargetLoginHarvester({}), {
   proxyListName: '',
+  workers: 1,
   cookieTtlSec: 600,
   intervalDelaySec: 10,
   loadsPerBrowser: 3,
 });
+assert.equal(helper.loginWorkerMaximum(''), 2);
+assert.equal(helper.loginWorkerMaximum('resi'), 20);
+assert.equal(helper.normalizeTargetLoginHarvester({ proxyListName: 'resi', workers: 8 }).workers, 8);
+assert.equal(helper.normalizeTargetLoginHarvester({ proxyListName: '', workers: 8 }).workers, 2);
+assert.equal(helper.normalizeTargetLoginHarvester({ proxyListName: 'resi', workers: 99 }).workers, 20);
 assert.equal(helper.normalizeTargetLoginHarvester({ cookieTtlSec: 12 }).cookieTtlSec, 30);
 assert.equal(helper.normalizeTargetLoginHarvester({ loadsPerBrowser: 99 }).loadsPerBrowser, 10);
 
@@ -37,6 +43,7 @@ const migrated = helper.readTargetLoginHarvesterSettings({
 });
 assert.deepEqual(migrated, {
   proxyListName: 'resi',
+  workers: 1,
   cookieTtlSec: 120,
   intervalDelaySec: 4,
   loadsPerBrowser: 2,
@@ -55,6 +62,9 @@ assert.equal(config.type, 'login');
 assert.equal(config.engine, 'playwright');
 assert.equal(config.browser, 'auto');
 assert.equal(config.workers, 1);
+assert.equal(helper.buildTargetLoginHarvesterConfig({
+  targetLoginHarvester: { proxyListName: 'group:resi', workers: 6 },
+}, true).workers, 6);
 assert.equal(config.startSchedule, '');
 assert.equal(config.enabled, true);
 assert.equal(config.proxyListName, 'group:resi');
@@ -114,6 +124,8 @@ assert.match(demandFragment, /login: basis === 'paused' \? 0 : Math\.min\(TARGET
 assert.match(demandFragment, /function setTargetLoginDemandTasks/);
 
 assert.match(ui, /LOGIN_HARVESTER_ID = 'zyn-login'/);
+assert.match(ui, /LOGIN_HARVESTER_WORKER_MAXIMUM = 20/);
+assert.match(ui, /saveLoginHarvesterField\('workers'/);
 assert.match(ui, /renderLoginHarvesterPanel/);
 assert.match(ui, /Zyn starts this automatically when a task needs to sign in/);
 assert.match(ui, /value: 'atc', label: 'Target ATC'/);
@@ -140,7 +152,7 @@ result = {
 explicitlyStartedHarvesterIds.add('zyn-login');
 setSettings({
   targetHarvesters: [{ id: 'atc-1', type: 'atc', workers: 2 }],
-  targetLoginHarvester: { proxyListName: 'resi', cookieTtlSec: 90, intervalDelaySec: 5, loadsPerBrowser: 2 },
+  targetLoginHarvester: { proxyListName: 'resi', cookieTtlSec: 90, intervalDelaySec: 5, loadsPerBrowser: 2, workers: 4 },
 });
 result.withLogin = managedHarvesterConfigs();
 `, sandbox);
@@ -152,7 +164,7 @@ const login = sandbox.result.withLogin.find(item => item.id === 'zyn-login');
 assert.ok(login);
 assert.equal(login.type, 'login');
 assert.equal(login.enabled, true);
-assert.equal(login.workers, 1);
+assert.equal(login.workers, 4);
 assert.equal(login.engine, 'playwright');
 assert.equal(login.proxyListName, 'resi');
 assert.equal(login.cookieTtlSec, 90);

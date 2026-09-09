@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.55",
+  "notes": [
+    "Login Shape harvest skips the homepage wait and stops as soon as the cookie is captured.",
+    "The Login harvester can run more than one worker so cookies fill faster.",
+    "Raise Login workers on a proxy list, up to 20, if you want more cookies per minute.",
+    "Local login harvest still caps at 2 workers; a proxy list is required for more."
+  ]
+}

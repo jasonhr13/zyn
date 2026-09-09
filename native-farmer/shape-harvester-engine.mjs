@@ -6,8 +6,10 @@ export function normalizeHarvesterEngine(value) {
   return String(value || '').trim().toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
 }
 
+export const LOGIN_HARVESTER_WORKER_MAXIMUM = 20;
+
 export function harvesterWorkerMaximum({ type, engine, proxyListName } = {}) {
-  if (type === 'login') return 1;
+  if (type === 'login') return proxyListName ? LOGIN_HARVESTER_WORKER_MAXIMUM : 2;
   return proxyListName ? 100 : 2;
 }
 
