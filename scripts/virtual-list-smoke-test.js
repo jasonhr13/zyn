@@ -60,10 +60,18 @@ assert.doesNotMatch(pokemon, /pokemon: state\.pokemon/);
 
 const styles = fs.readFileSync(path.join(root, 'frontend/src/App.css'), 'utf8');
 assert.match(styles, /\.virtual-list \{ overflow-x: hidden; overflow-y: auto/);
-assert.match(styles, /\.group-task-virtual \{ max-height:/);
+assert.match(styles, /overflow-anchor: none/);
+assert.match(styles, /\.virtual-list-space \{/);
+assert.match(styles, /\.group-task-virtual \{ flex:/);
 assert.match(styles, /\.site-task-virtual \{ max-height:/);
-assert.doesNotMatch(styles, /\.group-task-virtual \{ height:/);
+assert.doesNotMatch(styles, /max-height: calc\(100vh - 280px\)/);
 assert.doesNotMatch(styles, /\.site-task-virtual \{ height:/);
+assert.match(source, /virtual-list-space/);
+assert.match(source, /height < 32/);
+assert.match(source, /setTimeout\(this\.flushScroll, 32\)/);
+assert.match(taskGroups, /className="group-task-table"/);
+assert.match(taskGroups, /nextBank === previous\.bank && brokerStartRequestedAt === previous\.brokerStartRequestedAt/);
+assert.match(fs.readFileSync(path.join(root, 'frontend/src/components/target-otp-input.js'), 'utf8'), /autoFocus=\{large === true\}/);
 assert.match(styles, /\.inline-select-menu \{[\s\S]*z-index: 1100/);
 
 const store = fs.readFileSync(path.join(root, 'launcher/task-group-store.js'), 'utf8');

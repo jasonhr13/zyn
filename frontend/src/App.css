@@ -293,6 +293,12 @@
 .page-title-icon { color: var(--accent); }
 .page-actions { display: flex; gap: 6px; align-items: center; }
 .page-content { flex: 1; overflow-y: auto; padding: 24px 28px 28px; }
+.page-content.task-group-dashboard {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
 .btn {
@@ -642,9 +648,10 @@ body.theme-night .form-select {
 .inline-select-option:hover { background: var(--panel-hover); }
 .inline-select-option.selected { background: var(--accent-soft); color: var(--accent); }
 
-.virtual-list { overflow-x: hidden; overflow-y: auto; min-height: 0; }
-.virtual-list-pad { display: block; padding: 0; margin: 0; border: 0; pointer-events: none; }
-.group-task-virtual { max-height: calc(100vh - 280px); }
+.virtual-list { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; min-height: 0; }
+.virtual-list-space { position: relative; width: 100%; overflow: hidden; pointer-events: none; }
+.virtual-list-window { position: absolute; left: 0; right: 0; pointer-events: auto; }
+.group-task-virtual { flex: 1 1 auto; min-height: 140px; }
 .site-task-panel { margin: 0; overflow: hidden; }
 .site-task-head {
   padding: 9px 12px; border-bottom: 1px solid var(--panel-border);
@@ -652,8 +659,8 @@ body.theme-night .form-select {
 }
 .site-task-virtual { max-height: calc(100vh - 260px); }
 .site-task-row {
-  min-height: 46px; padding: 6px 12px; align-items: center; font-size: 11px;
-  border-bottom: 1px solid var(--panel-border); box-sizing: border-box;
+  height: 46px; max-height: 46px; min-height: 46px; padding: 6px 12px; align-items: center; font-size: 11px;
+  border-bottom: 1px solid var(--panel-border); box-sizing: border-box; overflow: hidden;
 }
 .site-task-row.is-selected { background: rgba(96,165,250,0.13); }
 .site-task-row:last-child { border-bottom: 0; }
@@ -840,7 +847,7 @@ body.theme-night .form-select {
 .shape-harvest-primary-row > .form-group > .form-input { align-self: end; }
 
 /* ── Unified Tasks workspace ────────────────────────────────────────────────── */
-.tasks-workspace { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+.tasks-workspace { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
 .task-groups-content,
 .task-group-dashboard,
 .task-detail-content { max-width: 1480px; width: 100%; margin: 0 auto; }
@@ -1600,7 +1607,20 @@ body.theme-night .form-select {
 .group-config-strip span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .group-config-strip strong { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--text2); font-size: 10.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.group-task-panel { margin-bottom: 0; }
+.group-task-panel {
+  margin-bottom: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.group-task-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .group-task-toolbar {
   min-height: 46px; display: grid; grid-template-columns: minmax(140px, 1fr) auto minmax(180px, 1fr);
   align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border);
@@ -1638,6 +1658,15 @@ body.theme-night .form-select {
   font-size: 10.5px;
   cursor: pointer;
 }
+.group-task-row:not(.group-task-table-head) {
+  height: 46px;
+  max-height: 46px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.group-task-row .target-otp-message { display: none; }
+.group-task-row .target-otp-control { gap: 0; }
+.group-task-row .target-otp-inline { height: 28px; }
 .group-task-row:last-child { border-bottom: 0; }
 .group-task-row:not(.group-task-table-head):hover { background: var(--panel-hover); }
 .group-task-row-clickable:focus-visible { outline: 1px solid var(--accent-border); outline-offset: -2px; background: var(--panel-hover); }
@@ -1818,6 +1847,7 @@ body.theme-night .form-select {
 
 /* Shared farmer / monitor / engine lifecycle log on Task Groups (replaced the old Target page). */
 .engine-log-panel { margin-top: 14px; margin-bottom: 14px; }
+.engine-log-panel-dashboard { flex: 0 0 auto; }
 .engine-log-panel-dashboard .engine-log-view { height: 260px; }
 .engine-log-panel-detail .engine-log-view { height: 220px; margin-top: 0; }
 .engine-log-heading { gap: 12px; }

@@ -39,6 +39,7 @@ export default class VirtualList extends Component {
   state = { scrollTop: 0, height: 0 };
   box = createRef();
   scrollFrame = 0;
+  scrollTimer = 0;
   pendingScrollTop = 0;
 
   componentDidMount() {
@@ -50,39 +51,61 @@ export default class VirtualList extends Component {
   }
 
   componentDidUpdate(prevProps) {
+    const el = this.box.current;
+    const size = Math.max(1, Number(this.props.rowHeight) || TASK_ROW_HEIGHT);
+    const maxScroll = Math.max(0, Math.max(0, this.props.count | 0) * size - (this.state.height || 0));
+    if (this.pendingScrollTop > maxScroll) this.pendingScrollTop = maxScroll;
+    // RDP/compositor frames can collapse clientHeight and clamp scrollTop to 0.
+    // Put the user back where the last scroll event said they were.
+    if (el && this.pendingScrollTop > 0 && Math.abs(el.scrollTop - this.pendingScrollTop) > 1) {
+      el.scrollTop = this.pendingScrollTop;
+    }
     if (prevProps.count !== this.props.count) this.measure();
   }
 
   componentWillUnmount() {
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
   }
 
   measure = () => {
     const el = this.box.current;
     if (!el) return;
     const height = el.clientHeight;
+    // Windows Server / RDP often reports 0 during a DWM frame. Treating that as
+    // a real resize remounts the window at the top of the list.
+    if (height < 32) return;
     if (height !== this.state.height) this.setState({ height });
+  };
+
+  flushScroll = () => {
+    this.scrollFrame = 0;
+    if (this.scrollTimer) {
+      clearTimeout(this.scrollTimer);
+      this.scrollTimer = 0;
+    }
+    const next = Math.max(0, this.pendingScrollTop);
+    if (this.state.scrollTop !== next) this.setState({ scrollTop: next });
   };
 
   onScroll = event => {
     this.pendingScrollTop = event.currentTarget.scrollTop;
     if (this.scrollFrame) return;
-    this.scrollFrame = requestAnimationFrame(() => {
-      this.scrollFrame = 0;
-      if (this.state.scrollTop !== this.pendingScrollTop) {
-        this.setState({ scrollTop: this.pendingScrollTop });
-      }
-    });
+    this.scrollFrame = requestAnimationFrame(this.flushScroll);
+    // Occluded Chromium (RDP) can stall rAF; the timer still advances the window.
+    this.scrollTimer = setTimeout(this.flushScroll, 32);
   };
 
   render() {
     const { count, rowHeight, overscan, className, estimatedHeight, renderRow } = this.props;
+    const size = Math.max(1, Number(rowHeight) || TASK_ROW_HEIGHT);
+    const total = Math.max(0, count | 0);
     const range = visibleListWindow({
-      scrollTop: this.state.scrollTop,
+      scrollTop: this.pendingScrollTop,
       viewportHeight: this.state.height || estimatedHeight,
-      count,
-      rowHeight,
+      count: total,
+      rowHeight: size,
       overscan,
     });
     const rows = [];
@@ -91,9 +114,14 @@ export default class VirtualList extends Component {
     }
     return (
       <div className={className} ref={this.box} onScroll={this.onScroll}>
-        {range.padTop > 0 && <div className="virtual-list-pad" style={{ height: range.padTop }} aria-hidden="true" />}
-        {rows}
-        {range.padBottom > 0 && <div className="virtual-list-pad" style={{ height: range.padBottom }} aria-hidden="true" />}
+        <div className="virtual-list-space" style={{ height: total * size }}>
+          <div
+            className="virtual-list-window"
+            style={{ top: range.start * size }}
+          >
+            {rows}
+          </div>
+        </div>
       </div>
     );
   }

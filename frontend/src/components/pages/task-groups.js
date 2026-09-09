@@ -737,14 +737,20 @@ class TaskGroups extends Component {
   pollBank = () => {
     ipcRenderer.invoke('targetCookieBank')
       .then(bank => this.setState(previous => {
-        const checkedAt = Date.now();
+        const nextBank = sameTargetBank(previous.bank, bank) ? previous.bank : bank;
+        const brokerStartRequestedAt = bank ? 0 : previous.brokerStartRequestedAt;
+        if (nextBank === previous.bank && brokerStartRequestedAt === previous.brokerStartRequestedAt) {
+          return null;
+        }
         return {
-          bank: sameTargetBank(previous.bank, bank) ? previous.bank : bank,
-          bankCheckedAt: checkedAt,
-          brokerStartRequestedAt: bank ? 0 : previous.brokerStartRequestedAt,
+          bank: nextBank,
+          bankCheckedAt: Date.now(),
+          brokerStartRequestedAt,
         };
       }))
-      .catch(() => this.setState({ bank: null, bankCheckedAt: Date.now() }));
+      .catch(() => this.setState(previous => (
+        previous.bank == null ? null : { bank: null, bankCheckedAt: Date.now() }
+      )));
   };
 
   saveAtcCookiesPerTask = () => {
@@ -2384,7 +2390,7 @@ class TaskGroups extends Component {
             {(group.tasks || []).length === 0 ? (
               <div className="group-tasks-empty"><span><Icon name="user" size={19} /></span><h3>No account tasks yet</h3><p>Add Target accounts to this group. Their checkout profiles are matched automatically by email.</p><button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}>Add Tasks</button></div>
             ) : (
-              <div>
+              <div className="group-task-table">
                 {selectedInGroup.length > 0 && (
                   <div className="group-task-bulk-bar">
                     <strong>{selectedInGroup.length} selected</strong>
@@ -2425,6 +2431,7 @@ class TaskGroups extends Component {
                 </div>
                 {visibleTasks.length ? (
                   <VirtualList
+                    key={group.id}
                     className="virtual-list group-task-virtual"
                     count={visibleTasks.length}
                     rowHeight={TASK_ROW_HEIGHT}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.56",
+  "notes": [
+    "Long Target task lists keep their scroll position instead of jumping back to the top.",
+    "Task rows no longer flash in and out while statuses update over Remote Desktop.",
+    "The task list is the only scroller, so the wheel stays on the accounts you are managing.",
+    "Cookie-bank polling no longer redraws the whole task page when nothing changed."
+  ]
+}

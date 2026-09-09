@@ -77,7 +77,7 @@ export default class TargetOtpInput extends Component {
             autoComplete="one-time-code"
             autoCorrect="off"
             spellCheck={false}
-            autoFocus
+            autoFocus={large === true}
             maxLength={6}
             placeholder={submitting ? 'Sending' : '123456'}
             aria-label={`Code for ${request.email}`}
