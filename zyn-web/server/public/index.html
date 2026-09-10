@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zyn Full Engine</title>
+  <link rel="stylesheet" href="/ui/app.css" />
+</head>
+<body>
+  <div id="login" class="gate" hidden>
+    <form id="login-form" class="gate-card">
+      <div class="gate-badge">ZYN<span>AIO</span></div>
+      <h1 id="login-title">Sign in to ZynAIO</h1>
+      <p id="login-copy">Use the same Zyn email and password as the desktop app. This host is Full Engine.</p>
+      <div id="login-fields">
+        <input name="email" type="email" autocomplete="username" placeholder="Email" aria-label="Email" />
+        <input name="password" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" />
+      </div>
+      <div id="reset-fields" hidden>
+        <input name="newPassword" type="password" autocomplete="new-password" placeholder="New password (10+ characters)" aria-label="New password" />
+        <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirm new password" aria-label="Confirm new password" />
+      </div>
+      <p id="login-error" class="error" hidden></p>
+      <button id="login-submit" type="submit">Sign in</button>
+      <button id="login-back" type="button" hidden>Back to sign in</button>
+    </form>
+  </div>
+  <div id="workspace" hidden>
+    <header>
+      <strong>Zyn</strong>
+      <span>Full Engine</span>
+      <span id="who" class="muted"></span>
+      <span id="health" class="pill">connecting</span>
+      <button id="logout" type="button">Sign out</button>
+    </header>
+    <nav id="nav" class="tabs">
+      <button type="button" data-tab="run" class="active">Run</button>
+      <button type="button" data-tab="groups">Groups</button>
+      <button type="button" data-tab="profiles">Profiles</button>
+      <button type="button" data-tab="accounts">Accounts</button>
+      <button type="button" data-tab="proxies">Proxies</button>
+      <button type="button" data-tab="backup">Backup</button>
+    </nav>
+    <main>
+      <section data-panel="run">
+        <h2>Cookie bank</h2>
+        <p id="bank">login 0 · ATC 0</p>
+        <p id="harvest" class="muted">Harvest room idle</p>
+      </section>
+      <section data-panel="run">
+        <h2>Target groups</h2>
+        <div id="groups"></div>
+        <button id="stop-target" type="button">Stop Target</button>
+      </section>
+      <section data-panel="run">
+        <h2>Pokémon Center</h2>
+        <p id="pokemon-meta"></p>
+        <button id="start-pokemon" type="button">Start Pokémon Center</button>
+        <button id="stop-pokemon" type="button">Stop Pokémon Center</button>
+      </section>
+      <section data-panel="run">
+        <h2>OTP</h2>
+        <p id="otp-status" class="muted">IMAP polls the profile mailbox when Target asks for a code. You can still paste one here.</p>
+        <div id="otp-pending"></div>
+        <form id="otp">
+          <input name="email" placeholder="email" autocomplete="username" />
+          <input name="code" placeholder="code" autocomplete="one-time-code" />
+          <button type="submit">Send code</button>
+        </form>
+      </section>
+      <section data-panel="run">
+        <h2>Engine events</h2>
+        <pre id="events"></pre>
+      </section>
+
+      <section data-panel="groups" hidden>
+        <h2>Edit Target group</h2>
+        <form id="group-form" class="stack">
+          <input name="id" type="hidden" />
+          <input name="name" placeholder="Group name" required />
+          <textarea name="skus" rows="4" placeholder="SKUs, one per line"></textarea>
+          <div class="row">
+            <input name="qty" type="number" min="1" max="99" value="2" aria-label="Quantity" />
+            <select name="proxyListName" aria-label="Proxy list"></select>
+          </div>
+          <label class="check"><input name="loopCheckout" type="checkbox" /> Loop checkout</label>
+          <label class="check"><input name="useFillerItem" type="checkbox" /> Filler item</label>
+          <label class="check"><input name="tasksFromAccounts" type="checkbox" /> One task per Target account (matching profile email)</label>
+          <div class="row">
+            <button type="submit">Save group</button>
+            <button id="group-new" type="button">New</button>
+          </div>
+        </form>
+        <div id="group-list"></div>
+      </section>
+
+      <section data-panel="profiles" hidden>
+        <h2>Profile</h2>
+        <form id="profile-form" class="stack">
+          <input name="id" type="hidden" />
+          <input name="profileName" placeholder="Profile name" required />
+          <input name="email" type="email" placeholder="Email" />
+          <input name="phone" placeholder="Phone" />
+          <div class="row">
+            <input name="firstName" placeholder="First name" />
+            <input name="lastName" placeholder="Last name" />
+          </div>
+          <input name="address" placeholder="Address" />
+          <input name="address2" placeholder="Address 2" />
+          <div class="row">
+            <input name="city" placeholder="City" />
+            <input name="state" placeholder="State" />
+            <input name="zipcode" placeholder="ZIP" />
+          </div>
+          <input name="cardName" placeholder="Name on card" />
+          <input name="cardNumber" placeholder="Card number" autocomplete="off" />
+          <div class="row">
+            <input name="cardMonth" placeholder="MM" maxlength="2" />
+            <input name="cardYear" placeholder="YYYY" maxlength="4" />
+            <input name="cardCvv" placeholder="CVV" maxlength="4" autocomplete="off" />
+          </div>
+          <input name="imapHost" placeholder="IMAP host (imap.gmail.com)" />
+          <input name="imapUser" placeholder="IMAP username" />
+          <input name="imapPass" type="password" placeholder="IMAP app password" autocomplete="off" />
+          <div class="row">
+            <button type="submit">Save profile</button>
+            <button id="profile-new" type="button">New</button>
+          </div>
+        </form>
+        <div id="profile-list"></div>
+      </section>
+
+      <section data-panel="accounts" hidden>
+        <h2>Target accounts</h2>
+        <form id="account-bulk" class="stack">
+          <textarea name="raw" rows="6" placeholder="email:password, one per line"></textarea>
+          <button type="submit">Add accounts</button>
+        </form>
+        <div id="account-list"></div>
+      </section>
+
+      <section data-panel="proxies" hidden>
+        <h2>Proxy list</h2>
+        <form id="proxy-form" class="stack">
+          <input name="name" placeholder="List name" required />
+          <textarea name="raw" rows="8" placeholder="host:port:user:pass, one per line"></textarea>
+          <div class="row">
+            <button type="submit">Save list</button>
+            <button id="proxy-new" type="button">New</button>
+          </div>
+        </form>
+        <div id="proxy-list"></div>
+      </section>
+
+      <section data-panel="backup" hidden>
+        <h2>Encrypted cloud backup</h2>
+        <p class="muted">Same recovery key as desktop Settings → Encrypted backup. Restore writes the same JSON files this host uses for Target.</p>
+        <p id="backup-status" class="muted">Backup idle</p>
+        <form id="backup-key" class="stack">
+          <input name="recoveryKey" placeholder="RCART1.… recovery key" autocomplete="off" />
+          <button type="submit">Import recovery key</button>
+        </form>
+        <div class="row">
+          <button id="backup-list" type="button">List cloud backups</button>
+          <select id="backup-mode">
+            <option value="merge">Merge</option>
+            <option value="replace">Replace</option>
+          </select>
+        </div>
+        <div id="backup-list-view"></div>
+        <h2>Import a file</h2>
+        <form id="backup-file" class="stack">
+          <input name="file" type="file" accept=".json,.rcb,application/json" />
+          <input name="recoveryKey" placeholder="Recovery key (only for .rcb)" autocomplete="off" />
+          <button type="submit">Import file</button>
+        </form>
+        <p id="backup-msg" class="muted"></p>
+      </section>
+    </main>
+  </div>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

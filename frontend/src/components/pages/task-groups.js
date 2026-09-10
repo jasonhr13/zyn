@@ -80,15 +80,7 @@ const EMPTY_HARVESTER = Object.freeze({
   enabled: false,
 });
 
-const LOGIN_HARVESTER_ID = 'zyn-login';
 const LOGIN_HARVESTER_WORKER_MAXIMUM = 20;
-const EMPTY_LOGIN_HARVESTER = Object.freeze({
-  proxyListName: '',
-  workers: '1',
-  cookieTtlSec: '600',
-  intervalDelaySec: '10',
-  loadsPerBrowser: '3',
-});
 const loginWorkerMaximum = proxyListName => (String(proxyListName || '').trim() ? LOGIN_HARVESTER_WORKER_MAXIMUM : 2);
 const normalizeLoginHarvester = raw => {
   const proxyListName = String((raw && raw.proxyListName) || '');
@@ -100,9 +92,7 @@ const normalizeLoginHarvester = raw => {
     loadsPerBrowser: clampInteger(raw && raw.loadsPerBrowser, 1, 10, 3),
   };
 };
-const isUserHarvester = harvester => harvester
-  && harvester.type !== 'login'
-  && String(harvester.id) !== LOGIN_HARVESTER_ID;
+const isUserHarvester = harvester => Boolean(harvester && harvester.id);
 
 const HARVESTER_ENGINES = [
   ['playwright', 'Default'],
@@ -636,7 +626,6 @@ class TaskGroups extends Component {
     brokerStartRequestedAt: 0,
     atcCookiesPerTask: String(DEFAULT_ATC_COOKIES_PER_TASK),
     harvesters: [],
-    loginHarvester: { ...EMPTY_LOGIN_HARVESTER },
     harvesterDrawerOpen: initialHarvesterDrawerOpen(),
     showHarvesterModal: false,
     editingHarvesterId: '',
@@ -681,32 +670,30 @@ class TaskGroups extends Component {
     let groups = [];
     let atcCookiesPerTask = String(DEFAULT_ATC_COOKIES_PER_TASK);
     let harvesters = [];
-    let loginHarvester = { ...EMPTY_LOGIN_HARVESTER };
     let migratedSettings = null;
     try { groups = ipcRenderer.sendSync('getTaskGroups') || []; } catch {}
     try {
       const settings = ipcRenderer.sendSync('getSettings') || {};
       atcCookiesPerTask = normalizeAtcCookiesPerTask(settings.targetAtcCookiesPerTask);
-      loginHarvester = normalizeLoginHarvester(settings.targetLoginHarvester);
       if (Array.isArray(settings.targetHarvesters)) {
-        const raw = settings.targetHarvesters.map(normalizeHarvester);
-        const leftoverLogin = raw.find(item => !isUserHarvester(item));
-        harvesters = raw.filter(isUserHarvester);
-        if (!settings.targetLoginHarvester && leftoverLogin) {
-          loginHarvester = normalizeLoginHarvester(leftoverLogin);
-        }
-        if (raw.length !== harvesters.length || !settings.targetLoginHarvester) {
-          migratedSettings = { ...settings, targetHarvesters: harvesters, targetLoginHarvester: loginHarvester };
-          ipcRenderer.sendSync('saveSettings', migratedSettings);
-        }
+        harvesters = settings.targetHarvesters.map(normalizeHarvester).filter(isUserHarvester);
       } else {
-        // Absence means exactly that: the user has not created a harvester. Persist an explicit
-        // empty list so neither a fresh install nor an older settings file can fall through to the
-        // retired task-owned farmer and begin using bandwidth merely because a task was added.
         harvesters = [];
-        migratedSettings = { ...settings, targetHarvesters: harvesters, targetLoginHarvester: loginHarvester };
-        ipcRenderer.sendSync('saveSettings', migratedSettings);
+        migratedSettings = { ...settings, targetHarvesters: harvesters };
       }
+      const hasLogin = harvesters.some(item => item.type === 'login');
+      const legacyLogin = normalizeLoginHarvester(settings.targetLoginHarvester);
+      if (!hasLogin && legacyLogin.proxyListName) {
+        harvesters = harvesters.concat(normalizeHarvester({
+          id: 'harvester-login',
+          name: 'Login',
+          type: 'login',
+          ...legacyLogin,
+          enabled: false,
+        }, harvesters.length));
+        migratedSettings = { ...(migratedSettings || settings), targetHarvesters: harvesters };
+      }
+      if (migratedSettings) ipcRenderer.sendSync('saveSettings', migratedSettings);
     } catch {}
     if (migratedSettings) {
       this.props.dispatch({ type: 'update', obj: { settings: migratedSettings } });
@@ -717,7 +704,6 @@ class TaskGroups extends Component {
       loaded: true,
       atcCookiesPerTask,
       harvesters,
-      loginHarvester,
       selectedGroupId: groups.some(group => group.id === selectedGroupId) ? selectedGroupId : '',
       selectedTaskId: groups.some(group => (group.tasks || []).some(task => task.id === selectedTaskId))
         ? selectedTaskId : '',
@@ -783,7 +769,7 @@ class TaskGroups extends Component {
     const next = {
       ...settings,
       targetHarvesters: normalized,
-      targetLoginHarvester: normalizeLoginHarvester(this.state.loginHarvester),
+      targetLoginHarvester: normalizeLoginHarvester(normalized.find(item => item.type === 'login') || {}),
       // Keep the legacy keys synchronized so cloud backups remain readable by the previous build.
       targetHarvesterProxyList: first ? first.proxyListName : '',
       targetHarvestWorkers: first ? String(first.workers) : '',
@@ -801,72 +787,7 @@ class TaskGroups extends Component {
     });
   };
 
-  persistLoginHarvester = (loginHarvester, callback) => {
-    const normalized = normalizeLoginHarvester(loginHarvester);
-    let settings = this.props.settings || {};
-    try { settings = ipcRenderer.sendSync('getSettings') || settings; } catch {}
-    const current = normalizeLoginHarvester(settings.targetLoginHarvester);
-    const unchanged = current.proxyListName === normalized.proxyListName
-      && current.workers === normalized.workers
-      && current.cookieTtlSec === normalized.cookieTtlSec
-      && current.intervalDelaySec === normalized.intervalDelaySec
-      && current.loadsPerBrowser === normalized.loadsPerBrowser;
-    this.setState({ loginHarvester: normalized }, () => {
-      if (unchanged) {
-        try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
-        if (callback) callback();
-        return;
-      }
-      const next = { ...settings, targetLoginHarvester: normalized };
-      try { ipcRenderer.sendSync('saveSettings', next); } catch {}
-      this.props.dispatch({ type: 'update', obj: { settings: next } });
-      try { ipcRenderer.sendSync('syncTargetHarvesters'); } catch {}
-      if (callback) callback();
-    });
-  };
-
   userHarvesters = () => this.state.harvesters.filter(isUserHarvester);
-
-  loginHarvesterLikelyNeeded = () => {
-    const target = liveTarget();
-    if (Array.isArray(target.otpPending) && target.otpPending.length) return true;
-    const statuses = target.taskStatus || {};
-    for (const group of this.state.groups) {
-      for (const task of (group.tasks || [])) {
-        const status = statuses[task.id];
-        if (!targetTaskIsRunning(status)) continue;
-        if (!accountHasSession(this.accountFor(task))) return true;
-        const text = `${(status && status.label) || ''} ${(status && status.state) || ''}`;
-        if (/\b(?:getting session|logging in|\blogin\b|requesting login code|waiting for code|submitting code|validating login|waiting for shape)\b/i.test(text)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  loginHarvesterPanelState = () => {
-    const loginHarvester = this.state.loginHarvester;
-    if (!this.harvesterProxyAvailable(loginHarvester)) {
-      return { kind: 'error', label: 'Proxy unavailable' };
-    }
-    const runtime = this.harvesterRuntimeFor(LOGIN_HARVESTER_ID);
-    if (runtime && (Number(runtime.activeWorkers) || 0) > 0) {
-      return { kind: 'running', label: 'Running automatically' };
-    }
-    if (runtime || this.loginHarvesterLikelyNeeded()) {
-      return { kind: 'running', label: 'Starting' };
-    }
-    return { kind: 'idle', label: 'Idle' };
-  };
-
-  setLoginHarvesterDraft = patch => {
-    this.setState({ loginHarvester: { ...this.state.loginHarvester, ...patch } });
-  };
-
-  saveLoginHarvesterField = (field, value) => {
-    this.persistLoginHarvester({ ...this.state.loginHarvester, [field]: value });
-  };
 
   openNewHarvester = () => this.setState({
     showHarvesterModal: true,
@@ -911,7 +832,7 @@ class TaskGroups extends Component {
       window.alert('Stop Schedule must be later than Start Schedule.');
       return;
     }
-    const type = draft.type === 'auto' ? 'auto' : 'atc';
+    const type = ['login', 'atc', 'auto'].includes(draft.type) ? draft.type : 'atc';
     const requestedWorkers = clampInteger(draft.workers, 1, harvesterWorkerMaximum({ ...draft, type }), 1);
     const harvester = normalizeHarvester({
       ...draft,
@@ -1855,94 +1776,6 @@ class TaskGroups extends Component {
       : { kind: 'running', label: 'Detecting browsers' };
   };
 
-  renderLoginHarvesterPanel(compact = false) {
-    const draft = this.state.loginHarvester;
-    const state = this.loginHarvesterPanelState();
-    const proxyMissing = draft.proxyListName && !this.harvesterProxyAvailable(draft);
-    return (
-      <section
-        className={`target-login-harvester${compact ? ' target-login-harvester-compact' : ''} target-login-harvester-${state.kind}`}
-        aria-label="Login harvester"
-      >
-        <header className="target-login-harvester-head">
-          <span className="target-login-harvester-icon"><Icon name="key" size={compact ? 14 : 16} /></span>
-          <span>
-            <h2>Login harvester</h2>
-            <p>Zyn starts this automatically when a task needs to sign in, and stops it when Shape and OTP waits are finished.</p>
-          </span>
-          <span className={`group-status group-status-${state.kind}`}><span className="group-status-dot" />{state.label}</span>
-        </header>
-        <div className="target-login-harvester-fields">
-          <div className="form-group">
-            <label className="form-label">Proxy</label>
-            <InlineSelect
-              className="form-select"
-              value={draft.proxyListName}
-              placeholder="Local (no proxy)"
-              options={[
-                ...this.proxySelectOptions({ localLabel: 'Local (no proxy)' }),
-                ...(proxyMissing ? [{ value: draft.proxyListName, label: `Unavailable: ${draft.proxyListName}` }] : []),
-              ]}
-              onChange={proxyListName => this.saveLoginHarvesterField('proxyListName', proxyListName)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Workers</label>
-            <input
-              className="form-input"
-              type="number"
-              min="1"
-              max={loginWorkerMaximum(draft.proxyListName)}
-              value={draft.workers}
-              onChange={event => this.setLoginHarvesterDraft({ workers: event.target.value })}
-              onBlur={event => this.saveLoginHarvesterField('workers', event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" title="Cookie lifetime in seconds">Cookie TTL</label>
-            <input
-              className="form-input"
-              type="number"
-              min="30"
-              max="86400"
-              value={draft.cookieTtlSec}
-              onChange={event => this.setLoginHarvesterDraft({ cookieTtlSec: event.target.value })}
-              onBlur={event => this.saveLoginHarvesterField('cookieTtlSec', event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" title="Pause between harvest attempts, in seconds">Interval</label>
-            <input
-              className="form-input"
-              type="number"
-              min="0"
-              max="3600"
-              value={draft.intervalDelaySec}
-              onChange={event => this.setLoginHarvesterDraft({ intervalDelaySec: event.target.value })}
-              onBlur={event => this.saveLoginHarvesterField('intervalDelaySec', event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" title="Successful harvests before Zyn launches a fresh browser">Refresh every</label>
-            <input
-              className="form-input"
-              type="number"
-              min="1"
-              max="10"
-              value={draft.loadsPerBrowser}
-              onChange={event => this.setLoginHarvesterDraft({ loadsPerBrowser: event.target.value })}
-              onBlur={event => this.saveLoginHarvesterField('loadsPerBrowser', event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-            />
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   harvestOnly = () => this.props.harvestOnly === true;
 
   renderRemoteHarvestStatus() {
@@ -1994,7 +1827,7 @@ class TaskGroups extends Component {
       <div className="target-harvester-empty">
         <Icon name="cookie" size={20} />
         <span>No harvesters configured</span>
-        <small>Create an ATC or Automatic harvester. Cookies are sent to your Full Engine Zyn, not used for checkout here.</small>
+        <small>Create a Login, ATC, or Automatic harvester. Cookies are sent to your Full Engine Zyn, not used for checkout here.</small>
       </div>
     ) : (
       <div className="target-harvester-list">
@@ -2006,7 +1839,9 @@ class TaskGroups extends Component {
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
-          const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
+          const typeLabel = harvester.type === 'login'
+            ? 'Target Login'
+            : harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
           const modeLabel = harvesterModeLabel(harvester.engine);
           return (
             <article className={`target-harvester-card target-harvester-card-${state.kind}`} key={harvester.id}>
@@ -2055,7 +1890,6 @@ class TaskGroups extends Component {
               <span><strong>{bank.atc}</strong><small>ATC</small></span>
             </span>
           </section>
-          {this.renderLoginHarvesterPanel(true)}
           <div className="workspace-section-heading">
             <div><h2>Harvesters</h2><p>Start workers on this machine. They feed the Full Engine cookie bank, not local tasks.</p></div>
           </div>
@@ -2082,7 +1916,6 @@ class TaskGroups extends Component {
     const remoteCopy = remoteHarvesterCopy(remote);
     const open = this.state.harvesterDrawerOpen;
     const configuredHarvesterIds = new Set(userHarvesters.map(item => String(item.id)));
-    configuredHarvesterIds.add(LOGIN_HARVESTER_ID);
     const runtimeHarvesters = this.state.bank && Array.isArray(this.state.bank.harvesters)
       ? this.state.bank.harvesters.filter(item => configuredHarvesterIds.has(String(item && item.id))) : [];
     const bandwidthSummary = targetBandwidthSummary(runtimeHarvesters, Date.now());
@@ -2104,7 +1937,7 @@ class TaskGroups extends Component {
       <div className="target-harvester-empty">
         <Icon name="cookie" size={20} />
         <span>No harvesters configured</span>
-        <small>Create an ATC or Automatic harvester to feed the shared bank.</small>
+        <small>Create a Login, ATC, or Automatic harvester to feed the shared bank.</small>
       </div>
     ) : (
       <div className="target-harvester-list">
@@ -2116,7 +1949,9 @@ class TaskGroups extends Component {
             ? `${runtime ? Number(runtime.activeWorkers) || 0 : 0}/${harvester.workers}`
             : `${harvester.workers} configured`;
           const atcModeLabel = harvester.atcMode === 'v2' ? 'ATC+' : 'ATC';
-          const typeLabel = harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
+          const typeLabel = harvester.type === 'login'
+            ? 'Target Login'
+            : harvester.type === 'atc' ? `Target ${atcModeLabel}` : `Automatic (${atcModeLabel})`;
           const modeLabel = harvesterModeLabel(harvester.engine);
           const schedule = harvester.startSchedule || harvester.stopSchedule
             ? `${harvester.startSchedule ? new Date(harvester.startSchedule).toLocaleString() : 'Now'} → ${harvester.stopSchedule ? new Date(harvester.stopSchedule).toLocaleString() : 'No stop'}`
@@ -2264,7 +2099,6 @@ class TaskGroups extends Component {
                 <button className="btn btn-primary btn-sm" onClick={this.openNewHarvester}><Icon name="plus" size={12} /> New Harvester</button>
               </div>
               <div className="target-harvester-drawer-content">
-                {this.renderLoginHarvesterPanel(true)}
                 {list}
               </div>
             </aside>
@@ -2299,7 +2133,6 @@ class TaskGroups extends Component {
         </div>
         <div className="page-content task-groups-content">
           {this.renderMetrics()}
-          {this.renderLoginHarvesterPanel()}
           <div className="workspace-section-heading">
             <div><h2>Target task groups</h2><p>Your watch lists, accounts, and tasks. Ready when you are.</p></div>
             {this.state.groups.length > 0 && (
@@ -2481,12 +2314,13 @@ class TaskGroups extends Component {
                   className="form-select"
                   value={draft.type}
                   options={[
+                    { value: 'login', label: 'Target Login' },
                     { value: 'atc', label: 'Target ATC' },
                     { value: 'auto', label: 'Automatic (Login + ATC)' },
                   ]}
                   onChange={type => setDraft({ type })}
                 />
-                <div className="form-hint">ATC uses the product rotation below. Login is configured on the Target page and starts automatically.</div>
+                <div className="form-hint">Login farms sign-in Shape cookies. ATC farms add-to-cart cookies. Automatic does both.</div>
               </div>
               <div className="form-group">
                 <label className="form-label">Browser</label>

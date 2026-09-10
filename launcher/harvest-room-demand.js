@@ -13,18 +13,21 @@ function remainingOf(absolute, filled) {
   return Math.max(0, filledCount(absolute) - filledCount(filled));
 }
 
-function remainingHarvestTargets({ current = {}, targets = {} } = {}) {
+function remainingHarvestTargets({ current = {}, targets = {}, waiting = {} } = {}) {
   const abs = targets && typeof targets === 'object' ? targets : {};
   const have = current && typeof current === 'object' ? current : {};
+  const wait = waiting && typeof waiting === 'object' ? waiting : {};
+  const login = remainingOf(
+    Object.prototype.hasOwnProperty.call(abs, 'login') ? abs.login : 0,
+    have.login,
+  );
+  const atc = remainingOf(
+    Object.prototype.hasOwnProperty.call(abs, 'atc') ? abs.atc : 0,
+    have.atc,
+  );
   return {
-    login: remainingOf(
-      Object.prototype.hasOwnProperty.call(abs, 'login') ? abs.login : 0,
-      have.login,
-    ),
-    atc: remainingOf(
-      Object.prototype.hasOwnProperty.call(abs, 'atc') ? abs.atc : 0,
-      have.atc,
-    ),
+    login: login === null ? null : Math.max(login, filledCount(wait.login)),
+    atc: atc === null ? null : Math.max(atc, filledCount(wait.atc)),
   };
 }
 

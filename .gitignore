@@ -23,6 +23,9 @@ frontend/build/
 launcher/node_modules/
 runtime-app/node_modules/
 bot-runtime/node_modules/
+zyn-web/node_modules/
+zyn-web/data/
+zyn-web/server/imap-client.mjs
 release-tools/
 
 # Packaged applications, installers, downloaded runtimes, and staging output

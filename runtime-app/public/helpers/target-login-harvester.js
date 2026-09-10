@@ -1,7 +1,8 @@
 'use strict';
 
-// Singleton Target login harvester. Users configure proxy, workers, cookie TTL, interval delay, and
-// browser refresh. Zyn hardcodes the rest and starts/stops the producer from checkout demand.
+// Target login harvester helpers. Users create a type=login harvester and click Start/Stop the same
+// way they do for ATC. Checkout demand still tracks who needs a sign-in cookie; it does not spawn
+// a hidden producer.
 
 const LOGIN_HARVESTER_ID = 'zyn-login';
 const LOGIN_HARVESTER_NAME = 'Login';
@@ -81,8 +82,10 @@ function loginHarvesterShouldRun({
   latchedTaskIds = [],
   otpPending = false,
   statuses = {},
+  remoteLoginDemand = 0,
 } = {}) {
   if (authorized !== true) return false;
+  if (Number(remoteLoginDemand) > 0) return true;
   if (otpPending) return true;
   const running = runningTaskIds instanceof Set ? runningTaskIds : new Set([...runningTaskIds].map(String));
   const latched = latchedTaskIds instanceof Set ? latchedTaskIds : new Set([...latchedTaskIds].map(String));

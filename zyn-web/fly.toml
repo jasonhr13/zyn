@@ -1,0 +1,30 @@
+# Deploy from the repository root so COPY launcher/ and native-backend/ resolve:
+#   fly deploy --config fly.zyn-web.toml
+#
+# Sign in at the public URL with your Zyn email and password. Put JSON files on the volume.
+
+app = "zyn-web"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "zyn-web/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  ZYN_DATA_DIR = "/data"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "zyn_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

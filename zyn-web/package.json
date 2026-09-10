@@ -1,0 +1,19 @@
+{
+  "name": "zyn-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Linux Full Engine host and web control plane. Desktop Zyn stays harvest-only.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "imapflow": "1.6.5",
+    "mailparser": "3.9.14",
+    "ws": "^8.18.0"
+  }
+}

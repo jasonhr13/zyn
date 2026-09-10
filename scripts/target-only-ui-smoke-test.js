@@ -35,7 +35,7 @@ assert.match(sidebar, /to:\s*'\/task-groups'[\s\S]*label:\s*'Target'[\s\S]*secti
 assert.match(sidebar, /to:\s*'\/pokemoncenter'[\s\S]*label:\s*'Pokémon Center'[\s\S]*taskType:\s*'pokemoncenter'/);
 assert.match(sidebar, /activeRoutes:\s*\['\/task-groups',\s*'\/target'\]/);
 assert.doesNotMatch(sidebar, /label:\s*'Tasks'[\s\S]*to:\s*'\/modules'/);
-assert.match(routes, /<Sidebar taskTypes=\{license\.taskTypes \|\| \{\}\} email=\{license\.email \|\| \'\'\} \/>/);
+assert.match(routes, /<Sidebar[\s\S]*taskTypes=\{license\.taskTypes \|\| \{\}\}[\s\S]*email=\{license\.email \|\| ''\}/);
 assert.match(sidebar, /Update to v\{update\.version\}/);
 assert.match(sidebar, /background:\s*'var\(--ok\)'[\s\S]{0,80}color:\s*'#000'/);
 assert.doesNotMatch(sidebar, /label:\s*'Generate'/);
@@ -68,6 +68,10 @@ assert.match(read('runtime-app/public/electron.js'), /role: 'editMenu'/,
   'macOS must keep an Edit menu so newly mounted OTP fields can receive keystrokes');
 assert.match(inlineOtp, /target-otp-message[\s\S]*role="status"[\s\S]*aria-live="polite"/,
   'the OTP control does not surface automatic mailbox progress');
+assert.match(inlineOtp, /Polling the profile IMAP mailbox for the code/);
+assert.doesNotMatch(read('frontend/src/App.css'), /\.group-task-row \.target-otp-message \{ display: none; \}/,
+  'task rows must show IMAP polling progress, not only the OTP field');
+assert.match(read('zyn-web/server/otp-host.js'), /Polling the profile IMAP mailbox for the code/);
 assert.match(inlineOtp, /phase === 'submitting'[\s\S]*disabled=\{submitting\}/,
   'the OTP control does not distinguish automatic lookup from code submission');
 assert.match(taskGroups, /Target order-limit history stay unchanged[\s\S]*type: 'targetTaskReset'/,

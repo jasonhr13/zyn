@@ -8,11 +8,19 @@ Luca, embedded Hyper credentials, PKC, or security services. Pokémon Center ret
 Railway queue-status check; Hyper operations cross the authenticated local bridge to Zyn's licensed
 server broker, and hCaptcha is solved manually in an isolated Electron window.
 
-Rebuild all three checked-in artifacts from the in-repo engine with:
+Rebuild the checked-in desktop artifacts from the in-repo engine with:
 
 ```bash
 ./scripts/build-native-target-engine.sh all
 ```
+
+Linux Full Engine (`zyn-web`) uses a fourth artifact that is not part of the desktop `all` set:
+
+```bash
+./scripts/build-native-target-engine.sh linux-x64
+```
+
+That writes `native-backend/linux-x64/backend`. It is the same `zyn` engine as the desktop binaries; desktop packaging and `engine-runtime.json` stay unchanged.
 
 `scripts/build-zyn.sh` selects `darwin-arm64/backend` or `darwin-x64/backend` to match the Electron
 application architecture. `scripts/build-zyn-windows.sh` packages `windows-x64/backend.exe`.

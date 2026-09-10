@@ -50,7 +50,9 @@ export default class TargetOtpInput extends Component {
     const submitting = phase === 'submitting';
     const message = request.message || (phase === 'manual'
       ? 'Enter the code from your Target email.'
-      : 'Checking your configured mailbox for the code…');
+      : phase === 'polling'
+        ? 'Polling the profile IMAP mailbox for the code…'
+        : 'Checking your configured mailbox for the code…');
     return (
       <div
         className={`target-otp-control${large ? ' target-otp-control-large' : ''}`}
@@ -68,7 +70,7 @@ export default class TargetOtpInput extends Component {
           aria-label={`Login code needed for ${request.email}`}
           onSubmit={this.submit}
         >
-          <span className="target-otp-inline-key" aria-hidden="true">OTP</span>
+          <span className="target-otp-inline-key" aria-hidden="true">{phase === 'polling' ? 'IMAP' : 'OTP'}</span>
           <input
             ref={el => { this.input = el; }}
             value={code}

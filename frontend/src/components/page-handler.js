@@ -43,13 +43,7 @@ class PageHandler extends Component {
       window.alert(String(message || 'This managed proxy list is no longer available.'));
     });
 
-    // Load initial data
-    const profiles = ipcRenderer.sendSync('getProfiles');
-    const accounts = ipcRenderer.sendSync('getAccounts');
-    const proxies = ipcRenderer.sendSync('getProxies');
-    const settings = ipcRenderer.sendSync('getSettings');
-    const discordStatus = ipcRenderer.sendSync('getDiscordStatus');
-    this.props.dispatch({ type: 'update', obj: { profiles, accounts, proxies, settings, discordStatus } });
+    this.loadWorkspace();
 
     ipcRenderer.on('discordStatus', (e, data) => {
       this.props.dispatch({ type: 'update', obj: { discordStatus: data } });
@@ -190,6 +184,15 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('updateStatus');
   }
 
+  loadWorkspace = () => {
+    const profiles = ipcRenderer.sendSync('getProfiles') || [];
+    const accounts = ipcRenderer.sendSync('getAccounts') || [];
+    const proxies = ipcRenderer.sendSync('getProxies') || { lists: [] };
+    const settings = ipcRenderer.sendSync('getSettings') || {};
+    const discordStatus = ipcRenderer.sendSync('getDiscordStatus') || { status: 'disconnected' };
+    this.props.dispatch({ type: 'update', obj: { profiles, accounts, proxies, settings, discordStatus } });
+  };
+
   render() {
     const { license } = this.state;
 
@@ -201,7 +204,7 @@ class PageHandler extends Component {
           <TitleBar />
           <div className="body-wrapper">
             {license
-              ? <LicenseGate status={license} onActivated={l => this.setState({ license: l })} />
+              ? <LicenseGate status={license} onActivated={l => { this.loadWorkspace(); this.setState({ license: l }); }} />
               : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: 12, color: 'var(--muted)' }}>Checking license…</div>}
           </div>

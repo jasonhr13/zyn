@@ -93,7 +93,9 @@ function spawnHarvesterProducer(config) {
   const loadsPerBrowser = Math.max(1, Math.min(10, parseInt(config.loadsPerBrowser, 10)
     || parseInt(settings.targetLoadsPerBrowser, 10) || 3));
   const blockHeavyResources = settings.targetBlockHeavyResources !== false && settings.targetBlockHeavyResources !== 'false';
-  const types = config.type === 'auto' ? 'login,atc' : config.type;
+  const types = (typeof harvestCookieTypes === 'function')
+    ? harvestCookieTypes(config)
+    : (config.type === 'auto' || config.type === 'login' ? (config.type === 'login' ? 'login' : 'login,atc') : config.type);
   const engine = String(config.engine || '').toLowerCase() === 'patchright' ? 'patchright' : 'playwright';
   const headed = engine === 'patchright';
   const profileRoot = headed

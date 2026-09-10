@@ -83,10 +83,8 @@ assert.match(runtimePatcher, /const harvesterProcs = new Map\(\)/,
   'packaged bridge patch must create independent producer process handles');
 assert.match(runtimePatcher, /const harvesterStartFailures = new Map\(\)/,
   'packaged bridge patch must track fail-closed producer startup errors');
-assert.match(harvesterConfig, /\['atc', 'auto'\]/,
-  'managed harvester configuration must preserve user-created ATC producer types');
-assert.match(harvesterConfig, /id === 'zyn-login'\) return false/,
-  'the login harvester must not be startable from the ATC Start button');
+assert.match(harvesterConfig, /\['login', 'atc', 'auto'\]/,
+  'managed harvester configuration must preserve user-created Login and ATC producer types');
 assert.match(harvesterConfig, /Array\.isArray\(settings\.targetHarvesters\) \? settings\.targetHarvesters : \[\]/,
   'missing harvester settings must disable the retired task-owned producer');
 assert.match(harvesterConfig, /'opera'/,

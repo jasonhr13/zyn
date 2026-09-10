@@ -102,6 +102,20 @@ assert.equal(helper.loginHarvesterShouldRun({
   runningTaskIds: ['t1'],
   statuses: { t1: 'Waiting For Restock' },
 }), false);
+assert.equal(helper.loginHarvesterShouldRun({
+  authorized: true,
+  remoteLoginDemand: 1,
+}), true);
+assert.equal(helper.loginHarvesterShouldRun({
+  authorized: true,
+  runningTaskIds: ['t1'],
+  statuses: { t1: 'Waiting For Restock' },
+  remoteLoginDemand: 2,
+}), true);
+assert.equal(helper.loginHarvesterShouldRun({
+  authorized: false,
+  remoteLoginDemand: 1,
+}), false);
 
 assert.match(engine, /cancelOtpForTask\(id, 'Target task signed in'\)/);
 assert.match(engine, /addOtpWaiter/);
@@ -109,33 +123,35 @@ assert.match(engine, /taskIds: p\.waiters/);
 assert.match(engine, /require\('\.\/target-login-harvester'\)/);
 assert.match(engine, /latchLoginHarvesterForTasks/);
 assert.match(engine, /reconcileLoginHarvester/);
-assert.match(engine, /LOGIN_HARVESTER_ID/);
-assert.match(engine, /starting login harvester — tasks need a Target sign-in/);
-assert.match(engine, /stopping login harvester — no tasks waiting for sign-in/);
-assert.match(engine, /id === LOGIN_HARVESTER_ID\) return false/);
+assert.doesNotMatch(engine, /LOGIN_HARVESTER_ID/);
+assert.doesNotMatch(engine, /setLoginHarvesterRunning/);
+assert.doesNotMatch(engine, /starting login harvester — tasks need a Target sign-in/);
+assert.doesNotMatch(engine, /starting login harvester — remote Full Engine needs login cookies/);
+assert.doesNotMatch(engine, /stopping login harvester — no tasks waiting for sign-in/);
+assert.match(engine, /function harvestCookieTypes/);
+assert.match(engine, /if \(config\.type === 'auto'\) return 'login,atc'/);
+assert.doesNotMatch(engine, /remoteLoginCookieDemand\(\) > 0/);
+assert.match(engine, /scheduleLoginHarvesterReconcile\(\)/);
+assert.match(engine, /\['login', 'atc', 'auto'\]/);
 assert.match(engine, /login: basis === 'paused' \? 0 : Math\.min\(TARGET_COOKIE_TASK_MAX, targetLoginDemandTaskIds\.size\)/);
 
-assert.match(configFragment, /id === 'zyn-login'\) return false/);
-assert.match(configFragment, /explicitlyStartedHarvesterIds\.has\('zyn-login'\)/);
-assert.match(configFragment, /\(raw && raw\.type\) !== 'login'/);
+assert.doesNotMatch(configFragment, /id === 'zyn-login'\) return false/);
+assert.match(configFragment, /\['login', 'atc', 'auto'\]/);
 
 assert.match(demandFragment, /const targetLoginDemandTaskIds = new Set\(\)/);
 assert.match(demandFragment, /login: basis === 'paused' \? 0 : Math\.min\(TARGET_COOKIE_TASK_MAX, targetLoginDemandTaskIds\.size\)/);
 assert.match(demandFragment, /function setTargetLoginDemandTasks/);
 
-assert.match(ui, /LOGIN_HARVESTER_ID = 'zyn-login'/);
 assert.match(ui, />Cookie TTL</);
 assert.match(ui, />Interval</);
 assert.match(ui, />Refresh every</);
 assert.match(ui, /LOGIN_HARVESTER_WORKER_MAXIMUM = 20/);
-assert.match(ui, /saveLoginHarvesterField\('workers'/);
-assert.match(ui, /renderLoginHarvesterPanel/);
-assert.match(ui, /Zyn starts this automatically when a task needs to sign in/);
+assert.doesNotMatch(ui, /renderLoginHarvesterPanel/);
+assert.doesNotMatch(ui, /Zyn starts this automatically when a task needs to sign in/);
+assert.match(ui, /value: 'login', label: 'Target Login'/);
 assert.match(ui, /value: 'atc', label: 'Target ATC'/);
-assert.doesNotMatch(ui, /value: 'login', label: 'Target Login'/);
+assert.match(ui, /\['login', 'atc', 'auto'\]\.includes\(draft\.type\)/);
 assert.match(ui, /userHarvesters = \(\) => this\.state\.harvesters\.filter/);
-assert.match(ui, /persistLoginHarvester/);
-assert.match(styles, /\.target-login-harvester/);
 
 assert.match(bootstrap, /settings\.targetLoginHarvester && settings\.targetLoginHarvester\.proxyListName/);
 
@@ -150,26 +166,28 @@ vm.runInNewContext(`${configSource}
 setManagedHarvesterRunning({ id: 'atc-1', running: true });
 result = {
   user: managedHarvesterConfigs(),
-  rejectedLogin: setManagedHarvesterRunning({ id: 'zyn-login', running: true }),
+  startedLogin: setManagedHarvesterRunning({ id: 'login-1', running: true }),
 };
-explicitlyStartedHarvesterIds.add('zyn-login');
 setSettings({
-  targetHarvesters: [{ id: 'atc-1', type: 'atc', workers: 2 }],
-  targetLoginHarvester: { proxyListName: 'resi', cookieTtlSec: 90, intervalDelaySec: 5, loadsPerBrowser: 2, workers: 4 },
+  targetHarvesters: [
+    { id: 'atc-1', type: 'atc', workers: 2 },
+    { id: 'login-1', type: 'login', proxyListName: 'resi', workers: 4 },
+  ],
 });
+explicitlyStartedHarvesterIds.add('login-1');
 result.withLogin = managedHarvesterConfigs();
 `, sandbox);
 assert.equal(sandbox.result.user.length, 1);
 assert.equal(sandbox.result.user[0].id, 'atc-1');
-assert.equal(sandbox.result.rejectedLogin, false);
+assert.equal(sandbox.result.startedLogin, false, 'Start is rejected until the login harvester exists in settings');
 assert.equal(sandbox.result.withLogin.length, 2);
-const login = sandbox.result.withLogin.find(item => item.id === 'zyn-login');
+const login = sandbox.result.withLogin.find(item => item.id === 'login-1');
 assert.ok(login);
 assert.equal(login.type, 'login');
 assert.equal(login.enabled, true);
 assert.equal(login.workers, 4);
 assert.equal(login.engine, 'playwright');
 assert.equal(login.proxyListName, 'resi');
-assert.equal(login.cookieTtlSec, 90);
+assert.equal(login.cookieTtlSec, 600);
 
-console.log('Target login harvester is a singleton auto-started from checkout demand');
+console.log('Target login harvester is a user-started producer like ATC');

@@ -61,12 +61,19 @@ build_arch() {
       go_arch="amd64"
       executable="backend.exe"
       ;;
+    linux|linux-x64|linux-amd64)
+      zyn_arch="linux-x64"
+      go_os="linux"
+      go_arch="amd64"
+      ;;
     *) echo "Unsupported Zyn backend architecture: $zyn_arch" >&2; exit 1 ;;
   esac
 
   local output_dir
   if [[ "$go_os" == "windows" ]]; then
     output_dir="$PROJECT_DIR/native-backend/$zyn_arch"
+  elif [[ "$go_os" == "linux" ]]; then
+    output_dir="$PROJECT_DIR/native-backend/linux-x64"
   else
     output_dir="$PROJECT_DIR/native-backend/darwin-$zyn_arch"
   fi
@@ -103,6 +110,10 @@ build_arch() {
   fi
   if [[ "$go_os" == "darwin" && "$go_arch" == "arm64" && "$description" != *"arm64"* ]]; then
     echo "Native backend architecture check failed: $description" >&2
+    exit 1
+  fi
+  if [[ "$go_os" == "linux" && "$description" != *"ELF"* ]]; then
+    echo "Native backend platform check failed: $description" >&2
     exit 1
   fi
   if [[ "$go_arch" == "amd64" && "$description" != *"x86-64"* && "$description" != *"x86_64"* ]]; then
