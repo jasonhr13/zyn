@@ -538,7 +538,17 @@ check('architecture-specific auto-update feed', () => {
   assert.match(updateConfig, new RegExp(`updaterCacheDirName: zyn-updater-${appArch}`));
   assert.match(bootstrap, /process\.arch === 'x64' \? 'x64' : 'arm64'/);
   assert.match(bootstrap, /autoUpdater\.setFeedURL\(\{ provider: 'generic', url: updateUrl \}\)/);
+  assert.match(bootstrap, /clearStaleShipItState/,
+    'launcher must drop a Squirrel install resume whose staged app is gone');
+  assert.match(bootstrap, /this copy is not \/Applications\/Zyn\.app/,
+    'launcher must not let a dist/ QA app replace /Applications/Zyn.app');
   assert.doesNotMatch(bootstrap, /disableWindowsOnlyUpdater/);
+});
+
+check('Info.plist NSUpdateSecurityPolicy', () => {
+  assert.equal(plistValue('NSUpdateSecurityPolicy.AllowPackages.0'), 'GXWBXH5M77');
+  assert.equal(plistValue('NSUpdateSecurityPolicy.AllowProcesses.GXWBXH5M77.0'), product.bundleIdentifier);
+  assert.equal(plistValue('NSUpdateSecurityPolicy.AllowProcesses.GXWBXH5M77.1'), 'ShipIt');
 });
 
 if (failures.length) {

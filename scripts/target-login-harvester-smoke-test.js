@@ -124,6 +124,9 @@ assert.match(demandFragment, /login: basis === 'paused' \? 0 : Math\.min\(TARGET
 assert.match(demandFragment, /function setTargetLoginDemandTasks/);
 
 assert.match(ui, /LOGIN_HARVESTER_ID = 'zyn-login'/);
+assert.match(ui, />Cookie TTL</);
+assert.match(ui, />Interval</);
+assert.match(ui, />Refresh every</);
 assert.match(ui, /LOGIN_HARVESTER_WORKER_MAXIMUM = 20/);
 assert.match(ui, /saveLoginHarvesterField\('workers'/);
 assert.match(ui, /renderLoginHarvesterPanel/);

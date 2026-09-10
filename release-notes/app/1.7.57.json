@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.57",
+  "notes": [
+    "Standard Target ATC harvest goes straight to the product page and stops once the cookie is captured.",
+    "If Target blocks that live product page, Zyn warms the homepage and retries instead of sitting at zero cookies.",
+    "Windows Remote Desktop keeps typing into fields instead of needing a relaunch.",
+    "Mac no longer tries to replace the installed app from a leftover or sideloaded updater.",
+    "Login and ATC harvester Cookie TTL, Interval, and Refresh labels stay on one line."
+  ]
+}

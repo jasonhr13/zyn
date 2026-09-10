@@ -46,6 +46,14 @@ assert.match(read('runtime-app/public/helpers/checkout-reporter.js'), /__ZYN_PUB
   'the public checkout webhook stays a build-time placeholder, not a credential');
 assert.match(read('runtime-app/public/electron.js'), /MONITOR_BOT_TOKEN = '__ZYN_MONITOR_BOT_TOKEN__'/,
   'the monitor bot token stays a build-time placeholder, not a credential');
+assert.match(read('runtime-app/public/electron.js'), /bundle !== '\/Applications\/Zyn\.app'/,
+  'packaged auto-update must not run from a QA or sideloaded Mac copy');
+assert.match(read('launcher/bootstrap.js'), /clearStaleShipItState/,
+  'launcher must drop a Squirrel install resume whose staged app is gone');
+assert.match(read('launcher/bootstrap.js'), /isInstalledMacApp/,
+  'launcher must not let a dist\/ QA app replace \/Applications\/Zyn.app');
+assert.match(read('scripts/build-zyn.sh'), /NSUpdateSecurityPolicy/,
+  'Mac builds must declare a same-team update policy so ShipIt is not App Management');
 
 for (const script of ['scripts/build-zyn.sh', 'scripts/build-zyn-windows.sh']) {
   const source = read(script);

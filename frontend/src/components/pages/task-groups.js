@@ -1900,7 +1900,7 @@ class TaskGroups extends Component {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Cookie expiration (seconds)</label>
+            <label className="form-label" title="Cookie lifetime in seconds">Cookie TTL</label>
             <input
               className="form-input"
               type="number"
@@ -1913,7 +1913,7 @@ class TaskGroups extends Component {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Interval delay (seconds)</label>
+            <label className="form-label" title="Pause between harvest attempts, in seconds">Interval</label>
             <input
               className="form-input"
               type="number"
@@ -1926,7 +1926,7 @@ class TaskGroups extends Component {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Refresh browser every</label>
+            <label className="form-label" title="Successful harvests before Zyn launches a fresh browser">Refresh every</label>
             <input
               className="form-input"
               type="number"
@@ -2562,17 +2562,17 @@ class TaskGroups extends Component {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">Cookie expiration (seconds)</label>
+                <label className="form-label" title="Cookie lifetime in seconds">Cookie TTL</label>
                 <input className="form-input" type="number" min="30" max="86400" value={draft.cookieTtlSec} onChange={event => setDraft({ cookieTtlSec: event.target.value })} />
               </div>
               <div className="form-group">
-                <label className="form-label">Interval delay (seconds)</label>
+                <label className="form-label" title="Pause between harvest attempts, in seconds">Interval</label>
                 <input className="form-input" type="number" min="0" max="3600" value={draft.intervalDelaySec} onChange={event => setDraft({ intervalDelaySec: event.target.value })} />
                 <div className="form-hint">Minimum pause after an attempt; health cooldowns may wait longer.</div>
               </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Refresh browser every</label>
+              <label className="form-label" title="Successful harvests before Zyn launches a fresh browser">Refresh every</label>
               <input className="form-input" type="number" min="1" max="10" value={draft.loadsPerBrowser} onChange={event => setDraft({ loadsPerBrowser: event.target.value })} />
               <div className="form-hint">Successful harvests on this process before Zyn launches a fresh browser. Randomized up to this number. Default 3.</div>
             </div>

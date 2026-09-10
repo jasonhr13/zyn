@@ -1020,8 +1020,9 @@ body.theme-night .form-select {
   min-width: 88px;
 }
 .harvest-workspace .target-login-harvester-compact .target-login-harvester-fields {
-  grid-template-columns: minmax(140px, 220px) repeat(4, minmax(88px, 130px));
+  grid-template-columns: minmax(160px, 1.3fr) repeat(4, minmax(108px, 1fr));
   justify-content: start;
+  align-items: end;
 }
 .harvest-workspace .cookie-bank-prominent {
   justify-content: space-between;
@@ -1130,10 +1131,22 @@ body.theme-night .form-select {
 .target-login-harvester-head p { margin-top: 3px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
 .target-login-harvester-fields {
   display: grid;
-  grid-template-columns: minmax(160px, 1.3fr) repeat(4, minmax(100px, 1fr));
+  grid-template-columns: minmax(160px, 1.4fr) repeat(4, minmax(112px, 1fr));
   gap: 12px;
+  align-items: end;
 }
-.target-login-harvester-fields .form-group { margin-bottom: 0; }
+.target-login-harvester-fields .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.target-login-harvester-fields .form-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .target-login-harvester-compact {
   margin: 0 0 12px;
   padding: 11px 12px 12px;

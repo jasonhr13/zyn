@@ -55,7 +55,9 @@ const RULES = [
   [/rate.?limit|DCO_RATE_LIMITED/i, () => 'Target is rate limiting — slowing down'],
   [/captcha/i, () => 'A security check appeared'],
   [/refusing to checkout|unexpected cart items/i, () => 'Stopped — the cart held an unexpected item'],
-  [/no atc|cart_items never fired/i, () => 'Could not prepare a security cookie — retrying'],
+  [/no atc|cart_items never fired|add-to-cart button never appeared/i, () => 'Could not prepare a security cookie — retrying'],
+  [/bot-block page|served a block page/i, () => 'Target blocked the harvest browser — retrying'],
+  [/incomplete signature/i, () => 'Security signature was incomplete — retrying'],
   [/shape block \(precart\)/i, () => 'Security cookie rejected before carting — retrying'],
   [/shape block \(cart\)/i, () => 'Security cookie rejected at add to cart — retrying'],
 

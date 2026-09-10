@@ -12,7 +12,9 @@ const read = relative => fs.readFileSync(path.join(project, relative), 'utf8');
 const source = read('frontend/src/native-dialog-focus.js');
 assert.match(source, /export function wrapNativeDialogs/);
 assert.match(source, /export function installNativeDialogFocusRestore/);
+assert.match(source, /export function installWindowsInputFocusGuard/);
 assert.match(source, /ipcRenderer\.send\('restoreRendererFocus'\)/);
+assert.match(source, /ipcRenderer\.send\('focusRenderer'\)/);
 
 const context = {
   module: { exports: {} },
@@ -45,12 +47,22 @@ assert.deepEqual(restored, ['restored', 'restored'],
 const electron = read('runtime-app/public/electron.js');
 assert.match(electron, /ipcMain\.on\('restoreRendererFocus'/,
   'main process must restore window focus after native dialogs');
+assert.match(electron, /ipcMain\.on\('focusRenderer'/,
+  'main process must offer a non-bouncing renderer focus path');
 assert.match(electron, /win\.setEnabled\(false\)/,
   'Windows focus restore must bounce BrowserWindow enabled state');
+assert.match(electron, /CalculateNativeWinOcclusion/,
+  'Windows must disable Chromium occlusion so RDP keeps delivering keystrokes');
+
+const bootstrap = read('launcher/bootstrap.js');
+assert.match(bootstrap, /disableWindowsNativeOcclusion/,
+  'packaged Windows builds must disable native occlusion before the original app loads');
 
 const index = read('frontend/src/index.js');
 assert.match(index, /installNativeDialogFocusRestore/,
   'renderer bootstrap must wrap native dialogs');
+assert.match(index, /installWindowsInputFocusGuard/,
+  'renderer bootstrap must restore input focus on RDP click');
 
 const css = read('frontend/src/index.css');
 assert.match(css, /input, textarea, select, button, a \{[\s\S]*-webkit-app-region: no-drag/,

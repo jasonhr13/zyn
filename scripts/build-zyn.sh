@@ -204,6 +204,15 @@ done
 /usr/libexec/PlistBuddy -c 'Add :ZynReactVersion string 18.3.1' "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :ZynRelease string $APP_RELEASE" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :ZynRuntimeMode string $RUNTIME_MODE" "$PLIST"
+# Same-team Squirrel/ShipIt replacements should not require the App Management toggle.
+/usr/libexec/PlistBuddy -c 'Delete :NSUpdateSecurityPolicy' "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy dict' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowPackages array' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowPackages:0 string GXWBXH5M77' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowProcesses dict' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowProcesses:GXWBXH5M77 array' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowProcesses:GXWBXH5M77:0 string com.thwebco.zyn' "$PLIST"
+/usr/libexec/PlistBuddy -c 'Add :NSUpdateSecurityPolicy:AllowProcesses:GXWBXH5M77:1 string ShipIt' "$PLIST"
 
 if [[ "$RUNTIME_MODE" == "remote" ]]; then
   # Keep the small architecture-matched backend as an offline fallback. The signed runtime channel

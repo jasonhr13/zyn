@@ -33,7 +33,7 @@ assert.match(ui, /<label className="form-label">Type<\/label>\s*<InlineSelect/);
 assert.match(ui, /<label className="form-label">Browser<\/label>\s*<InlineSelect/);
 assert.match(ui, /<label className="form-label">Mode<\/label>\s*<InlineSelect/);
 assert.match(ui, /<label className="form-label">Proxy<\/label>\s*<InlineSelect/);
-assert.match(ui, /Refresh browser every/);
+assert.match(ui, /Refresh every/);
 assert.match(ui, /loadsPerBrowser: clampInteger\(raw && raw\.loadsPerBrowser, 1, 10, 3\)/);
 assert.doesNotMatch(ui, /<label className="form-label">Type<\/label>\s*<select/);
 assert.doesNotMatch(ui, /<label className="form-label">Browser<\/label>\s*<select/);

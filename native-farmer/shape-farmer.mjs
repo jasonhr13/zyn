@@ -1198,12 +1198,14 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
             // harvest can close the page immediately.
             await waitUntilHarvested(LOGIN_MODE === 'otp' ? 4000 : 8000);
           } else {
-            // ATC v1 still warms the homepage first: a cold PDP hit through some proxies lands in
-            // Target's waiting room or the "Something went wrong" interstitial.
-            await warmHomepageForPx();
+            // Standard ATC used to always spend up to 18s mouse-warming the homepage before the
+            // product page. Competitors go straight to a live PDP. Homepage PX warmup stays as
+            // fallback when the product page bounces or the ATC controls never appear.
             const url = nextAtcUrl();   // rotates through the configured in-stock harvest products
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-            await page.waitForTimeout(3000);
+            const openPdp = async () => {
+              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+            };
+            await openPdp();
             const dismissHealthConsent = async () => {
               const consent = await dismissTargetHealthDataConsent(page);
               if (consent.dismissed) {
@@ -1236,13 +1238,75 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
               // Guarded: with no TCINs configured nextAtcUrl() returns /c/top-deals, which has none.
               return !!atcTcin && !now.includes('A-' + atcTcin);
             };
+            const atcControlSels = [
+              'button[data-test="shippingButton"]',
+              'button[data-test="orderPickupButton"]',
+              'button[data-test="shipItButton"]',
+              'button[id^="addToCart"]',
+              'button[data-test="addToCartButton"]',
+              'button:has-text("Add to cart")',
+              'button:has-text("Ship it")',
+              'button:has-text("Pick it up")',
+            ];
+            const waitForAtcControl = async (ms) => {
+              const until = Date.now() + Math.max(0, ms);
+              while (!done && Date.now() < until) {
+                for (const sel of atcControlSels) {
+                  if (await page.$(sel).catch(() => null)) return true;
+                }
+                await page.waitForTimeout(250).catch(() => {});
+              }
+              return false;
+            };
+            // Target's bot-block interstitial. It renders over the PDP with a backdrop that
+            // intercepts pointer events, so every click times out while the page still LOOKS normal
+            // underneath — the failure screenshot shows a perfectly good Add to cart button. Worth
+            // naming explicitly: it means this proxy/browser was flagged, not that ATC is broken.
+            const blocked = async () => {
+              try {
+                const t = await page.locator('text=/Something went wrong/i').first().isVisible({ timeout: 250 });
+                return !!t;
+              } catch { return false; }
+            };
+            const retryPdpAfterHomepage = async (reason) => {
+              if (DIAG) log(`  step: ${reason}, warming homepage then retrying`);
+              await warmHomepageForPx();
+              await openPdp();
+              throughQueue = await waitOutQueue(45000);
+              if (!throughQueue) {
+                queuedOut = true;
+                return false;
+              }
+              await dismissHealthConsent();
+              return true;
+            };
             // Hold position if Target queued us, rather than reporting a missing button.
-            const throughQueue = await waitOutQueue(45000);
+            let throughQueue = await waitOutQueue(45000);
             if (!throughQueue) {
               queuedOut = true;
             } else {
-              await page.waitForTimeout(5000);
               await dismissHealthConsent();
+              let hasControl = false;
+              // A cold live PDP through some proxies lands on Target's block interstitial. ATC+
+              // never sees that page because it replaces the document. Standard ATC has to recover.
+              if (await blocked()) {
+                if (await retryPdpAfterHomepage('Target served a block page on the product')) {
+                  hasControl = await waitForAtcControl(15000);
+                }
+              } else {
+                hasControl = await waitForAtcControl(8000);
+                if (!hasControl && offPdp()) {
+                  // Bounced to login/home. Re-entering a waiting-room PDP forfeits your place, so
+                  // only leave when the URL already proves we are not on the product.
+                  if (await retryPdpAfterHomepage('bounced off PDP')) {
+                    hasControl = await waitForAtcControl(15000);
+                  }
+                }
+              }
+              if (hasControl) {
+                // Pointer motion on the PDP itself. Shape signs cart_items from this document.
+                await human.warmUp(1).catch(() => {});
+              }
             }
             // Target PDPs gate the real add-to-cart behind a fulfillment choice. Clicking the actual
             // "Add to cart" / "Ship it" / "Pick it up" control fires the cart_items POST our route
@@ -1276,26 +1340,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
             };
             void clickNow;   // the ATC branch wants the diagnostic, so it uses clickSel instead
 
-            // Target's bot-block interstitial. It renders over the PDP with a backdrop that
-            // intercepts pointer events, so every click times out while the page still LOOKS normal
-            // underneath — the failure screenshot shows a perfectly good Add to cart button. Worth
-            // naming explicitly: it means this proxy/browser was flagged, not that ATC is broken.
-            const blocked = async () => {
-              try {
-                const t = await page.locator('text=/Something went wrong/i').first().isVisible({ timeout: 250 });
-                return !!t;
-              } catch { return false; }
-            };
-            const attempts = [
-              'button[data-test="shippingButton"]',
-              'button[data-test="orderPickupButton"]',
-              'button[data-test="shipItButton"]',
-              'button[id^="addToCart"]',
-              'button[data-test="addToCartButton"]',
-              'button:has-text("Add to cart")',
-              'button:has-text("Ship it")',
-              'button:has-text("Pick it up")',
-            ];
+            const attempts = atcControlSels;
             const clickDeadline = Date.now() + 24000;
             let clicked = 0, found = 0, wasBlocked = false;
             while (!done && Date.now() < clickDeadline) {
@@ -1312,7 +1357,8 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
                 if (await clickSel(sel)) {
                   clicked++;
                   if (DIAG) log(`  step: clicked ${sel} (atc attempt ${clicked})`);
-                  await page.waitForTimeout(3500);
+                  // Incomplete signatures need another click. A full capture sets done and we leave.
+                  await waitUntilHarvested(1200);
                 }
               }
               if (done) break;
@@ -1365,7 +1411,7 @@ async function harvestOnce(type, proxy, selectedBrowser, reuse = null) {
               }
               if (DIAG) log('  step: atc — ' + (blockedPage ? 'Target served its bot-block page' : atcNote));
             }
-            await page.waitForTimeout(3000);
+            await waitUntilHarvested(1500);
           }
         } catch (e) {
           // This used to be `catch {}`. Anything thrown in the login or ATC step — a navigation that

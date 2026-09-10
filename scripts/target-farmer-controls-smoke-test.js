@@ -88,6 +88,10 @@ assert.match(engine, /site === engineContract\.SITES\.TARGET\) log\(decoded/,
 const plain = fs.readFileSync(path.join(project, 'runtime-app', 'public', 'helpers', 'plain-log.js'), 'utf8');
 assert.doesNotMatch(plain, /\^get-addresses|\^set-address|\^address match=|\^profile line1=/,
   'Target address debug dumps must not ship in packaged logs');
+assert.match(plain, /add-to-cart button never appeared/,
+  'packaged logs must still say when a live PDP harvest found no Add to cart');
+assert.match(plain, /served a block page/,
+  'packaged logs must still say when Target blocked a live PDP harvest');
 
 // The IPC bridge ships directly from the tracked runtime source.
 const stagedApp = path.join(directory, 'staged-app');

@@ -62,7 +62,7 @@ assert.match(inlineOtp, /sendSync\('targetSubmitOtp', \{ email: request\.email, 
 assert.match(inlineOtp, /autoComplete="one-time-code"/);
 assert.match(inlineOtp, /onMouseDown=\{event => event\.stopPropagation\(\)\}/,
   'OTP entry must not let the task row steal mousedown/focus');
-assert.match(read('frontend/src/index.css'), /input, textarea \{[\s\S]*-webkit-user-select: text/,
+assert.match(read('frontend/src/index.css'), /input, textarea, \[contenteditable="true"\] \{[\s\S]*-webkit-user-select: text/,
   'inputs must opt back into text selection under the app-wide user-select: none');
 assert.match(read('runtime-app/public/electron.js'), /role: 'editMenu'/,
   'macOS must keep an Edit menu so newly mounted OTP fields can receive keystrokes');

@@ -35,6 +35,11 @@ log.transports.file.level = 'info';
 // GPU-dependent content (no canvas/video/3D), so software compositing costs nothing and removes the
 // whole failure class. Must be called before the app is ready.
 app.disableHardwareAcceleration();
+if (process.platform === 'win32') {
+  // RDP / Windows Server marks the frameless window as occluded, so Chromium
+  // stops delivering keystrokes until relaunch. Must run before app.whenReady.
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
 
 // ONE copy of the bot per machine.
 //
@@ -346,6 +351,13 @@ function redactUrls(text) {
 
 function initAutoUpdate() {
   if (!app.isPackaged) { log.info('auto-update: skipped (dev build)'); return; }
+  if (process.platform === 'darwin') {
+    const bundle = path.resolve(process.execPath, '..', '..', '..');
+    if (bundle !== '/Applications/Zyn.app') {
+      log.info('auto-update: skipped (not the /Applications/Zyn.app install)');
+      return;
+    }
+  }
   let autoUpdater;
   try { ({ autoUpdater } = require('electron-updater')); }
   catch (e) { log.warn('auto-update: electron-updater unavailable —', e.message); return; }
@@ -546,6 +558,10 @@ function createWindow() {
     show: false,
   });
 
+  mainWindow.on('focus', () => {
+    try { mainWindow.webContents.focus(); } catch {}
+  });
+
 
   // BUG FIX (reported live 2026-07-20): Electron shows NO native context menu on right-click by
   // default (unlike a regular browser tab) — the app has to build and pop one itself. Since nothing
@@ -724,14 +740,12 @@ ipcMain.on('maximize', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win) win.isMaximized() ? win.unmaximize() : win.maximize();
 });
-ipcMain.on('restoreRendererFocus', (e) => {
-  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+function focusRendererWindow(win, { bounce = false } = {}) {
   if (!win || win.isDestroyed()) return;
-  try { win.webContents.focus(); } catch {}
+  try { if (win.isMinimized()) win.restore(); } catch {}
   try { win.focus(); } catch {}
-  // Native confirm/alert on a frameless Windows window can leave Chromium stuck so
-  // inputs ignore clicks until relaunch. Bounce enable to cancel that drag/focus trap.
-  if (process.platform === 'win32') {
+  try { win.webContents.focus(); } catch {}
+  if (bounce && process.platform === 'win32') {
     try {
       win.setEnabled(false);
       win.setEnabled(true);
@@ -739,6 +753,15 @@ ipcMain.on('restoreRendererFocus', (e) => {
       win.webContents.focus();
     } catch {}
   }
+}
+
+ipcMain.on('focusRenderer', (e) => {
+  focusRendererWindow(BrowserWindow.fromWebContents(e.sender) || mainWindow, { bounce: false });
+});
+ipcMain.on('restoreRendererFocus', (e) => {
+  // Native confirm/alert on a frameless Windows window can leave Chromium stuck so
+  // inputs ignore keystrokes until relaunch. Bounce enable to cancel that trap.
+  focusRendererWindow(BrowserWindow.fromWebContents(e.sender) || mainWindow, { bounce: true });
 });
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────────

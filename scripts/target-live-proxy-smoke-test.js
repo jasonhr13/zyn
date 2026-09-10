@@ -111,6 +111,12 @@ assert.match(farmer, /waitUntilHarvested/,
   'login harvest must stop waiting once username_validations is captured');
 assert.match(farmer, /openSignup/,
   'login harvest must open /account/signup before any homepage PX warmup');
+assert.match(farmer, /const openPdp = async/,
+  'standard ATC harvest must open the product page before any homepage PX warmup');
+assert.match(farmer, /retryPdpAfterHomepage/,
+  'standard ATC must recover a Target block page by warming the homepage then returning to the product');
+assert.match(farmer, /waitUntilHarvested\(1200\)/,
+  'standard ATC harvest must stop waiting once cart_items is captured');
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',

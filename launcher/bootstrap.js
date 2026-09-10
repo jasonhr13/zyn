@@ -6,6 +6,7 @@
 
 const childProcess = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
@@ -83,6 +84,7 @@ function configureZynUserData() {
 }
 
 configureZynUserData();
+clearStaleShipItState();
 
 function packagedRuntimeMode() {
   try {
@@ -193,7 +195,49 @@ ipcMain.handle('retryRuntimeSetup', async () => {
   return runtimeManager.ensureAll({ force: true });
 });
 
+function packagedMacAppPath() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return '';
+  return path.resolve(process.execPath, '..', '..', '..');
+}
+
+function isInstalledMacApp() {
+  return packagedMacAppPath() === '/Applications/Zyn.app';
+}
+
+// Squirrel.Mac resumes a pending install from ShipItState.plist on launch. A missing staged
+// bundle still tries to replace /Applications/Zyn.app, which is the macOS "prevented from
+// modifying apps" alert on every start. Ad-hoc QA copies share this cache with the real install.
+function clearStaleShipItState() {
+  if (process.platform !== 'darwin') return;
+  const statePath = path.join(os.homedir(), 'Library/Caches/com.thwebco.zyn.ShipIt/ShipItState.plist');
+  if (!fs.existsSync(statePath)) return;
+  let staged = '';
+  try {
+    const raw = fs.readFileSync(statePath, 'utf8').trim();
+    if (raw.startsWith('{')) staged = String(JSON.parse(raw).updateBundleURL || '');
+    else {
+      const match = raw.match(/<string>(file:\/\/\/[^<]+)<\/string>/);
+      staged = match ? match[1] : '';
+    }
+  } catch {
+    return;
+  }
+  const stagedPath = decodeURIComponent(String(staged).replace(/^file:\/\//, '')).replace(/\/+$/, '');
+  if (!stagedPath || fs.existsSync(stagedPath)) return;
+  try {
+    fs.rmSync(statePath, { force: true });
+    console.warn('Cleared stale macOS updater state (staged Zyn.app is gone)');
+  } catch (error) {
+    console.error(`Could not clear stale updater state: ${error.message}`);
+  }
+}
+
 function configureUpdater() {
+  clearStaleShipItState();
+  if (process.platform === 'darwin' && app.isPackaged && !isInstalledMacApp()) {
+    console.info('Zyn auto-update skipped — this copy is not /Applications/Zyn.app');
+    return;
+  }
   try {
     const { autoUpdater } = require(path.join(
       originalAsar,
@@ -223,6 +267,13 @@ function isolateModernChromiumStorage() {
   const sessionData = path.join(app.getPath('userData'), `chromium-${electronMajor}`);
   fs.mkdirSync(sessionData, { recursive: true });
   app.setPath('sessionData', sessionData);
+}
+
+function disableWindowsNativeOcclusion() {
+  if (process.platform !== 'win32') return;
+  // Chromium treats Remote Desktop sessions as fully covered, then stops
+  // delivering keystrokes to inputs until the app is relaunched.
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 
 function preserveMacHardwareAcceleration() {
@@ -1619,6 +1670,7 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
   runNativeEngineSelfTest();
 } else {
   isolateModernChromiumStorage();
+  disableWindowsNativeOcclusion();
   preserveMacHardwareAcceleration();
   installWindowSizePersistence();
   // `enabled` existed as persisted run state in earlier builds. Clear it before the original app,
