@@ -57,6 +57,8 @@ assert.match(electron, /CalculateNativeWinOcclusion/,
 const bootstrap = read('launcher/bootstrap.js');
 assert.match(bootstrap, /disableWindowsNativeOcclusion/,
   'packaged Windows builds must disable native occlusion before the original app loads');
+assert.match(bootstrap, /installGpuCompositing/,
+  'packaged Windows builds must decide GPU compositing before the original app loads');
 
 const index = read('frontend/src/index.js');
 assert.match(index, /installNativeDialogFocusRestore/,

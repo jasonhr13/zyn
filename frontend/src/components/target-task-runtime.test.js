@@ -126,6 +126,40 @@ test('group drop pulse keeps carted and failed counts after the task leaves thos
   });
 });
 
+test('group drop pulse zeros carted and failed after quiet monitor OOS and keeps run checkouts', () => {
+  const group = { id: 'g1', tasks: [task] };
+  let state = withAccounts(reducer(undefined, { type: '@@test/init' }));
+  state = reducer(state, { type: 'targetRunStarted', taskIds: [task.id], startedAt: 100 });
+  state = reducer(state, {
+    type: 'targetOutcome', taskId: task.id, eventId: 'cart-1', eventType: 'carted', occurredAt: 110,
+  });
+  state = reducer(state, {
+    type: 'targetOutcome', taskId: task.id, eventId: 'ok-1', eventType: 'checkout', occurredAt: 120,
+  });
+  state = reducer(state, {
+    type: 'targetOutcome', taskId: task.id, eventId: 'fail-1', eventType: 'decline', occurredAt: 130,
+  });
+  state = reducer(state, {
+    type: 'targetStatus', taskId: task.id, state: 'Waiting For Restock',
+    label: 'Waiting For Restock', running: true, receivedAt: 200,
+  });
+  state = reducer(state, {
+    type: 'targetStatus', state: 'Out of Stock', label: 'Out of Stock', receivedAt: 300,
+  });
+  expect(mapGroupRuntimeState(state, { group }).pulse).toEqual({
+    carting: 0, submitting: 1, checkouts: 1, failures: 1,
+  });
+  state = reducer(state, {
+    type: 'targetStatus', state: 'Out of Stock', label: 'Out of Stock', receivedAt: 2000,
+  });
+  expect(mapGroupRuntimeState(state, { group }).pulse).toEqual({
+    carting: 0, submitting: 0, checkouts: 1, failures: 0,
+  });
+  expect(state.target.taskOutcomes[task.id]).toMatchObject({
+    carted: 1, declines: 1, checkouts: 1, waveCarted: 0, waveDeclines: 0,
+  });
+});
+
 test('selectTargetTaskRuntime hides completed proxy notices and counts this-run checkouts', () => {
   const runtime = selectTargetTaskRuntime({
     taskStatus: { 'task-1': { label: 'Waiting For Restock', running: true } },

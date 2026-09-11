@@ -68,6 +68,38 @@ func keepShapeAfterATCError(t *TargetTask) bool {
 	return t.CheckoutRateLimitCount <= checkoutRateLimitRetries
 }
 
+func (t *TargetTask) discardDeadShape() {
+	if t == nil {
+		return
+	}
+	t.ShapeHeaders = ShapeHeaders{}
+	t.ShapeProxy = ""
+	t.ShapeMethod = ""
+	t.ShapeCreatedAt = 0
+}
+
+// rotateDeadShape drops the blocked cookie and its harvest IP so the next
+// get-shape takes a fresh cookie. Shape 401 means that pair is spent; sleeping
+// or retrying it wastes the restock.
+func (t *TargetTask) rotateDeadShape(step string) {
+	t.discardDeadShape()
+	t.StepAfterSolve = step
+	t.NextStep = "get-shape"
+}
+
+func (t *TargetTask) handleShapeBlock(step, blockEvent, errText string) {
+	t.telemetry(blockEvent, step)
+	t.ShapeBlockCount++
+	if t.ShapeBlockCount >= 3 {
+		t.telemetry(task.TelemetryShapeSoftBlock, step)
+		t.UpdateStatus("Shape Soft Block", constants.Colors.RED)
+	} else {
+		c := cases.Title(language.English)
+		t.UpdateStatus(c.String(errText), constants.Colors.RED)
+	}
+	t.rotateDeadShape(step)
+}
+
 func (t *TargetTask) sleepCheckoutRateLimit(dco bool) {
 	t.CheckoutRateLimitCount++
 	if dco {
@@ -153,37 +185,9 @@ func (t *TargetTask) HandleErrors(step string) bool {
 			t.sleepCheckoutRateLimit(false)
 		}
 	case containsAnyText(errText, "Shape Block (Login)"):
-		t.telemetry(task.TelemetryShapeBlockLogin, step)
-		t.StepAfterSolve = step
-		t.NextStep = "get-shape"
-		if t.ShapeBlockCount >= 3 {
-			t.telemetry(task.TelemetryShapeSoftBlock, step)
-			t.UpdateStatus("Shape Soft Block", constants.Colors.RED)
-			t.SleepTask(60000)
-		} else {
-			t.ShapeBlockCount = t.ShapeBlockCount + 1
-			c := cases.Title(language.English)
-			t.UpdateStatus(c.String(errText), constants.Colors.RED)
-			t.SleepTask(t.ErrorDelay)
-		}
+		t.handleShapeBlock(step, task.TelemetryShapeBlockLogin, errText)
 	case containsAnyText(errText, "Shape Block (Cart)"):
-		t.telemetry(task.TelemetryShapeBlockCart, step)
-		t.StepAfterSolve = step
-		if t.ShapeBlockCount >= 3 {
-			t.telemetry(task.TelemetryShapeSoftBlock, step)
-			t.UpdateStatus("Shape Soft Block", constants.Colors.RED)
-			t.SleepTask(60000)
-			if step == "add-to-cart" {
-				t.bailToRestockKeepSignal()
-			} else {
-				t.NextStep = "wait-for-restock"
-			}
-		} else {
-			t.ShapeBlockCount = t.ShapeBlockCount + 1
-			c := cases.Title(language.English)
-			t.UpdateStatus(c.String(errText), constants.Colors.RED)
-			t.SleepTask(t.ErrorDelay)
-		}
+		t.handleShapeBlock(step, task.TelemetryShapeBlockCart, errText)
 	case containsAnyText(errText, "403"):
 		c := cases.Title(language.English)
 		t.UpdateStatus(c.String(errText), constants.Colors.RED)

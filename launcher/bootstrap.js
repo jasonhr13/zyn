@@ -39,6 +39,7 @@ const { createMobileHarvesterBridge } = require('./mobile-harvester-bridge');
 const { createCloudBackupManager } = require('./cloud-backup');
 const { createCloudBackupDataAdapter } = require('./cloud-backup-data');
 const { RuntimeManager, DEFAULT_RUNTIME_ORIGIN } = require('./runtime-manager');
+const { installGpuCompositing } = require('./gpu-compositing');
 
 // Main-process-only release metadata, intentionally unavailable to renderer globals.
 Object.defineProperty(global, '__zynApp', {
@@ -274,18 +275,6 @@ function disableWindowsNativeOcclusion() {
   // Chromium treats Remote Desktop sessions as fully covered, then stops
   // delivering keystrokes to inputs until the app is relaunched.
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-}
-
-function preserveMacHardwareAcceleration() {
-  if (process.platform !== 'darwin') return;
-
-  // Upstream disables Chromium's GPU process to work around a Windows-only
-  // black-window-on-restore issue. On macOS that sends every blur, shadow and
-  // keystroke repaint through SwiftShader/CPU compositing, which makes even a
-  // controlled text input feel delayed. Keep Chromium's normal Metal-backed
-  // acceleration by neutralizing the call before the original main process is
-  // loaded. Chromium can still choose software rendering itself if necessary.
-  app.disableHardwareAcceleration = () => {};
 }
 
 function installWindowSizePersistence() {
@@ -1671,7 +1660,9 @@ if (!fs.existsSync(originalAsar) || !fs.existsSync(nativeBackend)) {
 } else {
   isolateModernChromiumStorage();
   disableWindowsNativeOcclusion();
-  preserveMacHardwareAcceleration();
+  // Neutralize runtime-app's disableHardwareAcceleration on Mac and Windows so the
+  // UI uses the GPU. ZYN_DISABLE_GPU=1 or userData/disable-gpu restores software.
+  installGpuCompositing({ app, ipcMain });
   installWindowSizePersistence();
   // `enabled` existed as persisted run state in earlier builds. Clear it before the original app,
   // license authority, or cookie broker can load; configurations and schedules remain intact.

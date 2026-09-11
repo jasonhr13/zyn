@@ -144,6 +144,7 @@ class Settings extends Component {
       recoveryAcknowledged: false, recoveryImport: '', recoveryExpectedFingerprint: '',
       cloudRestoreReplace: false,
       engine: readEngineInfo(),
+      gpuCompositing: null, gpuBusy: false,
     };
   }
 
@@ -212,6 +213,9 @@ class Settings extends Component {
     ipcRenderer.invoke('remoteHarvesterStatus').then(remoteHarvester => {
       if (remoteHarvester) this.setState({ remoteHarvester });
     }).catch(() => {});
+    ipcRenderer.invoke('gpuCompositing').then(gpuCompositing => {
+      if (gpuCompositing) this.setState({ gpuCompositing });
+    }).catch(() => {});
   }
   componentWillUnmount() {
     ipcRenderer.removeListener('licenseStatus', this.applyLicenseStatus);
@@ -246,6 +250,18 @@ class Settings extends Component {
     };
     try { ipcRenderer.sendSync('saveSettings', next); } catch {}
     this.props.dispatch({ type: 'update', obj: { settings: next } });
+  };
+
+  toggleSoftwareGpu = async (enabled) => {
+    this.setState({ gpuBusy: true });
+    try {
+      const gpuCompositing = await ipcRenderer.invoke('setSoftwareGpu', enabled === true);
+      if (gpuCompositing) this.setState({ gpuCompositing });
+    } catch {
+      this.setState({ gpuBusy: false });
+      return;
+    }
+    this.setState({ gpuBusy: false });
   };
 
   save = () => {
@@ -753,6 +769,7 @@ class Settings extends Component {
       || '';
     const subscription = subscriptionSummary({ billingStatus, accessUntil });
     const engine = this.state.engine || (this.props.runtime && this.props.runtime.engine);
+    const gpu = this.state.gpuCompositing;
     const engineLabel = !engine || (!engine.running && !engine.installed)
       ? '—'
       : (engine.pendingRestart && engine.installed && engine.running !== engine.installed
@@ -904,6 +921,32 @@ class Settings extends Component {
               <span style={{ fontSize: 11, color: line.color }}>{line.text}</span>
             </div>
           </div>
+
+          {gpu && gpu.platform === 'win32' && (
+          <div className="settings-section">
+            <div className="settings-section-title">Display</div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: gpu.softwareForcedBy === 'env' || this.state.gpuBusy ? 'default' : 'pointer' }}>
+                <input
+                  type="checkbox"
+                  disabled={gpu.softwareForcedBy === 'env' || this.state.gpuBusy}
+                  checked={gpu.softwareForcedBy === 'env' || gpu.softwareForcedBy === 'file'}
+                  onChange={e => this.toggleSoftwareGpu(e.target.checked)}
+                />
+                Use software graphics
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
+                GPU compositing is on so the Windows UI stays smooth during a drop. Turn this on and restart Zyn only if the window goes black after alt-tab.
+                {gpu.softwareForcedBy === 'env'
+                  ? ' ZYN_DISABLE_GPU is set for this process, so software graphics stays on until that env is cleared.'
+                  : gpu.compositing
+                    ? ` This session is using ${gpu.compositing} compositing.`
+                    : ''}
+                {gpu.restartRequired ? ' Restart Zyn to apply.' : ''}
+              </div>
+            </div>
+          </div>
+          )}
 
           <div className="settings-section">
             <div className="settings-section-title">Discord</div>

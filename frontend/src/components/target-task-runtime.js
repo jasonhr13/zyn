@@ -121,9 +121,9 @@ export function selectTargetGroupRuntime(target = {}, tasks) {
     ...stats,
     pulse: summarizeGroupDropPulse(list, {
       statusFor: task => (target.taskStatus || {})[task.id],
-      cartedCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'carted'),
+      cartedCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'waveCarted'),
       checkoutCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'checkouts'),
-      declineCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'declines'),
+      declineCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'waveDeclines'),
     }),
   };
 }

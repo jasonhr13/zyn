@@ -494,6 +494,23 @@ function createLicenseAuthority({
         return { ok: false, status: 0, message: 'Harvest room service is unavailable.' };
       }
     },
+    async takeHarvestCookies({ type = 'atc', n = 10 } = {}) {
+      loadSession();
+      if (!licenseToken || licenseState.ok !== true) {
+        return { ok: false, status: 401, cookies: [], message: 'A valid Zyn session is required.' };
+      }
+      if (typeof licenseApi.takeHarvestCookies !== 'function') {
+        return { ok: false, status: 501, cookies: [], message: 'Harvest mailbox is unavailable.' };
+      }
+      try {
+        const result = await licenseApi.takeHarvestCookies(licenseToken, { type, n });
+        await revalidateUnauthorized(result);
+        return result;
+      } catch (error) {
+        logger.warn?.(`[license] harvest mailbox take unavailable: ${error.message}`);
+        return { ok: false, status: 0, cookies: [], message: 'Harvest mailbox is unavailable.' };
+      }
+    },
     openHarvestRoomEvents(roomId, { role = 'desktop', handlers = {} } = {}) {
       loadSession();
       if (!licenseToken || licenseState.ok !== true) throw new Error('A valid Zyn session is required.');

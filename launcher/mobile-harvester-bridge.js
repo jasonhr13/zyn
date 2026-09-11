@@ -16,6 +16,10 @@ const PAIR_FILE = 'mobile-harvester-pair.json';
 const MAX_RECONNECT_MS = 30000;
 const HEALTH_MS = 8000;
 const PONG_STALE_MS = 25000;
+const MAILBOX_PULL_MS = 200;
+const MAILBOX_PULL_LIVE_MS = 50;
+const MAILBOX_PULL_BATCH = 10;
+const MAILBOX_PULL_LIVE_BATCH = 64;
 const ANDROID_DOWNLOAD_URL = 'https://updates.zynbot.app/download/android';
 
 function harvesterIdForDevice(deviceId) {
@@ -51,6 +55,7 @@ function createMobileHarvesterBridge({
   getCookieBank = async () => ({}),
   getProxyCatalog = () => ({ lists: [] }),
   saveCookie = null,
+  takeCookies = null,
   cookieTtlMs = () => DEFAULT_COOKIE_TTL_MS,
   logger = console,
   WebSocketImpl = null,
@@ -73,8 +78,11 @@ function createMobileHarvesterBridge({
   let started = false;
   let lastDemandKey = '';
   let demandFlushTimer = null;
+  let pullTimer = null;
+  let pullInFlight = false;
   let lastPongAt = 0;
   let hostedRoomId = '';
+  let mailbox = { login: 0, atc: 0 };
   const activity = {
     connected: false,
     phoneCount: 0,
@@ -311,6 +319,89 @@ function createMobileHarvesterBridge({
     return saved;
   };
 
+  const takeFromMailbox = async (query) => {
+    if (typeof takeCookies === 'function') return takeCookies(query);
+    if (typeof authority.takeHarvestCookies === 'function') return authority.takeHarvestCookies(query);
+    return { ok: false, cookies: [] };
+  };
+
+  const ingestCookies = async (cookies) => {
+    if (!Array.isArray(cookies) || !cookies.length || typeof saveCookie !== 'function') return 0;
+    try { await ensureBroker(); } catch {}
+    const response = await saveCookie(cookies.length === 1 ? cookies[0] : cookies);
+    const saved = Number(response && response.saved);
+    const count = Number.isFinite(saved) ? saved : (response && response.ok === false ? 0 : cookies.length);
+    if (count > 0) {
+      activity.lastSavedAt = timestamp();
+      activity.lastSavedType = String(cookies[0] && cookies[0].type || 'atc');
+      activity.savedCount += count;
+    }
+    return count;
+  };
+
+  const localNeed = async () => {
+    let status = {};
+    try { status = await getCookieBank(); }
+    catch { status = {}; }
+    const pools = status && status.pools && typeof status.pools === 'object' ? status.pools : status;
+    const demand = status && status.demand && typeof status.demand === 'object' ? status.demand : {};
+    const remaining = remainingHarvestTargets({
+      current: { login: pools.login, atc: pools.atc },
+      targets: demand.targets,
+    });
+    const waiting = (demand.activity && demand.activity.waiting)
+      || (status.activity && status.activity.waiting) || {};
+    const live = Number(waiting.atc) > 0;
+    const batch = live ? MAILBOX_PULL_LIVE_BATCH : MAILBOX_PULL_BATCH;
+    let atc = 0;
+    if (remaining.atc === null || live) atc = batch;
+    else atc = Math.min(batch, Math.max(0, Number(remaining.atc) || 0));
+    return { atc, live };
+  };
+
+  const pullMailbox = async () => {
+    if (pullInFlight || !remoteHostOn() || !available()) return;
+    const need = await localNeed();
+    pullInFlight = true;
+    try {
+      const available = Math.max(0, Number(mailbox.atc) || 0);
+      const want = Math.min(need.atc, available, need.live ? MAILBOX_PULL_LIVE_BATCH : MAILBOX_PULL_BATCH);
+      if (want > 0) {
+        const result = await takeFromMailbox({ type: 'atc', n: want });
+        const cookies = Array.isArray(result && result.cookies) ? result.cookies : [];
+        if (cookies.length) await ingestCookies(cookies);
+        if (result && result.mailbox) {
+          mailbox.login = 0;
+          mailbox.atc = Number(result.mailbox.atc) || 0;
+        } else {
+          mailbox.atc = Math.max(0, available - cookies.length);
+        }
+      }
+    } catch (error) {
+      activity.lastError = error.message;
+      logger.warn?.(`[remote-harvester] mailbox pull: ${error.message}`);
+    } finally {
+      pullInFlight = false;
+      if (mailbox.atc > 0 && remoteHostOn()) {
+        schedulePull(need.live ? MAILBOX_PULL_LIVE_MS : MAILBOX_PULL_MS);
+      }
+    }
+  };
+
+  const schedulePull = (delayMs = 50) => {
+    if (pullTimer || pullInFlight || !remoteHostOn()) return;
+    pullTimer = scheduleTimeout(() => {
+      pullTimer = null;
+      pullMailbox().catch(() => {});
+    }, delayMs);
+  };
+
+  const noteMailbox = (message = {}) => {
+    mailbox.login = Number(message.login) || 0;
+    mailbox.atc = Number(message.atc) || 0;
+    if (mailbox.atc > 0 || mailbox.login > 0) schedulePull();
+  };
+
   const handleMessage = async (message) => {
     activity.lastSeenAt = timestamp();
     lastPongAt = timestamp();
@@ -345,19 +436,12 @@ function createMobileHarvesterBridge({
       sendSelectedProxyLists(message.names);
       return;
     }
-    if (message.type === 'capture') {
-      try {
-        await handleCapture(message);
-      } catch (error) {
-        activity.lastError = error.message;
-        logger.warn?.(`[mobile-harvester] capture: ${error.message}`);
-        send({ type: 'capture-ack', ok: false, message: 'Capture was not accepted.' });
-        publishDemand({ force: true }).catch(() => {});
-      }
+    if (message.type === 'mailbox') {
+      noteMailbox(message);
       return;
     }
-    if (message.type === 'log' || message.type === 'status' || message.type === 'error') {
-      logger.info?.(`[mobile-harvester] ${message.type}: ${String(message.message || message.text || '').slice(0, 240)}`);
+    if (message.type === 'capture') {
+      return;
     }
   };
 
@@ -367,6 +451,8 @@ function createMobileHarvesterBridge({
     reconnectTimer = null;
     if (demandFlushTimer) cancelTimeout(demandFlushTimer);
     demandFlushTimer = null;
+    if (pullTimer) cancelTimeout(pullTimer);
+    pullTimer = null;
     const previous = socket;
     socket = null;
     activity.connected = false;
@@ -619,6 +705,8 @@ function createMobileHarvesterBridge({
       sendSelectedProxyLists,
       publishDemand,
       healthOnce,
+      pullMailbox,
+      noteMailbox,
       harvesterIdForDevice,
       setSocket(next) {
         socket = next;

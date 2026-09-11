@@ -497,9 +497,9 @@ class TaskGroupDropPulseView extends Component {
     const pulse = this.props.pulse || { carting: 0, submitting: 0, checkouts: 0, failures: 0 };
     const stats = [
       { key: 'cart', icon: 'cart', count: pulse.carting, label: 'Adding to cart' },
-      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Carted this run' },
+      { key: 'submit', icon: 'send', count: pulse.submitting, label: 'Carted this wave' },
       { key: 'success', icon: 'check', count: pulse.checkouts, label: 'Successful checkouts this run' },
-      { key: 'fail', icon: 'warning', count: pulse.failures, label: 'Failed this run' },
+      { key: 'fail', icon: 'warning', count: pulse.failures, label: 'Failed this wave' },
     ];
     return (
       <div className="group-drop-pulse" role="status" aria-live="polite" aria-label="Drop status">

@@ -230,6 +230,14 @@ function createClient({ apiBase = DEFAULT_API_BASE, dataDirectory = '', deviceId
         headers: { 'x-rcart-device-id': deviceId },
       });
     },
+    takeHarvestCookies(token, { type = 'atc', n = 10 } = {}) {
+      return requestApi(apiBase, '/api/harvester/take', {
+        method: 'POST',
+        body: { type, n },
+        token,
+        headers: { 'x-rcart-device-id': deviceId },
+      });
+    },
     validate(token, proxyRevision = '') {
       return post(apiBase, '/api/license/validate', { deviceId, deviceName, proxyRevision }, token);
     },

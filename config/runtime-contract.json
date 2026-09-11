@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "appRelease": "R8.68",
+  "appRelease": "R8.69",
   "features": {
     "designShell": true,
     "taskGroups": true,
@@ -18,7 +18,7 @@
   },
   "product": {
     "name": "Zyn",
-    "version": "1.7.58",
+    "version": "1.7.59",
     "bundleIdentifier": "com.thwebco.zyn",
     "electronVersion": "43.3.0",
     "reactVersion": "18.3.1",
@@ -35,15 +35,15 @@
   "nativeEngines": {
     "arm64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "6d78b74700415fb3af9635beb7be9574e7f0042a757b39ff28a7e3e297f03b65"
+      "sha256": "844d45fba5f91aa35c6edc2012b0727b30b10822ba419e9216159fe243ff9c34"
     },
     "x64": {
       "path": "Contents/Resources/engine/backend",
-      "sha256": "61215b5f78aa5bba8bdc73f8a1133f3d32deb25c00e0f9f3ed6394960e10202f"
+      "sha256": "0a100e2bacc8a907c0506803a1efe674529e6a3ab4b0d4bc22e05ea719bb3eae"
     },
     "windows-x64": {
       "path": "resources/engine/backend.exe",
-      "sha256": "164a28af78e53104ec22ee81b446cbbb44a7af4ca0bcd09c1a17381117c5d74d"
+      "sha256": "a55ca92e0ad90da5298ba79e007ebd72a2a97ea57eadf9edbaec896f913a44a7"
     }
   },
   "requiredResources": [
@@ -94,6 +94,7 @@
     "Contents/Resources/app/harvest-room-demand.js",
     "Contents/Resources/app/cloud-backup.js",
     "Contents/Resources/app/cloud-backup-data.js",
+    "Contents/Resources/app/gpu-compositing.js",
     "Contents/Resources/app/runtime-manager.js",
     "Contents/Resources/app/node_modules/imapflow/package.json",
     "Contents/Resources/app/node_modules/ws/package.json",

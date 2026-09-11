@@ -35,8 +35,10 @@ test('Target checkout counts are per-run, deduplicated, and survive status rotat
 
   expect(state.target.taskOutcomes['task-a']).toMatchObject({
     carted: 2,
+    waveCarted: 2,
     checkouts: 2,
     declines: 1,
+    waveDeclines: 1,
     lastCheckoutAt: 130,
     startedAt: 100,
   });

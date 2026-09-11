@@ -1,4 +1,7 @@
-import { targetDropPhase, targetStatusTone, targetTaskIsRunning, summarizeGroupDropPulse } from './target-task-status';
+import {
+  targetDropPhase, targetStatusTone, targetTaskIsRunning, summarizeGroupDropPulse,
+  targetMonitorStockPhase, targetHasLiveDropWork, applyTargetDropWave, TARGET_DROP_WAVE_OOS_MS,
+} from './target-task-status';
 
 const status = (label, extra = {}) => ({ label, state: label, running: true, ...extra });
 
@@ -73,6 +76,59 @@ test('group drop pulse counts live cart and persistent carted/checkout/fail outc
     checkoutCountFor: task => checkouts[task.id],
     declineCountFor: task => declines[task.id],
   })).toEqual({ carting: 1, submitting: 5, checkouts: 3, failures: 3 });
+});
+
+test('shared monitor stock phase ignores checkout task OOS lines', () => {
+  expect(targetMonitorStockPhase(status('Out of Stock'))).toBe('oos');
+  expect(targetMonitorStockPhase(status('Product In Stock'))).toBe('in-stock');
+  expect(targetMonitorStockPhase(status('Getting Product(s)'))).toBe('');
+  expect(targetMonitorStockPhase(status('Out of Stock, Checking Cart'))).toBe('');
+});
+
+test('live drop work is only carting or submitting', () => {
+  expect(targetHasLiveDropWork({
+    a: status('Adding To Cart'),
+    b: status('Waiting For Restock'),
+  })).toBe(true);
+  expect(targetHasLiveDropWork({
+    a: status('Submitting Order'),
+  })).toBe(true);
+  expect(targetHasLiveDropWork({
+    a: status('Waiting For Restock'),
+    b: status('Out of Stock'),
+  })).toBe(false);
+});
+
+test('quiet monitor OOS ends the wave after the debounce and keeps run checkouts', () => {
+  const started = applyTargetDropWave({
+    monitorStatus: status('Out of Stock'),
+    taskStatus: { a: status('Waiting For Restock') },
+    taskOutcomes: { a: { waveCarted: 2, waveDeclines: 1, checkouts: 4, carted: 2, declines: 1 } },
+    dropWave: { at: 100, oosSince: 0, ended: false },
+  }, 200);
+  expect(started.dropWave.oosSince).toBe(200);
+  expect(started.taskOutcomes.a.waveCarted).toBe(2);
+
+  const tooSoon = applyTargetDropWave(started, 200 + TARGET_DROP_WAVE_OOS_MS - 1);
+  expect(tooSoon.taskOutcomes.a.waveCarted).toBe(2);
+
+  const ended = applyTargetDropWave(started, 200 + TARGET_DROP_WAVE_OOS_MS);
+  expect(ended.dropWave.ended).toBe(true);
+  expect(ended.taskOutcomes.a).toMatchObject({
+    waveCarted: 0, waveDeclines: 0, checkouts: 4, carted: 2, declines: 1,
+  });
+});
+
+test('live submitting blocks the OOS wave reset', () => {
+  const target = {
+    monitorStatus: status('Out of Stock'),
+    taskStatus: { a: status('Submitting Order') },
+    taskOutcomes: { a: { waveCarted: 1, waveDeclines: 0, checkouts: 0 } },
+    dropWave: { at: 100, oosSince: 50, ended: false },
+  };
+  const next = applyTargetDropWave(target, 50 + TARGET_DROP_WAVE_OOS_MS + 5000);
+  expect(next.dropWave.oosSince).toBe(0);
+  expect(next.taskOutcomes.a.waveCarted).toBe(1);
 });
 
 test('live submitting still counts once before the carted outcome arrives', () => {

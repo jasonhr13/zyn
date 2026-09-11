@@ -89,7 +89,18 @@ assert.match(read('chrome-extension/harvester/remote-pair-ui.js'), /\/api\/auth\
 assert.match(read('chrome-extension/harvester/remote-pair-ui.js'), /sessionKind: 'harvester'/);
 
 const manifest = JSON.parse(read('chrome-extension/harvester/manifest.json'));
-assert.equal(manifest.version, '1.1.9');
+assert.equal(manifest.version, '1.1.10');
+assert.match(source, /\/api\/harvester\/capture/);
+assert.equal(api.captureUrl({
+  origin: 'https://license.zynbot.app',
+  roomId: pairing.roomId,
+  joinToken: pairing.joinToken,
+  deviceId: 'ext',
+}).includes('/api/harvester/capture'), true);
+assert.equal(api.statusFromDemand({
+  room: { atc: 20 },
+  remaining: { atc: 0 },
+}).waiting.atc, 0, 'a full Cloudflare mailbox must park the extension');
 assert.equal(manifest.background.service_worker, 'src/sw.js');
 
 const sw = read('chrome-extension/harvester/src/sw.js');

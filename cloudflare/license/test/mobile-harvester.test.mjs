@@ -12,6 +12,13 @@ import {
   parseMobilePairingUrl,
   shouldReplaceMobilePeer,
 } from '../src/mobile-harvester.js';
+import {
+  MAILBOX_MAX_ATC,
+  enqueueMailboxCookie,
+  mailboxSnapshot,
+  normalizeMailboxCookie,
+  takeMailboxCookies,
+} from '../src/harvest-mailbox.js';
 
 const DEVICE_A = 'aaaaaaaaaaaaaaaa';
 const TOKEN_A = 'license-token-a';
@@ -121,9 +128,19 @@ async function environment(overrides = {}) {
     session_kind: 'engine',
   });
   const wsCalls = [];
+  const mailboxHttp = [];
+  let mailboxList = [];
+  const shapeHeaders = Object.fromEntries([
+    'sec-ch-ua-platform', 'sec-ch-ua', 'user-agent',
+    'x-gyjwza5z-a', 'x-gyjwza5z-b', 'x-gyjwza5z-c',
+    'x-gyjwza5z-d', 'x-gyjwza5z-f', 'x-gyjwza5z-z',
+  ].map(name => [name, `captured-${name}`]));
   return {
     DB,
     wsCalls,
+    mailboxHttp,
+    shapeHeaders,
+    mailboxList: () => mailboxList,
     MOBILE_HARVESTER: {
       idFromName(name) {
         return { name };
@@ -131,6 +148,31 @@ async function environment(overrides = {}) {
       get(id) {
         return {
           fetch: async (request) => {
+            const url = new URL(request.url);
+            if (url.pathname === '/mailbox/capture') {
+              mailboxHttp.push({ id, path: url.pathname });
+              const body = await request.json();
+              const cookie = normalizeMailboxCookie(body, { now: Date.now(), id: 'cookie-1' });
+              const next = enqueueMailboxCookie(mailboxList, cookie);
+              mailboxList = next.list;
+              return Response.json({
+                ok: next.saved > 0,
+                saved: next.saved,
+                reason: next.reason,
+                mailbox: mailboxSnapshot(mailboxList),
+              });
+            }
+            if (url.pathname === '/mailbox/take') {
+              mailboxHttp.push({ id, path: url.pathname });
+              const body = await request.json().catch(() => ({}));
+              const next = takeMailboxCookies(mailboxList, body);
+              mailboxList = next.list;
+              return Response.json({
+                ok: true,
+                cookies: next.cookies,
+                mailbox: mailboxSnapshot(mailboxList),
+              });
+            }
             wsCalls.push({ id, url: String(request.url), headers: Object.fromEntries(request.headers) });
             // Node's Response constructor rejects 101; Cloudflare returns 101 for a real upgrade.
             return new Response('upgraded', { status: 200, headers: { 'x-test-upgrade': '1' } });
@@ -417,3 +459,81 @@ test('Full Engine hosts a harvest room that harvester-only companions can join',
   assert.match(env.wsCalls.at(-1).url, /role=companion/);
   assert.doesNotMatch(env.wsCalls.at(-1).url, /token=/);
 });
+
+test('mailbox parks at the ATC cap and hands cookies to Full Engine in batches', () => {
+  const now = 1_000_000;
+  const headers = Object.fromEntries([
+    'sec-ch-ua-platform', 'sec-ch-ua', 'user-agent',
+    'x-gyjwza5z-a', 'x-gyjwza5z-b', 'x-gyjwza5z-c',
+    'x-gyjwza5z-d', 'x-gyjwza5z-f', 'x-gyjwza5z-z',
+  ].map(name => [name, name]));
+  const cookie = normalizeMailboxCookie({
+    cookieType: 'atc',
+    headers,
+    proxy: 'http://user:pass@1.1.1.1:8000',
+  }, { now, id: 'a' });
+  assert.equal(cookie.type, 'atc');
+  assert.equal(cookie.headers.cookie, undefined);
+  assert.throws(() => normalizeMailboxCookie({ cookieType: 'login', headers }, { now, id: 'login' }), /ATC only/);
+  let list = [];
+  const caps = { login: 0, atc: 8 };
+  for (let i = 0; i < 8; i += 1) {
+    const next = enqueueMailboxCookie(list, { ...cookie, id: `c${i}` }, { now, caps });
+    assert.equal(next.saved, 1);
+    list = next.list;
+  }
+  const full = enqueueMailboxCookie(list, { ...cookie, id: 'overflow' }, { now, caps });
+  assert.equal(full.saved, 0);
+  assert.equal(full.reason, 'full');
+  const login = enqueueMailboxCookie(list, { ...cookie, id: 'login-1', type: 'login' }, { now, caps });
+  assert.equal(login.saved, 0);
+  assert.equal(login.reason, 'login');
+  const taken = takeMailboxCookies(list, { type: 'atc', n: 64, now });
+  assert.equal(taken.cookies.length, 8);
+  assert.equal(mailboxSnapshot(taken.list, now).atc, 0);
+  assert.equal(mailboxSnapshot(taken.list, now).remaining.login, 0);
+});
+
+test('HTTP capture stores cookies on Cloudflare and take pulls them for Full Engine', async () => {
+  const env = await environment();
+  await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env);
+  const captured = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/capture', {
+    method: 'POST',
+    headers: licenseHeaders(),
+    body: JSON.stringify({
+      cookieType: 'atc',
+      headers: env.shapeHeaders,
+      proxy: 'http://user:pass@1.1.1.1:8000',
+    }),
+  }), env);
+  assert.equal(captured.status, 200);
+  const stored = await captured.json();
+  assert.equal(stored.ok, true);
+  assert.equal(stored.saved, 1);
+  assert.equal(stored.mailbox.atc, 1);
+  assert.equal(env.wsCalls.length, 0, 'capture must not open a desktop websocket');
+
+  env.DB.licenses[0].session_kind = 'harvester';
+  const harvesterTake = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/take', {
+    method: 'POST',
+    headers: licenseHeaders(),
+    body: JSON.stringify({ type: 'atc', n: 10 }),
+  }), env);
+  assert.equal(harvesterTake.status, 403);
+
+  env.DB.licenses[0].session_kind = 'engine';
+  const taken = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/take', {
+    method: 'POST',
+    headers: licenseHeaders(),
+    body: JSON.stringify({ type: 'atc', n: 10 }),
+  }), env);
+  assert.equal(taken.status, 200);
+  const pulled = await taken.json();
+  assert.equal(pulled.cookies.length, 1);
+  assert.equal(pulled.cookies[0].type, 'atc');
+  assert.equal(pulled.mailbox.atc, 0);
+});
+

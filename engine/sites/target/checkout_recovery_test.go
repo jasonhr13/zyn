@@ -147,13 +147,82 @@ func TestHandleErrorsSubmitOrder429DoesNotChangeStep(t *testing.T) {
 
 func TestHandleErrorsShapeBlockCartStillRotates(t *testing.T) {
 	task := cancelledTargetTask("add-to-cart", errors.New("Shape Block (Cart)"))
+	task.ShapeHeaders = ShapeHeaders{UserAgent: "keep"}
+	task.ShapeProxy = "http://dead-sticky:8000"
+	task.ShapeMethod = "extension"
+	task.ShapeCreatedAt = 1
 	if !task.HandleErrors("add-to-cart") {
 		t.Fatal("expected HandleErrors to report an error")
 	}
 	if task.ShapeBlockCount != 1 {
 		t.Fatalf("ShapeBlockCount = %d, want 1", task.ShapeBlockCount)
 	}
+	if task.NextStep != "get-shape" {
+		t.Fatalf("NextStep = %q, want get-shape", task.NextStep)
+	}
+	if task.StepAfterSolve != "add-to-cart" {
+		t.Fatalf("StepAfterSolve = %q, want add-to-cart", task.StepAfterSolve)
+	}
+	if task.ShapeProxy != "" || task.ShapeMethod != "" || task.ShapeCreatedAt != 0 || task.shapeOK() {
+		t.Fatal("Shape block must discard the dead cookie and harvest IP")
+	}
 	if keepShapeAfterATCError(task) {
 		t.Fatal("Shape block must not keep the dead cookie")
+	}
+}
+
+func TestHandleErrorsShapeBlockCartDoesNotParkOnThird(t *testing.T) {
+	task := cancelledTargetTask("add-to-cart", errors.New("Shape Block (Cart)"))
+	for i := 1; i <= 3; i++ {
+		task.Error = errors.New("Shape Block (Cart)")
+		task.NextStep = "add-to-cart"
+		task.ShapeProxy = "http://dead-sticky:8000"
+		if !task.HandleErrors("add-to-cart") {
+			t.Fatal("expected HandleErrors to report an error")
+		}
+		if task.NextStep != "get-shape" {
+			t.Fatalf("retry %d NextStep = %q, want get-shape", i, task.NextStep)
+		}
+		if task.StepAfterSolve != "add-to-cart" {
+			t.Fatalf("retry %d StepAfterSolve = %q, want add-to-cart", i, task.StepAfterSolve)
+		}
+		if task.ShapeProxy != "" {
+			t.Fatalf("retry %d left the dead harvest IP in place", i)
+		}
+	}
+	if task.ShapeBlockCount != 3 {
+		t.Fatalf("ShapeBlockCount = %d, want 3", task.ShapeBlockCount)
+	}
+}
+
+func TestHandleErrorsShapeBlockLoginRotatesImmediately(t *testing.T) {
+	task := cancelledTargetTask("login", errors.New("Shape Block (Login)"))
+	task.ShapeProxy = "http://dead-sticky:8000"
+	if !task.HandleErrors("login") {
+		t.Fatal("expected HandleErrors to report an error")
+	}
+	if task.NextStep != "get-shape" {
+		t.Fatalf("NextStep = %q, want get-shape", task.NextStep)
+	}
+	if task.StepAfterSolve != "login" {
+		t.Fatalf("StepAfterSolve = %q, want login", task.StepAfterSolve)
+	}
+	if task.ShapeProxy != "" {
+		t.Fatal("login Shape block must discard the dead harvest IP")
+	}
+	task.Error = errors.New("Shape Block (Login)")
+	task.NextStep = "login"
+	task.ShapeProxy = "http://dead-sticky:8000"
+	task.HandleErrors("login")
+	task.Error = errors.New("Shape Block (Login)")
+	task.NextStep = "login"
+	if !task.HandleErrors("login") {
+		t.Fatal("expected HandleErrors to report an error")
+	}
+	if task.NextStep != "get-shape" {
+		t.Fatalf("third login block NextStep = %q, want get-shape", task.NextStep)
+	}
+	if task.ShapeBlockCount != 3 {
+		t.Fatalf("ShapeBlockCount = %d, want 3", task.ShapeBlockCount)
 	}
 }

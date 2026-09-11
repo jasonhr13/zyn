@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.59",
+  "notes": [
+    "Full Engine pulls remote ATC cookies when checkout has room instead of receiving every cookie live.",
+    "Remote harvest is ATC only. Login cookies stay on the Full Engine machine.",
+    "A Shape block dumps the dead cookie and immediately takes a fresh one instead of waiting a minute.",
+    "Carted and failed pulse chips reset after the shared monitor stays out of stock.",
+    "Windows uses hardware graphics by default, with a Settings option to switch to software graphics.",
+    "The Zyn Harvester extension parks when the remote harvest room is full."
+  ]
+}

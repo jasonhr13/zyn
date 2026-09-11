@@ -31,9 +31,9 @@ let buyerDiscordId = '';   // numeric Discord id, so the collector can post a re
 log.transports.file.level = 'info';
 
 // Repeated black-screen-on-app-switch reports where the renderer had died: the classic cause is GPU
-// compositing losing the surface when the window is backgrounded/restored on Windows. This UI has no
-// GPU-dependent content (no canvas/video/3D), so software compositing costs nothing and removes the
-// whole failure class. Must be called before the app is ready.
+// compositing losing the surface when the window is backgrounded/restored on Windows. Packaged Mac
+// and Windows builds neutralize this call in launcher/gpu-compositing.js so the UI can use the GPU;
+// ZYN_DISABLE_GPU=1 or userData/disable-gpu leaves software compositing on. Must run before ready.
 app.disableHardwareAcceleration();
 if (process.platform === 'win32') {
   // RDP / Windows Server marks the frameless window as occluded, so Chromium

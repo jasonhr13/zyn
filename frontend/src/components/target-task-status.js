@@ -26,16 +26,87 @@ export function targetTaskIsRunning(status) {
   return !!text && !/\b(?:successful|checked out|payment declined)\b/.test(text);
 }
 
-// Adding-to-cart is current-state only so the pulse can show who is mid-ATC. Carted, checkout,
-// and decline counts come from task outcomes and stay until the next start. A live submitting
-// status still counts once if its carted event has not arrived yet, so the first submit is not
-// blank for a heartbeat.
+// Adding-to-cart is current-state only so the pulse can show who is mid-ATC. Carted and failed
+// counts are this restock wave. Checkouts stay for the whole run. A live submitting status still
+// counts once if its carted event has not arrived yet, so the first submit is not blank.
 export function targetDropPhase(status) {
   if (!status) return '';
   const text = textOf(status);
   if (/\b(?:adding to cart|using alternate cart flow)\b/.test(text)) return 'carting';
   if (/\b(?:submitting payment|submitting cvv|submitting order)\b/.test(text)) return 'submitting';
   return '';
+}
+
+export const TARGET_DROP_WAVE_OOS_MS = 1500;
+export const EMPTY_DROP_WAVE = Object.freeze({ at: 0, oosSince: 0, ended: false });
+
+// The shared Target monitor. Task lines such as "Out of Stock, Checking Cart" must not count.
+export function targetMonitorStockPhase(status) {
+  if (!status) return '';
+  const text = textOf(status);
+  if (!text) return '';
+  if (/^out of stock$/.test(text)) return 'oos';
+  if (/^product in stock$/.test(text) || /^in stock$/.test(text)) return 'in-stock';
+  return '';
+}
+
+export function targetHasLiveDropWork(taskStatus) {
+  const statuses = taskStatus && typeof taskStatus === 'object' ? Object.values(taskStatus) : [];
+  for (const status of statuses) {
+    const phase = targetDropPhase(status);
+    if (phase === 'carting' || phase === 'submitting') return true;
+  }
+  return false;
+}
+
+function emptyWaveOutcome(outcome) {
+  if (!outcome || typeof outcome !== 'object') return outcome;
+  if (!(Number(outcome.waveCarted) || Number(outcome.waveDeclines))) return outcome;
+  return { ...outcome, waveCarted: 0, waveDeclines: 0 };
+}
+
+function zeroWaveOutcomes(taskOutcomes) {
+  if (!taskOutcomes || typeof taskOutcomes !== 'object') return taskOutcomes;
+  let changed = false;
+  const next = {};
+  for (const [taskId, outcome] of Object.entries(taskOutcomes)) {
+    const cleared = emptyWaveOutcome(outcome);
+    next[taskId] = cleared;
+    if (cleared !== outcome) changed = true;
+  }
+  return changed ? next : taskOutcomes;
+}
+
+// Quiet OOS for TARGET_DROP_WAVE_OOS_MS with nobody carting/submitting ends the wave:
+// carted/failed chips go to 0, successful checkouts stay. One OOS poll does not wipe.
+export function applyTargetDropWave(target, now) {
+  if (!target || typeof target !== 'object') return target;
+  const at = Number(now) || 0;
+  const phase = targetMonitorStockPhase(target.monitorStatus);
+  const live = targetHasLiveDropWork(target.taskStatus);
+  const wave = target.dropWave && typeof target.dropWave === 'object'
+    ? target.dropWave
+    : EMPTY_DROP_WAVE;
+  let nextWave = wave;
+  let nextOutcomes = target.taskOutcomes;
+
+  if (phase === 'in-stock') {
+    if (wave.oosSince || wave.ended) {
+      nextWave = { at: Number(wave.at) || 0, oosSince: 0, ended: false };
+    }
+  } else if (phase === 'oos' && live) {
+    if (wave.oosSince) nextWave = { ...wave, oosSince: 0 };
+  } else if (phase === 'oos' && !live && !wave.ended) {
+    if (!wave.oosSince) {
+      nextWave = { ...wave, oosSince: at };
+    } else if (at - Number(wave.oosSince) >= TARGET_DROP_WAVE_OOS_MS) {
+      nextOutcomes = zeroWaveOutcomes(target.taskOutcomes);
+      nextWave = { at, oosSince: 0, ended: true };
+    }
+  }
+
+  if (nextWave === wave && nextOutcomes === target.taskOutcomes) return target;
+  return { ...target, dropWave: nextWave, taskOutcomes: nextOutcomes };
 }
 
 const countOf = (reader, task) => (

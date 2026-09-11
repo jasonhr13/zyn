@@ -10,6 +10,7 @@ import {
   stopTargetMonitorBandwidthRuns,
 } from './target-monitor-bandwidth.mjs';
 import { timestampLogLine, timestampLogLines } from './log-timestamp';
+import { applyTargetDropWave, EMPTY_DROP_WAVE } from './target-task-status';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
 // task must never re-enter the pool — even when a Discord reconnect ('ready') or a refreshQueuePasses
@@ -136,7 +137,8 @@ const defaultState = {
     skus: '',                 // newline-separated TCINs or full Target URLs; shared by all tasks
     tasks: [],                // [{ id, accountId, proxyListName, cardId, qty }]
     taskStatus: {},           // taskId -> { state, label, color, detail }
-    taskOutcomes: {},         // taskId -> per-run carted/checkout/decline counts + seen analytics event ids
+    taskOutcomes: {},         // taskId -> run checkouts + wave carted/failed counts
+    dropWave: EMPTY_DROP_WAVE, // quiet monitor OOS ends the wave; successes stay for the run
     proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
@@ -483,7 +485,8 @@ export function reducer(state = defaultState, action) {
 
     case 'targetTasksClear':
       return { ...state, target: {
-        ...state.target, tasks: [], taskStatus: {}, taskOutcomes: {}, proxyStatus: {}, taskLogs: {},
+        ...state.target, tasks: [], taskStatus: {}, taskOutcomes: {}, dropWave: EMPTY_DROP_WAVE,
+        proxyStatus: {}, taskLogs: {},
       } };
 
     case 'targetLaunch': {
@@ -509,10 +512,13 @@ export function reducer(state = defaultState, action) {
       for (const taskId of (Array.isArray(action.taskIds) ? action.taskIds : [])) {
         if (!taskId) continue;
         taskOutcomes[taskId] = {
-          carted: 0, checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt, seenEventIds: [],
+          carted: 0, waveCarted: 0, checkouts: 0, declines: 0, waveDeclines: 0,
+          lastCheckoutAt: 0, startedAt, seenEventIds: [],
         };
       }
-      return { ...state, target: { ...state.target, taskOutcomes } };
+      return { ...state, target: { ...state.target, taskOutcomes,
+        dropWave: { at: startedAt, oosSince: 0, ended: false },
+      } };
     }
 
     case 'targetMonitorBandwidth': {
@@ -531,26 +537,33 @@ export function reducer(state = defaultState, action) {
       const eventType = String(action.eventType || '').trim().toLowerCase();
       if (!taskId || !eventId || !['carted', 'checkout', 'decline'].includes(eventType)) return state;
       const previous = (state.target.taskOutcomes || {})[taskId] || {
-        carted: 0, checkouts: 0, declines: 0, lastCheckoutAt: 0, startedAt: 0, seenEventIds: [],
+        carted: 0, waveCarted: 0, checkouts: 0, declines: 0, waveDeclines: 0,
+        lastCheckoutAt: 0, startedAt: 0, seenEventIds: [],
       };
       const seenEventIds = Array.isArray(previous.seenEventIds) ? previous.seenEventIds : [];
       if (seenEventIds.includes(eventId)) return state;
       const occurredAt = Number.isFinite(Number(action.occurredAt)) ? Number(action.occurredAt) : Date.now();
       if (previous.startedAt && occurredAt < previous.startedAt) return state;
+      const waveAt = Number((state.target.dropWave || {}).at) || 0;
+      const inThisWave = !waveAt || occurredAt >= waveAt;
       const next = {
         ...previous,
         carted: Number(previous.carted) || 0,
+        waveCarted: Number(previous.waveCarted) || 0,
         checkouts: Number(previous.checkouts) || 0,
         declines: Number(previous.declines) || 0,
+        waveDeclines: Number(previous.waveDeclines) || 0,
         seenEventIds: [...seenEventIds.slice(-99), eventId],
       };
       if (eventType === 'carted') {
         next.carted += 1;
+        if (inThisWave) next.waveCarted += 1;
       } else if (eventType === 'checkout') {
         next.checkouts += 1;
         next.lastCheckoutAt = occurredAt;
       } else {
         next.declines += 1;
+        if (inThisWave) next.waveDeclines += 1;
       }
       return { ...state, target: { ...state.target,
         taskOutcomes: { ...(state.target.taskOutcomes || {}), [taskId]: next },
@@ -597,7 +610,13 @@ export function reducer(state = defaultState, action) {
         taskState: action.taskState,
         running: action.running,
       };
-      if (!action.taskId) return { ...state, target: { ...state.target, monitorStatus: entry } };
+      if (!action.taskId) {
+        const target = applyTargetDropWave(
+          { ...state.target, monitorStatus: entry },
+          Number(action.receivedAt) || Date.now(),
+        );
+        return { ...state, target };
+      }
 
       // A runtime proxy edit is feedback about the connection, not a new task step. Only intercept
       // it while a selector command is actually outstanding; that avoids mistaking an unrelated
@@ -624,8 +643,11 @@ export function reducer(state = defaultState, action) {
       // A completed edit remains hidden as a narrow guard against late "Rotating Proxy" chatter.
       // The first genuine task step proves the engine has moved on and retires that guard.
       if (proxyEdit && !proxyEdit.pending) delete proxyStatus[action.taskId];
-      return { ...state, target: { ...state.target,
-        taskStatus: { ...state.target.taskStatus, [action.taskId]: entry }, proxyStatus } };
+      return { ...state, target: applyTargetDropWave({
+        ...state.target,
+        taskStatus: { ...state.target.taskStatus, [action.taskId]: entry },
+        proxyStatus,
+      }, Number(action.receivedAt) || Date.now()) };
     }
 
     case 'targetStatusBatch': {
@@ -645,7 +667,8 @@ export function reducer(state = defaultState, action) {
       if (plain.length) {
         next = { ...next, target: { ...next.target, taskStatus: applyStatusEntries(next.target.taskStatus, plain) } };
       }
-      return next;
+      const waved = applyTargetDropWave(next.target, Number(receivedAt) || Date.now());
+      return waved === next.target ? next : { ...next, target: waved };
     }
 
     case 'targetOtp':

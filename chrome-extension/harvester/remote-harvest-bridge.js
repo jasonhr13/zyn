@@ -30,6 +30,36 @@
     }
   }
 
+  function captureUrl({ origin, roomId, joinToken, sessionToken, deviceId }) {
+    const url = new URL('/api/harvester/capture', origin || LICENSE_ORIGIN);
+    if (!sessionToken) {
+      url.searchParams.set('room', roomId);
+      url.searchParams.set('token', joinToken);
+      url.searchParams.set('deviceId', deviceId || 'extension');
+    }
+    return url.toString();
+  }
+
+  async function postCapture(connection, payload) {
+    const headers = { 'content-type': 'application/json' };
+    if (connection && connection.sessionToken) {
+      headers.authorization = `Bearer ${connection.sessionToken}`;
+      headers['x-rcart-device-id'] = connection.deviceId || connection.sessionDeviceId || 'extension';
+    }
+    const response = await fetch(captureUrl(connection), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload || {}),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok && body && body.ok !== true) {
+      const error = new Error(body.message || 'Capture was not accepted.');
+      error.body = body;
+      throw error;
+    }
+    return body;
+  }
+
   function websocketUrl({ origin, roomId, joinToken, sessionToken, deviceId }) {
     const url = new URL('/api/mobile/ws', origin || LICENSE_ORIGIN);
     url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
@@ -76,15 +106,24 @@
   }
 
   function statusFromDemand(message = {}) {
-    if (!message || (message.atc == null && message.atcTarget == null && !message.room)) {
+    if (!message || (message.atc == null && message.atcTarget == null && !message.room && !message.mailbox && !message.remaining)) {
       return { login: 0, atc: 0, runningTasks: 0, waiting: { login: 0, atc: 1 } };
     }
     const room = message.room && typeof message.room === 'object' ? message.room : {};
+    const mailbox = (message.mailbox && message.mailbox.remaining)
+      || message.mailboxRemaining
+      || message.remaining
+      || {};
     const atc = Math.max(0, Number(message.atc) || 0);
     const login = Math.max(0, Number(message.login) || 0);
-    const remainingAtc = Object.prototype.hasOwnProperty.call(room, 'atc')
+    let remainingAtc = Object.prototype.hasOwnProperty.call(room, 'atc')
       ? remainingOf(room.atc)
       : remainingOf(message.atcTarget != null ? Number(message.atcTarget) - atc : message.waitingAtc);
+    if (Object.prototype.hasOwnProperty.call(mailbox, 'atc')) {
+      const mailboxAtc = remainingOf(mailbox.atc);
+      if (mailboxAtc === 0) remainingAtc = 0;
+      else if (remainingAtc !== null && mailboxAtc !== null) remainingAtc = Math.min(remainingAtc, mailboxAtc);
+    }
     const waitingAtc = remainingAtc === null ? 1 : remainingAtc;
     return {
       login,
@@ -132,6 +171,8 @@
     fetchHarvestRoom,
     statusFromDemand,
     captureFromSave,
+    captureUrl,
+    postCapture,
     proxyGroupsFromMessage,
   };
 
@@ -209,6 +250,7 @@
     let pending = null;
     let closed = false;
     let id = 'extension';
+    let liveConnection = pairing;
 
     const fail = error => {
       if (closed) return;
@@ -249,6 +291,7 @@
         live = { ...pairing, roomId: roomInfo.roomId, origin: roomInfo.origin };
       }
       if (closed) return;
+      liveConnection = { ...live, deviceId: id };
       room = new NativeWebSocket(websocketUrl({ ...live, deviceId: id }));
       const timer = setTimeout(() => fail(new Error('ws timeout')), REQUEST_TIMEOUT_MS);
       room.onopen = () => {
@@ -259,6 +302,9 @@
         try { message = JSON.parse(String(event && event.data || '')); } catch {}
         if (!message || typeof message !== 'object') return;
         if (message.type === 'demand' || message.type === 'start') demand = message;
+        if (message.type === 'mailbox') {
+          demand = { ...(demand || {}), mailbox: message, remaining: message.remaining };
+        }
         if (message.type === 'proxies') proxies = proxyGroupsFromMessage(message);
         if (message.type === 'stop') demand = { ...(demand || {}), room: { login: 0, atc: 0 } };
         if ((message.type === 'registered' || message.type === 'hello' || message.type === 'demand')
@@ -304,11 +350,17 @@
         return;
       }
       if (message.action !== 'save') return;
-      try { room.send(JSON.stringify(captureFromSave(message, id))); }
-      catch (error) { fail(error); return; }
-      wait(item => item.type === 'capture-ack').then(item => {
-        if (!item.ok) {
-          fail(new Error('capture was not accepted'));
+      postCapture(liveConnection, captureFromSave(message, id)).then(item => {
+        if (item && item.mailbox) {
+          demand = { ...(demand || {}), mailbox: item.mailbox, remaining: item.mailbox.remaining };
+        }
+        if (item && item.reason === 'full') {
+          demand = { ...(demand || {}), room: { login: 0, atc: 0 }, remaining: { login: 0, atc: 0 } };
+          reply({ ok: true, saved: 0 });
+          return;
+        }
+        if (!item || item.ok !== true) {
+          fail(new Error((item && item.message) || 'capture was not accepted'));
           return;
         }
         reply({ ok: true, saved: Number(item.saved) || 1 });

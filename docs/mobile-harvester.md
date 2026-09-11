@@ -5,12 +5,11 @@ The phone app pairs to a signed-in Zyn desktop through `license.zynbot.app` and 
 ```
 Android WebView -> CDP Fetch.requestPaused on cart POST
 iOS WKWebView   -> JS fetch/XHR hook on cart POST (Mode B)
-phone JS        -> wss://license.zynbot.app/api/mobile/ws  (join token)
-desktop         -> same room (license bearer)
-desktop         -> POST /saveCookies  (x-zyn-token, source: mobile)
+phone / extension / companion -> harvest mailbox on license.zynbot.app
+Full Engine                    -> pulls batches into 127.0.0.1 cookie bank
 ```
 
-The Durable Object is a live pipe. It does not store Shape headers. Managed proxies and the license token never go to the phone. The phone picks which user-owned proxy lists to use. Android is 1 harvester; iOS Mode B is 1–6 in-process WKWebViews.
+The Durable Object stores Shape headers in a short-TTL mailbox (128 ATC / 16 login). Full Engine pulls up to 10 cookies at a time. Fat capture payloads are not forwarded over the desktop WebSocket. Managed proxies and the license token never go to the phone. The phone picks which user-owned proxy lists to use. Android is 1 harvester; iOS Mode B is 1–6 in-process WKWebViews.
 
 Pairing UI is Settings → Target — Mobile Harvesters. Generate a pairing code, then scan the QR (`zyn://pair?room=&token=&origin=`). Android APK: `https://updates.zynbot.app/download/android`. iOS is a development / ad-hoc / TestFlight IPA, not App Store.
 

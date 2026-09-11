@@ -35,6 +35,7 @@ const required = [
   'resources/app/harvest-room-demand.js',
   'resources/app/cloud-backup.js',
   'resources/app/cloud-backup-data.js',
+  'resources/app/gpu-compositing.js',
   'resources/app/target-product-history.js',
   'resources/app/target-cookie-standby.js',
   'resources/app/package.json',

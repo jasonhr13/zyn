@@ -170,6 +170,40 @@ async function main() {
   assert.equal(saved[0].proxy, 'host:8000:user:pass');
   assert.equal(saved[0].headers['sec-ch-ua-platform'], SHAPE_HEADERS['sec-ch-ua-platform']);
 
+  saved.length = 0;
+  const pulled = [];
+  const pullDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-mobile-bridge-pull-'));
+  const pullBridge = createMobileHarvesterBridge({
+    dataDirectory: pullDir,
+    authority: fakeAuthority({
+      cached: () => ({ ok: true, sessionKind: 'engine' }),
+    }),
+    enabled: () => true,
+    hostRemote: () => true,
+    takeCookies: async ({ type, n }) => {
+      pulled.push({ type, n });
+      return {
+        ok: true,
+        cookies: [{ type: 'atc', headers: SHAPE_HEADERS, proxy: 'host:8000', source: 'extension' }],
+        mailbox: { login: 0, atc: 0 },
+      };
+    },
+    saveCookie: async cookie => {
+      saved.push(cookie);
+      return { ok: true, saved: Array.isArray(cookie) ? cookie.length : 1 };
+    },
+    getCookieBank: async () => ({ login: 0, atc: 0, demand: { targets: { login: 0, atc: 4 } } }),
+    scheduleTimeout: () => 1,
+    cancelTimeout() {},
+    logger: { warn() {}, info() {} },
+  });
+  pullBridge.__test.noteMailbox({ login: 0, atc: 3 });
+  await pullBridge.__test.pullMailbox();
+  assert.equal(pulled.length, 1);
+  assert.equal(pulled[0].type, 'atc');
+  assert.equal(saved.length, 1);
+  fs.rmSync(pullDir, { recursive: true, force: true });
+
   await bridge.__test.handleMessage({
     type: 'peer-state',
     desktopOnline: true,
