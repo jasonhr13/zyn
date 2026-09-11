@@ -3,6 +3,8 @@
   "version": "1.7.58",
   "notes": [
     "Target checkout spends extension ATC cookies before in-bot cookies.",
-    "The Zyn Harvester browser extension can sign in with your Zyn account to send cookies to Full Engine."
+    "The Zyn Harvester browser extension can sign in with your Zyn account to send cookies to Full Engine.",
+    "Harvester sign-in does not use a Full Engine device seat.",
+    "The pairing URL remains under extension details if you still need the old join path."
   ]
 }
