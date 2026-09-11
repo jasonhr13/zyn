@@ -289,16 +289,34 @@ export async function connectMobileWebSocket(request, env, url, { authenticate }
   }
 
   if (role === 'extension') {
-    const token = String(url.searchParams.get('token') || '');
-    if (!token) {
-      return json({ ok: false, code: 'join_required', message: 'Extension join token is required.' }, 401);
-    }
-    const tokenHash = await sha256Hex(token);
-    if (tokenHash !== room.token_hash) {
-      return json({ ok: false, code: 'join_invalid', message: 'This pairing code is no longer valid.' }, 403);
-    }
-    if (!validDeviceId(deviceId)) {
-      return json({ ok: false, code: 'invalid_request', message: 'Extension device id is required.' }, 400);
+    const joinToken = String(url.searchParams.get('token') || '');
+    const sessionToken = String(url.searchParams.get('session') || '');
+    if (joinToken) {
+      const tokenHash = await sha256Hex(joinToken);
+      if (tokenHash !== room.token_hash) {
+        return json({ ok: false, code: 'join_invalid', message: 'This pairing code is no longer valid.' }, 403);
+      }
+      if (!validDeviceId(deviceId)) {
+        return json({ ok: false, code: 'invalid_request', message: 'Extension device id is required.' }, 400);
+      }
+    } else if (sessionToken) {
+      if (!validDeviceId(deviceId)) {
+        return json({ ok: false, code: 'invalid_request', message: 'Extension device id is required.' }, 400);
+      }
+      const headers = new Headers(request.headers);
+      headers.set('authorization', `Bearer ${sessionToken}`);
+      headers.set('x-rcart-device-id', deviceId);
+      const identity = await authenticate(new Request(request.url, { method: 'GET', headers }), env);
+      if (!identity || identity.user_id !== room.user_id) {
+        return json({
+          ok: false,
+          code: 'license_invalid',
+          message: 'Sign in again to harvest into this Zyn account.',
+        }, 401);
+      }
+      deviceId = String(identity.device_id || deviceId);
+    } else {
+      return json({ ok: false, code: 'join_required', message: 'Sign in with your Zyn account, or paste a pairing URL.' }, 401);
     }
   } else if (role === 'desktop' || role === 'companion') {
     const identity = await authenticate(request, env);

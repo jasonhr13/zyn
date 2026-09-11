@@ -34,13 +34,16 @@ the same Target cookie bank.
 
 To harvest from a browser that does **not** have Zyn installed:
 
-1. On the Full Engine Zyn, **Settings → Target — Mobile Harvesters → Generate pairing code**
-2. Copy the `zyn://pair?…` URL
-3. In this extension popup, paste it under **Remote cookie bank** and save
-4. Connection should show **Live** while that Full Engine is open
+1. Open this extension’s popup
+2. Under **Remote cookie bank**, sign in with the same Zyn email and password you use in the app
+3. Connection should show **Live** while Full Engine is signed in on the machine that runs tasks
 
-Paired extensions deposit into the remote bank and follow Full Engine remaining-room demand (they
-stop when the ATC cap is full). Leave the pairing field empty to keep using a local Zyn on `127.0.0.1`.
+The extension joins that account’s harvest room the same way a harvest-only Zyn app does. It follows
+Full Engine remaining-room demand (it stops when the ATC cap is full). Sign out, or leave the account
+blank, to keep using a local Zyn on `127.0.0.1`.
+
+A pairing URL from **Settings → Target — Mobile Harvesters** still works under **Pairing URL** if you
+need the older paste-to-pair flow.
 
 ### Ports
 

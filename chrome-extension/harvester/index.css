@@ -897,6 +897,46 @@ select {
     line-height: 1.4;
 }
 
+.remoteLoginForm,
+.remoteSignedIn {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.remoteLoginForm[hidden],
+.remoteSignedIn[hidden] {
+    display: none;
+}
+
+.remoteLoginInput {
+    width: 100%;
+    min-height: 34px;
+    padding: 8px 10px;
+    border: 1px solid var(--field-border);
+    border-radius: var(--radius-sm);
+    background: var(--field);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.remoteSignedEmail {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.remotePairAdvanced {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.remotePairAdvanced summary {
+    cursor: pointer;
+    margin-bottom: 6px;
+}
+
 .remotePairInput {
     width: 100%;
     min-height: 52px;

@@ -20,8 +20,12 @@
     "shape-farmer-throughput.mjs": "79d033d32d467ba3bb5a6d5955ec48c5dbce9be329d295232335f83fbce7ea87",
     "shape-farmer.mjs": {
       "upstreamSha256": "a961759aa1d3e97c0e4bfb6b92b9ee02baafda23a9830455386ccc6b3d6f89ab",
-      "sha256": "c361eb0ad7d84a8f848d8c2087bd15b3ca9524cc34a5a4c208ab881bbcffe355",
-      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling. Producer bank refresh is 1s so remotes park when Full Engine remaining room hits zero. Login harvest opens /account/signup first, skips homepage PX warmup unless the form bounces, and stops waiting once username_validations is captured. Dedicated login producers honor --workers as loginConcurrency. Standard ATC opens the live PDP first, skips homepage PX warmup unless the product page bounces or Target serves its block interstitial, and stops waiting once cart_items is captured."
+      "sha256": "046279da1b0cb74d2b40901b2ec146e60774e4c6415713e4c8f854cc1a4752f8",
+      "adaptation": "Retain managed-route health handling and add isolated typed producer mode, per-cookie expiration, shared-broker telemetry including proxy bandwidth and yield, authenticated live per-task bank demand and extension injection, adaptive performance-based browser selection, configurable worker pacing, the selectable Target ATC V2 synthetic-PDP flow, Zyn-branded local broker credentials, and source-tagged multi-list proxy weighting. Optional headed persistent Chrome harvest engine with Mac minimize. Experimental proxy workers share the 100-worker ceiling. Producer bank refresh is 1s so remotes park when Full Engine remaining room hits zero. Login harvest opens /account/signup first, skips homepage PX warmup unless the form bounces, and stops waiting once username_validations is captured. Dedicated login producers honor --workers as loginConcurrency. Standard ATC opens the live PDP first, skips homepage PX warmup unless the product page bounces or Target serves its block interstitial, and stops waiting once cart_items is captured. ATC checkout spends extension-minted cookies before in-bot cookies."
+    },
+    "shape-cookie-take.mjs": {
+      "sha256": "e87922d34808889bd389f6843268e28b4b4c07c7a3701b0b81a56f885b8ae7a2",
+      "adaptation": "ATC cookie take prefers extension harvests, then FIFO."
     },
     "shape-atc-replay.mjs": {
       "sha256": "0d1bf73d818e03bf642c5e7333c4c283636055ab66e067259f19937da6383e83",

@@ -157,17 +157,31 @@
                 </div>
             </div>
 
-            <section class="remotePair" aria-label="Remote Full Engine pairing">
+            <section class="remotePair" aria-label="Remote Full Engine sign in">
                 <div class="remotePairCopy">
                     <strong>Remote cookie bank</strong>
-                    <small>Paste a Full Engine pairing URL to harvest from this browser into that Zyn. Leave empty to use a local Zyn on this machine.</small>
+                    <small>Sign in with your Zyn account to harvest from this browser into Full Engine. Leave this empty to use a local Zyn on this machine.</small>
                 </div>
-                <textarea id="remotePairInput" class="remotePairInput" spellcheck="false" rows="2" placeholder="zyn://pair?room=…&amp;token=…&amp;origin=…"></textarea>
-                <div class="remotePairActions">
-                    <button id="remotePairSave" class="importBtn" type="button">Save pairing</button>
-                    <button id="remotePairClear" class="deleteBtn" type="button">Clear</button>
-                    <span id="remotePairStatus" class="remotePairStatus">Not paired.</span>
+                <div id="remoteLoginForm" class="remoteLoginForm">
+                    <input id="remoteEmail" class="remoteLoginInput" type="email" autocomplete="username" placeholder="Zyn email" spellcheck="false">
+                    <input id="remotePassword" class="remoteLoginInput" type="password" autocomplete="current-password" placeholder="Password">
+                    <div class="remotePairActions">
+                        <button id="remoteSignIn" class="importBtn" type="button">Sign in</button>
+                    </div>
                 </div>
+                <div id="remoteSignedIn" class="remoteSignedIn" hidden>
+                    <span id="remoteSignedEmail" class="remoteSignedEmail"></span>
+                    <button id="remoteSignOut" class="deleteBtn" type="button">Sign out</button>
+                </div>
+                <details class="remotePairAdvanced">
+                    <summary>Pairing URL</summary>
+                    <textarea id="remotePairInput" class="remotePairInput" spellcheck="false" rows="2" placeholder="zyn://pair?room=…&amp;token=…&amp;origin=…"></textarea>
+                    <div class="remotePairActions">
+                        <button id="remotePairSave" class="importBtn" type="button">Save pairing</button>
+                        <button id="remotePairClear" class="deleteBtn" type="button">Clear</button>
+                    </div>
+                </details>
+                <span id="remotePairStatus" class="remotePairStatus">Not signed in.</span>
             </section>
 
             <section class="proxyWorkspace" aria-label="Proxy workspace">

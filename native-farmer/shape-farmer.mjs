@@ -42,6 +42,7 @@ import {
 import { concealHarvestWindow } from './shape-harvest-window.mjs';
 import { makePersona, personaInitScript, makeContextOptions, createHuman } from './harvest-persona.mjs';
 import { createHarvestCoordinator } from './shape-harvest-coordinator.mjs';
+import { takePreferredCookie } from './shape-cookie-take.mjs';
 import { createBankDemand } from './shape-bank-demand.mjs';
 import {
   classifyHarvestPageEvidence, classifyHarvestFailure, createHarvestHealth, pickWeightedSource,
@@ -412,7 +413,7 @@ function pushCookie(type, headers, proxy, options = {}) {
 function takeCookie(type, waitMs) {
   return new Promise((resolve) => {
     prune(type);
-    const available = pool[type].shift();
+    const available = takePreferredCookie(pool[type], type);
     if (available) {
       activity.delivered[type]++;
       saveBank();

@@ -215,8 +215,12 @@ try {
     assert.equal(result.ok, true);
     tandemCookies.push(result.cookie);
   }
-  const managedCookie = tandemCookies.find(cookie => cookie.source === 'inBotV2');
-  const extensionCookies = tandemCookies.filter(cookie => cookie.source === 'extension');
+  assert.equal(tandemCookies[0].source, 'extension');
+  assert.equal(tandemCookies[1].source, 'extension');
+  assert.equal(tandemCookies[2].source, 'inBotV2',
+    'ATC checkout must spend extension cookies before in-bot cookies');
+  const managedCookie = tandemCookies[2];
+  const extensionCookies = tandemCookies.slice(0, 2);
   assert.equal(managedCookie.proxy, '127.0.0.1:9000:user:pass');
   assert.equal(managedCookie.harvesterId, 'proxy');
   assert.deepEqual(extensionCookies.map(cookie => cookie.proxy).sort(), [

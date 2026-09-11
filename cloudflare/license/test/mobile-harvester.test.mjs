@@ -335,6 +335,37 @@ test('browser extension websocket accepts the phone pairing token', async () => 
   assert.doesNotMatch(env.wsCalls[0].url, /token=/);
 });
 
+test('browser extension websocket accepts a signed-in Zyn license session', async () => {
+  const env = await environment();
+  const hosted = await (await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {
+    method: 'POST',
+    headers: licenseHeaders(),
+  }), env)).json();
+
+  const missingSession = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${hosted.roomId}&role=extension&deviceId=${DEVICE_A}`,
+    { headers: { upgrade: 'websocket' } },
+  ), env);
+  assert.equal(missingSession.status, 401);
+
+  const badSession = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${hosted.roomId}&role=extension&session=nope-nope-nope-nope&deviceId=${DEVICE_A}`,
+    { headers: { upgrade: 'websocket' } },
+  ), env);
+  assert.equal(badSession.status, 401);
+  assert.equal(env.wsCalls.length, 0);
+
+  const good = await worker.fetch(new Request(
+    `https://license.zynbot.app/api/mobile/ws?room=${hosted.roomId}&role=extension&session=${TOKEN_A}&deviceId=${DEVICE_A}`,
+    { headers: { upgrade: 'websocket' } },
+  ), env);
+  assert.equal(good.status, 200);
+  assert.equal(env.wsCalls.length, 1);
+  assert.match(env.wsCalls[0].url, /role=extension/);
+  assert.doesNotMatch(env.wsCalls[0].url, /session=/);
+  assert.doesNotMatch(env.wsCalls[0].url, /token=/);
+});
+
 test('Full Engine hosts a harvest room that harvester-only companions can join', async () => {
   const env = await environment();
   const deniedCompanionHost = await worker.fetch(new Request('https://license.zynbot.app/api/harvester/room', {

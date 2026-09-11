@@ -3,8 +3,14 @@
 
   const LOCAL_BRIDGE = 'ws://127.0.0.1:4312/ws';
   const STORAGE_KEY = 'zynHarvesterRemotePairing';
+  const SESSION_KEY = 'zynHarvesterLicenseSession';
+  const LICENSE_ORIGIN = 'https://license.zynbot.app';
   const ROOM_ID_PATTERN = /^zynm_[A-Za-z0-9_-]{16,64}$/;
   const REQUEST_TIMEOUT_MS = 8000;
+
+  function licenseDeviceId(clientId) {
+    return String(clientId || '').replace(/-/g, '').toLowerCase();
+  }
 
   function parsePairingInput(value) {
     const text = String(value || '').trim().replace(/^['"]+|['"]+$/g, '');
@@ -24,14 +30,43 @@
     }
   }
 
-  function websocketUrl({ origin, roomId, joinToken, deviceId }) {
-    const url = new URL('/api/mobile/ws', origin);
+  function websocketUrl({ origin, roomId, joinToken, sessionToken, deviceId }) {
+    const url = new URL('/api/mobile/ws', origin || LICENSE_ORIGIN);
     url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
     url.searchParams.set('room', roomId);
     url.searchParams.set('role', 'extension');
-    url.searchParams.set('token', joinToken);
     url.searchParams.set('deviceId', deviceId);
+    if (sessionToken) url.searchParams.set('session', sessionToken);
+    else url.searchParams.set('token', joinToken);
     return url.toString();
+  }
+
+  function parseSessionRecord(value) {
+    const record = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    if (!record) return null;
+    const token = String(record.token || '').trim();
+    const deviceId = licenseDeviceId(record.deviceId);
+    const origin = String(record.origin || LICENSE_ORIGIN).replace(/\/+$/, '') || LICENSE_ORIGIN;
+    const email = String(record.email || '').trim();
+    if (token.length < 16 || deviceId.length < 16) return null;
+    return { token, deviceId, origin, email, expiresAt: Number(record.expiresAt) || 0 };
+  }
+
+  async function fetchHarvestRoom(session) {
+    const response = await fetch(`${session.origin}/api/harvester/room`, {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'x-rcart-device-id': session.deviceId,
+      },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body || body.ok !== true || !ROOM_ID_PATTERN.test(body.roomId || '')) {
+      const error = new Error(body.message || 'No Full Engine harvest room is online.');
+      error.code = body.code || 'room_not_found';
+      throw error;
+    }
+    return { roomId: body.roomId, origin: session.origin };
   }
 
   function remainingOf(value) {
@@ -88,8 +123,13 @@
   globalThis.zynRemoteHarvest = {
     LOCAL_BRIDGE,
     STORAGE_KEY,
+    SESSION_KEY,
+    LICENSE_ORIGIN,
+    licenseDeviceId,
     parsePairingInput,
+    parseSessionRecord,
     websocketUrl,
+    fetchHarvestRoom,
     statusFromDemand,
     captureFromSave,
     proxyGroupsFromMessage,
@@ -101,6 +141,12 @@
   let cachedPairing = undefined;
   const storage = globalThis.chrome && chrome.storage && chrome.storage.local;
 
+  function connectionFromStore(result) {
+    const session = parseSessionRecord(result && result[SESSION_KEY]);
+    if (session) return { ...session, sessionToken: session.token };
+    return parsePairingInput(result && result[STORAGE_KEY]);
+  }
+
   function readPairing() {
     if (cachedPairing !== undefined) return Promise.resolve(cachedPairing);
     if (!storage || typeof storage.get !== 'function') {
@@ -109,8 +155,8 @@
     }
     return new Promise(resolve => {
       try {
-        storage.get([STORAGE_KEY], result => {
-          cachedPairing = parsePairingInput(result && result[STORAGE_KEY]);
+        storage.get([STORAGE_KEY, SESSION_KEY], result => {
+          cachedPairing = connectionFromStore(result);
           resolve(cachedPairing);
         });
       } catch {
@@ -122,8 +168,9 @@
 
   if (storage && chrome.storage.onChanged && typeof chrome.storage.onChanged.addListener === 'function') {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes || !changes[STORAGE_KEY]) return;
-      cachedPairing = parsePairingInput(changes[STORAGE_KEY].newValue);
+      if (area !== 'local' || !changes) return;
+      if (!changes[STORAGE_KEY] && !changes[SESSION_KEY]) return;
+      cachedPairing = undefined;
     });
   }
 
@@ -191,10 +238,18 @@
       pending = { match, resolve, reject, timer };
     });
 
-    deviceId().then(nextId => {
-      id = nextId || 'extension';
+    deviceId().then(async nextId => {
+      id = pairing.sessionToken
+        ? (pairing.deviceId || licenseDeviceId(nextId) || 'extension')
+        : (nextId || 'extension');
       if (closed) return;
-      room = new NativeWebSocket(websocketUrl({ ...pairing, deviceId: id }));
+      let live = pairing;
+      if (pairing.sessionToken && !pairing.roomId) {
+        const roomInfo = await fetchHarvestRoom(pairing);
+        live = { ...pairing, roomId: roomInfo.roomId, origin: roomInfo.origin };
+      }
+      if (closed) return;
+      room = new NativeWebSocket(websocketUrl({ ...live, deviceId: id }));
       const timer = setTimeout(() => fail(new Error('ws timeout')), REQUEST_TIMEOUT_MS);
       room.onopen = () => {
         try { room.send(JSON.stringify({ type: 'hello', role: 'extension', deviceId: id })); } catch {}

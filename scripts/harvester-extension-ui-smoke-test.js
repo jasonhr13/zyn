@@ -36,6 +36,8 @@ const coupledIds = [
   'scheduleStartAmPm', 'scheduleEndHour', 'scheduleEndMinute', 'scheduleEndAmPm',
   'scheduleStartLabel', 'scheduleEndLabel', 'loginCookieCount', 'atcCookieCount',
   'botConnectionBadge', 'botStatusLabel', 'botConnectionState',
+  'remoteEmail', 'remotePassword', 'remoteSignIn', 'remoteSignOut',
+  'remoteLoginForm', 'remoteSignedIn', 'remoteSignedEmail',
   'remotePairInput', 'remotePairSave', 'remotePairClear', 'remotePairStatus',
 ];
 for (const id of coupledIds) {

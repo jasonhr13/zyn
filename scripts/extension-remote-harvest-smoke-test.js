@@ -33,6 +33,24 @@ assert.equal(ws.pathname, '/api/mobile/ws');
 assert.equal(ws.searchParams.get('role'), 'extension');
 assert.equal(ws.searchParams.get('token'), pairing.joinToken);
 
+assert.equal(api.licenseDeviceId('11111111-2222-4333-a444-555555555555'), '1111111122224333a444555555555555');
+const session = api.parseSessionRecord({
+  token: 'license-token-value-123456',
+  deviceId: '1111111122224333a444555555555555',
+  email: 'a@b.c',
+  origin: 'https://license.zynbot.app',
+});
+assert.equal(session.email, 'a@b.c');
+const sessionWs = new URL(api.websocketUrl({
+  origin: session.origin,
+  roomId: pairing.roomId,
+  sessionToken: session.token,
+  deviceId: session.deviceId,
+}));
+assert.equal(sessionWs.searchParams.get('session'), session.token);
+assert.equal(sessionWs.searchParams.get('token'), null);
+assert.equal(api.parseSessionRecord({ token: 'short', deviceId: 'abc' }), null);
+
 assert.equal(api.statusFromDemand({
   atc: 320,
   login: 0,
@@ -65,9 +83,13 @@ const html = read('chrome-extension/harvester/index.html');
 assert.match(html, /remote-harvest-bridge\.js/);
 assert.match(html, /remote-pair-ui\.js/);
 assert.match(html, /remotePairInput/);
+assert.match(html, /remoteEmail/);
+assert.match(html, /remoteSignIn/);
+assert.match(read('chrome-extension/harvester/remote-pair-ui.js'), /\/api\/auth\/login/);
+assert.match(read('chrome-extension/harvester/remote-pair-ui.js'), /sessionKind: 'harvester'/);
 
 const manifest = JSON.parse(read('chrome-extension/harvester/manifest.json'));
-assert.equal(manifest.version, '1.1.8');
+assert.equal(manifest.version, '1.1.9');
 assert.equal(manifest.background.service_worker, 'src/sw.js');
 
 const sw = read('chrome-extension/harvester/src/sw.js');
