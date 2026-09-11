@@ -37,7 +37,7 @@ const coupledIds = [
   'scheduleStartLabel', 'scheduleEndLabel', 'loginCookieCount', 'atcCookieCount',
   'botConnectionBadge', 'botStatusLabel', 'botConnectionState',
   'remoteEmail', 'remotePassword', 'remoteSignIn', 'remoteSignOut',
-  'remoteLoginForm', 'remoteSignedIn', 'remoteSignedEmail',
+  'remoteLoginForm', 'remoteSignedIn', 'remoteSignedEmail', 'remotePair',
   'remotePairInput', 'remotePairSave', 'remotePairClear', 'remotePairStatus',
 ];
 for (const id of coupledIds) {
@@ -136,9 +136,11 @@ assert.match(css, /\.routeModeOption--proxy/);
 assert.match(css, /\.routeNoticeCopy--local/);
 assert.match(css, /\.routeNoticeCopy--proxy/);
 assert.match(css, /max-width:\s*790px/);
-assert.match(css, /max-height:\s*570px/);
-assert.match(background, /It=0x316,wt=0x23a/,
-  'background popup dimensions must remain 790 by 570');
+assert.match(css, /max-height:\s*640px/);
+assert.match(css, /\.remotePair\.is-signed-in/);
+assert.match(css, /\.proxyInput[\s\S]{0,180}min-height:\s*132px/);
+assert.match(background, /It=0x316,wt=0x280/,
+  'background popup dimensions must remain 790 by 640');
 
 const atcPageSessionSource = read('src/atc-page-session.js');
 assert.match(background, /from'\.\/atc-page-session\.js'/,
@@ -351,7 +353,7 @@ async function verifyClientIdentity() {
 verifyClientIdentity().then(() => {
   console.log(JSON.stringify({
     ok: true,
-    viewport: '790x570',
+    viewport: '790x640',
     coupledIds: coupledIds.length,
     localAssets: document.querySelectorAll('link[href], script[src], img[src]').length,
     stableClientIdentity: true,

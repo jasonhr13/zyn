@@ -718,26 +718,30 @@ export class MobileHarvesterRoom {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  announce(socket) {
+  async announce(socket) {
     const meta = this.attachment(socket);
     if (!meta || meta.announced) return meta;
     const next = { ...meta, announced: true };
     try { socket.serializeAttachment(next); } catch {}
     const peer = this.peerState();
-    this.send(socket, {
+    const payload = {
       type: 'registered',
       role: next.role,
       deviceId: next.deviceId,
       desktopOnline: peer.desktopOnline,
       phoneCount: peer.phoneCount,
       peer,
-    });
+    };
+    if (next.role === 'extension' || next.role === 'companion' || next.role === 'phone') {
+      payload.mailbox = mailboxSnapshot(await this.loadMailbox());
+    }
+    this.send(socket, payload);
     this.broadcast({ type: 'peer-state', ...peer });
     return next;
   }
 
   async webSocketMessage(socket, raw) {
-    const meta = this.announce(socket) || this.attachment(socket) || {};
+    const meta = await this.announce(socket) || this.attachment(socket) || {};
     const role = meta.role;
     const parsed = parseMobileClientMessage(raw, role);
     if (!parsed.ok) {

@@ -105,22 +105,35 @@
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
   }
 
+  function applyMailbox(demand, mailbox) {
+    if (!mailbox || typeof mailbox !== 'object') return demand || {};
+    const remaining = mailbox.remaining && typeof mailbox.remaining === 'object'
+      ? mailbox.remaining
+      : undefined;
+    return {
+      ...(demand || {}),
+      mailbox,
+      remaining: remaining || demand && demand.remaining,
+    };
+  }
+
   function statusFromDemand(message = {}) {
     if (!message || (message.atc == null && message.atcTarget == null && !message.room && !message.mailbox && !message.remaining)) {
       return { login: 0, atc: 0, runningTasks: 0, waiting: { login: 0, atc: 1 } };
     }
     const room = message.room && typeof message.room === 'object' ? message.room : {};
-    const mailbox = (message.mailbox && message.mailbox.remaining)
+    const mailbox = message.mailbox && typeof message.mailbox === 'object' ? message.mailbox : null;
+    const mailboxRemaining = (mailbox && mailbox.remaining)
       || message.mailboxRemaining
       || message.remaining
       || {};
-    const atc = Math.max(0, Number(message.atc) || 0);
-    const login = Math.max(0, Number(message.login) || 0);
+    const atc = Math.max(0, Number(mailbox && mailbox.atc != null ? mailbox.atc : message.atc) || 0);
+    const login = Math.max(0, Number(mailbox && mailbox.login != null ? mailbox.login : message.login) || 0);
     let remainingAtc = Object.prototype.hasOwnProperty.call(room, 'atc')
       ? remainingOf(room.atc)
       : remainingOf(message.atcTarget != null ? Number(message.atcTarget) - atc : message.waitingAtc);
-    if (Object.prototype.hasOwnProperty.call(mailbox, 'atc')) {
-      const mailboxAtc = remainingOf(mailbox.atc);
+    if (Object.prototype.hasOwnProperty.call(mailboxRemaining, 'atc')) {
+      const mailboxAtc = remainingOf(mailboxRemaining.atc);
       if (mailboxAtc === 0) remainingAtc = 0;
       else if (remainingAtc !== null && mailboxAtc !== null) remainingAtc = Math.min(remainingAtc, mailboxAtc);
     }
@@ -170,6 +183,7 @@
     websocketUrl,
     fetchHarvestRoom,
     statusFromDemand,
+    applyMailbox,
     captureFromSave,
     captureUrl,
     postCapture,
@@ -301,10 +315,11 @@
         let message = null;
         try { message = JSON.parse(String(event && event.data || '')); } catch {}
         if (!message || typeof message !== 'object') return;
-        if (message.type === 'demand' || message.type === 'start') demand = message;
-        if (message.type === 'mailbox') {
-          demand = { ...(demand || {}), mailbox: message, remaining: message.remaining };
+        if (message.type === 'demand' || message.type === 'start') {
+          demand = applyMailbox(message, message.mailbox || (demand && demand.mailbox));
         }
+        if (message.type === 'mailbox') demand = applyMailbox(demand, message);
+        if (message.type === 'registered' && message.mailbox) demand = applyMailbox(demand, message.mailbox);
         if (message.type === 'proxies') proxies = proxyGroupsFromMessage(message);
         if (message.type === 'stop') demand = { ...(demand || {}), room: { login: 0, atc: 0 } };
         if ((message.type === 'registered' || message.type === 'hello' || message.type === 'demand')
@@ -351,9 +366,7 @@
       }
       if (message.action !== 'save') return;
       postCapture(liveConnection, captureFromSave(message, id)).then(item => {
-        if (item && item.mailbox) {
-          demand = { ...(demand || {}), mailbox: item.mailbox, remaining: item.mailbox.remaining };
-        }
+        if (item && item.mailbox) demand = applyMailbox(demand, item.mailbox);
         if (item && item.reason === 'full') {
           demand = { ...(demand || {}), room: { login: 0, atc: 0 }, remaining: { login: 0, atc: 0 } };
           reply({ ok: true, saved: 0 });

@@ -24,8 +24,10 @@
   function signedInView(signedIn) {
     const form = $('remoteLoginForm');
     const signed = $('remoteSignedIn');
+    const pair = $('remotePair') || document.querySelector('.remotePair');
     if (form) form.hidden = signedIn;
     if (signed) signed.hidden = !signedIn;
+    if (pair) pair.classList.toggle('is-signed-in', Boolean(signedIn));
   }
 
   async function clientIdentity() {
@@ -48,7 +50,7 @@
         signedInView(true);
         const email = $('remoteSignedEmail');
         if (email) email.textContent = session.email || 'Signed in';
-        setStatus('Signed in. This browser deposits into your Full Engine cookie bank when that Zyn is open.', true);
+        setStatus('Deposits into Full Engine while that Zyn is open.', true);
         return;
       }
       signedInView(false);
