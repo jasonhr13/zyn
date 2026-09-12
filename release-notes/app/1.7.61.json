@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.61",
+  "notes": [
+    "Windows inputs and dropdowns keep working after a confirm dialog, including deleting a task.",
+    "Windows confirm and alert dialogs stay attached to the Zyn window instead of stealing focus.",
+    "You no longer need to close and reopen Zyn on Windows after a native confirm.",
+    "Hardware graphics remain on by default; software graphics is still available in Settings."
+  ]
+}

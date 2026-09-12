@@ -742,16 +742,32 @@ ipcMain.on('maximize', (e) => {
 });
 function focusRendererWindow(win, { bounce = false } = {}) {
   if (!win || win.isDestroyed()) return;
-  try { if (win.isMinimized()) win.restore(); } catch {}
-  try { win.focus(); } catch {}
-  try { win.webContents.focus(); } catch {}
+  const apply = () => {
+    if (!win || win.isDestroyed()) return;
+    try { if (win.isMinimized()) win.restore(); } catch {}
+    if (bounce && process.platform === 'win32') {
+      try { app.focus({ steal: true }); } catch {}
+      try { win.blur(); } catch {}
+      try {
+        if (typeof win.setFocusable === 'function') {
+          win.setFocusable(false);
+          win.setFocusable(true);
+        }
+      } catch {}
+      try {
+        win.setEnabled(false);
+        win.setEnabled(true);
+      } catch {}
+    }
+    try { if (typeof win.moveTop === 'function') win.moveTop(); } catch {}
+    try { win.show(); } catch {}
+    try { win.focus(); } catch {}
+    try { win.webContents.focus(); } catch {}
+  };
+  apply();
   if (bounce && process.platform === 'win32') {
-    try {
-      win.setEnabled(false);
-      win.setEnabled(true);
-      win.focus();
-      win.webContents.focus();
-    } catch {}
+    setTimeout(apply, 32);
+    setTimeout(apply, 100);
   }
 }
 
@@ -762,6 +778,38 @@ ipcMain.on('restoreRendererFocus', (e) => {
   // Native confirm/alert on a frameless Windows window can leave Chromium stuck so
   // inputs ignore keystrokes until relaunch. Bounce enable to cancel that trap.
   focusRendererWindow(BrowserWindow.fromWebContents(e.sender) || mainWindow, { bounce: true });
+});
+ipcMain.on('nativeConfirm', (e, message) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  let ok = false;
+  try {
+    ok = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['OK', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      message: String(message || ''),
+    }) === 0;
+  } catch {
+    ok = false;
+  }
+  e.returnValue = ok;
+  focusRendererWindow(win, { bounce: process.platform === 'win32' });
+});
+ipcMain.on('nativeAlert', (e, message) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  try {
+    dialog.showMessageBoxSync(win, {
+      type: 'info',
+      buttons: ['OK'],
+      defaultId: 0,
+      noLink: true,
+      message: String(message || ''),
+    });
+  } catch {}
+  e.returnValue = true;
+  focusRendererWindow(win, { bounce: process.platform === 'win32' });
 });
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────────
