@@ -3,10 +3,12 @@ import test from 'node:test';
 import worker from '../src/index.js';
 import {
   MOBILE_MAX_COMPANIONS,
+  MOBILE_MAX_DESKTOPS,
   MOBILE_MAX_EXTENSIONS,
   MOBILE_MAX_PHONES,
   allowedMobileMessageType,
   canAcceptMobilePeer,
+  sumHarvestDemand,
   mobilePairingUrl,
   parseMobileClientMessage,
   parseMobilePairingUrl,
@@ -237,9 +239,11 @@ test('same-device reconnects replace the stale socket instead of occupying a sec
   assert.equal(shouldReplaceMobilePeer({ role: 'companion', deviceId: 'win-1' }, 'desktop', 'win-1'), false);
 });
 
-test('room occupancy rejects a second desktop and extra phones', () => {
-  assert.equal(canAcceptMobilePeer({ desktopOnline: false, phoneCount: 0 }, 'desktop'), true);
-  assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: 0 }, 'desktop'), false);
+test('room occupancy allows multiple Full Engines and rejects extra phones', () => {
+  assert.equal(canAcceptMobilePeer({ desktopCount: 0, phoneCount: 0 }, 'desktop'), true);
+  assert.equal(canAcceptMobilePeer({ desktopCount: 1, phoneCount: 0 }, 'desktop'), true);
+  assert.equal(canAcceptMobilePeer({ desktopCount: MOBILE_MAX_DESKTOPS - 1 }, 'desktop'), true);
+  assert.equal(canAcceptMobilePeer({ desktopCount: MOBILE_MAX_DESKTOPS }, 'desktop'), false);
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: MOBILE_MAX_PHONES - 1 }, 'phone'), true);
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, phoneCount: MOBILE_MAX_PHONES }, 'phone'), false);
   assert.equal(canAcceptMobilePeer({ desktopOnline: true, companionCount: 0 }, 'companion'), true);
@@ -250,6 +254,31 @@ test('room occupancy rejects a second desktop and extra phones', () => {
   assert.equal(canAcceptMobilePeer({
     desktopOnline: true, extensionCount: MOBILE_MAX_EXTENSIONS,
   }, 'extension'), false);
+});
+
+test('harvest demand remaining room is the sum of every Full Engine', () => {
+  const summed = sumHarvestDemand([
+    { atc: 10, login: 0, waitingAtc: 2, activeTasks: 16, atcPerTask: 3, basis: 'live', room: { login: 0, atc: 20 } },
+    { atc: 8, login: 0, waitingAtc: 4, activeTasks: 8, atcPerTask: 3, basis: 'live', room: { login: 0, atc: 12 } },
+  ]);
+  assert.equal(summed.engines, 2);
+  assert.equal(summed.atc, 18);
+  assert.equal(summed.waitingAtc, 6);
+  assert.equal(summed.activeTasks, 24);
+  assert.equal(summed.room.atc, 32);
+  assert.equal(summed.basis, 'live');
+  const pausedPlusLive = sumHarvestDemand([
+    { basis: 'paused', room: { atc: 0, login: 0 }, waitingAtc: 0, activeTasks: 0 },
+    { basis: 'live', room: { atc: 9, login: 0 }, waitingAtc: 1, activeTasks: 4 },
+  ]);
+  assert.equal(pausedPlusLive.room.atc, 9);
+  assert.equal(pausedPlusLive.basis, 'live');
+  assert.equal(sumHarvestDemand([]).room.atc, 0);
+  assert.equal(sumHarvestDemand([]).basis, 'paused');
+  assert.equal(sumHarvestDemand([
+    { room: { atc: null, login: 0 } },
+    { room: { atc: 4, login: 0 } },
+  ]).room.atc, null, 'any uncapped engine keeps remote harvest running');
 });
 
 test('pairing requires a live license session', async () => {

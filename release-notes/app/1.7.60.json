@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.60",
+  "notes": [
+    "Several Full Engine machines can pull from the same remote harvest cookie bank.",
+    "Harvesters mint toward the combined remaining room of every Full Engine on the account.",
+    "Split checkout tasks across machines so each desktop stays responsive under a large task count.",
+    "Pausing one Full Engine does not stop remote harvest for the others."
+  ]
+}

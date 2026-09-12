@@ -12,6 +12,7 @@ export const MOBILE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const MOBILE_MAX_PHONES = 3;
 export const MOBILE_MAX_COMPANIONS = 8;
 export const MOBILE_MAX_EXTENSIONS = 8;
+export const MOBILE_MAX_DESKTOPS = 10;
 export const MOBILE_MAX_MESSAGE_BYTES = 256 * 1024;
 export const MOBILE_BINDING = 'MOBILE_HARVESTER';
 
@@ -137,15 +138,85 @@ export function shouldReplaceMobilePeer(meta, role, deviceId) {
 }
 
 export function canAcceptMobilePeer(stats, role) {
-  const desktopOnline = Boolean(stats && stats.desktopOnline);
+  const desktopCount = stats && stats.desktopCount != null
+    ? Math.max(0, Number(stats.desktopCount) || 0)
+    : (stats && stats.desktopOnline ? 1 : 0);
   const phoneCount = Math.max(0, Number(stats && stats.phoneCount) || 0);
   const companionCount = Math.max(0, Number(stats && stats.companionCount) || 0);
   const extensionCount = Math.max(0, Number(stats && stats.extensionCount) || 0);
-  if (role === 'desktop') return !desktopOnline;
+  if (role === 'desktop') return desktopCount < MOBILE_MAX_DESKTOPS;
   if (role === 'phone') return phoneCount < MOBILE_MAX_PHONES;
   if (role === 'companion') return companionCount < MOBILE_MAX_COMPANIONS;
   if (role === 'extension') return extensionCount < MOBILE_MAX_EXTENSIONS;
   return false;
+}
+
+function addRemaining(sum, value) {
+  if (sum === null || value === null) return null;
+  return sum + Math.max(0, Number(value) || 0);
+}
+
+export function sumHarvestDemand(demands) {
+  const list = Array.isArray(demands)
+    ? demands.filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    : [];
+  if (!list.length) {
+    return {
+      type: 'demand',
+      atc: 0,
+      login: 0,
+      atcTarget: 0,
+      waitingAtc: 0,
+      activeTasks: 0,
+      standbyTasks: 0,
+      atcPerTask: 0,
+      loginTasks: 0,
+      room: { login: 0, atc: 0 },
+      engines: 0,
+      basis: 'paused',
+    };
+  }
+  let atc = 0;
+  let login = 0;
+  let atcTarget = 0;
+  let waitingAtc = 0;
+  let activeTasks = 0;
+  let standbyTasks = 0;
+  let loginTasks = 0;
+  let atcPerTask = 0;
+  let roomAtc = 0;
+  let roomLogin = 0;
+  let liveBasis = '';
+  for (const demand of list) {
+    const basis = String(demand.basis || '');
+    if (basis !== 'paused' && !liveBasis) liveBasis = basis || 'live';
+    atc += Math.max(0, Number(demand.atc) || 0);
+    login += Math.max(0, Number(demand.login) || 0);
+    atcTarget += Math.max(0, Number(demand.atcTarget) || 0);
+    waitingAtc += Math.max(0, Number(demand.waitingAtc) || 0);
+    activeTasks += Math.max(0, Number(demand.activeTasks) || 0);
+    standbyTasks += Math.max(0, Number(demand.standbyTasks) || 0);
+    loginTasks += Math.max(0, Number(demand.loginTasks) || 0);
+    const per = Number(demand.atcPerTask);
+    if (Number.isFinite(per) && per > atcPerTask) atcPerTask = per;
+    const room = demand.room && typeof demand.room === 'object' ? demand.room : {};
+    if (Object.prototype.hasOwnProperty.call(room, 'atc')) roomAtc = addRemaining(roomAtc, room.atc);
+    if (Object.prototype.hasOwnProperty.call(room, 'login')) roomLogin = addRemaining(roomLogin, room.login);
+  }
+  return {
+    type: 'demand',
+    atc,
+    login,
+    atcTarget,
+    waitingAtc,
+    activeTasks,
+    standbyTasks,
+    atcPerTask,
+    loginTasks,
+    room: { login: roomLogin, atc: roomAtc },
+    engines: list.length,
+    basis: liveBasis || 'paused',
+  };
 }
 
 async function activeRoomForUser(env, userId) {
@@ -635,7 +706,7 @@ export class MobileHarvesterRoom {
   }
 
   peerState(exclude) {
-    let desktopOnline = false;
+    let desktopCount = 0;
     let phoneCount = 0;
     let companionCount = 0;
     let extensionCount = 0;
@@ -643,12 +714,18 @@ export class MobileHarvesterRoom {
       const meta = this.attachment(socket);
       if (typeof exclude === 'function' && exclude(meta, socket)) continue;
       const role = meta.role;
-      if (role === 'desktop') desktopOnline = true;
+      if (role === 'desktop') desktopCount += 1;
       else if (role === 'phone') phoneCount += 1;
       else if (role === 'companion') companionCount += 1;
       else if (role === 'extension') extensionCount += 1;
     }
-    return { desktopOnline, phoneCount, companionCount, extensionCount };
+    return {
+      desktopOnline: desktopCount > 0,
+      desktopCount,
+      phoneCount,
+      companionCount,
+      extensionCount,
+    };
   }
 
   replaceMatchingPeers(role, deviceId) {
@@ -702,9 +779,9 @@ export class MobileHarvesterRoom {
     if (!canAcceptMobilePeer(stats, role)) {
       return json({
         ok: false,
-        code: role === 'desktop' ? 'desktop_connected' : 'phone_limit',
+        code: role === 'desktop' ? 'desktop_limit' : 'phone_limit',
         message: role === 'desktop'
-          ? 'Another Zyn desktop is already connected to this room.'
+          ? 'This account already has the maximum number of Full Engine desktops in the harvest room.'
           : role === 'companion'
             ? 'This account already has the maximum number of remote harvesters.'
             : role === 'extension'
@@ -732,7 +809,8 @@ export class MobileHarvesterRoom {
       phoneCount: peer.phoneCount,
       peer,
     };
-    if (next.role === 'extension' || next.role === 'companion' || next.role === 'phone') {
+    if (next.role === 'extension' || next.role === 'companion' || next.role === 'phone'
+        || next.role === 'desktop') {
       payload.mailbox = mailboxSnapshot(await this.loadMailbox());
     }
     this.send(socket, payload);
@@ -771,6 +849,24 @@ export class MobileHarvesterRoom {
       return;
     }
     if (role === 'desktop') {
+      if (parsed.type === 'demand' || parsed.type === 'start') {
+        this.rememberDesktopDemand(socket, parsed.message);
+        this.publishAggregatedDemand();
+        return;
+      }
+      if (parsed.type === 'stop') {
+        const current = (this.attachment(socket) || {}).demand || {};
+        this.rememberDesktopDemand(socket, {
+          ...current,
+          type: 'demand',
+          basis: 'paused',
+          waitingAtc: 0,
+          activeTasks: 0,
+          room: { login: 0, atc: 0 },
+        });
+        this.publishAggregatedDemand();
+        return;
+      }
       this.broadcast(parsed.message, (peer) => (
         peer.role === 'phone' || peer.role === 'companion' || peer.role === 'extension'
       ));
@@ -779,12 +875,34 @@ export class MobileHarvesterRoom {
     }
   }
 
+  rememberDesktopDemand(socket, demand) {
+    const meta = this.attachment(socket) || {};
+    if (meta.role !== 'desktop') return;
+    try { socket.serializeAttachment({ ...meta, demand }); } catch {}
+  }
+
+  publishAggregatedDemand() {
+    const demands = [];
+    for (const socket of this.sockets()) {
+      const meta = this.attachment(socket);
+      if (meta && meta.role === 'desktop' && meta.demand) demands.push(meta.demand);
+    }
+    const aggregated = sumHarvestDemand(demands);
+    const harvesters = (peer) => (
+      peer.role === 'phone' || peer.role === 'companion' || peer.role === 'extension'
+    );
+    this.broadcast(aggregated, harvesters);
+    if (aggregated.basis === 'paused') this.broadcast({ type: 'stop', site: 'target' }, harvesters);
+  }
+
   async webSocketClose() {
     this.broadcast({ type: 'peer-state', ...this.peerState() });
+    this.publishAggregatedDemand();
   }
 
   async webSocketError(socket) {
     try { socket.close(1011, 'error'); } catch {}
     this.broadcast({ type: 'peer-state', ...this.peerState() });
+    this.publishAggregatedDemand();
   }
 }

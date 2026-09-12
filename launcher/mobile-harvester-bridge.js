@@ -369,7 +369,10 @@ function createMobileHarvesterBridge({
       if (want > 0) {
         const result = await takeFromMailbox({ type: 'atc', n: want });
         const cookies = Array.isArray(result && result.cookies) ? result.cookies : [];
-        if (cookies.length) await ingestCookies(cookies);
+        if (cookies.length) {
+          await ingestCookies(cookies);
+          publishDemand({ force: true }).catch(() => {});
+        }
         if (result && result.mailbox) {
           mailbox.login = 0;
           mailbox.atc = Number(result.mailbox.atc) || 0;
@@ -407,6 +410,7 @@ function createMobileHarvesterBridge({
     lastPongAt = timestamp();
     if (message.type === 'pong' || message.type === 'ping') return;
     if (message.type === 'registered' || message.type === 'peer-state') {
+      if (message.mailbox) noteMailbox(message.mailbox);
       const previousCompanions = activity.companionCount;
       const previousExtensions = activity.extensionCount;
       activity.connected = true;

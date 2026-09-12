@@ -202,6 +202,15 @@ async function main() {
   assert.equal(pulled.length, 1);
   assert.equal(pulled[0].type, 'atc');
   assert.equal(saved.length, 1);
+  pulled.length = 0;
+  pullBridge.__test.setSocket({ readyState: 1, send() {}, close() {} });
+  await pullBridge.__test.handleMessage({
+    type: 'registered',
+    mailbox: { login: 0, atc: 4 },
+    peer: { desktopOnline: true, desktopCount: 2 },
+  });
+  await pullBridge.__test.pullMailbox();
+  assert.equal(pulled.length, 1, 'a joining Full Engine must pull from the shared mailbox');
   fs.rmSync(pullDir, { recursive: true, force: true });
 
   await bridge.__test.handleMessage({
