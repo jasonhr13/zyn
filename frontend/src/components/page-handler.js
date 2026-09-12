@@ -90,6 +90,9 @@ class PageHandler extends Component {
     ipcRenderer.on('targetMonitorBandwidth', (e, payload = {}) => {
       this.props.dispatch({ type: 'targetMonitorBandwidth', payload });
     });
+    ipcRenderer.on('targetMonitor', (e, payload = {}) => {
+      this.props.dispatch({ type: 'targetMonitor', ...payload });
+    });
     ipcRenderer.on('targetOutcome', (e, payload = {}) => {
       this.props.dispatch({ type: 'targetOutcome', ...payload });
     });
@@ -174,6 +177,7 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('targetDone');
     ipcRenderer.removeAllListeners('targetRunStarted');
     ipcRenderer.removeAllListeners('targetMonitorBandwidth');
+    ipcRenderer.removeAllListeners('targetMonitor');
     ipcRenderer.removeAllListeners('targetOutcome');
     ipcRenderer.removeAllListeners('targetOtp');
     ipcRenderer.removeAllListeners('pokemonLog');

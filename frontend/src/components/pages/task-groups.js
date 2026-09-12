@@ -50,6 +50,13 @@ const stopTargetTasks = ids => {
   try { ipcRenderer.send('stopTarget', ids); } catch {}
 };
 
+const DEFAULT_MONITOR_DELAY = '4000';
+const clampMonitorDelay = value => {
+  const parsed = Number.parseInt(String(value == null ? '' : value).replace(/\D/g, ''), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MONITOR_DELAY;
+  return String(Math.max(500, Math.min(60000, parsed)));
+};
+
 const EMPTY_GROUP = Object.freeze({
   name: '',
   skus: '',
@@ -57,6 +64,8 @@ const EMPTY_GROUP = Object.freeze({
   priorities: {},
   qty: 2,
   proxyListName: '',
+  monitorProxyListName: '',
+  monitorDelay: DEFAULT_MONITOR_DELAY,
   loopCheckout: false,
   useFillerItem: false,
   stockConfidence: 'any',
@@ -525,7 +534,7 @@ class TaskGroupRunControlsView extends Component {
   render() {
     const { group, host, running } = this.props;
     return running ? (
-      <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop All</button>
+      <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop Tasks</button>
     ) : (
       <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start All</button>
     );
@@ -536,7 +545,7 @@ const TaskGroupRunControls = connect(mapGroupRuntimeState)(TaskGroupRunControlsV
 
 class TaskGroupOverviewRowView extends Component {
   render() {
-    const { group, host, scheduleNow, total, running, error } = this.props;
+    const { group, host, scheduleNow, total, running, error, monitorWanted } = this.props;
     const items = watchedItemsForGroup(group);
     const limited = items.filter(item => item.maxPrice).length;
     const isRunning = running > 0;
@@ -565,10 +574,13 @@ class TaskGroupOverviewRowView extends Component {
         </div>
         <div className="task-group-row-actions" onClick={event => event.stopPropagation()}>
           {isRunning ? (
-            <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop</button>
+            <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop Tasks</button>
           ) : (
             <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start</button>
           )}
+          {monitorWanted ? (
+            <button className="btn btn-danger btn-sm" onClick={() => host.stopMonitor()}><Icon name="stop" size={12} /> Stop Monitor</button>
+          ) : null}
           <button className="icon-action" title="Edit group" onClick={() => host.openEditGroup(group)}><Icon name="settings" size={13} /></button>
           <button className="icon-action icon-action-danger" title="Delete group" onClick={() => host.deleteGroup(group)}><Icon name="trash" size={13} /></button>
           <button className="btn btn-secondary btn-sm" onClick={() => host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}>Open</button>
@@ -1069,6 +1081,8 @@ class TaskGroups extends Component {
         priorities: Object.fromEntries(items.map(item => [item.sku, item.priority === true])),
         qty: group.qty || 2,
         proxyListName: group.proxyListName || '',
+        monitorProxyListName: group.monitorProxyListName || '',
+        monitorDelay: clampMonitorDelay(group.monitorDelay),
         loopCheckout: group.loopCheckout === true,
         useFillerItem: group.useFillerItem === true,
         stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
@@ -1231,6 +1245,8 @@ class TaskGroups extends Component {
     const liveWatchChanged = !!previousGroup && (
       serializeWatch(previousItems) !== serializeWatch(items)
       || String(previousGroup.qty || 2) !== String(draft.qty || 2)
+      || String(previousGroup.monitorProxyListName || '') !== String(draft.monitorProxyListName || '')
+      || clampMonitorDelay(previousGroup.monitorDelay) !== clampMonitorDelay(draft.monitorDelay)
     );
     const loopCheckout = draft.loopCheckout === true;
     const liveLoopChanged = !!previousGroup
@@ -1241,8 +1257,9 @@ class TaskGroups extends Component {
     const stockConfidence = draft.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any';
     const liveStockConfidenceChanged = !!previousGroup
       && (previousGroup.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any') !== stockConfidence;
-    if (liveWatchChanged && liveTasks.length && !nextSkus.length) {
-      window.alert('A running group must keep at least one valid Target SKU. Stop the tasks before clearing the watch list.');
+    const monitorLive = !!previousGroup && this.monitorOwnedBy(previousGroup);
+    if (liveWatchChanged && (liveTasks.length || monitorLive) && !nextSkus.length) {
+      window.alert('A running group must keep at least one valid Target SKU. Stop the monitor and tasks before clearing the watch list.');
       return;
     }
     let groups;
@@ -1254,6 +1271,8 @@ class TaskGroups extends Component {
         skus: items.map(item => item.sku).join('\n'),
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        monitorProxyListName: draft.monitorProxyListName || '',
+        monitorDelay: clampMonitorDelay(draft.monitorDelay),
         loopCheckout,
         useFillerItem,
         stockConfidence,
@@ -1272,6 +1291,8 @@ class TaskGroups extends Component {
         skus: items.map(item => item.sku).join('\n'),
         qty: draft.qty,
         proxyListName: draft.proxyListName,
+        monitorProxyListName: draft.monitorProxyListName || '',
+        monitorDelay: clampMonitorDelay(draft.monitorDelay),
         loopCheckout,
         useFillerItem,
         stockConfidence,
@@ -1282,7 +1303,7 @@ class TaskGroups extends Component {
     }
     this.persist(groups, () => {
       let liveEditError = '';
-      if (liveWatchChanged && liveTasks.length) {
+      if (liveWatchChanged && (liveTasks.length || monitorLive)) {
         try {
           const result = ipcRenderer.sendSync('editTargetTasks', {
             tasks: liveTasks,
@@ -1291,8 +1312,14 @@ class TaskGroups extends Component {
             qty: draft.qty || 2,
             stockConfidence,
             ignoreLowStock: stockConfidence === 'confirmed-10-plus',
+            groupId: selectedGroupId,
+            monitor: {
+              groupId: selectedGroupId,
+              proxyListName: draft.monitorProxyListName || '',
+              delay: clampMonitorDelay(draft.monitorDelay),
+            },
           });
-          if (!result || result.ok !== true || result.updated < 1) {
+          if (!result || result.ok !== true) {
             liveEditError = (result && result.error) || 'The native engine did not accept the live watch-list update.';
           }
         } catch (error) {
@@ -1315,6 +1342,7 @@ class TaskGroups extends Component {
 
   deleteGroup = (group) => {
     if (!window.confirm(`Delete “${group.name}” and its ${(group.tasks || []).length} task(s)?\n\nThe legacy Target workspace is not affected.`)) return;
+    if (this.monitorOwnedBy(group)) this.stopMonitor();
     const taskIds = (group.tasks || []).map(task => task.id);
     if (taskIds.length) stopTargetTasks(taskIds);
     for (const task of (group.tasks || [])) {
@@ -1508,14 +1536,36 @@ class TaskGroups extends Component {
       skus,
       items,
       qty: group.qty || 2,
+      groupId: group.id,
       useFillerItem: group.useFillerItem === true,
       stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
       ignoreLowStock: group.stockConfidence === 'confirmed-10-plus',
+      monitor: this.monitorPayload(group),
+    };
+  };
+
+  monitorOwnedBy = group => {
+    const monitor = this.props.monitor || {};
+    return !!(group && monitor.wanted && String(monitor.groupId || '') === String(group.id));
+  };
+
+  monitorPayload = group => {
+    const items = watchedItemsForGroup(group);
+    return {
+      groupId: group.id,
+      proxyListName: group.monitorProxyListName || '',
+      delay: clampMonitorDelay(group.monitorDelay),
+      ignoreLowStock: group.stockConfidence === 'confirmed-10-plus',
+      stockConfidence: group.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
+      items,
+      skus: items.map(item => item.sku),
+      qty: group.qty || 2,
     };
   };
 
   activeOtherGroup = group => this.state.groups.find(item => item.id !== group.id
-    && (item.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task))));
+    && ((item.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task)))
+      || this.monitorOwnedBy(item)));
 
   launchTasks = (group, tasks) => {
     const config = this.runnableTasks(group, tasks);
@@ -1524,6 +1574,42 @@ class TaskGroups extends Component {
       this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
       ipcRenderer.send('startTarget', config);
     }
+  };
+
+  startMonitor = group => {
+    const other = this.activeOtherGroup(group);
+    if (other) {
+      window.alert(`“${other.name}” is already running. The current Target engine has one shared monitor, so stop that group first.`);
+      return;
+    }
+    if (!watchedItemsForGroup(group).length) {
+      window.alert('Add at least one Target SKU to this task group first.');
+      return;
+    }
+    try { ipcRenderer.send('startTargetMonitor', this.monitorPayload(group)); } catch {}
+  };
+
+  stopMonitor = () => {
+    try { ipcRenderer.send('stopTargetMonitor'); } catch {}
+  };
+
+  updateGroupMonitor = (group, patch, options = {}) => {
+    if (!group) return;
+    const nextPatch = { ...patch };
+    if (nextPatch.monitorDelay != null && options.live !== false) {
+      nextPatch.monitorDelay = clampMonitorDelay(nextPatch.monitorDelay);
+    } else if (nextPatch.monitorDelay != null) {
+      nextPatch.monitorDelay = String(nextPatch.monitorDelay || '').replace(/\D/g, '').slice(0, 5);
+    }
+    this.persist(this.state.groups.map(item => (
+      item.id === group.id ? { ...item, ...nextPatch, updatedAt: Date.now() } : item
+    )));
+    if (options.live === false || !this.monitorOwnedBy(group)) return;
+    const live = {};
+    if (nextPatch.monitorProxyListName != null) live.proxyListName = nextPatch.monitorProxyListName;
+    if (nextPatch.monitorDelay != null) live.delay = nextPatch.monitorDelay;
+    if (!Object.keys(live).length) return;
+    try { ipcRenderer.sendSync('setTargetMonitor', live); } catch {}
   };
 
   runReadiness = async (group, tasks, intent = 'check') => {
@@ -1813,6 +1899,48 @@ class TaskGroups extends Component {
     );
   }
 
+  renderGroupMonitor(group) {
+    const wanted = this.monitorOwnedBy(group);
+    const local = !String(group.monitorProxyListName || '').trim();
+    return (
+      <section className="panel group-monitor-panel">
+        <div className="group-monitor-row">
+          <strong>Monitor</strong>
+          <label className="group-monitor-field">
+            <span>Proxy</span>
+            <select
+              className="form-select"
+              value={group.monitorProxyListName || ''}
+              title={local ? 'Local IP typically 403s redsky. Pick a list before a drop.' : ''}
+              onChange={event => this.updateGroupMonitor(group, { monitorProxyListName: event.target.value })}
+            >
+              {this.renderProxySelectOptions()}
+            </select>
+          </label>
+          <label className="group-monitor-field">
+            <span>Delay</span>
+            <input
+              className="form-input"
+              inputMode="numeric"
+              aria-label="Monitor delay in milliseconds"
+              value={group.monitorDelay || DEFAULT_MONITOR_DELAY}
+              onChange={event => this.updateGroupMonitor(group, { monitorDelay: event.target.value.replace(/\D/g, '').slice(0, 5) || DEFAULT_MONITOR_DELAY }, { live: false })}
+              onBlur={event => this.updateGroupMonitor(group, { monitorDelay: clampMonitorDelay(event.target.value) })}
+            />
+          </label>
+          <div className="page-actions group-monitor-actions">
+            <GroupMonitorStatus hideLabel />
+            {wanted ? (
+              <button className="btn btn-danger btn-sm" onClick={this.stopMonitor}><Icon name="stop" size={12} /> Stop</button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={() => this.startMonitor(group)}><Icon name="play" size={12} /> Start</button>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   renderGroupFacts(group) {
     const tasks = group.tasks || [];
     const loopOn = tasks.filter(task => task.loopCheckout).length;
@@ -1821,10 +1949,10 @@ class TaskGroups extends Component {
         <span><small>Tasks</small><strong>{tasks.length}</strong></span>
         <span title={watchListSummary(group)}><small>Watch</small><strong>{watchListSummary(group)}</strong></span>
         <span><small>Stock</small><strong>{group.stockConfidence === 'confirmed-10-plus' ? 'Confirmed 10+' : 'Any stock'}</strong></span>
-        <span title={proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}><small>Proxy</small><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></span>
+        <span title={proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}><small>Task proxy</small><strong>{proxyLabelForRef(this.proxyLists(), group.proxyListName, 'Local')}</strong></span>
+        <span title={proxyLabelForRef(this.proxyLists(), group.monitorProxyListName, 'Local')}><small>Monitor</small><strong>{proxyLabelForRef(this.proxyLists(), group.monitorProxyListName, 'Local')} · {clampMonitorDelay(group.monitorDelay)}ms</strong></span>
         <span><small>Loop</small><strong>{tasks.length ? `${loopOn}/${tasks.length}` : group.loopCheckout ? 'On' : 'Off'}</strong></span>
         <span title={group.useFillerItem ? 'On · SKU 84704409' : 'Off'}><small>Filler</small><strong>{group.useFillerItem ? 'On' : 'Off'}</strong></span>
-        <GroupMonitorStatus />
       </div>
     );
   }
@@ -2378,6 +2506,7 @@ class TaskGroups extends Component {
           </div>
         </div>
         <div className="page-content task-group-dashboard">
+          {this.renderGroupMonitor(group)}
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
               <div><h2>Account tasks</h2></div>
@@ -2816,8 +2945,13 @@ class TaskGroups extends Component {
             {this.renderProductHistoryPicker(draft)}
             <div className="form-row">
               <div className="form-group"><label className="form-label">Quantity per SKU</label><input className="form-input" type="number" min="1" max="99" value={draft.qty} onChange={event => this.setState({ groupDraft: { ...draft, qty: event.target.value } })} /></div>
-              <div className="form-group"><label className="form-label">Default proxy</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}>{this.renderProxySelectOptions()}</select></div>
+              <div className="form-group"><label className="form-label">Default task proxy</label><select className="form-select" value={draft.proxyListName} onChange={event => this.setState({ groupDraft: { ...draft, proxyListName: event.target.value } })}>{this.renderProxySelectOptions()}</select></div>
             </div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Monitor proxy</label><select className="form-select" value={draft.monitorProxyListName || ''} onChange={event => this.setState({ groupDraft: { ...draft, monitorProxyListName: event.target.value } })}>{this.renderProxySelectOptions()}</select></div>
+              <div className="form-group"><label className="form-label">Monitor delay (ms)</label><input className="form-input" inputMode="numeric" value={draft.monitorDelay} onChange={event => this.setState({ groupDraft: { ...draft, monitorDelay: event.target.value.replace(/\D/g, '').slice(0, 5) } })} onBlur={() => this.setState({ groupDraft: { ...draft, monitorDelay: clampMonitorDelay(draft.monitorDelay) } })} /></div>
+            </div>
+            <div className="form-hint">The monitor is a separate redsky poller. Local IP typically 403s. Checkout tasks keep their own proxy for session warmup.</div>
             <div className="form-group">
               <label className="form-label">Stock confidence</label>
               <select
@@ -2909,9 +3043,10 @@ class GroupMonitorStatusView extends Component {
     if (!monitor) return null;
     const tone = targetStatusTone(monitor);
     const label = monitor.label || monitor.state || 'Idle';
+    const hideLabel = this.props.hideLabel === true;
     return (
       <span className={`group-ops-monitor group-ops-monitor-${tone}`} title={`Monitor: ${label}`}>
-        <small>Monitor</small>
+        {hideLabel ? null : <small>Monitor</small>}
         <strong>{label}</strong>
       </span>
     );
@@ -2939,4 +3074,5 @@ export default connect(state => ({
   profiles: state.profiles,
   proxies: state.proxies,
   settings: state.settings,
+  monitor: state.target.monitor,
 }))(TaskGroups);

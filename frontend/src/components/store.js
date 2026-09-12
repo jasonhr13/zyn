@@ -142,6 +142,7 @@ const defaultState = {
     proxyStatus: {},          // taskId -> transient live-proxy result; never replaces taskStatus
     taskLogs: {},             // taskId -> [lines]
     monitorStatus: null,      // { state, label, color } | null when the monitor isn't running
+    monitor: { groupId: '', wanted: false, running: false },
     // Latest cumulative TLS-transport sample per monitor run. A run is replaced by sequence rather
     // than added here, so loopback retries cannot inflate the displayed bandwidth.
     monitorBandwidth: emptyTargetMonitorBandwidthState(),
@@ -439,6 +440,17 @@ export function reducer(state = defaultState, action) {
     }
 
     // ── Target ────────────────────────────────────────────────────────────────
+    case 'targetMonitor': {
+      const monitor = {
+        groupId: String(action.groupId || ''),
+        wanted: action.wanted === true,
+        running: action.running === true,
+      };
+      const target = { ...state.target, monitor };
+      if (!monitor.wanted) target.monitorStatus = null;
+      return { ...state, target };
+    }
+
     case 'targetSet':
       return { ...state, target: { ...state.target, ...action.obj } };
 
@@ -696,6 +708,7 @@ export function reducer(state = defaultState, action) {
       if (action.taskId) ids.push(String(action.taskId));
       if (!ids.length) return { ...state, target: { ...state.target,
         monitorStatus: null,
+        monitor: { groupId: '', wanted: false, running: false },
         monitorBandwidth: stopTargetMonitorBandwidthRuns(state.target.monitorBandwidth),
       } };
       const status = { ...state.target.taskStatus };

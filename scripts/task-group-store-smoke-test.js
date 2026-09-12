@@ -71,6 +71,8 @@ try {
     ],
     qty: 999,
     proxyListName: 'Local',
+    monitorProxyListName: 'Residential',
+    monitorDelay: '250',
     loopCheckout: true,
     useFillerItem: true,
     stockConfidence: 'confirmed-10-plus',
@@ -87,6 +89,8 @@ try {
   assert.equal(saved[0].name, 'Friday Drop');
   assert.equal(saved[0].site, 'target');
   assert.equal(saved[0].qty, 99);
+  assert.equal(saved[0].monitorProxyListName, 'Residential');
+  assert.equal(saved[0].monitorDelay, '500', 'monitor delay must clamp to 500ms minimum');
   assert.equal(saved[0].loopCheckout, true);
   assert.equal(saved[0].useFillerItem, true, 'group filler-item setting was discarded');
   assert.deepEqual(saved[0].items, [

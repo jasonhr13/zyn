@@ -1533,6 +1533,24 @@ body.theme-night .form-select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.group-ops-monitor {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.group-ops-monitor small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.group-ops-monitor strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .group-ops-monitor-watching strong { color: var(--target-status-watch); }
 .group-ops-monitor-carting strong { color: var(--target-status-cart); }
 .group-ops-monitor-checkout strong { color: var(--target-status-checkout); }
@@ -1620,6 +1638,40 @@ body.theme-night .form-select {
 .group-config-strip span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .group-config-strip strong { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--text2); font-size: 10.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.group-monitor-panel {
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+.group-monitor-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 40px;
+  padding: 6px 12px;
+}
+.group-monitor-row > strong {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+}
+.group-monitor-actions { margin-left: auto; gap: 10px; }
+.group-monitor-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.group-monitor-field span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.group-monitor-field .form-select,
+.group-monitor-field .form-input { min-height: 30px; font-size: 12px; }
+.group-monitor-field .form-select { width: 160px; }
+.group-monitor-field .form-input { width: 72px; }
 .group-task-panel {
   margin-bottom: 0;
   flex: 1 1 auto;
@@ -2143,6 +2195,7 @@ body.theme-night .form-select {
   .first-run-steps { grid-template-columns: 1fr; }
   .first-run-step { min-height: 170px; }
   .group-task-toolbar { grid-template-columns: 1fr auto; }
+  .group-monitor-actions { margin-left: 0; }
   .group-drop-pulse { grid-column: 1 / -1; justify-content: flex-start; }
   .group-config-strip { grid-template-columns: repeat(3, 1fr); }
   .group-config-strip > div:nth-child(3) { border-right: 0; }

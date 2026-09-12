@@ -1516,6 +1516,25 @@ ipcMain.on('startTarget', (e, config) => {
   targetEngine.startTarget(config || {}, mainWindow);
 });
 ipcMain.on('stopTarget', (e, taskId) => { targetEngine.stopTarget(taskId); e.returnValue = true; });
+ipcMain.on('startTargetMonitor', (e, config) => {
+  if (moduleBlocked('target')) { refuseModule('Target'); e.returnValue = false; return; }
+  if (!licensed()) { refuseUnlicensed('startTargetMonitor'); e.returnValue = false; return; }
+  try { e.returnValue = targetEngine.startTargetMonitor(config || {}, mainWindow); }
+  catch (err) { log.warn('startTargetMonitor:', err.message); e.returnValue = false; }
+});
+ipcMain.on('stopTargetMonitor', (e) => {
+  try { e.returnValue = targetEngine.stopTargetMonitor(); }
+  catch (err) { log.warn('stopTargetMonitor:', err.message); e.returnValue = false; }
+});
+ipcMain.on('setTargetMonitor', (e, config) => {
+  if (moduleBlocked('target')) { refuseModule('Target'); e.returnValue = { ok: false, error: 'Target is unavailable.' }; return; }
+  if (!licensed()) { refuseUnlicensed('setTargetMonitor'); e.returnValue = { ok: false, error: 'Zyn is not licensed.' }; return; }
+  try { e.returnValue = targetEngine.setTargetMonitor(config || {}); }
+  catch (err) {
+    log.warn('setTargetMonitor:', err.message);
+    e.returnValue = { ok: false, error: err.message || 'Monitor update failed.' };
+  }
+});
 // Watch-list product names. getTargetSkuTitles is the cached read (instant, no network);
 // resolveTargetSkuTitles fetches whatever is missing and returns the merged map.
 ipcMain.on('getTargetSkuTitles', (e) => {

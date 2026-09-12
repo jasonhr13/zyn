@@ -20,6 +20,7 @@ function createTaskGroupScheduler(deps = {}) {
   const getProfiles = deps.getProfiles || (() => []);
   const getReadiness = deps.getReadiness || (() => ({ level: 'ready', blockers: [], warnings: [] }));
   const isTaskRunning = deps.isTaskRunning || (() => false);
+  const monitorGroupId = deps.monitorGroupId || (() => '');
   const startTarget = deps.startTarget || (() => {});
   const stopTarget = deps.stopTarget || (() => {});
   const canStart = deps.canStart || (() => true);
@@ -122,7 +123,9 @@ function createTaskGroupScheduler(deps = {}) {
       if (schedule?.stopAt == null || retryAt < schedule.stopAt) armTimer(groupId, 'start', retryAt);
       return;
     }
-    const other = otherTargetGroupRunning(groups, groupId, isTaskRunning);
+    const other = otherTargetGroupRunning(groups, groupId, isTaskRunning, {
+      monitorGroupId: monitorGroupId(),
+    });
     if (other) {
       emit({
         groupId,

@@ -20,6 +20,8 @@ const harvesterProducers = source('scripts/target-multi-harvester-producers.frag
 const electron = source('runtime-app/public/electron.js');
 const bridge = source('runtime-app/public/helpers/target-engine.js');
 const farmer = source('native-farmer/shape-farmer.mjs');
+const monitorGo = source('engine/sites/target/monitor.go');
+const editGo = source('engine/sites/target/edit.go');
 const engine = fs.readFileSync(path.join(
   root,
   `native-backend/darwin-${process.arch === 'x64' ? 'x64' : 'arm64'}/backend`,
@@ -117,6 +119,13 @@ assert.match(farmer, /retryPdpAfterHomepage/,
   'standard ATC must recover a Target block page by warming the homepage then returning to the product');
 assert.match(farmer, /waitUntilHarvested\(1200\)/,
   'standard ATC harvest must stop waiting once cart_items is captured');
+
+assert.match(monitorGo, /if p\.ProxyGroup != nil/,
+  'monitor set-task-proxy must apply ProxyGroup without wiping the watch list');
+assert.match(monitorGo, /applyBaseRuntimeProxy\(t\.BaseTask, p\.Input\.Proxy, p\.Input\.ProxySources\)/,
+  'monitor edit-tasks must copy Input.ProxySources');
+assert.match(editGo, /func applyBaseRuntimeProxy/,
+  'checkout and monitor must share the same runtime proxy swap');
 
 for (const marker of [
   'ConnectFrontend: set-task-proxy',

@@ -4,7 +4,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const TASK_GROUP_SCHEMA_VERSION = 4;
+const TASK_GROUP_SCHEMA_VERSION = 5;
+const DEFAULT_MONITOR_DELAY = '4000';
+const MIN_MONITOR_DELAY = 500;
+const MAX_MONITOR_DELAY = 60000;
 const TASK_GROUP_FILE = 'task-groups.json';
 const LEGACY_TARGET_FILE = 'target-tasks.json';
 const MAX_GROUPS = 200;
@@ -17,6 +20,12 @@ function boundedText(value, maximum, fallback = '') {
 
 function quantity(value) {
   return Math.max(1, Math.min(99, Number.parseInt(value, 10) || 2));
+}
+
+function normalizeMonitorDelay(value) {
+  const parsed = Number.parseInt(String(value == null ? '' : value).replace(/\D/g, ''), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MONITOR_DELAY;
+  return String(Math.max(MIN_MONITOR_DELAY, Math.min(MAX_MONITOR_DELAY, parsed)));
 }
 
 function parseSku(value) {
@@ -115,6 +124,8 @@ function normalizeGroup(raw, index = 0, options = {}) {
     skus: items.map(item => item.sku).join('\n'),
     qty: quantity(group.qty),
     proxyListName: boundedText(group.proxyListName, 240),
+    monitorProxyListName: boundedText(group.monitorProxyListName, 240),
+    monitorDelay: normalizeMonitorDelay(group.monitorDelay),
     loopCheckout: group.loopCheckout != null
       ? group.loopCheckout === true
       : group.repeatCheckout === true,
@@ -262,7 +273,9 @@ function createTaskGroupStore(dataDirectory, options = {}) {
 
 module.exports = {
   TASK_GROUP_SCHEMA_VERSION,
+  DEFAULT_MONITOR_DELAY,
   normalizeMaxPrice,
+  normalizeMonitorDelay,
   normalizeWatchedItems,
   normalizeSchedule,
   normalizeGroup,

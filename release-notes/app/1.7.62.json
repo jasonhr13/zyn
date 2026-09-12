@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.62",
+  "notes": [
+    "Target stock monitoring is its own control: proxy, delay, and start or stop without checkout tasks.",
+    "The shared monitor uses the group's monitor proxy list instead of borrowing a task's list.",
+    "Stopping checkout tasks leaves the monitor running so you can restart accounts without dropping stock polls.",
+    "Changing the monitor proxy while it is running applies on the next poll without a restart."
+  ]
+}

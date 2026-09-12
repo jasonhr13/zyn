@@ -29,8 +29,8 @@
     removeAllListeners(channel) { listeners.delete(channel); },
     send() {},
     sendSync(channel, payload) {
-      if (channel === 'getAppVersion') return '1.7.61';
-      if (channel === 'getEngineInfo') return { installed: '1.2.9', running: '1.2.9' };
+      if (channel === 'getAppVersion') return '1.7.62';
+      if (channel === 'getEngineInfo') return { installed: '1.2.10', running: '1.2.10' };
       if (channel === 'getChannel') return 'preview';
       if (channel.startsWith('get') && channel.slice(3) in data) return data[channel.slice(3)];
       if (channel.startsWith('save') && channel.slice(4) in data) { data[channel.slice(4)] = payload; return payload; }

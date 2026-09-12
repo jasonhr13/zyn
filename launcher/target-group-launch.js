@@ -96,16 +96,27 @@ function buildTargetGroupLaunch(group, { accounts = [], profiles = [] } = {}) {
         : 'Nothing to start — group has no tasks.',
     };
   }
+  const qty = Math.max(1, Math.min(99, Number.parseInt(candidate.qty, 10) || 2));
   return {
     ok: true,
     config: {
       tasks,
       skus,
       items,
-      qty: Math.max(1, Math.min(99, Number.parseInt(candidate.qty, 10) || 2)),
+      qty,
+      groupId: String(candidate.id || ''),
       useFillerItem: candidate.useFillerItem === true,
       stockConfidence: candidate.stockConfidence === 'confirmed-10-plus' ? 'confirmed-10-plus' : 'any',
       ignoreLowStock: candidate.stockConfidence === 'confirmed-10-plus',
+      monitor: {
+        groupId: String(candidate.id || ''),
+        proxyListName: String(candidate.monitorProxyListName || ''),
+        delay: String(candidate.monitorDelay || '4000'),
+        ignoreLowStock: candidate.stockConfidence === 'confirmed-10-plus',
+        items,
+        skus,
+        qty,
+      },
     },
     skipped,
   };
@@ -117,12 +128,14 @@ function groupHasRunningTasks(group, isTaskRunning) {
     .some(task => check(String(task.id)));
 }
 
-function otherTargetGroupRunning(groups, groupId, isTaskRunning) {
-  return (Array.isArray(groups) ? groups : []).find(group => (
-    String(group.id) !== String(groupId)
-    && String(group.site || 'target').toLowerCase() === 'target'
-    && groupHasRunningTasks(group, isTaskRunning)
-  )) || null;
+function otherTargetGroupRunning(groups, groupId, isTaskRunning, options = {}) {
+  const monitorGroupId = String(options.monitorGroupId || '').trim();
+  return (Array.isArray(groups) ? groups : []).find(group => {
+    if (String(group.id) === String(groupId)) return false;
+    if (String(group.site || 'target').toLowerCase() !== 'target') return false;
+    if (groupHasRunningTasks(group, isTaskRunning)) return true;
+    return !!(monitorGroupId && String(group.id) === monitorGroupId);
+  }) || null;
 }
 
 module.exports = {

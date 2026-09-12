@@ -20,7 +20,14 @@ const pageHandler = read('frontend/src/components/page-handler.js');
 assert.doesNotMatch(taskGroups, /sendSync\('stopTarget'/,
   'Task Groups Stop must not freeze the renderer on a sendSync loop');
 assert.match(taskGroups, /stopTargetTasks\(ids\)/,
-  'Stop All / selected Stop must send one batched stopTarget');
+  'Stop Tasks / selected Stop must send one batched stopTarget');
+assert.match(taskGroups, /Stop Tasks/, 'Task group Stop All must be labeled Stop Tasks');
+assert.match(taskGroups, /startTargetMonitor/, 'Task groups must start the monitor independently');
+assert.match(engine, /function startTargetMonitor/, 'Target bridge omits independent monitor start');
+assert.match(engine, /function stopTargetMonitor/, 'Target bridge omits independent monitor stop');
+assert.match(engine, /monitorWanted/, 'Target bridge still ties the monitor to checkout tasks');
+assert.match(engine, /type: 'set-task-proxy'[\s\S]{0,180}targetMainMonitorId/,
+  'Live monitor proxy must use set-task-proxy on the native monitor id');
 assert.match(taskGroups, /stopTargetTasks\(taskIds\)/,
   'Deleting a group must stop its tasks in one IPC');
 assert.match(taskGroups, /includeBank: intent !== 'start'/,

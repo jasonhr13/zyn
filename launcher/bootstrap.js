@@ -685,7 +685,7 @@ function installTargetProductHistory() {
     // Wrap the shared engine API rather than a renderer page. Every Target launch path—including
     // scheduled task groups and the legacy workspace—calls this same exported function.
     if (!targetEngine.__zynProductHistoryWrapped) {
-      for (const method of ['startTarget', 'editTargetTasks']) {
+      for (const method of ['startTarget', 'startTargetMonitor', 'editTargetTasks']) {
         if (typeof targetEngine[method] !== 'function') continue;
         const original = targetEngine[method].bind(targetEngine);
         targetEngine[method] = (config, ...args) => {
@@ -777,6 +777,7 @@ function validateScheduledTargetProxies(config, dataManager, managedProxyControl
   const settings = dataManager.getSettings?.() || {};
   const refs = [
     ...(Array.isArray(config?.tasks) ? config.tasks.map(task => task.proxyListName) : []),
+    config && config.monitor && config.monitor.proxyListName,
     settings.targetHarvesterProxyList,
     settings.targetLoginHarvester && settings.targetLoginHarvester.proxyListName,
     ...(Array.isArray(settings.targetHarvesters)
@@ -799,6 +800,7 @@ function installTaskGroupScheduling(authority, managedProxyControl) {
     getProfiles: () => dataManager.getProfiles?.() || [],
     getReadiness: group => targetReadinessForGroup(group, undefined, { includeBank: false }),
     isTaskRunning: taskId => targetEngine.isTaskRunning?.(taskId) === true,
+    monitorGroupId: () => targetEngine.targetMonitorOwnerGroupId?.() || '',
     canStart: () => (!authority || (authority.cached().ok === true && authority.cached().sessionKind !== 'harvester'))
       && BrowserWindow.getAllWindows().some(window => !window.isDestroyed()),
     startTarget: config => {
@@ -1152,6 +1154,7 @@ function guardTaskHelpers(authority) {
 
   for (const [file, method, taskType] of [
     ['target-engine.js', 'startTarget', ''],
+    ['target-engine.js', 'startTargetMonitor', ''],
     ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
     ['target-engine.js', 'startWalmart', 'walmart'],
   ]) {
@@ -1166,7 +1169,7 @@ function guardTaskHelpers(authority) {
           return undefined;
         }
         if (taskType && !entitled(taskType)) { blocked(method, taskType); return undefined; }
-        if (method === 'startTarget' && runtimeManager.enabled) {
+        if ((method === 'startTarget' || method === 'startTargetMonitor') && runtimeManager.enabled) {
           return launchTargetAfterRuntime(original, args, authority);
         }
         return original(...args);

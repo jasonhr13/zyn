@@ -55,6 +55,10 @@ assert.equal(launch.config.ignoreLowStock, true);
 assert.equal(launch.config.tasks[0].profileId, 'profile-1');
 assert.equal(launch.config.tasks[0].loopCheckout, true);
 assert.equal(launch.config.useFillerItem, true, 'scheduled launch omitted the group filler-item setting');
+assert.equal(launch.config.groupId, 'group-1');
+assert.equal(launch.config.monitor.groupId, 'group-1');
+assert.equal(launch.config.monitor.proxyListName, '');
+assert.equal(launch.config.monitor.delay, '4000');
 
 const fakeSetTimeout = (callback, delay) => ({ callback, delay, unref() {} });
 const fakeClearTimeout = () => {};

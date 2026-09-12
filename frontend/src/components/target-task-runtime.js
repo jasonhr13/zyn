@@ -109,7 +109,7 @@ export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
   };
 }
 
-export function selectTargetGroupRuntime(target = {}, tasks) {
+export function selectTargetGroupRuntime(target = {}, tasks, group) {
   const list = Array.isArray(tasks) ? tasks : [];
   const stats = { total: list.length, running: 0, error: 0 };
   for (const task of list) {
@@ -117,6 +117,8 @@ export function selectTargetGroupRuntime(target = {}, tasks) {
     if (targetTaskIsRunning(status)) stats.running += 1;
     if (targetStatusTone(status) === 'error') stats.error += 1;
   }
+  const monitor = target.monitor || {};
+  const monitorOwned = !!(group && String(monitor.groupId || '') === String(group.id));
   return {
     ...stats,
     pulse: summarizeGroupDropPulse(list, {
@@ -125,6 +127,8 @@ export function selectTargetGroupRuntime(target = {}, tasks) {
       checkoutCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'checkouts'),
       declineCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'waveDeclines'),
     }),
+    monitorWanted: monitorOwned && monitor.wanted === true,
+    monitorRunning: monitorOwned && monitor.running === true,
   };
 }
 
@@ -132,7 +136,7 @@ export function selectTargetWorkspaceRuntime(target = {}, groups) {
   const list = Array.isArray(groups) ? groups : [];
   const sum = { groups: list.length, tasks: 0, running: 0, attention: 0 };
   for (const group of list) {
-    const stats = selectTargetGroupRuntime(target, group && group.tasks);
+    const stats = selectTargetGroupRuntime(target, group && group.tasks, group);
     sum.tasks += stats.total;
     sum.running += stats.running;
     sum.attention += stats.error;
@@ -168,5 +172,5 @@ export function mapTaskDetailState(state, { task }) {
 }
 
 export function mapGroupRuntimeState(state, { group, tasks }) {
-  return selectTargetGroupRuntime(state.target, (group && group.tasks) || tasks);
+  return selectTargetGroupRuntime(state.target, (group && group.tasks) || tasks, group);
 }

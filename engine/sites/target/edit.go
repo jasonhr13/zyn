@@ -80,7 +80,10 @@ func (t *TargetTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	t.IgnoreLowStock = in.IgnoreLowStock
 }
 
-func (t *TargetTask) applyRuntimeProxy(group string, sources []string) {
+func applyBaseRuntimeProxy(t *task.BaseTask, group string, sources []string) {
+	if t == nil {
+		return
+	}
 	group = strings.TrimSpace(group)
 	if group == "" || strings.EqualFold(group, "Local") {
 		group = "Local"
@@ -105,6 +108,10 @@ func (t *TargetTask) applyRuntimeProxy(group string, sources []string) {
 		return
 	}
 	t.UpdateStatus("Proxy Updated", constants.Colors.BLUE)
+}
+
+func (t *TargetTask) applyRuntimeProxy(group string, sources []string) {
+	applyBaseRuntimeProxy(t.BaseTask, group, sources)
 }
 
 func sameStringSlice(left, right []string) bool {

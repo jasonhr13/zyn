@@ -135,9 +135,33 @@ function evaluateTargetReadiness(group, options = {}) {
       ? `${localTasks.length} task${localTasks.length === 1 ? '' : 's'} will use the local connection`
       : 'Selected proxy groups contain proxies');
   if (localTasks.length) warnings.push(issue(
-    'local-proxy', 'Local connection selected', `${localTasks.length} task${localTasks.length === 1 ? '' : 's'} will monitor and check out from this device’s IP.`,
+    'local-proxy', 'Local connection selected', `${localTasks.length} task${localTasks.length === 1 ? '' : 's'} will check out from this device’s IP.`,
     { taskIds: localTasks },
   ));
+
+  const monitorRef = String(candidate.monitorProxyListName || '').trim();
+  const monitorIsLocal = !monitorRef || /^local$/i.test(monitorRef);
+  if (monitorIsLocal) {
+    addCheck('monitor-proxy', 'warning', 'Monitor proxy', 'Local IP — redsky typically returns 403');
+    warnings.push(issue(
+      'monitor-local',
+      'Monitor using Local IP',
+      'The shared monitor polls redsky from this device’s IP, which Target typically 403s. Pick a monitor proxy list.',
+    ));
+  } else {
+    const resolved = proxyCounts[monitorRef];
+    if (!resolved || resolved.ok !== true || count(resolved.count) < 1) {
+      blockers.push(issue(
+        'monitor-proxy-unavailable',
+        'Monitor proxy unavailable',
+        `${monitorRef}: ${resolved && resolved.error ? String(resolved.error) : 'missing or empty'}`,
+        { proxyRefs: [monitorRef] },
+      ));
+      addCheck('monitor-proxy', 'fail', 'Monitor proxy', `${monitorRef} is unavailable or empty`);
+    } else {
+      addCheck('monitor-proxy', 'pass', 'Monitor proxy', 'Monitor proxy group contains proxies');
+    }
+  }
 
   const atcPerTask = Math.max(0, Number.parseInt(String(settings.targetAtcCookiesPerTask || '3'), 10) || 0);
   const atcNeeded = atcPerTask > 0 ? atcPerTask * tasks.length : 0;

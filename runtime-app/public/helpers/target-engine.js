@@ -484,6 +484,9 @@ const SHAPE_TOKEN = crypto.randomBytes(24).toString('hex');
 // One shared monitor drives every checkout task in the module (see sendStart). Its id is fixed so
 // stop/restart always replaces the same monitor instead of accumulating one per run.
 const MONITOR_ID = 'target-monitor';
+const DEFAULT_MONITOR_DELAY_MS = 4000;
+const MIN_MONITOR_DELAY_MS = 500;
+const MAX_MONITOR_DELAY_MS = 60000;
 
 let wss = null;         // WebSocket.Server the engine dials into
 // Set once the app is quitting. Teardown is not just "kill the children": stopTarget ENDS by calling
@@ -2387,6 +2390,14 @@ function sendConfigs(config = {}) {
     if (!proxyMaps.has(proxyKey)) proxyMaps.set(proxyKey, buildProxyMap(t.proxyListName));
     Object.assign(sentConfigs.proxies, proxyMaps.get(proxyKey));
   }
+  const monitorRef = (config.monitor && config.monitor.proxyListName != null)
+    ? config.monitor.proxyListName
+    : (monitorWanted ? monitorConfig.proxyListName : '');
+  if (monitorRef || monitorWanted) {
+    const proxyKey = String(monitorRef || '');
+    if (!proxyMaps.has(proxyKey)) proxyMaps.set(proxyKey, buildProxyMap(monitorRef));
+    Object.assign(sentConfigs.proxies, proxyMaps.get(proxyKey));
+  }
   const { profiles, accounts, proxies } = sentConfigs;
   // ConfigsStruct fields are STRINGS holding inner JSON (settings/profileList/proxyList/accountList).
   return sendToEngine({ type: 'send-configs', messages: [{
@@ -2417,6 +2428,113 @@ const targetMainMonitorPendingStopIds = new Set();
 let targetMainMonitorSyncTimer = null;
 let targetMainMonitorScanTimer = null;
 let targetMainMonitorRetryTimer = null;
+// Operator-owned poller. Independent of checkout tasks: Stop Tasks must not kill redsky, and
+// Start Monitor must work with zero tasks. Spec comes from this config, not task[0]'s proxy.
+let monitorWanted = false;
+let monitorPersistent = false;
+let monitorOwnerGroupId = '';
+let monitorConfig = emptyMonitorConfig();
+
+function emptyMonitorConfig() {
+  return {
+    proxyListName: '',
+    delay: String(DEFAULT_MONITOR_DELAY_MS),
+    ignoreLowStock: false,
+    items: [],
+    qty: 2,
+  };
+}
+
+function clampMonitorDelay(value) {
+  const parsed = parseInt(String(value == null ? '' : value).replace(/\D/g, ''), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MONITOR_DELAY_MS;
+  return Math.max(MIN_MONITOR_DELAY_MS, Math.min(MAX_MONITOR_DELAY_MS, parsed));
+}
+
+function publishMonitorState() {
+  toRenderer('targetMonitor', {
+    groupId: monitorOwnerGroupId,
+    wanted: monitorWanted,
+    running: !!(monitorWanted && targetMainMonitorRunning),
+    proxyListName: monitorConfig.proxyListName,
+    delay: String(clampMonitorDelay(monitorConfig.delay)),
+  });
+}
+
+function clearMonitorIntent() {
+  monitorWanted = false;
+  monitorPersistent = false;
+  monitorOwnerGroupId = '';
+  monitorConfig = emptyMonitorConfig();
+  publishMonitorState();
+}
+
+function monitorItemsFromConfig(config = {}) {
+  const qty = Math.max(1, parseInt(config.qty, 10) || 2);
+  const { maxPriceBySku } = skuMetaFromItems(config.items);
+  const fromItems = Array.isArray(config.items) ? config.items : [];
+  const seen = new Set();
+  const items = [];
+  for (const item of fromItems) {
+    const sku = String(item && (item.sku || item.monitorInput || item.tcin) || '').trim();
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    items.push({
+      monitorInput: sku,
+      quantity: String(Math.max(1, parseInt(item && item.quantity, 10) || qty)),
+      maxPrice: String((item && item.maxPrice) || maxPriceBySku[sku] || '').trim(),
+    });
+  }
+  for (const raw of (Array.isArray(config.skus) ? config.skus : [])) {
+    const sku = String(raw || '').trim();
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    items.push({
+      monitorInput: sku,
+      quantity: String(qty),
+      maxPrice: maxPriceBySku[sku] || '',
+    });
+  }
+  return items;
+}
+
+function firstNonLocalProxyFromTasks(tasks) {
+  for (const task of (Array.isArray(tasks) ? tasks : [])) {
+    if (groupOf(task && task.proxyListName) !== 'Local') return String(task.proxyListName || '');
+  }
+  return '';
+}
+
+function adoptMonitorFromConfig(config = {}, options = {}) {
+  const monitor = config.monitor && typeof config.monitor === 'object' ? config.monitor : {};
+  const groupId = String(monitor.groupId || config.groupId || '').trim();
+  if (monitorWanted && monitorOwnerGroupId && groupId && groupId !== monitorOwnerGroupId) {
+    log('[target] monitor: not adopting — another group owns the shared monitor');
+    return false;
+  }
+  const itemSource = (monitor.items && monitor.items.length) || (monitor.skus && monitor.skus.length)
+    ? { ...config, ...monitor, qty: monitor.qty || config.qty }
+    : config;
+  const items = monitorItemsFromConfig(itemSource);
+  if (!items.length) return false;
+  const proxyListName = monitor.proxyListName != null
+    ? String(monitor.proxyListName || '')
+    : firstNonLocalProxyFromTasks(config.tasks);
+  monitorConfig = {
+    proxyListName,
+    delay: String(clampMonitorDelay(monitor.delay || monitor.monitorDelay || monitorConfig.delay)),
+    ignoreLowStock: monitor.ignoreLowStock === true
+      || config.ignoreLowStock === true
+      || config.stockConfidence === 'confirmed-10-plus',
+    items,
+    qty: Math.max(1, parseInt(monitor.qty || config.qty, 10) || 2),
+  };
+  if (groupId) monitorOwnerGroupId = groupId;
+  monitorWanted = true;
+  if (options.persistent != null) monitorPersistent = options.persistent === true;
+  publishMonitorState();
+  return true;
+}
 
 function clearTargetMainMonitorState() {
   if (targetMainMonitorSyncTimer) clearTimeout(targetMainMonitorSyncTimer);
@@ -2432,10 +2550,10 @@ function clearTargetMainMonitorState() {
 
 function queueTargetMainMonitorSync() {
   targetMainMonitorNeedsSync = true;
-  if (targetMainMonitorRetryTimer || !runningTaskIds.size) return;
+  if (targetMainMonitorRetryTimer || (!runningTaskIds.size && !monitorWanted)) return;
   targetMainMonitorRetryTimer = setTimeout(() => {
     targetMainMonitorRetryTimer = null;
-    if (targetMainMonitorNeedsSync && runningTaskIds.size) reconcileTargetMainMonitor();
+    if (targetMainMonitorNeedsSync && (runningTaskIds.size || monitorWanted)) reconcileTargetMainMonitor();
   }, TARGET_MAIN_MONITOR_RETRY_MS);
   if (targetMainMonitorRetryTimer && typeof targetMainMonitorRetryTimer.unref === 'function') targetMainMonitorRetryTimer.unref();
 }
@@ -2455,6 +2573,19 @@ function queueTargetMonitorStop(id) {
 }
 
 function targetMainMonitorSpec() {
+  if (monitorWanted && Array.isArray(monitorConfig.items) && monitorConfig.items.length) {
+    return {
+      items: monitorConfig.items.map(item => ({
+        monitorInput: item.monitorInput,
+        quantity: String(item.quantity || monitorConfig.qty || 1),
+        maxPrice: item.maxPrice || '',
+      })),
+      proxyGroup: groupOf(monitorConfig.proxyListName),
+      proxySources: sourceNamesFor(monitorConfig.proxyListName),
+      ignoreLowStock: monitorConfig.ignoreLowStock === true,
+      monitorDelay: String(clampMonitorDelay(monitorConfig.delay)),
+    };
+  }
   const quantities = new Map();
   const maxPrices = new Map();
   let ignoreLowStock = false;
@@ -2483,7 +2614,13 @@ function targetMainMonitorSpec() {
   const items = [...quantities.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([monitorInput, quantity]) => ({ monitorInput, quantity: String(quantity), maxPrice: maxPrices.get(monitorInput) || '' }));
-  return { items, proxyGroup, proxySources, ignoreLowStock };
+  return {
+    items,
+    proxyGroup,
+    proxySources,
+    ignoreLowStock,
+    monitorDelay: String(clampMonitorDelay(monitorConfig.delay)),
+  };
 }
 
 function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
@@ -2504,6 +2641,7 @@ function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
       site: 'Target',
       proxyGroup: spec.proxyGroup,
       proxySources: spec.proxySources || [],
+      monitorDelay: String(spec.monitorDelay || clampMonitorDelay(monitorConfig.delay)),
       ignoreLowStock: spec.ignoreLowStock,
       item: monitorItems,
       monitorItems,
@@ -2513,12 +2651,13 @@ function editTargetMainMonitor(spec, monitorId = targetMainMonitorId) {
 
 function reconcileTargetMainMonitor() {
   const spec = targetMainMonitorSpec();
-  if (!spec.items.length) {
+  if (!spec.items.length || !monitorWanted) {
     let stopped = true;
     if (targetMainMonitorRunning && targetMainMonitorId) {
       stopped = queueTargetMonitorStop(targetMainMonitorId);
     }
     clearTargetMainMonitorState();
+    publishMonitorState();
     return stopped;
   }
 
@@ -2536,7 +2675,7 @@ function reconcileTargetMainMonitor() {
       site: 'Target',
       proxyGroup: spec.proxyGroup,
       proxySources: spec.proxySources || [],
-      monitorDelay: '4000',
+      monitorDelay: String(spec.monitorDelay || clampMonitorDelay(monitorConfig.delay)),
       ignoreLowStock: spec.ignoreLowStock,
       items: spec.items,
     }] });
@@ -2563,7 +2702,7 @@ function reconcileTargetMainMonitor() {
     if (targetMainMonitorSyncTimer && typeof targetMainMonitorSyncTimer.unref === 'function') targetMainMonitorSyncTimer.unref();
   }
 
-  if (sharedMonitorOnly()) {
+  if (sharedMonitorOnly() && !monitorPersistent) {
     if (targetMainMonitorScanTimer) clearTimeout(targetMainMonitorScanTimer);
     targetMainMonitorScanTimer = setTimeout(() => {
       targetMainMonitorScanTimer = null;
@@ -2572,12 +2711,19 @@ function reconcileTargetMainMonitor() {
         targetMainMonitorRunning = false;
         targetMainMonitorId = '';
       }
+      monitorWanted = false;
+      publishMonitorState();
       log('[target] monitor: initial scan done — this copy is no longer polling Target');
     }, TARGET_MAIN_MONITOR_SCAN_MS);
     if (targetMainMonitorScanTimer && typeof targetMainMonitorScanTimer.unref === 'function') targetMainMonitorScanTimer.unref();
   }
   log('[target] monitor: ' + (wasRunning ? 'updated to ' : 'scanning ')
-    + spec.items.length + ' active SKU(s) across ' + runningTaskIds.size + ' task(s)');
+    + spec.items.length + ' SKU(s), proxy ' + spec.proxyGroup
+    + ', delay ' + spec.monitorDelay + 'ms, ' + runningTaskIds.size + ' task(s)');
+  if (spec.proxyGroup === 'Local') {
+    log('[target] ⚠ monitor proxy: Local (your own IP) — redsky will 403. Pick a monitor list, then start the monitor.');
+  }
+  publishMonitorState();
   return true;
 }
 
@@ -2634,10 +2780,39 @@ function editTargetTasks(config = {}) {
   const qty = Math.max(1, parseInt(config.qty, 10) || 1);
   const selected = (Array.isArray(config.tasks) ? config.tasks : [])
     .filter(task => task && task.id && runningTaskIds.has(task.id));
-  if (!selected.length) return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'No selected Target tasks are running.' };
+  if (!selected.length && !monitorWanted) {
+    return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'No selected Target tasks are running.' };
+  }
 
   const makeItems = list => engineItemsFor(list, qty, maxPriceBySku, priorityBySku);
+  if (monitorWanted) {
+    const adopted = adoptMonitorFromConfig({
+      ...config,
+      groupId: monitorOwnerGroupId || config.groupId,
+      monitor: {
+        groupId: monitorOwnerGroupId || (config.monitor && config.monitor.groupId) || '',
+        proxyListName: (config.monitor && config.monitor.proxyListName) != null
+          ? config.monitor.proxyListName
+          : monitorConfig.proxyListName,
+        delay: (config.monitor && (config.monitor.delay || config.monitor.monitorDelay)) || monitorConfig.delay,
+        ignoreLowStock,
+        items: config.items,
+        skus,
+        qty,
+      },
+    });
+    if (!adopted && !selected.length) {
+      return { ok: false, updated: 0, watched: 0, cappedTasks: 0, error: 'The shared monitor did not accept the watch list.' };
+    }
+  }
   let cappedTasks = 0;
+  if (!selected.length) {
+    const watched = skus.slice();
+    const monitorRefreshed = reconcileTargetMainMonitor();
+    log('[target] watch list updated for the shared monitor: ' + watched.length + ' SKU(s), qty ' + qty);
+    if (!monitorRefreshed) log('[target] monitor refresh failed; watch list is stored for the next start');
+    return { ok: true, updated: 0, watched: watched.length, cappedTasks: 0, monitorRefreshed };
+  }
   const messages = selected.map(task => {
     const accountId = task.accountId || taskAccountById.get(task.id) || '';
     const eligible = accountId
@@ -2689,12 +2864,13 @@ function editTargetTasks(config = {}) {
     const first = selected[0] || {};
     const id = MONITOR_ID + '-edit-' + (++liveEditMonitorSequence);
     liveEditMonitorId = id;
+    const liveProxy = monitorWanted ? monitorConfig.proxyListName : first.proxyListName;
     monitorRefreshed = sendToEngine({ type: 'start-monitors', messages: [{
       id,
       site: 'Target',
-      proxyGroup: groupOf(first.proxyListName),
-      proxySources: sourceNamesFor(first.proxyListName),
-      monitorDelay: '4000',
+      proxyGroup: groupOf(liveProxy),
+      proxySources: sourceNamesFor(liveProxy),
+      monitorDelay: String(clampMonitorDelay(monitorConfig.delay)),
       ignoreLowStock,
       items: watched.map(sku => ({
         monitorInput: sku,
@@ -2860,13 +3036,12 @@ function sendStart(config) {
 
   // flushStart reconciles the one native monitor after every pending checkout batch has been
   // delivered, so additive configs cannot race duplicate starts for the same monitor ID.
-  const firstRef = tasks[0] && tasks[0].proxyListName;
-  const grp = groupOf(firstRef);
-  const proxyCount = resolveAssignment(firstRef).sources.reduce((sum, source) => sum + source.lines.length, 0);
+  const grp = groupOf(monitorConfig.proxyListName);
+  const proxyCount = resolveAssignment(monitorConfig.proxyListName).sources.reduce((sum, source) => sum + source.lines.length, 0);
   log(`[target] monitor watching ${watched.length} SKU(s) for ${tasks.length} task(s)`);
   log(grp === 'Local'
-    ? '[target] ⚠ proxy group: Local (your own IP) — redsky will 403 the monitor. Pick a list on the task, then STOP and START it.'
-    : `[target] proxy group: ${grp} (${proxyCount} proxies)`);
+    ? '[target] ⚠ monitor proxy: Local (your own IP) — redsky will 403. Set a monitor list, then start the monitor.'
+    : `[target] monitor proxy: ${grp} (${proxyCount} proxies)`);
   return tasks.length;
 }
 
@@ -2890,7 +3065,7 @@ function flushStart() {
     taskActive = true;
     log(`${started} task(s) started on ${(config.skus || []).length} SKU(s)`);
   }
-  if (startedTotal) reconcileTargetMainMonitor();
+  if (startedTotal || monitorWanted) reconcileTargetMainMonitor();
   return startedTotal;
 }
 
@@ -2957,6 +3132,7 @@ function failNativeEngineRuns(reason, publishError = false) {
   engineConn = null;
   try { if (failedConnection) failedConnection.close(); } catch {}
   taskActive = false;
+  clearMonitorIntent();
   activeMonitorBandwidthRuns.clear();
   stopLiveEditMonitor();
   targetMainMonitorPendingStopIds.clear();
@@ -3765,7 +3941,7 @@ function handleEngineMessage(data, connection) {
         if (pendingMonitorStopAcknowledged) targetMainMonitorPendingStopIds.delete(rawId);
         const mainMonitorRejected = rawId === targetMainMonitorId && st === 'Cloud Disconnected';
         if (rawId === targetMainMonitorId && (m.running === false || mainMonitorRejected)) {
-          const retryMainMonitor = mainMonitorRejected && runningTaskIds.size > 0;
+          const retryMainMonitor = mainMonitorRejected && (runningTaskIds.size > 0 || monitorWanted);
           clearTargetMainMonitorState();
           if (retryMainMonitor) queueTargetMainMonitorSync();
         }
@@ -3781,8 +3957,8 @@ function handleEngineMessage(data, connection) {
           taskAccountById.delete(id);
           releaseTargetCookieTask(id);
           releaseLoginHarvesterTask(id);
-          taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
-          if (targetMainMonitorRunning || !runningTaskIds.size) reconcileTargetMainMonitor();
+          taskActive = runningTaskIds.size > 0 || monitorWanted || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+          if (targetMainMonitorRunning || monitorWanted || !runningTaskIds.size) reconcileTargetMainMonitor();
         }
         // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
         // state is already shown live next to "Engine Log", so logging it as well just buries the
@@ -4117,7 +4293,9 @@ function bindServer(port) {
       vlog('engine reconnected — re-sending configs');
       sendConfigs();
     }
-    if (targetMainMonitorNeedsSync && runningTaskIds.size) reconcileTargetMainMonitor();
+    if (monitorWanted) sendConfigs({ monitor: { proxyListName: monitorConfig.proxyListName } });
+    if (targetMainMonitorNeedsSync && (runningTaskIds.size || monitorWanted)) reconcileTargetMainMonitor();
+    else if (monitorWanted && !pendingTargetStarts.length) reconcileTargetMainMonitor();
   });
   s.on('error', (err) => {
     if (boundPort) { log('engine server error: ' + err.message); return; }   // already listening: not a bind failure
@@ -4218,7 +4396,7 @@ function spawnEngine() {
       }
       return;
     }
-    if (taskActive || runningTaskIds.size || pokemonTaskIds.size || walmartTaskIds.size || targetMainMonitorRunning
+    if (taskActive || runningTaskIds.size || monitorWanted || pokemonTaskIds.size || walmartTaskIds.size || targetMainMonitorRunning
         || activeMonitorBandwidthRuns.size || pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length) {
       log('engine exited (code ' + code + ')');
       failNativeEngineRuns('Native engine exited', false);
@@ -4230,6 +4408,7 @@ function spawnEngine() {
 // config: { tasks: [{ id, accountId, profileId, proxyListName }], skus: [...], qty }
 function startTarget(config, mainWindow) {
   attachWindow(mainWindow);
+  adoptMonitorFromConfig(config || {}, { persistent: !sharedMonitorOnly() });
   queueTargetStart(config);
   // A restarted task gets a fresh mailbox fetch, while additive starts must not cancel OTP polling
   // for sibling tasks that are already running.
@@ -4347,8 +4526,9 @@ function stopTarget(taskId) {
     for (const id of requested) releaseStoppedTargetTask(id);
     notifyTargetDone(requested);
     flushLogs();
-    if (runningTaskIds.size) {
-      if (targetMainMonitorRunning) reconcileTargetMainMonitor();
+    if (runningTaskIds.size || monitorWanted) {
+      if (monitorWanted || targetMainMonitorRunning) reconcileTargetMainMonitor();
+      taskActive = runningTaskIds.size > 0 || monitorWanted || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
       return;
     }
   }
@@ -4356,6 +4536,7 @@ function stopTarget(taskId) {
   startSeq += 1;
   farmerWanted = null;
   clearPendingTargetStarts();
+  clearMonitorIntent();
   if (targetMainMonitorId) targetMainMonitorPendingStopIds.add(targetMainMonitorId);
   stopLiveEditMonitor();
   const mainMonitorIds = [...targetMainMonitorPendingStopIds];
@@ -4506,6 +4687,76 @@ function sendStockPing(p) {
 // show who is running what without having to ask anyone.
 function isTaskRunning(taskId) { return runningTaskIds.has(String(taskId || '')); }
 function runningCount() { return runningTaskIds.size; }
+function isTargetMonitorWanted() { return monitorWanted === true; }
+function targetMonitorOwnerGroupId() { return monitorOwnerGroupId; }
+
+function startTargetMonitor(config = {}, mainWindow) {
+  attachWindow(mainWindow);
+  if (!adoptMonitorFromConfig(config, { persistent: true })) {
+    log('[target] monitor: not starting — add SKUs or stop the other group first');
+    return false;
+  }
+  taskActive = true;
+  ensureServer(() => {
+    if (!monitorWanted) return;
+    sendConfigs({ monitor: { proxyListName: monitorConfig.proxyListName } });
+    spawnEngine();
+    if (engineConn && engineConn.readyState === WebSocket.OPEN) reconcileTargetMainMonitor();
+  });
+  return true;
+}
+
+function stopTargetMonitor() {
+  if (!monitorWanted && !targetMainMonitorRunning) return true;
+  monitorWanted = false;
+  monitorPersistent = false;
+  publishMonitorState();
+  if (targetMainMonitorScanTimer) {
+    clearTimeout(targetMainMonitorScanTimer);
+    targetMainMonitorScanTimer = null;
+  }
+  stopLiveEditMonitor();
+  if (targetMainMonitorId) queueTargetMonitorStop(targetMainMonitorId);
+  clearTargetMainMonitorState();
+  publishMonitorState();
+  if (runningTaskIds.size || pokemonTaskIds.size || walmartTaskIds.size) {
+    taskActive = true;
+    return true;
+  }
+  stopTarget();
+  return true;
+}
+
+function setTargetMonitor(config = {}) {
+  if (config.proxyListName != null) monitorConfig.proxyListName = String(config.proxyListName || '');
+  if (config.delay != null || config.monitorDelay != null) {
+    monitorConfig.delay = String(clampMonitorDelay(config.delay || config.monitorDelay));
+  }
+  if (config.items || config.skus) {
+    const items = monitorItemsFromConfig({ ...monitorConfig, ...config, qty: config.qty || monitorConfig.qty });
+    if (items.length) monitorConfig.items = items;
+  }
+  if (config.ignoreLowStock != null) monitorConfig.ignoreLowStock = config.ignoreLowStock === true;
+  publishMonitorState();
+  if (!monitorWanted) return { ok: true, applied: false };
+  sendConfigs({ monitor: { proxyListName: monitorConfig.proxyListName } });
+  const proxyOnly = config.proxyListName != null && config.delay == null && config.monitorDelay == null
+    && !config.items && !config.skus;
+  if (proxyOnly && targetMainMonitorId) {
+    const group = groupOf(monitorConfig.proxyListName);
+    const proxySources = sourceNamesFor(monitorConfig.proxyListName);
+    return {
+      ok: sendToEngine({
+        type: 'set-task-proxy',
+        messages: [{ id: targetMainMonitorId, proxyGroup: group, proxySources }],
+      }),
+      applied: true,
+    };
+  }
+  const edited = editTargetMainMonitor(targetMainMonitorSpec());
+  if (!edited) queueTargetMainMonitorSync();
+  return { ok: !!edited || targetMainMonitorNeedsSync, applied: true };
+}
 
 // Product names for the watch list, supplied by the ENGINE.
 //
@@ -4541,4 +4792,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, cancelOtpForTask, sendStockPing, isTaskRunning, runningCount, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };
+module.exports = { startTarget, stopTarget, editTargetTasks, startTargetMonitor, stopTargetMonitor, setTargetMonitor, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, cancelOtpForTask, sendStockPing, isTaskRunning, runningCount, isTargetMonitorWanted, targetMonitorOwnerGroupId, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };

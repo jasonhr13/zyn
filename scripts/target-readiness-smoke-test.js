@@ -15,6 +15,8 @@ const group = {
   skus: '12345678\n87654321',
   stockConfidence: 'confirmed-10-plus',
   tasks: [{ id: 'task-1', accountId: 'account-1', proxyListName: 'Residential' }],
+  monitorProxyListName: 'Residential',
+  monitorDelay: '4000',
 };
 const accounts = [{
   id: 'account-1', email: 'buyer@example.com', site: 'target', hasPassword: true, cookie: 'saved-session',
@@ -36,6 +38,7 @@ assert.equal(ready.warnings.length, 0);
 const warning = evaluateTargetReadiness({
   ...group,
   tasks: [{ ...group.tasks[0], proxyListName: '' }],
+  monitorProxyListName: '',
 }, {
   accounts: [{ ...accounts[0], cookie: '' }],
   profiles,
@@ -86,7 +89,7 @@ const folderReady = evaluateTargetReadiness({
 }, {
   accounts,
   profiles,
-  proxyCounts: { 'group:Friday mix': { ok: true, count: 12 } },
+  proxyCounts: { 'group:Friday mix': { ok: true, count: 12 }, Residential: { ok: true, count: 25 } },
   bank: { atc: 3, login: 0 },
   settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
 });
@@ -98,11 +101,28 @@ const folderBlocked = evaluateTargetReadiness({
 }, {
   accounts,
   profiles,
-  proxyCounts: { 'group:Friday mix': { ok: false, count: 0, error: 'no usable lists in this folder' } },
+  proxyCounts: {
+    'group:Friday mix': { ok: false, count: 0, error: 'no usable lists in this folder' },
+    Residential: { ok: true, count: 25 },
+  },
   bank: { atc: 3, login: 0 },
   settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
 });
 assert.ok(folderBlocked.blockers.some(item => item.code === 'proxy-unavailable'));
 assert.equal(selected.counts.tasks, 1);
+
+const monitorLocal = evaluateTargetReadiness({
+  ...group,
+  monitorProxyListName: '',
+}, {
+  accounts,
+  profiles,
+  proxyCounts: { Residential: { ok: true, count: 25 } },
+  bank: { atc: 3, login: 0 },
+  settings: { targetAtcCookiesPerTask: '3', targetHarvesters: [] },
+});
+assert.equal(monitorLocal.level, 'warning');
+assert.ok(monitorLocal.warnings.some(item => item.code === 'monitor-local'));
+assert.ok(monitorLocal.warnings.every(item => item.code !== 'local-proxy'));
 
 console.log('Target readiness blockers, warnings, selection, cookie demand, and per-SKU price validation passed.');

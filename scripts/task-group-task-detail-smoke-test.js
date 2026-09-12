@@ -64,7 +64,14 @@ assert.match(taskGroups, /renderSharedEngineLog\(source = this\.props\)/);
 assert.match(taskGroups, /<VirtualLogView/);
 assert.match(taskGroups, /showOperatorLogs/);
 assert.match(taskGroups, /<GroupMonitorStatus/);
+assert.match(taskGroups, /<GroupMonitorStatus hideLabel/);
+assert.doesNotMatch(
+  taskGroups.replace(/renderGroupMonitor[\s\S]*?renderGroupFacts/, ''),
+  /renderGroupFacts[\s\S]*?<GroupMonitorStatus \/>/,
+  'group header facts must not repeat the live monitor status chip',
+);
 assert.match(styles, /\.group-ops-monitor-watching/);
+assert.match(styles, /\.group-ops-monitor \{/);
 assert.match(styles, /\.task-log-view-virtual/);
 assert.match(styles, /\.task-log-virtual-pad/);
 assert.match(taskGroups, /this\.renderHarvesterDrawer\(\)/);

@@ -4,13 +4,16 @@ import (
 	"sort"
 	"time"
 
-	"zynbot.app/engine/bot-base/proxy"
 	"zynbot.app/engine/bot-base/task"
 	"zynbot.app/engine/bot-base/task/constants"
 	monitorhub "zynbot.app/engine/monitor-hub"
 )
 
 func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
+	if p.ProxyGroup != nil {
+		applyBaseRuntimeProxy(t.BaseTask, *p.ProxyGroup, p.ProxySources)
+		return
+	}
 	if p.Input.MonitorDelay > 0 {
 		t.MonitorDelay = p.Input.MonitorDelay
 	}
@@ -22,12 +25,6 @@ func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 	}
 	if p.Input.RetryDelay > 0 {
 		t.ErrorDelay = p.Input.RetryDelay
-	}
-	if p.Input.Proxy != "" {
-		if p.Input.Proxy != t.ProxyGroup {
-			proxy.ReleaseProxy(t.ProxyGroup, t.ID)
-		}
-		t.ProxyGroup = p.Input.Proxy
 	}
 	t.IgnoreLowStock = p.Input.IgnoreLowStock
 
@@ -64,6 +61,9 @@ func (t *TargetMonitorTask) applyRuntimeEdit(p task.RuntimeEditPayload) {
 				t.missingTcins = keep
 			}
 		}
+	}
+	if p.Input.Proxy != "" {
+		applyBaseRuntimeProxy(t.BaseTask, p.Input.Proxy, p.Input.ProxySources)
 	}
 }
 

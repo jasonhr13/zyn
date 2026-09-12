@@ -9,8 +9,10 @@ const START_CHANNELS = new Set([
   'startRound1',
   'startPokemonCenter',
   'startTarget',
+  'startTargetMonitor',
   'editTargetTasks',
   'setTargetTaskProxy',
+  'setTargetMonitor',
 ]);
 const MANAGED_BOT_SCRIPTS = new Set([
   'pbandai-register.mjs',
@@ -41,7 +43,10 @@ function collectManagedRefs(channel, args, dataManager) {
     if (Array.isArray(first?.tasks)) first.tasks.forEach(walkTask);
     add(first?.harvesterProxyList);
     add(first?.targetHarvesterProxyList);
-    if (channel === 'startTarget' || channel === 'editTargetTasks') {
+    add(first?.proxyListName);
+    add(first?.monitorProxyListName);
+    add(first?.monitor?.proxyListName);
+    if (channel === 'startTarget' || channel === 'startTargetMonitor' || channel === 'editTargetTasks' || channel === 'setTargetMonitor') {
       const settings = dataManager.getSettings?.() || {};
       add(settings.targetHarvesterProxyList);
     }
