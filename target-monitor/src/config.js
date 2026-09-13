@@ -50,7 +50,7 @@ export const config = {
   },
   heartbeat: {
     url: process.env.OPS_DISCORD_WEBHOOK_URL || '',
-    intervalMs: num(process.env.HEALTH_INTERVAL_S, 1800) * 1000,
+    intervalMs: num(process.env.HEALTH_INTERVAL_S, 21600) * 1000,
   },
   proxies: list(process.env.PROXY_URLS),
   // Explicit TCINs to watch regardless of discovery — for pre-launch SKUs that
@@ -60,7 +60,7 @@ export const config = {
   // TCINs that must never ping Discord/webhooks. Discovery still sees them, but
   // they are not enrolled, polled, or emitted. Ignore wins over SEED_TCINS.
   // Env IGNORED_TCINS is additive on top of these built-in mutes.
-  ignoredTcins: [...new Set(['1011060493', '95280894', ...list(process.env.IGNORED_TCINS)])],
+  ignoredTcins: [...new Set(['1011060493', '95280894', '95138800', ...list(process.env.IGNORED_TCINS)])],
   pacing: { maxRequestsPerMin: num(process.env.MAX_RPM, 600) },
   brand: {
     name: process.env.BRAND_NAME || 'Zyn',
