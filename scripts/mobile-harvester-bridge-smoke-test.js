@@ -213,6 +213,80 @@ async function main() {
   assert.equal(pulled.length, 1, 'a joining Full Engine must pull from the shared mailbox');
   fs.rmSync(pullDir, { recursive: true, force: true });
 
+  saved.length = 0;
+  pulled.length = 0;
+  const deficitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-mobile-bridge-deficit-'));
+  const deficitBridge = createMobileHarvesterBridge({
+    dataDirectory: deficitDir,
+    authority: fakeAuthority({
+      cached: () => ({ ok: true, sessionKind: 'engine' }),
+    }),
+    enabled: () => true,
+    hostRemote: () => true,
+    takeCookies: async ({ n }) => {
+      pulled.push(n);
+      return {
+        ok: true,
+        cookies: [{ type: 'atc', headers: SHAPE_HEADERS, proxy: 'host:8000', source: 'extension' }],
+        mailbox: { login: 0, atc: 170 },
+      };
+    },
+    saveCookie: async cookie => {
+      saved.push(cookie);
+      return { ok: true, saved: Array.isArray(cookie) ? cookie.length : 1 };
+    },
+    getCookieBank: async () => ({
+      login: 0,
+      atc: 18,
+      demand: { mode: 'per-task', targets: { login: 0, atc: 500 } },
+    }),
+    scheduleTimeout: () => 1,
+    cancelTimeout() {},
+    logger: { warn() {}, info() {} },
+  });
+  await deficitBridge.__test.pullMailbox();
+  assert.equal(pulled.length, 1, 'a bank still below target must probe the mailbox even with no cached mailbox count');
+  assert.equal(pulled[0], 10);
+  assert.equal(saved.length, 1);
+
+  saved.length = 0;
+  pulled.length = 0;
+  const emptyDelays = [];
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zyn-mobile-bridge-empty-'));
+  const emptyBridge = createMobileHarvesterBridge({
+    dataDirectory: emptyDir,
+    authority: fakeAuthority({
+      cached: () => ({ ok: true, sessionKind: 'engine' }),
+    }),
+    enabled: () => true,
+    hostRemote: () => true,
+    takeCookies: async ({ n }) => {
+      pulled.push(n);
+      return { ok: true, cookies: [], mailbox: { login: 0, atc: 0 } };
+    },
+    saveCookie: async cookie => {
+      saved.push(cookie);
+      return { ok: true, saved: 1 };
+    },
+    getCookieBank: async () => ({
+      login: 0,
+      atc: 18,
+      demand: { mode: 'per-task', targets: { login: 0, atc: 500 } },
+    }),
+    scheduleTimeout: (fn, ms) => {
+      emptyDelays.push(ms);
+      return 1;
+    },
+    cancelTimeout() {},
+    logger: { warn() {}, info() {} },
+  });
+  await emptyBridge.__test.pullMailbox();
+  assert.equal(pulled.length, 1, 'an empty mailbox must not skip take while the bank has room');
+  assert.equal(saved.length, 0);
+  assert.equal(emptyDelays[0], 1000, 'empty mailbox must keep asking on a backoff, not stop');
+  fs.rmSync(emptyDir, { recursive: true, force: true });
+  fs.rmSync(deficitDir, { recursive: true, force: true });
+
   await bridge.__test.handleMessage({
     type: 'peer-state',
     desktopOnline: true,

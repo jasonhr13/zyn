@@ -18,6 +18,7 @@ const HEALTH_MS = 8000;
 const PONG_STALE_MS = 25000;
 const MAILBOX_PULL_MS = 200;
 const MAILBOX_PULL_LIVE_MS = 50;
+const MAILBOX_PULL_EMPTY_MS = 1000;
 const MAILBOX_PULL_BATCH = 10;
 const MAILBOX_PULL_LIVE_BATCH = 64;
 const ANDROID_DOWNLOAD_URL = 'https://updates.zynbot.app/download/android';
@@ -343,10 +344,15 @@ function createMobileHarvesterBridge({
     let status = {};
     try { status = await getCookieBank(); }
     catch { status = {}; }
-    const pools = status && status.pools && typeof status.pools === 'object' ? status.pools : status;
-    const demand = status && status.demand && typeof status.demand === 'object' ? status.demand : {};
+    if (!status || typeof status !== 'object') status = {};
+    // getCookieBank flattens pools to top-level login/atc. Prefer that; fall back to
+    // broker-shaped { pools: { atc } } if a caller passes /status through unchanged.
+    const pools = status.pools && typeof status.pools === 'object' ? status.pools : status;
+    const haveAtc = Number(pools.atc ?? status.atc) || 0;
+    const haveLogin = Number(pools.login ?? status.login) || 0;
+    const demand = status.demand && typeof status.demand === 'object' ? status.demand : {};
     const remaining = remainingHarvestTargets({
-      current: { login: pools.login, atc: pools.atc },
+      current: { login: haveLogin, atc: haveAtc },
       targets: demand.targets,
     });
     const waiting = (demand.activity && demand.activity.waiting)
@@ -363,21 +369,25 @@ function createMobileHarvesterBridge({
     if (pullInFlight || !remoteHostOn() || !available()) return;
     const need = await localNeed();
     pullInFlight = true;
+    let got = 0;
     try {
-      const available = Math.max(0, Number(mailbox.atc) || 0);
-      const want = Math.min(need.atc, available, need.live ? MAILBOX_PULL_LIVE_BATCH : MAILBOX_PULL_BATCH);
+      const batch = need.live ? MAILBOX_PULL_LIVE_BATCH : MAILBOX_PULL_BATCH;
+      // Bank remaining room is the only gate. Mailbox.atc from WS/take is a hint
+      // for empty-mailbox backoff, not permission to stop asking.
+      const want = need.atc > 0 ? Math.min(need.atc, batch) : 0;
       if (want > 0) {
         const result = await takeFromMailbox({ type: 'atc', n: want });
         const cookies = Array.isArray(result && result.cookies) ? result.cookies : [];
-        if (cookies.length) {
+        got = cookies.length;
+        if (got) {
           await ingestCookies(cookies);
           publishDemand({ force: true }).catch(() => {});
         }
         if (result && result.mailbox) {
           mailbox.login = 0;
           mailbox.atc = Number(result.mailbox.atc) || 0;
-        } else {
-          mailbox.atc = Math.max(0, available - cookies.length);
+        } else if (got) {
+          mailbox.atc = Math.max(0, (Number(mailbox.atc) || 0) - got);
         }
       }
     } catch (error) {
@@ -385,8 +395,11 @@ function createMobileHarvesterBridge({
       logger.warn?.(`[remote-harvester] mailbox pull: ${error.message}`);
     } finally {
       pullInFlight = false;
-      if (mailbox.atc > 0 && remoteHostOn()) {
-        schedulePull(need.live ? MAILBOX_PULL_LIVE_MS : MAILBOX_PULL_MS);
+      if (remoteHostOn() && need.atc > 0) {
+        const delay = got > 0 || mailbox.atc > 0
+          ? (need.live ? MAILBOX_PULL_LIVE_MS : MAILBOX_PULL_MS)
+          : MAILBOX_PULL_EMPTY_MS;
+        schedulePull(delay);
       }
     }
   };
@@ -574,6 +587,7 @@ function createMobileHarvesterBridge({
         const nextId = String((record && record.roomId) || '');
         if (nextId && nextId === previousId && socketLive) {
           await publishDemand({ force: true });
+          await pullMailbox();
           return;
         }
         connect();

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.63",
+  "notes": [
+    "Full Engine keeps pulling remote ATC cookies until its local bank is actually full.",
+    "An empty or stale mailbox notice no longer stops a Full Engine that still has bank room.",
+    "Several Full Engines sharing one harvest room no longer get stuck far below their ATC target."
+  ]
+}
