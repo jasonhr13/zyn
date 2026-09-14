@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { to: '/task-groups', icon: 'target', label: 'Target', section: 'Tasks', activeRoutes: ['/task-groups', '/target'] },
   { to: '/pokemoncenter', icon: 'ticket', label: 'Pokémon Center', section: 'Tasks', taskType: 'pokemoncenter' },
   { to: '/walmart', icon: 'cart', label: 'Walmart', section: 'Tasks', taskType: 'walmart' },
+  { to: '/costco', icon: 'layers', label: 'Costco', section: 'Tasks', taskType: 'costco' },
   { to: '/profiles', icon: 'user', label: 'Profiles', section: 'Workspace' },
   { to: '/accounts', icon: 'key', label: 'Accounts', section: 'Workspace' },
   { to: '/proxies', icon: 'network', label: 'Proxies', section: 'Workspace' },

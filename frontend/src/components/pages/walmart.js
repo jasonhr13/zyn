@@ -6,6 +6,7 @@ import VirtualList, { TASK_ROW_HEIGHT } from '../virtual-list';
 import InlineSelect from '../inline-select';
 import { connectEngineLog, connectTaskLog, indexByEmail, indexById, pickTableState } from '../module-table-state';
 import { showOperatorLogs } from '../operator-logs';
+import Icon from '../icon';
 const { ipcRenderer } = window.require('electron');
 
 const WALMART_MODES = Object.freeze(['Checkout', 'Raffle Entry']);
@@ -496,8 +497,9 @@ class Walmart extends Component {
             <button className="btn btn-secondary" onClick={this.toggleSetup}>
               {setupOpen ? 'Hide setup' : 'Show setup'}
             </button>
-            <button className="btn btn-primary" onClick={() => this.start(walmart.tasks)} disabled={!walmart.tasks.length}>Start All</button>
-            <button className="btn btn-secondary" onClick={() => this.stop()}>Stop All</button>
+            {this.runningTasks().length
+              ? <button className="btn btn-danger" onClick={() => this.stop()}><Icon name="stop" size={13} /> Stop Tasks</button>
+              : <button className="btn btn-primary" onClick={() => this.start(walmart.tasks)} disabled={!walmart.tasks.length}><Icon name="play" size={13} /> Start All</button>}
           </div>
         </div>
 

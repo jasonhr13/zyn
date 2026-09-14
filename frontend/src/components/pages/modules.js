@@ -23,6 +23,13 @@ const MODULES = [
     description: 'Account checkout with PX solving, restock waits, and per-SKU queues.',
     taskType: 'walmart',
   },
+  {
+    path: '/costco',
+    name: 'Costco',
+    icon: 'layers',
+    description: 'Farm Queue-it waiting rooms. Paste the product URL when the room opens; passed tasks open a headed browser for checkout.',
+    taskType: 'costco',
+  },
 ];
 
 export default function Modules({ taskTypes = {} }) {

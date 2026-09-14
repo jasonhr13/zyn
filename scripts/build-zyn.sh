@@ -116,6 +116,7 @@ rm -f "$RESOURCES/default_app.asar"
 rm -rf "$RESOURCES/bot" "$RESOURCES/node_modules"
 mkdir -p "$RESOURCES/bot"
 rsync -a --exclude='node_modules' --exclude='package-lock.json' --exclude='package.json' --exclude='README.md' \
+  --exclude='queue-it-farm.mjs' --exclude='*.test.mjs' \
   "$PROJECT_DIR/bot-runtime/" "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.mjs "$RESOURCES/bot/"
 cp "$PROJECT_DIR/native-farmer/"*.html "$RESOURCES/bot/"

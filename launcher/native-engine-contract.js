@@ -8,12 +8,16 @@ const SITES = Object.freeze({
   TARGET: 'Target',
   POKEMON_CENTER_US: 'Pokemon Center US',
   WALMART: 'Walmart',
+  COSTCO: 'Costco',
+  QUEUE_IT: 'QueueIt',
 });
 
 const SITE_KEYS = Object.freeze({
   [SITES.TARGET]: 'target',
   [SITES.POKEMON_CENTER_US]: 'pokemoncenter',
   [SITES.WALMART]: 'walmart',
+  [SITES.COSTCO]: 'costco',
+  [SITES.QUEUE_IT]: 'queueit',
 });
 
 const TO_ENGINE = Object.freeze([
@@ -26,7 +30,7 @@ const TO_ENGINE = Object.freeze([
 const FROM_ENGINE = Object.freeze([
   'update-status', 'update-input', 'task-log', 'task-notification', 'product',
   'product-titles', 'request-code', 'account-cookie', 'account-password', 'solve-captcha',
-  'analytics-event', 'task-telemetry', 'monitor-bandwidth',
+  'analytics-event', 'task-telemetry', 'monitor-bandwidth', 'queue-pass',
   // Reserved for the server-side Hyper broker.
   'hyper-request',
 ]);
@@ -46,6 +50,10 @@ const SITE_ALIASES = new Map([
   ['pokemon-center-us', SITES.POKEMON_CENTER_US],
   ['pcus', SITES.POKEMON_CENTER_US],
   ['walmart', SITES.WALMART],
+  ['costco', SITES.COSTCO],
+  ['queueit', SITES.QUEUE_IT],
+  ['queue-it', SITES.QUEUE_IT],
+  ['queue it', SITES.QUEUE_IT],
 ]);
 
 function nonEmpty(value, label) {

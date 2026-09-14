@@ -95,6 +95,24 @@ function saveWalmartTasks(data) {
   return next;
 }
 
+function getCostcoTasks() {
+  return readJSON('costco-tasks.json', {
+    productUrl: '', tasks: [],
+    monitorDelay: '2000', retryDelay: '2000', openBrowserOnPass: true, setupOpen: true,
+  });
+}
+
+function saveCostcoTasks(data) {
+  const current = getCostcoTasks();
+  const next = {
+    ...current,
+    ...(data && typeof data === 'object' ? data : {}),
+    tasks: Array.isArray(data && data.tasks) ? data.tasks : current.tasks,
+  };
+  writeJSON('costco-tasks.json', next);
+  return next;
+}
+
 // ── Target tasks ───────────────────────────────────────────────────────────────
 // Kept in their OWN file rather than sharing tasks.json: Secret Lair tasks carry a productUrl and
 // profileIds, Target tasks carry an accountId and resolve their profile by email at launch. Mixing
@@ -740,6 +758,7 @@ module.exports = {
   getTasks, createTask, updateTask, deleteTask,
   getPokemonCenterTasks, savePokemonCenterTasks,
   getWalmartTasks, saveWalmartTasks,
+  getCostcoTasks, saveCostcoTasks,
   getTargetTasks, saveTargetTasks,
   targetOrderLimitReached, recordTargetOrder, recentTargetOrders,
   ORDER_LIMIT_WINDOW_MS, ORDER_LIMIT_MAX,

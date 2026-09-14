@@ -62,6 +62,7 @@ const TELEMETRY_EVENTS = new Set([
 const TELEMETRY_SITES = new Map([
   ['target', 'Target'], ['pokemoncenter', 'Pokemon Center US'], ['pokemoncenterus', 'Pokemon Center US'],
   ['walmart', 'Walmart'],
+  ['costco', 'Costco'],
 ]);
 const MIN_ACTIVE_DEVICES = 1;
 const MAX_ACTIVE_DEVICES = 10;
@@ -97,6 +98,7 @@ const HYPER_UPSTREAMS = Object.freeze({
 const TASK_TYPE_REGISTRY = Object.freeze([
   { key: 'pokemoncenter', label: 'Pokémon Center' },
   { key: 'walmart', label: 'Walmart' },
+  { key: 'costco', label: 'Costco' },
   { key: 'round1', label: 'Round1' },
 ]);
 let taskTypeRegistryEnsured = false;
@@ -1561,6 +1563,8 @@ function analyticsSite(value) {
   const compact = analyticsText(value, 80).toLowerCase().replace(/[^a-z]/g, '');
   if (compact === 'target') return 'Target';
   if (compact === 'pokemoncenter' || compact === 'pokemoncenterus') return 'Pokemon Center US';
+  if (compact === 'walmart') return 'Walmart';
+  if (compact === 'costco') return 'Costco';
   return '';
 }
 

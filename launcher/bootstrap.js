@@ -1061,6 +1061,12 @@ function stopRemovedTaskTypes({ removed = [] } = {}) {
         require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopWalmart?.();
       } catch {}
     }
+    if (taskType === 'costco') {
+      console.warn('[license] Costco access removed; stopping its running tasks');
+      try {
+        require(path.join(originalAsar, 'public', 'helpers', 'target-engine.js')).stopCostco?.();
+      } catch {}
+    }
   }
 }
 
@@ -1115,7 +1121,7 @@ function guardTaskHelpers(authority) {
   const allowed = () => authority.cached().ok === true;
   const engineAllowed = () => allowed() && authority.cached().sessionKind !== 'harvester';
   const TASK_TYPE_METHODS = Object.freeze({
-    startRound1: 'round1', startPokemonCenter: 'pokemoncenter', startWalmart: 'walmart',
+    startRound1: 'round1', startPokemonCenter: 'pokemoncenter', startWalmart: 'walmart', startCostco: 'costco',
   });
   const entitled = taskType => authority.cached().taskTypes?.[taskType] === true;
   const blocked = (name, taskType = '') => {
@@ -1157,6 +1163,7 @@ function guardTaskHelpers(authority) {
     ['target-engine.js', 'startTargetMonitor', ''],
     ['target-engine.js', 'startPokemonCenter', 'pokemoncenter'],
     ['target-engine.js', 'startWalmart', 'walmart'],
+    ['target-engine.js', 'startCostco', 'costco'],
   ]) {
     try {
       const engine = require(path.join(originalAsar, 'public', 'helpers', file));

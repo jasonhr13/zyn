@@ -15,6 +15,11 @@ assert.equal(contract.canonicalSite('pokemon-center-us'), 'Pokemon Center US');
 assert.equal(contract.siteKey('PCUS'), 'pokemoncenter');
 assert.equal(contract.canonicalSite('Walmart'), 'Walmart');
 assert.equal(contract.siteKey('walmart'), 'walmart');
+assert.equal(contract.canonicalSite('costco'), 'Costco');
+assert.equal(contract.canonicalSite('Costco'), 'Costco');
+assert.equal(contract.siteKey('costco'), 'costco');
+assert.equal(contract.canonicalSite('queue-it'), 'QueueIt');
+assert.equal(contract.FROM_ENGINE.includes('queue-pass'), true);
 
 const start = contract.normalizeStartTask({
   id: 'pc-1',

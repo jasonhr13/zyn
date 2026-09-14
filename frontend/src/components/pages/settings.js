@@ -133,7 +133,7 @@ class Settings extends Component {
       targetVerboseLogs: false, hcaptchaAutosolve: true, shapeMethod: 'In Bot', targetHarvesterExtensionIds: '', extensionIdsError: '',
       mobileHarvesterEnabled: false, mobileHarvester: null, mobileBusy: false, mobileError: '',
       licenseEmail: '', licenseOffline: false, sessionKind: 'engine', sessionKindBusy: false, sessionKindError: '', remoteHarvester: null, harvestReconnectBusy: false,
-      pokemonCenterAccess: false, walmartAccess: false, proxyAccess: false, managedProxyCount: 0,
+      pokemonCenterAccess: false, walmartAccess: false, costcoAccess: false, proxyAccess: false, managedProxyCount: 0,
       billingPlan: '', billingStatus: '', accessUntil: 0,
       signingOut: false,
       clearingAnalytics: false, analyticsMsg: '', analyticsColor: 'var(--muted)',
@@ -183,6 +183,7 @@ class Settings extends Component {
       sessionKind: String(status.sessionKind || '').trim().toLowerCase() === 'harvester' ? 'harvester' : 'engine',
       pokemonCenterAccess: !!(status.taskTypes && status.taskTypes.pokemoncenter),
       walmartAccess: !!(status.taskTypes && status.taskTypes.walmart),
+      costcoAccess: !!(status.taskTypes && status.taskTypes.costco),
       proxyAccess: status.proxyAccess === true,
       managedProxyCount: Number(status.managedProxyCount) || 0,
       billingPlan: String(status.billingPlan || ''),
@@ -743,7 +744,7 @@ class Settings extends Component {
       targetVerboseLogs, hcaptchaAutosolve, shapeMethod, targetHarvesterExtensionIds, extensionIdsError,
       mobileHarvesterEnabled, mobileHarvester, mobileBusy, mobileError,
       licenseEmail, licenseOffline, sessionKind, sessionKindBusy, sessionKindError,
-      pokemonCenterAccess, walmartAccess, proxyAccess, managedProxyCount,
+      pokemonCenterAccess, walmartAccess, costcoAccess, proxyAccess, managedProxyCount,
       billingStatus, accessUntil, signingOut,
       clearingAnalytics, analyticsMsg, analyticsColor } = this.state;
     // From props, not state: syncFromProps only runs when props change, so a freshly-toggled value
@@ -885,12 +886,16 @@ class Settings extends Component {
               <strong className={walmartAccess ? 'enabled' : 'disabled'}>
                 {walmartAccess ? 'Enabled' : 'Not included'}
               </strong>
+              <span>Costco</span>
+              <strong className={costcoAccess ? 'enabled' : 'disabled'}>
+                {costcoAccess ? 'Enabled' : 'Not included'}
+              </strong>
               <span>Managed proxies</span><strong className={proxyAccess ? 'enabled' : 'disabled'}>
                 {proxyAccess ? `${managedProxyCount} list${managedProxyCount === 1 ? '' : 's'}` : 'Not included'}
               </strong>
             </div>
             <div style={{ marginTop: 8, color: 'var(--dim)', fontSize: 10, lineHeight: 1.45 }}>
-              Target, Pokémon Center, and managed proxy access update automatically from your Zyn account.
+              Target, Pokémon Center, Walmart, Costco, and managed proxy access update automatically from your Zyn account.
             </div>
           </div>
 

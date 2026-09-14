@@ -13,6 +13,7 @@ import TaskGroups from './pages/task-groups';
 import Target from './pages/target';
 import PokemonCenter from './pages/pokemoncenter';
 import Walmart from './pages/walmart';
+import Costco from './pages/costco';
 import Profiles from './pages/profiles';
 import Accounts from './pages/accounts';
 import Proxies from './pages/proxies';
@@ -135,6 +136,15 @@ class PageHandler extends Component {
     ipcRenderer.on('walmartDone', (e, { taskId, idle } = {}) => {
       this.props.dispatch({ type: 'walmartDone', taskId, idle });
     });
+    ipcRenderer.on('costcoLogBatch', (e, { byTask } = {}) => {
+      this.props.dispatch({ type: 'costcoLogBatch', byTask: byTask || {}, at: Date.now() });
+    });
+    ipcRenderer.on('costcoStatusBatch', (e, { updates } = {}) => {
+      this.props.dispatch({ type: 'costcoStatusBatch', updates: Array.isArray(updates) ? updates : [] });
+    });
+    ipcRenderer.on('costcoDone', (e, { taskId, idle } = {}) => {
+      this.props.dispatch({ type: 'costcoDone', taskId, idle });
+    });
 
     // Update status → redux, so the sidebar badge and the Settings "Check for updates" button
     // read one shared source instead of each keeping their own copy.
@@ -191,6 +201,9 @@ class PageHandler extends Component {
     ipcRenderer.removeAllListeners('walmartStatus');
     ipcRenderer.removeAllListeners('walmartStatusBatch');
     ipcRenderer.removeAllListeners('walmartDone');
+    ipcRenderer.removeAllListeners('costcoLogBatch');
+    ipcRenderer.removeAllListeners('costcoStatusBatch');
+    ipcRenderer.removeAllListeners('costcoDone');
     ipcRenderer.removeAllListeners('updateStatus');
   }
 
@@ -230,6 +243,7 @@ class PageHandler extends Component {
                 {license.sessionKind === 'harvester' && <Redirect from="/modules" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/pokemoncenter" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/walmart" to="/task-groups" />}
+                {license.sessionKind === 'harvester' && <Redirect from="/costco" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/profiles" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/accounts" to="/task-groups" />}
                 {license.sessionKind === 'harvester' && <Redirect from="/target" to="/task-groups" />}
@@ -243,6 +257,8 @@ class PageHandler extends Component {
                   ? <PokemonCenter /> : <Redirect to="/modules" />} />
                 <Route path="/walmart" render={() => license.taskTypes && license.taskTypes.walmart
                   ? <Walmart /> : <Redirect to="/modules" />} />
+                <Route path="/costco" render={() => license.taskTypes && license.taskTypes.costco
+                  ? <Costco /> : <Redirect to="/modules" />} />
                 <Route path="/profiles" component={Profiles} />
                 <Route path="/accounts" component={Accounts} />
                 <Route path="/proxies" component={Proxies} />

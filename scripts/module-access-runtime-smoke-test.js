@@ -172,7 +172,7 @@ async function main() {
   const exact = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
   const compactSettingsAccess = report.settingsAccess.replace(/\s+/g, '');
   if (report.authoritative.ok !== false
-    || !exact(report.authoritative.taskTypes, { pokemoncenter: false, round1: false })
+    || !exact(report.authoritative.taskTypes, { pokemoncenter: false, walmart: false, costco: false, round1: false })
     || report.gateBadge !== 'ZYNAIO'
     || !exact(report.deniedCards, deniedCardsExpected)
     || !report.deniedRound1Route.hash.endsWith('/modules')

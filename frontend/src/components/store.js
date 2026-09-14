@@ -120,6 +120,16 @@ const defaultState = {
     endless: false,
     mode: 'Checkout',
   },
+  costco: {
+    productUrl: '',
+    tasks: [],
+    taskStatus: {},
+    taskLogs: {},
+    logs: [],
+    monitorDelay: '2000',
+    retryDelay: '2000',
+    openBrowserOnPass: true,
+  },
   // Target: one compiled Go engine instance driving MANY checkout tasks plus a single shared
   // monitor. Lives in the store (not page state) for the same reason as pokemon above — the page
   // unmounts on a tab switch, but the engine keeps running and its status/log events must survive
@@ -436,6 +446,71 @@ export function reducer(state = defaultState, action) {
         ? { state: 'Idle', label: 'Idle', color: '#6b7280', detail: '', running: false }
         : { ...previous, running: false };
       return { ...state, walmart: { ...state.walmart, taskStatus: { ...state.walmart.taskStatus,
+        [action.taskId]: next } } };
+    }
+
+    case 'costcoSet':
+      return { ...state, costco: { ...state.costco, ...action.obj } };
+
+    case 'costcoTasksAdd':
+      return { ...state, costco: { ...state.costco,
+        tasks: [...state.costco.tasks, ...(action.tasks || [])] } };
+
+    case 'costcoTaskDelete': {
+      const taskStatus = { ...state.costco.taskStatus }; delete taskStatus[action.id];
+      const taskLogs = { ...state.costco.taskLogs }; delete taskLogs[action.id];
+      return { ...state, costco: { ...state.costco,
+        tasks: state.costco.tasks.filter(task => task.id !== action.id), taskStatus, taskLogs } };
+    }
+
+    case 'costcoLaunch': {
+      const ids = action.taskIds || [];
+      const taskStatus = { ...state.costco.taskStatus };
+      for (const id of ids) taskStatus[id] = { state: 'Starting', label: 'Starting', color: '#868686', detail: '', running: true };
+      return { ...state, costco: { ...state.costco, taskStatus } };
+    }
+
+    case 'costcoLog': {
+      const incoming = Array.isArray(action.lines) ? action.lines : (action.line != null ? [action.line] : []);
+      if (!incoming.length) return state;
+      const timestamped = timestampLogLines(incoming, action.at);
+      const logs = [...(state.costco.logs || []), ...timestamped].slice(-800);
+      if (!action.taskId) return { ...state, costco: { ...state.costco, logs } };
+      const previous = state.costco.taskLogs[action.taskId] || [];
+      return { ...state, costco: { ...state.costco, logs, taskLogs: { ...state.costco.taskLogs,
+        [action.taskId]: [...previous, ...timestamped].slice(-400) } } };
+    }
+
+    case 'costcoLogBatch': {
+      const next = applyLogBatch(state.costco, action.byTask, action.at, { alwaysModule: true });
+      return next === state.costco ? state : { ...state, costco: next };
+    }
+
+    case 'costcoStatus': {
+      if (!action.taskId) return state;
+      const previous = state.costco.taskStatus[action.taskId] || {};
+      return { ...state, costco: { ...state.costco, taskStatus: { ...state.costco.taskStatus,
+        [action.taskId]: {
+          ...previous, state: action.state, label: action.label || action.state,
+          color: action.color || '#6DACFF', detail: action.detail || '',
+          taskState: action.taskState === undefined ? previous.taskState : action.taskState,
+          running: action.running === undefined ? previous.running : action.running,
+        } } } };
+    }
+
+    case 'costcoStatusBatch': {
+      const updates = Array.isArray(action.updates) ? action.updates : [];
+      if (!updates.length) return state;
+      return { ...state, costco: { ...state.costco, taskStatus: applyStatusEntries(state.costco.taskStatus, updates) } };
+    }
+
+    case 'costcoDone': {
+      if (!action.taskId) return state;
+      const previous = state.costco.taskStatus[action.taskId] || {};
+      const next = action.idle
+        ? { state: 'Idle', label: 'Idle', color: '#6b7280', detail: '', running: false }
+        : { ...previous, running: false };
+      return { ...state, costco: { ...state.costco, taskStatus: { ...state.costco.taskStatus,
         [action.taskId]: next } } };
     }
 

@@ -588,6 +588,7 @@ function attachWindow(mainWindow) {
     try { if (taskActive || engineProc || farmerProc) stopTarget(); } catch {}
     try { if (pokemonTaskIds.size) stopPokemonCenter(); } catch {}
     try { if (walmartTaskIds.size) stopWalmart(); } catch {}
+    try { if (costcoTaskIds.size) stopCostco(); } catch {}
   };
   try {
     mainWindow.once('closed', die);
@@ -790,9 +791,18 @@ function bundledEnginePath() {
 function enginePath() {
   // The runtime manager installs engines side by side and changes this pointer only for future
   // spawns. A child that already owns tasks keeps its original executable and process image.
+  // Same advertised version as this app's fallback uses the copy we just packaged, so a local QA
+  // build is not replaced by a cached published engine with the same version string.
+  const bundled = bundledEnginePath();
   const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
+  const downloadedVer = String(process.env.ZYN_ENGINE_VERSION || '');
+  const bundledVer = bundledEngineVersion();
+  if (downloaded && fs.existsSync(downloaded) && downloadedVer && bundledVer && downloadedVer !== bundledVer) {
+    return downloaded;
+  }
+  if (bundled && fs.existsSync(bundled)) return bundled;
   if (downloaded && fs.existsSync(downloaded)) return downloaded;
-  return bundledEnginePath();
+  return bundled;
 }
 
 function bundledEngineVersion() {
@@ -3168,6 +3178,10 @@ function failNativeEngineRuns(reason, publishError = false) {
     if (publishError) walmartStatus('Error', '#fb5454', detail, id, 0, false);
     walmartDone(id);
   }
+  for (const id of costcoTaskIds) {
+    if (publishError) costcoStatus('Error', '#fb5454', detail, id, 0, false);
+    costcoDone(id);
+  }
   runningTaskIds.clear();
   clearTargetCookieTasks();
   clearPendingTargetStarts();
@@ -3178,6 +3192,9 @@ function failNativeEngineRuns(reason, publishError = false) {
   walmartTaskConfigs.clear();
   pendingWalmartStarts.length = 0;
   walmartMonitorIds.clear();
+  costcoTaskIds.clear();
+  costcoTaskConfigs.clear();
+  pendingCostcoStarts.length = 0;
   engineTaskSites.clear();
   taskAccountById.clear();
   taskProfileById.clear();
@@ -3391,7 +3408,7 @@ function flushPokemonStarts() {
       pokemonLog(pokemonQueueStreamLine(), message.id);
     }
   }
-  taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+  taskActive = hasNativeTasks();
   return started;
 }
 
@@ -3511,7 +3528,7 @@ function stopPokemonCenter(taskId) {
       if (!pendingPokemonStarts[i].tasks.length) pendingPokemonStarts.splice(i, 1);
     }
   }
-  if (pokemonTaskIds.size || runningTaskIds.size) {
+  if (hasNativeTasks()) {
     taskActive = true;
     return true;
   }
@@ -3770,7 +3787,7 @@ function flushWalmartStarts() {
     for (const message of valid) walmartLog('Walmart task started', message.id);
     reconcileWalmartMonitors();
   }
-  taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+  taskActive = hasNativeTasks();
   return started;
 }
 
@@ -3870,7 +3887,321 @@ function stopWalmart(taskId) {
     }
   }
   reconcileWalmartMonitors();
-  if (walmartTaskIds.size || pokemonTaskIds.size || runningTaskIds.size) {
+  if (hasNativeTasks()) {
+    taskActive = true;
+    return true;
+  }
+  taskActive = false;
+  nativeHyperBroker.cancelPending();
+  manualCaptchaManager.cancelPending();
+  beginTargetEngineStop(engineProc);
+  return true;
+}
+
+const COSTCO_SITE = engineContract.SITES.COSTCO;
+const QUEUE_IT_SITE = engineContract.SITES.QUEUE_IT;
+const costcoTaskIds = new Set();
+const costcoTaskConfigs = new Map();
+const pendingCostcoStarts = [];
+const queuePassBrowsers = new Set();
+let costcoStartSeq = 0;
+
+function hasNativeTasks() {
+  return runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0 || costcoTaskIds.size > 0;
+}
+
+function hasPendingNativeStarts() {
+  return pendingTargetStarts.length > 0
+    || pendingPokemonStarts.length > 0
+    || pendingWalmartStarts.length > 0
+    || pendingCostcoStarts.length > 0;
+}
+
+function isQueueFarmSite(site) {
+  return site === COSTCO_SITE || site === QUEUE_IT_SITE;
+}
+
+const costcoStatusCoalescer = createStatusCoalescer({
+  intervalMs: STATUS_FLUSH_MS,
+  send: updates => toRenderer('costcoStatusBatch', { updates }),
+});
+const costcoLogBufs = {};
+let costcoLogTimer = null;
+function flushCostcoLogs() {
+  costcoLogTimer = null;
+  if (!operatorLogsEnabled()) {
+    dropPendingLogBufs(costcoLogBufs);
+    return;
+  }
+  const byTask = {};
+  for (const key of Object.keys(costcoLogBufs)) {
+    const lines = costcoLogBufs[key];
+    if (!lines || !lines.length) continue;
+    delete costcoLogBufs[key];
+    byTask[key] = lines;
+  }
+  if (Object.keys(byTask).length) toRenderer('costcoLogBatch', { byTask });
+}
+
+function costcoStatus(state, color, detail, taskId, taskState, running) {
+  state = zynBrandText(state);
+  detail = zynBrandText(detail);
+  costcoStatusCoalescer.enqueue(String(taskId || ''), {
+    taskId: String(taskId || ''), state: String(state || ''), label: String(state || ''),
+    color: String(color || ''), detail: String(detail || ''),
+    taskState: typeof taskState === 'number' ? taskState : undefined,
+    running: typeof running === 'boolean' ? running : undefined,
+  }, { immediate: running === false });
+}
+
+function costcoLog(line, taskId = '') {
+  if (!operatorLogsEnabled()) return;
+  let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
+  if (!value) return;
+  if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
+  const key = String(taskId || '');
+  const buf = costcoLogBufs[key] || (costcoLogBufs[key] = []);
+  buf.push(value);
+  if (buf.length > LOG_BUF_MAX) costcoLogBufs[key] = buf.slice(-LOG_BUF_MAX);
+  if (!costcoLogTimer) costcoLogTimer = setTimeout(flushCostcoLogs, LOG_FLUSH_MS);
+}
+
+function costcoDone(taskId = '', { idle = false } = {}) {
+  toRenderer('costcoDone', { taskId: String(taskId || ''), idle: idle === true });
+}
+
+function normalizeCostcoUrl(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+  try {
+    const parsed = new URL(input);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'costco.com' || host.endsWith('.costco.com')) return parsed.href;
+    if (host === 'costco.ca' || host.endsWith('.costco.ca')) return parsed.href;
+    if (host.endsWith('.queue-it.net') || host.includes('queue-it')) return parsed.href;
+    return '';
+  } catch { return ''; }
+}
+
+function costcoItems(url) {
+  const input = normalizeCostcoUrl(url);
+  if (!input) return [];
+  return [{ id: input, monitorInput: input, quantity: '1', maxPrice: '', color: '', sizes: [] }];
+}
+
+function costcoMessage(task = {}, shared = {}) {
+  const items = costcoItems(task.productUrl || shared.productUrl);
+  return engineContract.normalizeStartTask({
+    id: String(task.id || ''), type: COSTCO_SITE, site: COSTCO_SITE,
+    taskGroup: '',
+    monitorDelay: String(task.monitorDelay || shared.monitorDelay || '2000'),
+    retryDelay: String(task.retryDelay || shared.retryDelay || '2000'),
+    proxyGroup: String(task.proxyListName || '').trim() || 'Local',
+    profileId: '', profileGroup: '', accountId: '',
+    item: items, monitorItems: items,
+    status: '', mode: 'Queue Runner', minPrice: '', maxPrice: '', statusColor: '',
+    running: true, carted: false, failed: false, successful: false,
+    loopCheckout: false, waitForQueue: false, QueueEntryDelay: '0',
+    allInstock: false, endless: false, useFillerItem: false, useOtpLogin: false,
+    startSchedule: '', stopSchedule: '', ignoreLowStock: false,
+  });
+}
+
+function rememberCostcoConfig(task, shared) {
+  const merged = {
+    ...shared, ...task,
+    productUrl: normalizeCostcoUrl(task.productUrl || shared.productUrl),
+    openBrowserOnPass: (task.openBrowserOnPass != null ? task.openBrowserOnPass : shared.openBrowserOnPass) !== false,
+    mode: 'Queue Runner',
+  };
+  costcoTaskConfigs.set(String(task.id), merged);
+  return merged;
+}
+
+function queuePassScriptPath() {
+  const candidates = [
+    path.join(botDirPath(), 'queue-pass-browser.mjs'),
+    path.join(__dirname, '..', '..', '..', 'bot-runtime', 'queue-pass-browser.mjs'),
+    path.join(__dirname, '..', '..', 'bot', 'queue-pass-browser.mjs'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return '';
+}
+
+function launchQueuePassBrowser(pass, config) {
+  if (config && config.openBrowserOnPass === false) {
+    costcoLog('Queue pass — headed browser disabled', pass.taskID || pass.taskId);
+    return;
+  }
+  const script = queuePassScriptPath();
+  const taskId = String(pass.taskID || pass.taskId || '');
+  if (!script) {
+    costcoLog('Queue pass browser script missing', taskId);
+    return;
+  }
+  const url = String(pass.redirectUrl || pass.RedirectURL || '').trim();
+  if (!url) {
+    costcoLog('Queue pass missing redirect URL', taskId);
+    return;
+  }
+  const cookieFile = path.join(os.tmpdir(), `zyn-queue-pass-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  try {
+    fs.writeFileSync(cookieFile, String(pass.cookies || ''), { encoding: 'utf8', mode: 0o600 });
+  } catch {
+    costcoLog('Could not write queue-pass session', taskId);
+    return;
+  }
+  const env = nodeEnvironment({
+    FORCE_COLOR: '0',
+    QUEUE_PASS_PROXY: String(pass.proxy || ''),
+  });
+  let proc;
+  try {
+    proc = spawn(findNodeExe(), [
+      script,
+      `--url=${url}`,
+      `--origin=${String(pass.origin || '')}`,
+      `--cookie-file=${cookieFile}`,
+    ], {
+      cwd: path.dirname(script),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env,
+      ...plat.spawnOpts(),
+    });
+  } catch {
+    try { fs.unlinkSync(cookieFile); } catch {}
+    costcoLog('Could not open queue-pass browser', taskId);
+    return;
+  }
+  const cleanup = () => { try { fs.unlinkSync(cookieFile); } catch {} };
+  proc.on('exit', () => {
+    cleanup();
+    queuePassBrowsers.delete(proc);
+  });
+  proc.on('error', () => {
+    cleanup();
+    queuePassBrowsers.delete(proc);
+    costcoLog('Queue-pass browser failed to start', taskId);
+  });
+  const relay = (chunk) => {
+    String(chunk).split(/\r?\n/).forEach((line) => {
+      const text = redactProxies(String(line || '')).replace(/https?:\/\/[^\s]+/gi, '[url]').trim();
+      if (text) costcoLog(text, taskId);
+    });
+  };
+  if (proc.stdout) proc.stdout.on('data', relay);
+  if (proc.stderr) proc.stderr.on('data', relay);
+  queuePassBrowsers.add(proc);
+  costcoLog('Opened headed browser for operator checkout', taskId);
+}
+
+function closeQueuePassBrowsers() {
+  for (const proc of [...queuePassBrowsers]) {
+    try { proc.kill(); } catch {}
+  }
+  queuePassBrowsers.clear();
+}
+
+function flushCostcoStarts() {
+  if (pendingTargetEngineStop || !engineConn || engineConn.readyState !== WebSocket.OPEN) return 0;
+  let started = 0;
+  while (pendingCostcoStarts.length) {
+    const config = pendingCostcoStarts[0] || {};
+    const tasks = (config.tasks || []).filter(task => task && costcoTaskIds.has(String(task.id || '')));
+    if (!tasks.length) {
+      pendingCostcoStarts.shift();
+      continue;
+    }
+    const messages = tasks.map(task => costcoMessage(task, config));
+    const valid = messages.filter(message => message.id && message.item.length);
+    for (const message of messages) {
+      if (valid.includes(message)) continue;
+      costcoStatus('Invalid Task', '#fb5454', 'Paste a Costco or Queue-it URL', message.id, 0, false);
+      costcoTaskIds.delete(message.id);
+      costcoTaskConfigs.delete(message.id);
+      engineTaskSites.remove(message.id);
+      costcoDone(message.id);
+    }
+    if (!valid.length) {
+      pendingCostcoStarts.shift();
+      continue;
+    }
+    if (!sendConfigs({ tasks }) || !sendToEngine({ type: 'start-tasks', messages: valid })) break;
+    pendingCostcoStarts.shift();
+    started += valid.length;
+    for (const message of valid) costcoLog('Costco queue task started', message.id);
+  }
+  taskActive = hasNativeTasks();
+  return started;
+}
+
+function startCostco(config = {}, mainWindow) {
+  attachWindow(mainWindow);
+  const productUrl = normalizeCostcoUrl(config.productUrl);
+  if (!productUrl) return false;
+  const requestedTasks = Array.isArray(config.tasks) ? config.tasks : [config];
+  const tasks = requestedTasks.filter(task => task && task.id);
+  if (!tasks.length) return false;
+
+  const batch = {
+    ...config,
+    productUrl,
+    openBrowserOnPass: config.openBrowserOnPass !== false,
+    mode: 'Queue Runner',
+    tasks: tasks.map(task => rememberCostcoConfig(task, { ...config, productUrl })),
+  };
+  pendingCostcoStarts.push(batch);
+  for (const task of batch.tasks) {
+    const id = String(task.id);
+    costcoTaskIds.add(id);
+    engineTaskSites.register(id, COSTCO_SITE);
+    costcoStatus('Starting', '#868686', 'launching engine', id, 1, true);
+  }
+  flushStartingStatuses(costcoStatusCoalescer);
+  const seq = ++costcoStartSeq;
+  ensureServer(() => {
+    if (seq !== costcoStartSeq && !batch.tasks.some(task => costcoTaskIds.has(String(task.id)))) return;
+    spawnEngine();
+    if (engineConn && engineConn.readyState === WebSocket.OPEN) flushCostcoStarts();
+  });
+  return true;
+}
+
+function setCostcoTaskProxy(taskId, proxyListName) {
+  const id = String(taskId || '');
+  if (!costcoTaskIds.has(id)) return false;
+  const group = String(proxyListName || '').trim() || 'Local';
+  if (group !== 'Local') {
+    Object.assign(sentConfigs.proxies, buildProxyMap(group));
+    sendConfigs();
+  }
+  const current = costcoTaskConfigs.get(id) || { id };
+  costcoTaskConfigs.set(id, { ...current, proxyListName: group === 'Local' ? '' : group });
+  return sendToEngine({ type: 'set-task-proxy', messages: [{ id, proxyGroup: group }] });
+}
+
+function stopCostco(taskId) {
+  const requestedId = String(taskId || '');
+  const ids = requestedId ? [requestedId] : [...costcoTaskIds];
+  if (engineConn && ids.length) sendToEngine({ type: 'stop-tasks', messages: ids.map(id => ({ id })) });
+  for (const id of ids) {
+    costcoTaskIds.delete(id);
+    costcoTaskConfigs.delete(id);
+    engineTaskSites.remove(id);
+    costcoDone(id, { idle: true });
+  }
+  if (!requestedId) {
+    costcoStartSeq += 1;
+    pendingCostcoStarts.length = 0;
+  } else {
+    for (let i = pendingCostcoStarts.length - 1; i >= 0; i -= 1) {
+      pendingCostcoStarts[i].tasks = (pendingCostcoStarts[i].tasks || []).filter(task => String(task.id) !== requestedId);
+      if (!pendingCostcoStarts[i].tasks.length) pendingCostcoStarts.splice(i, 1);
+    }
+  }
+  if (hasNativeTasks()) {
     taskActive = true;
     return true;
   }
@@ -3939,7 +4270,7 @@ function handleEngineMessage(data, connection) {
             pokemonTaskConfigs.delete(id);
             engineTaskSites.remove(id);
             manualCaptchaManager.cancelTask(id);
-            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+            taskActive = hasNativeTasks();
           }
           continue;
         }
@@ -3952,8 +4283,19 @@ function handleEngineMessage(data, connection) {
             engineTaskSites.remove(id);
             taskAccountById.delete(id);
             taskProfileById.delete(id);
-            taskActive = runningTaskIds.size > 0 || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+            taskActive = hasNativeTasks();
             reconcileWalmartMonitors();
+          }
+          continue;
+        }
+        if (isQueueFarmSite(engineTaskSites.resolve(m))) {
+          costcoStatus(st, m.color, '', id, m.state, m.running);
+          costcoLog(st, id);
+          if (m.running === false && id) {
+            costcoTaskIds.delete(id);
+            costcoTaskConfigs.delete(id);
+            engineTaskSites.remove(id);
+            taskActive = hasNativeTasks();
           }
           continue;
         }
@@ -3980,7 +4322,7 @@ function handleEngineMessage(data, connection) {
           taskAccountById.delete(id);
           releaseTargetCookieTask(id);
           releaseLoginHarvesterTask(id);
-          taskActive = runningTaskIds.size > 0 || monitorWanted || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+          taskActive = hasNativeTasks() || monitorWanted;
           if (targetMainMonitorRunning || monitorWanted || !runningTaskIds.size) reconcileTargetMainMonitor();
         }
         // The monitor re-emits Getting Product(s) / Rotating Proxy every few seconds forever. Its
@@ -4062,6 +4404,16 @@ function handleEngineMessage(data, connection) {
         analyticsRecorder.recordTelemetry({ ...m, engineVersion: m.engineVersion || runningEngineVersion });
       }
       break;
+    case 'queue-pass':
+      for (const m of items) {
+        if (!m || typeof m !== 'object') continue;
+        const id = String(m.taskID || m.taskId || '');
+        if (!isQueueFarmSite(engineTaskSites.resolve(m, COSTCO_SITE))) continue;
+        costcoStatus('Queue Pass', '#34ca6e', '', id, 3, true);
+        costcoLog('Queue pass', id);
+        launchQueuePassBrowser(m, costcoTaskConfigs.get(id) || {});
+      }
+      break;
     case 'task-notification':
       for (const m of items) {
         if (!m || typeof m === 'string') { log('[notify] ' + String(m || '')); continue; }
@@ -4102,6 +4454,11 @@ function handleEngineMessage(data, connection) {
               });
             } catch (e) { walmartLog('[report] ' + e.message, notificationTaskId); }
           }
+          continue;
+        }
+        if (isQueueFarmSite(engineTaskSites.resolve(m))) {
+          costcoLog('[notify] ' + String(m.type || 'event') + (m.productName ? ': ' + m.productName : ''), notificationTaskId);
+          if (m.type === 'checkout') costcoStatus('Queue Pass', '#34ca6e', '', notificationTaskId, 3);
           continue;
         }
         log('[notify] ' + JSON.stringify(m));
@@ -4309,6 +4666,7 @@ function bindServer(port) {
     if (pendingTargetStarts.length) { flushStart(); flushed = true; }
     if (pendingPokemonStarts.length) { flushPokemonStarts(); flushed = true; }
     if (pendingWalmartStarts.length) { flushWalmartStarts(); flushed = true; }
+    if (pendingCostcoStarts.length) { flushCostcoStarts(); flushed = true; }
     // An engine that reconnects — or a respawned one — comes up with empty profile/account/proxy
     // maps, because they live in that process and nothing on this side re-sent them. Any task still
     // running would fail its next rotation with "invalid group". Push what it should already have.
@@ -4412,15 +4770,15 @@ function spawnEngine() {
       runningEngineVersion = '';
     }
     if (gracefulStop) {
-      if (!quitting && (pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length)) {
+      if (!quitting && hasPendingNativeStarts()) {
         setImmediate(() => {
-          if (!quitting && !engineProc && (pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length)) spawnEngine();
+          if (!quitting && !engineProc && hasPendingNativeStarts()) spawnEngine();
         });
       }
       return;
     }
-    if (taskActive || runningTaskIds.size || monitorWanted || pokemonTaskIds.size || walmartTaskIds.size || targetMainMonitorRunning
-        || activeMonitorBandwidthRuns.size || pendingTargetStarts.length || pendingPokemonStarts.length || pendingWalmartStarts.length) {
+    if (taskActive || hasNativeTasks() || monitorWanted || targetMainMonitorRunning
+        || activeMonitorBandwidthRuns.size || hasPendingNativeStarts()) {
       log('engine exited (code ' + code + ')');
       failNativeEngineRuns('Native engine exited', false);
     }
@@ -4551,7 +4909,7 @@ function stopTarget(taskId) {
     flushLogs();
     if (runningTaskIds.size || monitorWanted) {
       if (monitorWanted || targetMainMonitorRunning) reconcileTargetMainMonitor();
-      taskActive = runningTaskIds.size > 0 || monitorWanted || pokemonTaskIds.size > 0 || walmartTaskIds.size > 0;
+      taskActive = hasNativeTasks() || monitorWanted;
       return;
     }
   }
@@ -4598,7 +4956,7 @@ function stopTarget(taskId) {
     brokerOnly = false;
   }
   if (!quitting) ensureHarvesterBroker();
-  if (pokemonTaskIds.size || walmartTaskIds.size) { taskActive = true; return; }
+  if (pokemonTaskIds.size || walmartTaskIds.size || costcoTaskIds.size) { taskActive = true; return; }
 
   targetMainMonitorPendingStopIds.clear();
   taskActive = false;
@@ -4613,9 +4971,11 @@ function stopTarget(taskId) {
 // outlived every task and only died with the process.
 function shutdown() {
   quitting = true;
+  try { stopCostco(); } catch {}
   try { stopWalmart(); } catch {}
   try { stopTarget(); } catch {}
   try { stopPokemonCenter(); } catch {}
+  try { closeQueuePassBrowsers(); } catch {}
   clearLoginHarvesterState();
   if (targetCookieDemandRetryTimer) clearTimeout(targetCookieDemandRetryTimer);
   targetCookieDemandRetryTimer = null;
@@ -4742,7 +5102,7 @@ function stopTargetMonitor() {
   if (targetMainMonitorId) queueTargetMonitorStop(targetMainMonitorId);
   clearTargetMainMonitorState();
   publishMonitorState();
-  if (runningTaskIds.size || pokemonTaskIds.size || walmartTaskIds.size) {
+  if (hasNativeTasks()) {
     taskActive = true;
     return true;
   }
@@ -4815,4 +5175,4 @@ function setTaskProxy(taskId, proxyListName) {
   return sendToEngine({ type: 'set-task-proxy', messages: [{ id: taskId, proxyGroup: group, proxySources }] });
 }
 
-module.exports = { startTarget, stopTarget, editTargetTasks, startTargetMonitor, stopTargetMonitor, setTargetMonitor, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, cancelOtpForTask, sendStockPing, isTaskRunning, runningCount, isTargetMonitorWanted, targetMonitorOwnerGroupId, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };
+module.exports = { startTarget, stopTarget, editTargetTasks, startTargetMonitor, stopTargetMonitor, setTargetMonitor, startPokemonCenter, stopPokemonCenter, editPokemonCenter, setPokemonCenterTaskProxy, runningPokemonCenterCount, startWalmart, stopWalmart, editWalmart, setWalmartTaskProxy, startCostco, stopCostco, setCostcoTaskProxy, setPokemonQueueStreamHealth, setSolverLucaKey, publishPokemonQueueProtection, shutdown, ensureHarvesterBroker, saveHarvesterCookie, takeBankCookie, syncTargetHarvesters, setTargetHarvestAuthorized, setTargetCookieStandbyTasks, setRemoteCookieDemand, syncTargetCookieBankDemand, targetCookieDemand, getCookieBank, submitOtpManually, cancelOtpForTask, sendStockPing, isTaskRunning, runningCount, isTargetMonitorWanted, targetMonitorOwnerGroupId, setTaskProxy, getSkuTitles, getEngineInfo, logMonitorLine };

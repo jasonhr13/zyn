@@ -493,6 +493,22 @@ func (t *BaseTask) SendProductNoti(productName, productImage string) {
 
 }
 
+func (t *BaseTask) SendQueuePass(msg QueuePassMessage) {
+	if t == nil || sendMessage == nil {
+		return
+	}
+	if msg.TaskID == "" {
+		msg.TaskID = t.ID
+	}
+	if msg.Site == "" {
+		msg.Site = t.Site
+	}
+	_ = sendMessage(statusMessage{
+		Type:     "queue-pass",
+		Messages: []QueuePassMessage{msg},
+	})
+}
+
 func (t *BaseTask) SendCheckoutDeclineNoti(productName, productImage string, checkout bool, details ...NotificationDetails) {
 	if sendMessage == nil {
 		return

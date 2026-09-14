@@ -5,6 +5,7 @@
 const OPTIONAL_START_CHANNELS = Object.freeze({
   startPokemonCenter: 'pokemoncenter',
   startWalmart: 'walmart',
+  startCostco: 'costco',
   startRound1: 'round1',
 });
 

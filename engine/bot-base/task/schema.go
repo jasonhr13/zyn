@@ -310,6 +310,16 @@ type UpdateCookieMessage struct {
 	AccountID string `json:"accountId"`
 }
 
+type QueuePassMessage struct {
+	TaskID      string `json:"taskID"`
+	Site        string `json:"site"`
+	QueueID     string `json:"queueId"`
+	RedirectURL string `json:"redirectUrl"`
+	Cookies     string `json:"cookies"`
+	Proxy       string `json:"proxy"`
+	Origin      string `json:"origin"`
+}
+
 type UpdatePasswordMessage struct {
 	Password  string `json:"password"`
 	AccountID string `json:"accountId"`

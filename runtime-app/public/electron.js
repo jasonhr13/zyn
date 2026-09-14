@@ -1506,6 +1506,23 @@ ipcMain.on('stopWalmart', (e, taskId) => {
 ipcMain.on('getWalmartTasks', (e) => { e.returnValue = dm.getWalmartTasks(); });
 ipcMain.on('saveWalmartTasks', (e, data) => { e.returnValue = dm.saveWalmartTasks(data || {}); });
 
+ipcMain.on('startCostco', (e, config) => {
+  if (moduleBlocked('costco')) { refuseModule('Costco'); e.returnValue = false; return; }
+  if (!licensed()) { refuseUnlicensed('startCostco'); e.returnValue = false; return; }
+  try { e.returnValue = targetEngine.startCostco(config || {}, mainWindow) === true; }
+  catch (err) { log.warn('startCostco:', err.message); e.returnValue = false; }
+});
+ipcMain.on('setCostcoTaskProxy', (e, taskId, proxyListName) => {
+  try { e.returnValue = targetEngine.setCostcoTaskProxy(taskId, proxyListName); }
+  catch (err) { log.warn('setCostcoTaskProxy:', err.message); e.returnValue = false; }
+});
+ipcMain.on('stopCostco', (e, taskId) => {
+  try { e.returnValue = targetEngine.stopCostco(taskId); }
+  catch (err) { log.warn('stopCostco:', err.message); e.returnValue = false; }
+});
+ipcMain.on('getCostcoTasks', (e) => { e.returnValue = dm.getCostcoTasks(); });
+ipcMain.on('saveCostcoTasks', (e, data) => { e.returnValue = dm.saveCostcoTasks(data || {}); });
+
 // ── Target: compiled Go checkout engine (backend/backend.exe) over a loopback WS ──
 // The engine dials our WebSocket server; target-engine.js hosts it, forwards the
 // task, and relays engine status back to the renderer as targetStatus/targetLog.

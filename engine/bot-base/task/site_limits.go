@@ -9,6 +9,9 @@ var siteLimits = map[string]int{
 	"Pokemon Center CA": 700,
 	"Pokemon Center DE": 700,
 	"Pokemon Center UK": 700,
+	"Costco":            500,
+	"QueueIt":           500,
+	"Queue-It":          500,
 }
 
 var (
