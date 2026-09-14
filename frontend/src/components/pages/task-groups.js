@@ -39,6 +39,7 @@ import {
   targetTaskSessionCaption,
   mapGroupRuntimeState,
   mapTaskDetailState,
+  mapTaskRowShellState,
   mapTaskRowState,
   profileForAccountId,
   profileListFrom,
@@ -290,56 +291,13 @@ function liveTarget() {
   try { return (Store.getState().target) || {}; } catch { return {}; }
 }
 
-class TaskGroupTaskRowView extends Component {
-  proxyStatusFor(task) {
-    return this.props.proxyStatus || null;
-  }
-
+class TaskGroupTaskLiveCellsView extends Component {
   render() {
-    const { group, task, selected, host, account, profile, status, otpRequest, checkouts, declines, canReset } = this.props;
-    const displayStatus = this.proxyStatusFor(task) || status;
+    const { group, task, host, account, status, otpRequest, checkouts, declines, canReset } = this.props;
+    const displayStatus = this.props.proxyStatus || status;
     const running = targetTaskIsRunning(status);
-    const session = targetTaskSessionCaption(account, displayStatus, otpRequest);
-    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
     return (
-      <div
-        className={`group-task-row group-task-row-clickable${selected ? ' selected' : ''}`}
-        key={task.id}
-        tabIndex="0"
-        aria-label={`Open task for ${host.accountLabel(task)}`}
-        onClick={() => host.openTask(task)}
-        onKeyDown={event => {
-          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            host.openTask(task);
-          }
-        }}
-      >
-        <span className="task-select-cell" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={selected}
-            aria-label={`Select ${host.accountLabel(task)}`}
-            onChange={() => host.toggleTaskSelected(task.id)}
-          />
-        </span>
-        <span className={`task-primary${profile ? '' : ' task-primary-missing'}`} title={profile ? '' : 'No matching checkout profile'}>
-          <i className="task-avatar">{initial}</i>
-          <span className="task-primary-copy">
-            <strong>{host.accountLabel(task)}</strong>
-            {session ? <small className={session.className}>{session.label}</small> : null}
-          </span>
-        </span>
-        <span onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-          <InlineSelect
-            className="form-select task-proxy-select"
-            value={task.proxyListName || ''}
-            options={host.proxySelectOptions()}
-            placeholder="Local"
-            ariaLabel={`Proxy for ${host.accountLabel(task)}`}
-            onChange={value => host.updateTaskProxy(group, task, value)}
-          />
-        </span>
+      <>
         <label
           className={`task-repeat-toggle${task.loopCheckout ? ' enabled' : ''}`}
           title={running ? 'Stop this task before changing loop checkout.' : 'Continue after checkout or decline until the Target order cap is reached.'}
@@ -383,12 +341,73 @@ class TaskGroupTaskRowView extends Component {
           <button className="icon-action icon-action-reset" disabled={!canReset || running} title={canReset && !running ? 'Reset task to Idle' : 'Task is already fresh'} onClick={() => host.resetTask(task)}><Icon name="refresh" size={12} /></button>
           <button className="icon-action icon-action-danger" title="Delete task" onClick={() => host.deleteTask(group, task)}><Icon name="trash" size={12} /></button>
         </span>
+      </>
+    );
+  }
+}
+
+const TaskGroupTaskLiveCells = connect(mapTaskRowState)(TaskGroupTaskLiveCellsView);
+
+class TaskGroupTaskSessionView extends Component {
+  render() {
+    const { account, status, otpRequest } = this.props;
+    const session = targetTaskSessionCaption(account, this.props.proxyStatus || status, otpRequest);
+    if (!session) return null;
+    return <small className={session.className}>{session.label}</small>;
+  }
+}
+
+const TaskGroupTaskSession = connect(mapTaskRowState)(TaskGroupTaskSessionView);
+
+class TaskGroupTaskRowView extends Component {
+  render() {
+    const { group, task, selected, host, account, profile } = this.props;
+    const initial = String((account && account.email) || '?').slice(0, 1).toUpperCase();
+    return (
+      <div
+        className={`group-task-row group-task-row-clickable${selected ? ' selected' : ''}`}
+        tabIndex="0"
+        aria-label={`Open task for ${host.accountLabel(task)}`}
+        onClick={() => host.openTask(task)}
+        onKeyDown={event => {
+          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            host.openTask(task);
+          }
+        }}
+      >
+        <span className="task-select-cell" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={`Select ${host.accountLabel(task)}`}
+            onChange={() => host.toggleTaskSelected(task.id)}
+          />
+        </span>
+        <span className={`task-primary${profile ? '' : ' task-primary-missing'}`} title={profile ? '' : 'No matching checkout profile'}>
+          <i className="task-avatar">{initial}</i>
+          <span className="task-primary-copy">
+            <strong>{host.accountLabel(task)}</strong>
+            <TaskGroupTaskSession task={task} />
+          </span>
+        </span>
+        <span onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+          <InlineSelect
+            className="form-select task-proxy-select"
+            value={task.proxyListName || ''}
+            options={host.proxySelectOptions()}
+            placeholder="Local"
+            ariaLabel={`Proxy for ${host.accountLabel(task)}`}
+            onChange={value => host.updateTaskProxy(group, task, value)}
+          />
+        </span>
+        <TaskGroupTaskLiveCells host={host} group={group} task={task} />
       </div>
     );
   }
 }
 
-const TaskGroupTaskRow = connect(mapTaskRowState)(TaskGroupTaskRowView);
+const TaskGroupTaskRow = connect(mapTaskRowShellState)(TaskGroupTaskRowView);
 
 class TaskGroupTaskDetailView extends Component {
   proxyStatusFor(task) {

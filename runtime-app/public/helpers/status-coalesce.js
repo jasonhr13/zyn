@@ -1,8 +1,8 @@
 // Last-write-wins status flush. Target can re-emit a new step per task many times a second;
 // one IPC + Redux update per change is enough to stall the Task Groups page. Buffer the latest
 // payload per id and send it once per interval. Terminal statuses (running === false) flush
-// immediately so Stop still feels instant.
-const STATUS_FLUSH_MS = 64;
+// immediately so Stop still feels instant. 200ms keeps ATC visible without painting 15 times a second.
+const STATUS_FLUSH_MS = 200;
 
 function createStatusCoalescer({
   send,

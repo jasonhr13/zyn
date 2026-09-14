@@ -59,7 +59,7 @@ coalescer.drop('a');
 advance(64);
 assert.deepEqual(sent, [], 'a dropped task must not deliver a stale status after Stop');
 
-assert.equal(STATUS_FLUSH_MS, 64);
+assert.equal(STATUS_FLUSH_MS, 200);
 
 const engine = fs.readFileSync(
   path.join(__dirname, '..', 'runtime-app', 'public', 'helpers', 'target-engine.js'),
@@ -93,7 +93,8 @@ const taskGroups = fs.readFileSync(
   path.join(__dirname, '..', 'frontend', 'src', 'components', 'pages', 'task-groups.js'),
   'utf8',
 );
-assert.match(taskGroups, /mapTaskRowState/);
+assert.match(taskGroups, /mapTaskRowShellState/);
+assert.match(taskGroups, /connect\(mapTaskRowShellState\)/);
 assert.match(taskGroups, /connect\(mapTaskRowState\)/);
 assert.match(taskGroups, /connect\(mapTaskDetailState\)/);
 assert.match(taskGroups, /<VirtualLogView/);

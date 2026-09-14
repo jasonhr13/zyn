@@ -4,6 +4,7 @@ import {
   targetTaskSessionCaption,
   mapGroupRuntimeState,
   mapTaskDetailState,
+  mapTaskRowShellState,
   mapTaskRowState,
   selectTargetTaskRuntime,
 } from './target-task-runtime';
@@ -68,13 +69,18 @@ test('only the changed Target row receives a new status object', () => {
     label: 'Waiting For Restock', running: true,
   });
   const before = mapTaskRowState(state, { task });
+  const shellBefore = mapTaskRowShellState(state, { task });
   state = reducer(state, {
     type: 'targetStatus', taskId: task.id, state: 'Adding To Cart',
     label: 'Adding To Cart', running: true,
   });
   const after = mapTaskRowState(state, { task });
+  const shellAfter = mapTaskRowShellState(state, { task });
   expect(after.status).not.toBe(before.status);
   expect(after.status.label).toBe('Adding To Cart');
+  expect(shellAfter).toEqual(shellBefore);
+  expect(shellAfter.account).toBe(shellBefore.account);
+  expect(shellAfter.profile).toBe(shellBefore.profile);
 });
 
 test('task logs are not part of the list-row slice, so a log line does not dirty the row', () => {

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.65",
+  "notes": [
+    "Task Groups keeps the proxy dropdown usable while tasks are adding to cart.",
+    "Status paints no longer remount the per-task proxy control during a drop.",
+    "Checkout status updates at most five times a second so the window stays clickable."
+  ]
+}

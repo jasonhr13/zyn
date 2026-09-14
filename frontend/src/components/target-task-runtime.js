@@ -144,12 +144,19 @@ export function selectTargetWorkspaceRuntime(target = {}, groups) {
   return sum;
 }
 
-export function mapTaskRowState(state, { task }) {
+export function mapTaskRowShellState(state, { task }) {
   const account = accountForTask(state.accounts, task);
-  const runtime = selectTargetTaskRuntime(state.target, task, account && account.email);
   return {
     account,
     profile: profileForAccountId(state.profiles, state.accounts, task && task.accountId),
+  };
+}
+
+export function mapTaskRowState(state, { task }) {
+  const shell = mapTaskRowShellState(state, { task });
+  const runtime = selectTargetTaskRuntime(state.target, task, shell.account && shell.account.email);
+  return {
+    ...shell,
     status: runtime.status,
     proxyStatus: runtime.proxyStatus,
     checkouts: runtime.checkouts,

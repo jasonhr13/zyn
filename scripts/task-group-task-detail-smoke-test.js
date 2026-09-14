@@ -53,7 +53,19 @@ assert.match(styles, /\.target-sku-remove/);
 assert.match(styles, /\.group-task-bulk-bar/);
 assert.match(taskGroups, /openTask = task => this\.setState\(\{ selectedTaskId: task\.id/);
 assert.match(taskGroups, /host\.openTask\(task\)/);
-assert.match(taskGroups, /targetTaskSessionCaption\(account, displayStatus, otpRequest\)/,
+assert.match(taskRuntime, /export function mapTaskRowShellState/);
+assert.match(taskGroups, /connect\(mapTaskRowShellState\)/);
+assert.match(taskGroups, /TaskGroupTaskLiveCells/);
+assert.doesNotMatch(
+  (taskGroups.match(/class TaskGroupTaskLiveCellsView[\s\S]*?const TaskGroupTaskLiveCells/) || [''])[0],
+  /InlineSelect/,
+  'status paints must not remount the per-task proxy select',
+);
+assert.match(
+  (taskGroups.match(/class TaskGroupTaskRowView[\s\S]*?const TaskGroupTaskRow/) || [''])[0],
+  /InlineSelect/,
+);
+assert.match(taskGroups, /targetTaskSessionCaption\(account, this\.props\.proxyStatus \|\| status, otpRequest\)/,
   'task rows do not show a saved-session label');
 assert.match(styles, /\.task-session-signed-in/);
 assert.match(taskGroups, /this\.props\.taskLogs/);
