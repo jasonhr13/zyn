@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.64",
+  "notes": [
+    "Full Engine skips task log IPC while Show task and engine logs is off.",
+    "Hidden logs are dropped in the main process instead of flooding the window during a drop.",
+    "Target, Pokemon Center, and Walmart log batches stay off until you turn logs on."
+  ]
+}

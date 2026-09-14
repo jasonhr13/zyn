@@ -455,6 +455,14 @@ function verboseLogs() {
   try { return !!(dm.getSettings() || {}).targetVerboseLogs; } catch { return false; }
 }
 
+function operatorLogsEnabled() {
+  try { return !!(dm.getSettings() || {}).showOperatorLogs; } catch { return false; }
+}
+
+function dropPendingLogBufs(bufs) {
+  for (const key of Object.keys(bufs)) delete bufs[key];
+}
+
 // Anything matching this is ALWAYS logged, quiet or not. Erring toward keeping a line: a missing
 // diagnostic costs a debugging session, an extra line costs one row.
 // This used to also keep "warm done" and "bounced off", because targetVerboseLogs had no Settings
@@ -617,6 +625,10 @@ let logTimer = null;
 // would be readable.
 function flushLogs() {
   logTimer = null;
+  if (!operatorLogsEnabled()) {
+    dropPendingLogBufs(logBufs);
+    return;
+  }
   const byTask = {};
   for (const key of Object.keys(logBufs)) {
     const lines = logBufs[key];
@@ -686,6 +698,7 @@ function zynBrandText(value) {
 
 const log = (line, taskId = '') => {
   if (rendererDead) return;
+  if (!operatorLogsEnabled()) return;
   let s = zynBrandText(redactProxies(line));
   if (!devLogs()) {
     // Allow-list: anything not recognised is dropped rather than shown raw, so engine chatter added
@@ -3087,6 +3100,10 @@ const pokemonLogBufs = {};
 let pokemonLogTimer = null;
 function flushPokemonLogs() {
   pokemonLogTimer = null;
+  if (!operatorLogsEnabled()) {
+    dropPendingLogBufs(pokemonLogBufs);
+    return;
+  }
   const byTask = {};
   for (const key of Object.keys(pokemonLogBufs)) {
     const lines = pokemonLogBufs[key];
@@ -3109,6 +3126,7 @@ function pokemonStatus(state, color, detail, taskId, taskState, running) {
 }
 
 function pokemonLog(line, taskId = '') {
+  if (!operatorLogsEnabled()) return;
   let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
   if (!value) return;
   if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';
@@ -3521,6 +3539,10 @@ const walmartLogBufs = {};
 let walmartLogTimer = null;
 function flushWalmartLogs() {
   walmartLogTimer = null;
+  if (!operatorLogsEnabled()) {
+    dropPendingLogBufs(walmartLogBufs);
+    return;
+  }
   const byTask = {};
   for (const key of Object.keys(walmartLogBufs)) {
     const lines = walmartLogBufs[key];
@@ -3543,6 +3565,7 @@ function walmartStatus(state, color, detail, taskId, taskState, running) {
 }
 
 function walmartLog(line, taskId = '') {
+  if (!operatorLogsEnabled()) return;
   let value = zynBrandText(redactProxies(String(line || ''))).replace(/[\r\n]+/g, ' ').trim();
   if (!value) return;
   if (value.length > LOG_LINE_MAX) value = value.slice(0, LOG_LINE_MAX) + '…';

@@ -1105,8 +1105,8 @@ class Settings extends Component {
                 Show task and engine logs
               </label>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                Off by default. Most people cannot act on engine output, so logs stay hidden until you
-                turn them on here. Monitor status still appears on Target task groups.
+                Off by default. Engine output is not sent to this window until you turn this on.
+                Monitor status still appears on Target task groups.
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 {
   "name": "zyn-frontend",
-  "version": "1.7.63",
+  "version": "1.7.64",
   "private": true,
   "homepage": "./",
   "dependencies": {
