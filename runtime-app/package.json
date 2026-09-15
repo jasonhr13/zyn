@@ -1,7 +1,7 @@
 {
   "name": "zyn-runtime-app",
   "productName": "Zyn",
-  "version": "1.7.70",
+  "version": "1.7.71",
   "private": true,
   "main": "public/electron.js",
   "description": "Zyn Electron application runtime",

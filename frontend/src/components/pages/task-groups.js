@@ -219,7 +219,7 @@ const normalizeHarvester = (raw, index = 0) => {
     enabled: !!(raw && raw.enabled),
   };
 };
-const parseSkus = raw => String(raw || '').split(/[\n,]/).map(line => {
+const parseSkus = raw => String(raw || '').split(/[\n\r,;\t]+/).map(line => {
   const value = line.trim();
   if (!value) return '';
   const direct = (value.match(/^(\d{6,})/) || [])[1];
@@ -681,6 +681,7 @@ class TaskGroups extends Component {
     groupDraft: { ...EMPTY_GROUP },
     skuInput: '',
     skuInputError: '',
+    copiedSkus: false,
     productHistory: [],
     productHistoryFilter: '',
     showScheduleModal: false,
@@ -1114,6 +1115,7 @@ class TaskGroups extends Component {
       groupDraft: { ...EMPTY_GROUP },
       skuInput: '',
       skuInputError: '',
+      copiedSkus: false,
       productHistoryFilter: '',
     });
   };
@@ -1139,6 +1141,7 @@ class TaskGroups extends Component {
       },
       skuInput: '',
       skuInputError: '',
+      copiedSkus: false,
       productHistoryFilter: '',
     });
   };
@@ -1148,6 +1151,7 @@ class TaskGroups extends Component {
     editingGroupId: '',
     skuInput: '',
     skuInputError: '',
+    copiedSkus: false,
   });
 
   productNameForSku = sku => {
@@ -1158,7 +1162,7 @@ class TaskGroups extends Component {
   addWatchedSkus = raw => {
     const incoming = parseSkus(raw);
     if (!incoming.length) {
-      this.setState({ skuInputError: 'Paste a Target TCIN or product URL.' });
+      this.setState({ skuInputError: 'Paste Target TCINs or product URLs, one per line.' });
       return false;
     }
     this.setState(previous => {
@@ -1180,6 +1184,15 @@ class TaskGroups extends Component {
   };
 
   addProductFromHistory = sku => this.addWatchedSkus(sku);
+
+  copyWatchedSkus = () => {
+    const skus = parseSkus(this.state.groupDraft.skus);
+    if (!skus.length) return;
+    try { clipboard.writeText(skus.join('\n')); } catch {}
+    this.setState({ copiedSkus: true }, () => {
+      setTimeout(() => this.setState({ copiedSkus: false }), 1200);
+    });
+  };
 
   removeSku = sku => this.setState(previous => {
     const id = String(sku || '').trim();
@@ -3001,9 +3014,19 @@ class TaskGroups extends Component {
               <div className="target-sku-watch-heading">
                 <span>
                   <label className="form-label">Watch list</label>
-                  <small>Add TCINs or Target URLs. Remove a SKU to drop it from running tasks before payment.</small>
+                  <small>Add TCINs or Target URLs, one per line. Remove a SKU to drop it from running tasks before payment.</small>
                 </span>
-                {controlsLocked && <em>Prices lock while tasks run. Add, remove, and priority still apply on save.</em>}
+                <span className="target-sku-watch-heading-actions">
+                  {controlsLocked && <em>Prices lock while tasks run. Add, remove, and priority still apply on save.</em>}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!watchedSkus.length}
+                    onClick={this.copyWatchedSkus}
+                  >
+                    <Icon name="copy" size={12} /> {this.state.copiedSkus ? 'Copied' : 'Copy All'}
+                  </button>
+                </span>
               </div>
               <form
                 className="target-sku-add"
@@ -3012,16 +3035,22 @@ class TaskGroups extends Component {
                   this.addWatchedSkus(this.state.skuInput);
                 }}
               >
-                <input
-                  className="form-input"
+                <textarea
+                  className="form-textarea"
                   autoFocus={editing}
+                  rows={3}
                   value={this.state.skuInput}
-                  placeholder="12345678 or https://www.target.com/p/…/-/A-87654321"
-                  aria-label="Add Target SKUs or product URLs"
+                  placeholder={"12345678\n87654321\nor https://www.target.com/p/…/-/A-87654321"}
+                  aria-label="Add Target TCINs or product URLs, one per line"
                   onChange={event => this.setState({ skuInput: event.target.value, skuInputError: '' })}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter' || event.shiftKey || /\n/.test(this.state.skuInput)) return;
+                    event.preventDefault();
+                    this.addWatchedSkus(this.state.skuInput);
+                  }}
                   onPaste={event => {
                     const text = event.clipboardData && event.clipboardData.getData('text');
-                    if (!text || !/[\n,]/.test(text)) return;
+                    if (parseSkus(text).length < 2) return;
                     event.preventDefault();
                     this.addWatchedSkus(`${this.state.skuInput}\n${text}`);
                   }}
@@ -3082,7 +3111,7 @@ class TaskGroups extends Component {
                   })}
                 </div>
               ) : (
-                <div className="target-sku-watch-empty">No SKUs yet. Paste a TCIN or pick one from recently monitored.</div>
+                <div className="target-sku-watch-empty">No SKUs yet. Paste TCINs, one per line, or pick from recently monitored.</div>
               )}
             </div>
             {this.renderProductHistoryPicker(draft)}

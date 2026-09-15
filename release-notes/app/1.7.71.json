@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.71",
+  "notes": [
+    "Paste a list of Target TCINs into the watch list, one per line, and they are added together.",
+    "Copy All copies every watch-list TCIN to the clipboard, one per line.",
+    "The watch-list field now accepts several TCINs or Target URLs at once."
+  ]
+}

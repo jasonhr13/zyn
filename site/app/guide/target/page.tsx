@@ -26,7 +26,8 @@ export default function GuideTargetPage() {
       <h2>Watch list</h2>
       <Fields
         rows={[
-          { label: "TCIN or URL", detail: "Eight-digit TCIN or a target.com product link. Duplicate SKUs are rejected." },
+          { label: "TCIN or URL", detail: "One eight-digit TCIN or target.com product link per line. Paste a list, then Add. Duplicate SKUs are rejected." },
+          { label: "Copy All", detail: "Copies every watch-list TCIN to the clipboard, one per line." },
           { label: "Priority", detail: "Star a SKU so running tasks prefer it." },
           { label: "Max price", detail: "Optional per SKU. Leave empty for no maximum. Prices lock while tasks are running; add/remove/priority still save." },
           { label: "Quantity per SKU", detail: "1–99, shared across the watch list." },

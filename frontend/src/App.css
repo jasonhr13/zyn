@@ -2081,11 +2081,13 @@ body.theme-night .form-select {
 .site-choice i { color: var(--accent); font-size: 9px; font-style: normal; font-weight: 700; }
 .target-sku-watch { margin-bottom: 14px; }
 .target-sku-watch-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
-.target-sku-watch-heading > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.target-sku-watch-heading > span:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .target-sku-watch-heading .form-label { margin: 0; }
 .target-sku-watch-heading small { color: var(--muted); font-size: 8.5px; }
 .target-sku-watch-heading em { color: var(--run); font-size: 8.5px; font-style: normal; max-width: 220px; text-align: right; }
-.target-sku-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.target-sku-watch-heading-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.target-sku-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.target-sku-add .form-textarea { min-height: 72px; }
 .target-sku-add-error { color: var(--danger); }
 .target-sku-watch-list {
   display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto;
