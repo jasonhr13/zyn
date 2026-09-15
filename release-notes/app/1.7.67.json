@@ -3,6 +3,7 @@
   "version": "1.7.67",
   "notes": [
     "The live checkout engine is used as soon as it is downloaded, instead of staying on the copy bundled in the app.",
-    "The sidebar shows the running engine version after sign-in."
+    "The sidebar shows the running engine version after sign-in.",
+    "Engine-only updates keep applying without waiting for a new app install."
   ]
 }
