@@ -1,6 +1,7 @@
 import {
   targetDropPhase, targetStatusTone, targetTaskIsRunning, summarizeGroupDropPulse,
   targetMonitorStockPhase, targetHasLiveDropWork, applyTargetDropWave, TARGET_DROP_WAVE_OOS_MS,
+  targetPhaseEvent, targetStickyPhase, taskMatchesDropBucket, withStickyPhase,
 } from './target-task-status';
 
 const status = (label, extra = {}) => ({ label, state: label, running: true, ...extra });
@@ -139,6 +140,87 @@ test('live submitting still counts once before the carted outcome arrives', () =
     checkoutCountFor: () => 0,
     declineCountFor: () => 0,
   })).toEqual({ carting: 0, submitting: 1, checkouts: 0, failures: 0 });
+});
+
+test.each([
+  ['Adding To Cart', 'atc'],
+  ['Using Alternate Cart Flow', 'atc'],
+  ['Getting Cart', 'atc'],
+  ['Product Found: Prismatic', 'atc'],
+  ['DCO Rate Limited', 'retry'],
+  ['Waiting For Shape', 'retry'],
+  ['Rate Limited (429)', 'retry'],
+  ['Submitting Order', 'submit'],
+  ['Getting Cart Info', 'submit'],
+  ['Carted', 'submit'],
+  ['Waiting For Restock', 'watch'],
+  ['Shape Soft Block', 'attention'],
+  ['Payment Declined', 'attention'],
+  ['Successful', 'success'],
+  ['Waiting For Shape', 'retry'],
+  ['Getting Session', 'setup'],
+  ['Stopped', 'idle'],
+])('classifies %s as %s', (label, expected) => {
+  const extra = label === 'Stopped' ? { running: false } : {};
+  if (label === 'Successful') extra.taskState = 3;
+  if (label === 'Payment Declined') extra.taskState = 4;
+  expect(targetPhaseEvent(status(label, extra))).toBe(expected);
+});
+
+test('ATC loop stays ATC across Shape and DCO', () => {
+  let phase = targetStickyPhase(status('Adding To Cart'), 'watching');
+  expect(phase).toBe('atc');
+  phase = targetStickyPhase(status('Waiting For Shape'), phase);
+  expect(phase).toBe('atc');
+  phase = targetStickyPhase(status('DCO Rate Limited', { color: '#f5a623' }), phase);
+  expect(phase).toBe('atc');
+  phase = targetStickyPhase(status('Adding To Cart'), phase);
+  expect(phase).toBe('atc');
+  phase = targetStickyPhase(status('Waiting For Restock'), phase);
+  expect(phase).toBe('watching');
+});
+
+test('submitting loop stays submitting across DCO and cart-check', () => {
+  let phase = targetStickyPhase(status('Carted'), 'atc');
+  expect(phase).toBe('submitting');
+  phase = targetStickyPhase(status('DCO Rate Limited'), phase);
+  expect(phase).toBe('submitting');
+  phase = targetStickyPhase(status('Out of Stock, Checking Cart'), phase);
+  expect(phase).toBe('submitting');
+  phase = targetStickyPhase(status('Submitting Order'), phase);
+  expect(phase).toBe('submitting');
+  phase = targetStickyPhase(status('Successful', { taskState: 3 }), phase);
+  expect(phase).toBe('success');
+});
+
+test('Shape Soft Block and payment decline leave the checkout loops', () => {
+  expect(targetStickyPhase(status('Shape Soft Block'), 'atc')).toBe('attention');
+  expect(targetStickyPhase(status('Payment Declined', { taskState: 4 }), 'submitting')).toBe('attention');
+});
+
+test('Waiting for Shape before ATC is setup, not a fake ATC card', () => {
+  expect(targetStickyPhase(status('Waiting For Shape'), 'running')).toBe('running');
+  expect(targetStickyPhase(status('Waiting For Shape'), 'idle')).toBe('running');
+});
+
+test('OTP forces attention without changing the stored engine label', () => {
+  expect(targetStickyPhase(status('Adding To Cart'), 'atc', { otpRequest: { email: 'a@b.c' } })).toBe('attention');
+});
+
+test('drop buckets match sticky phase and running liveness', () => {
+  const atc = withStickyPhase(status('DCO Rate Limited'), { phase: 'atc' });
+  expect(atc.phase).toBe('atc');
+  expect(taskMatchesDropBucket('atc', atc)).toBe(true);
+  expect(taskMatchesDropBucket('running', atc)).toBe(true);
+  expect(taskMatchesDropBucket('attention', atc)).toBe(false);
+  expect(taskMatchesDropBucket('attention', status('Adding To Cart'), { otpRequest: {} })).toBe(true);
+  expect(targetStatusTone(atc)).toBe('carting');
+});
+
+test('live drop work includes a sticky ATC DCO loop', () => {
+  expect(targetHasLiveDropWork({
+    a: withStickyPhase(status('DCO Rate Limited'), { phase: 'atc' }),
+  })).toBe(true);
 });
 
 test('visual success and error tones do not change task liveness', () => {

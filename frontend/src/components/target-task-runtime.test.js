@@ -111,6 +111,24 @@ test('group runtime only changes counts for the group that moved', () => {
   expect(mapGroupRuntimeState(state, { group: groupB })).toEqual(beforeB);
   expect(mapGroupRuntimeState(state, { group: groupA }).running).toBe(1);
   expect(mapGroupRuntimeState(state, { group: groupA }).pulse.carting).toBe(1);
+  expect(mapGroupRuntimeState(state, { group: groupA }).buckets.atc).toBe(1);
+});
+
+test('DCO after ATC stays in the ATC drop bucket', () => {
+  const group = { id: 'g1', tasks: [task] };
+  let state = withAccounts(reducer(undefined, { type: '@@test/init' }));
+  state = reducer(state, {
+    type: 'targetStatus', taskId: task.id, state: 'Adding To Cart',
+    label: 'Adding To Cart', running: true,
+  });
+  state = reducer(state, {
+    type: 'targetStatus', taskId: task.id, state: 'DCO Rate Limited',
+    label: 'DCO Rate Limited', running: true,
+  });
+  const runtime = mapGroupRuntimeState(state, { group });
+  expect(runtime.buckets.atc).toBe(1);
+  expect(runtime.buckets.attention).toBe(0);
+  expect(mapTaskRowState(state, { task }).status.phase).toBe('atc');
 });
 
 test('group drop pulse keeps carted and failed counts after the task leaves those statuses', () => {

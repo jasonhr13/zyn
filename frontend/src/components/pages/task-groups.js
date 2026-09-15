@@ -26,7 +26,7 @@ import {
   scheduleDetailLine,
   scheduleSummary,
 } from '../task-group-schedule.mjs';
-import { targetStatusTone, targetTaskIsRunning } from '../target-task-status';
+import { TARGET_DROP_BUCKETS, targetStatusTone, targetTaskIsRunning, taskMatchesDropBucket } from '../target-task-status';
 import { showOperatorLogs } from '../operator-logs';
 import TargetOtpInput, { targetOtpForTask } from '../target-otp-input';
 import VirtualLogView from '../virtual-log-view';
@@ -549,6 +549,35 @@ class TaskGroupDropPulseView extends Component {
 
 const TaskGroupDropPulse = connect(mapGroupRuntimeState)(TaskGroupDropPulseView);
 
+class TaskGroupDropBoardView extends Component {
+  render() {
+    const { host, group, buckets } = this.props;
+    const counts = buckets || {};
+    return (
+      <div className="drop-board" role="navigation" aria-label="Drop overview">
+        {TARGET_DROP_BUCKETS.map(card => {
+          const count = Number(counts[card.key]) || 0;
+          return (
+            <button
+              type="button"
+              key={card.key}
+              className={`drop-board-card drop-board-card-${card.key}${count ? ' active' : ''}`}
+              onClick={() => host.openGroupBucket(group, card.key)}
+            >
+              <span className="drop-board-card-icon"><Icon name={card.icon} size={20} /></span>
+              <small>{card.label}</small>
+              <strong>{count}</strong>
+              <em>{card.hint}</em>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+}
+
+const TaskGroupDropBoard = connect(mapGroupRuntimeState)(TaskGroupDropBoardView);
+
 class TaskGroupRunControlsView extends Component {
   render() {
     const { group, host, running } = this.props;
@@ -573,8 +602,8 @@ class TaskGroupOverviewRowView extends Component {
         className="task-group-row task-group-r2-row"
         key={group.id}
         tabIndex="0"
-        onClick={() => host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
-        onKeyDown={event => event.key === 'Enter' && host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}
+        onClick={() => host.openGroup(group)}
+        onKeyDown={event => event.key === 'Enter' && host.openGroup(group)}
       >
         <div className="task-group-row-identity">
           <span className="site-mark"><Icon name="target" size={19} /></span>
@@ -602,7 +631,7 @@ class TaskGroupOverviewRowView extends Component {
           ) : null}
           <button className="icon-action" title="Edit group" onClick={() => host.openEditGroup(group)}><Icon name="settings" size={13} /></button>
           <button className="icon-action icon-action-danger" title="Delete group" onClick={() => host.deleteGroup(group)}><Icon name="trash" size={13} /></button>
-          <button className="btn btn-secondary btn-sm" onClick={() => host.setState({ selectedGroupId: group.id, selectedTaskIds: [] })}>Open</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => host.openGroup(group)}>Open</button>
         </div>
       </article>
     );
@@ -643,6 +672,8 @@ class TaskGroups extends Component {
     selectedGroupId: '',
     selectedTaskId: '',
     selectedTaskIds: [],
+    groupView: 'list',
+    groupBucket: '',
     groupFilter: '',
     taskFilter: '',
     showGroupModal: false,
@@ -1590,9 +1621,72 @@ class TaskGroups extends Component {
     const config = this.runnableTasks(group, tasks);
     if (config) {
       this.props.dispatch({ type: 'targetLaunch', taskIds: config.tasks.map(task => task.id) });
-      this.setState({ brokerStartRequestedAt: Date.now(), bankCheckedAt: Date.now() });
+      this.setState({
+        brokerStartRequestedAt: Date.now(),
+        bankCheckedAt: Date.now(),
+        selectedGroupId: group.id,
+        groupView: 'overview',
+        groupBucket: '',
+        selectedTaskId: '',
+      });
       ipcRenderer.send('startTarget', config);
     }
+  };
+
+  openGroup = group => {
+    if (!group) return;
+    const running = (group.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task)));
+    this.setState({
+      selectedGroupId: group.id,
+      selectedTaskId: '',
+      selectedTaskIds: [],
+      taskFilter: '',
+      groupView: running ? 'overview' : 'list',
+      groupBucket: '',
+    });
+  };
+
+  openGroupBucket = (group, bucket) => {
+    if (!group) return;
+    this.setState({
+      selectedGroupId: group.id,
+      selectedTaskId: '',
+      selectedTaskIds: [],
+      taskFilter: '',
+      groupView: 'list',
+      groupBucket: bucket || '',
+    });
+  };
+
+  showGroupOverview = group => {
+    if (!group) return;
+    this.setState({
+      selectedGroupId: group.id,
+      selectedTaskId: '',
+      selectedTaskIds: [],
+      groupView: 'overview',
+      groupBucket: '',
+    });
+  };
+
+  showGroupSetup = group => {
+    if (!group) return;
+    this.setState({
+      selectedGroupId: group.id,
+      selectedTaskId: '',
+      selectedTaskIds: [],
+      groupView: 'list',
+      groupBucket: '',
+    });
+  };
+
+  taskInGroupBucket = (task, bucket) => {
+    if (!bucket) return true;
+    const status = this.statusFor(task);
+    const account = this.accountFor(task);
+    return taskMatchesDropBucket(bucket, status, {
+      otpRequest: targetOtpForTask((liveTarget().otpPending || []), task.id, account && account.email, status),
+    });
   };
 
   startMonitor = group => {
@@ -2503,21 +2597,42 @@ class TaskGroups extends Component {
   }
 
   renderGroup(group) {
+    const tasks = group.tasks || [];
+    const bucket = this.state.groupView === 'list' ? this.state.groupBucket : '';
+    const bucketMeta = TARGET_DROP_BUCKETS.find(item => item.key === bucket);
+    const overview = this.state.groupView !== 'list' && tasks.length > 0;
     const filter = this.state.taskFilter.trim().toLowerCase();
-    const visibleTasks = (group.tasks || []).filter(task => !filter || this.accountLabel(task).toLowerCase().includes(filter));
+    const visibleTasks = overview ? [] : tasks.filter(task => {
+      if (bucket && !this.taskInGroupBucket(task, bucket)) return false;
+      if (filter && !this.accountLabel(task).toLowerCase().includes(filter)) return false;
+      return true;
+    });
     const selectedIds = new Set(this.state.selectedTaskIds);
     const selectedVisible = visibleTasks.filter(task => selectedIds.has(task.id));
-    const selectedInGroup = (group.tasks || []).filter(task => selectedIds.has(task.id));
+    const selectedInGroup = tasks.filter(task => selectedIds.has(task.id));
     const allVisibleSelected = visibleTasks.length > 0 && selectedVisible.length === visibleTasks.length;
+    const listTitle = bucketMeta ? bucketMeta.label : 'Account tasks';
     return (
       <div className="tasks-workspace tasks-workspace-with-harvester-dock">
         <div className="page-header task-view-header">
           <div>
-            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
-            <div className="page-title"><span className="page-title-dot" /> {group.name}{this.renderScheduleChip(group)}</div>
+            <button className="breadcrumb-back" onClick={() => this.setState({ selectedGroupId: '', selectedTaskId: '', selectedTaskIds: [], taskFilter: '', groupView: 'list', groupBucket: '' })}><Icon name="chevronDown" size={11} /> Task Groups</button>
+            {bucketMeta ? (
+              <button className="breadcrumb-back" onClick={() => this.showGroupOverview(group)}><Icon name="chevronDown" size={11} /> {group.name}</button>
+            ) : null}
+            <div className="page-title"><span className="page-title-dot" /> {bucketMeta ? bucketMeta.label : group.name}{this.renderScheduleChip(group)}</div>
             {this.renderGroupFacts(group)}
           </div>
           <div className="page-actions">
+            {overview || bucketMeta ? (
+              <button className="btn btn-secondary btn-sm" onClick={() => overview ? this.showGroupSetup(group) : this.showGroupOverview(group)}>
+                <Icon name={overview ? 'list' : 'layers'} size={12} /> {overview ? 'Manage tasks' : 'Drop overview'}
+              </button>
+            ) : tasks.length > 0 ? (
+              <button className="btn btn-secondary btn-sm" onClick={() => this.showGroupOverview(group)}>
+                <Icon name="layers" size={12} /> Drop overview
+              </button>
+            ) : null}
             <button className="btn btn-secondary btn-sm" disabled={this.state.readinessPending} onClick={() => this.runReadiness(group, group.tasks)}><Icon name="check" size={12} /> Check Readiness</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openSchedule(group)}><Icon name="activity" size={12} /> Schedule</button>
             <button className="btn btn-secondary btn-sm" onClick={() => this.openEditGroup(group)}><Icon name="settings" size={12} /> Edit Group</button>
@@ -2526,12 +2641,17 @@ class TaskGroups extends Component {
         </div>
         <div className="page-content task-group-dashboard">
           {this.renderGroupMonitor(group)}
+          {overview ? (
+            <div className="panel group-task-panel group-drop-board-panel">
+              <TaskGroupDropBoard host={this} group={group} />
+            </div>
+          ) : (
           <div className="panel group-task-panel">
             <div className="group-task-toolbar">
-              <div><h2>Account tasks</h2></div>
+              <div><h2>{listTitle}{bucketMeta ? ` · ${visibleTasks.length}` : ''}</h2></div>
               {this.renderGroupDropPulse(group)}
               <div className="page-actions">
-                {(group.tasks || []).length > 0 && <input className="form-input task-filter" placeholder="Filter tasks…" value={this.state.taskFilter} onChange={event => this.setState({ taskFilter: event.target.value })} />}
+                {tasks.length > 0 && <input className="form-input task-filter" placeholder="Filter tasks…" value={this.state.taskFilter} onChange={event => this.setState({ taskFilter: event.target.value })} />}
                 <button className="btn btn-primary btn-sm" onClick={() => this.openTaskModal(group)}><Icon name="plus" size={12} /> Add Tasks</button>
               </div>
             </div>
@@ -2579,7 +2699,7 @@ class TaskGroups extends Component {
                 </div>
                 {visibleTasks.length ? (
                   <VirtualList
-                    key={group.id}
+                    key={`${group.id}:${bucket || 'all'}`}
                     className="virtual-list group-task-virtual"
                     count={visibleTasks.length}
                     rowHeight={TASK_ROW_HEIGHT}
@@ -2590,6 +2710,7 @@ class TaskGroups extends Component {
               </div>
             )}
           </div>
+          )}
           {showOperatorLogs(this.props.settings) ? <SharedEngineLog host={this} /> : null}
         </div>
         {this.renderHarvesterDrawer()}

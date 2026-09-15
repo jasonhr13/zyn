@@ -10,7 +10,7 @@ import {
   stopTargetMonitorBandwidthRuns,
 } from './target-monitor-bandwidth.mjs';
 import { timestampLogLine, timestampLogLines } from './log-timestamp';
-import { applyTargetDropWave, EMPTY_DROP_WAVE } from './target-task-status';
+import { applyTargetDropWave, EMPTY_DROP_WAVE, withStickyPhase } from './target-task-status';
 
 // Single-use bypass guard: a Queue-It qitq token dies after ONE redeem, so a token ever handed to a
 // task must never re-enter the pool — even when a Discord reconnect ('ready') or a refreshQueuePasses
@@ -215,7 +215,7 @@ function applyStatusEntries(current, updates) {
   for (const update of updates) {
     if (!update || !update.taskId) continue;
     const previous = taskStatus[update.taskId] || {};
-    taskStatus[update.taskId] = {
+    taskStatus[update.taskId] = withStickyPhase({
       ...previous,
       state: update.state,
       label: update.label || update.state,
@@ -223,7 +223,7 @@ function applyStatusEntries(current, updates) {
       detail: update.detail || '',
       taskState: update.taskState === undefined ? previous.taskState : update.taskState,
       running: update.running === undefined ? previous.running : update.running,
-    };
+    }, previous);
   }
   return taskStatus;
 }
@@ -582,10 +582,10 @@ export function reducer(state = defaultState, action) {
       const taskStatus = { ...state.target.taskStatus };
       for (const id of ids) {
         if (!id) continue;
-        taskStatus[id] = {
+        taskStatus[id] = withStickyPhase({
           state: 'Starting', label: 'Starting', color: '#868686',
           detail: 'launching engine', running: true,
-        };
+        }, { phase: 'idle' });
       }
       return { ...state, target: { ...state.target, taskStatus } };
     }
@@ -726,13 +726,14 @@ export function reducer(state = defaultState, action) {
       const prev = state.target.taskStatus[action.taskId];
       if (prev && entry.taskState === undefined) entry.taskState = prev.taskState;
       if (prev && entry.running === undefined) entry.running = prev.running;
+      const nextEntry = withStickyPhase({ ...(prev || {}), ...entry }, prev);
       const proxyStatus = { ...state.target.proxyStatus };
       // A completed edit remains hidden as a narrow guard against late "Rotating Proxy" chatter.
       // The first genuine task step proves the engine has moved on and retires that guard.
       if (proxyEdit && !proxyEdit.pending) delete proxyStatus[action.taskId];
       return { ...state, target: applyTargetDropWave({
         ...state.target,
-        taskStatus: { ...state.target.taskStatus, [action.taskId]: entry },
+        taskStatus: { ...state.target.taskStatus, [action.taskId]: nextEntry },
         proxyStatus,
       }, Number(action.receivedAt) || Date.now()) };
     }

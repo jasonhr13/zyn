@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.68",
+  "notes": [
+    "Target task groups open to a drop overview of running, restock, cart, submit, attention, and checkout counts.",
+    "Click a card to work only the tasks in that state, including new ones that join it live.",
+    "Adding to cart and submitting order stay on those cards through Shape and rate-limit loops.",
+    "Manage tasks still has the full setup list for proxies, adds, and bulk edits."
+  ]
+}

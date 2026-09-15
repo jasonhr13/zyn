@@ -25,6 +25,22 @@ assert.match(taskGroups, /renderTaskDetail\(group, task\)/);
 assert.match(taskGroups, /className=\{`group-task-row group-task-row-clickable\$\{selected \? ' selected' : ''\}`\}/);
 assert.match(taskGroups, /toggleSelectVisibleTasks/);
 assert.match(taskGroups, /renderGroupDropPulse/);
+assert.match(taskGroups, /TaskGroupDropBoard/);
+assert.match(taskGroups, /openGroupBucket/);
+assert.match(taskGroups, /showGroupOverview/);
+assert.match(taskGroups, /groupView: running \? 'overview' : 'list'/);
+assert.match(taskGroups, /drop-board/);
+assert.equal(
+  (taskGroups.match(/Manage tasks/g) || []).length,
+  1,
+  'overview should expose a single Manage tasks control in the page header',
+);
+assert.match(taskGroups, /Drop overview/);
+assert.doesNotMatch(taskGroups, /drop-board-setup/);
+assert.match(taskRuntime, /TARGET_DROP_BUCKETS/);
+assert.match(taskRuntime, /taskMatchesDropBucket/);
+assert.match(styles, /\.drop-board-card-atc\.active/);
+assert.match(styles, /\.drop-board \{/);
 assert.match(taskGroups, /renderProxySelectOptions/);
 assert.match(taskGroups, /Folders/);
 assert.match(taskRuntime, /summarizeGroupDropPulse/);

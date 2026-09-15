@@ -1,4 +1,7 @@
-import { summarizeGroupDropPulse, targetStatusTone, targetTaskIsReauthenticating, targetTaskIsRunning } from './target-task-status';
+import {
+  summarizeGroupDropPulse, TARGET_DROP_BUCKETS, targetStatusTone, targetTaskIsReauthenticating,
+  targetTaskIsRunning, taskMatchesDropBucket,
+} from './target-task-status';
 import { targetOtpForTask } from './target-otp';
 import { showOperatorLogs } from './operator-logs';
 
@@ -112,15 +115,24 @@ export function selectTargetTaskRuntime(target = {}, task, accountEmail = '') {
 export function selectTargetGroupRuntime(target = {}, tasks, group) {
   const list = Array.isArray(tasks) ? tasks : [];
   const stats = { total: list.length, running: 0, error: 0 };
+  const buckets = {
+    running: 0, watching: 0, atc: 0, submitting: 0, attention: 0, success: 0,
+  };
   for (const task of list) {
-    const status = (target.taskStatus || {})[task.id];
+    const runtime = selectTargetTaskRuntime(target, task);
+    const status = runtime.status;
+    const extras = { otpRequest: runtime.otpRequest };
     if (targetTaskIsRunning(status)) stats.running += 1;
-    if (targetStatusTone(status) === 'error') stats.error += 1;
+    if (targetStatusTone(status) === 'error' || runtime.otpRequest) stats.error += 1;
+    for (const bucket of TARGET_DROP_BUCKETS) {
+      if (taskMatchesDropBucket(bucket.key, status, extras)) buckets[bucket.key] += 1;
+    }
   }
   const monitor = target.monitor || {};
   const monitorOwned = !!(group && String(monitor.groupId || '') === String(group.id));
   return {
     ...stats,
+    buckets,
     pulse: summarizeGroupDropPulse(list, {
       statusFor: task => (target.taskStatus || {})[task.id],
       cartedCountFor: task => outcomeCount((target.taskOutcomes || {})[task.id], 'waveCarted'),
