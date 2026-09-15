@@ -40,22 +40,32 @@ test("server-renders the Zyn product site", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>ZynAIO — Target, Pokémon Center, and Walmart<\/title>/i);
+  assert.match(html, /<title>ZynAIO — Target, Pokémon Center, Walmart, and Costco<\/title>/i);
   assert.match(html, /ZynAIO/);
-  assert.match(html, /Retail automation for Target, Pokémon Center, and Walmart\./);
-  assert.match(html, /Top-tier checkout on the three sites that matter/);
+  assert.match(html, /Target, Pokémon Center, Walmart, and Costco\./);
+  assert.match(html, /Costco waiting rooms/);
   assert.match(html, /What’s in the app\./);
-  assert.match(html, /Task Groups/);
-  assert.match(html, /Scheduled Tasks/);
-  assert.match(html, /2FA Handling/);
-  assert.match(html, /Cookie Harvest/);
-  assert.match(html, /Proxy Support/);
-  assert.match(html, /Local &amp; Secure|Local & Secure/);
+  assert.match(html, /What Zyn runs\./);
+  assert.doesNotMatch(html, /How a drop works\./);
+  assert.match(html, /Queue farm/);
+  assert.match(html, /Cookie harvest/);
+  assert.match(html, /Harvest telemetry/);
+  assert.match(html, /bytes per cookie/);
+  assert.match(html, /No other bot shows harvest data usage in one place/);
+  assert.match(html, /home-feature-spotlight/);
+  assert.match(html, /MB\/hr/);
+  assert.match(html, /Walmart Draw/);
+  assert.match(html, /Costco queues/);
+  assert.match(html, /Pokémon Center queues/);
+  assert.match(html, /Proxy tester/);
+  assert.match(html, /Login codes/);
   assert.match(html, /Discord webhooks/);
   assert.match(html, /Target/);
   assert.match(html, /Pokémon Center US/);
   assert.match(html, /Walmart/);
+  assert.match(html, /Costco/);
   assert.match(html, /href="\/join"/);
+  assert.match(html, /href="\/guide"/);
   assert.match(html, /\$100 for two months/);
   assert.match(html, /\$40 every month/);
   assert.doesNotMatch(html, /screenshots\/zyn-/);
@@ -75,6 +85,54 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /https:\/\/zynbot\.app\/og-aio\.png/);
 });
 
+test("renders the Zyn operator guide from the live app labels", async () => {
+  const home = await render("/guide");
+  assert.equal(home.status, 200);
+  const homeHtml = await home.text();
+  assert.match(homeHtml, /Run drops with Zyn/);
+  assert.match(homeHtml, /href="\/guide\/profiles"/);
+  assert.match(homeHtml, /href="\/guide\/accounts"/);
+  assert.match(homeHtml, /href="\/guide\/proxies"/);
+  assert.match(homeHtml, /href="\/guide\/target"/);
+  assert.match(homeHtml, /href="\/guide\/walmart"/);
+  assert.match(homeHtml, /href="\/guide\/pokemon-center"/);
+  assert.match(homeHtml, /href="\/guide\/costco"/);
+  assert.doesNotMatch(homeHtml, /Not included/);
+  assert.doesNotMatch(homeHtml, /\bPolar\b/i);
+  assert.doesNotMatch(homeHtml, /native engine/i);
+  assert.doesNotMatch(homeHtml, /Refract|Stellar|HiddenAIO|NSB/i);
+
+  const target = await render("/guide/target");
+  assert.equal(target.status, 200);
+  const targetHtml = await target.text();
+  assert.match(targetHtml, /Drop overview/);
+  assert.match(targetHtml, /Waiting for restock/);
+  assert.match(targetHtml, /Submitting order/);
+  assert.match(targetHtml, /Need attention/);
+  assert.match(targetHtml, /Matching profile ready/);
+  assert.doesNotMatch(targetHtml, /native engine/i);
+
+  const costco = await render("/guide/costco");
+  assert.equal(costco.status, 200);
+  const costcoHtml = await costco.text();
+  assert.match(costcoHtml, /waiting room|waiting-room/i);
+  assert.match(costcoHtml, /Queue-it/);
+  assert.match(costcoHtml, /does not check out/i);
+  assert.doesNotMatch(costcoHtml, /Not included/);
+  assert.doesNotMatch(costcoHtml, /Costco checkout/i);
+
+  const harvest = await render("/guide/harvesters");
+  assert.equal(harvest.status, 200);
+  const harvestHtml = await harvest.text();
+  assert.match(harvestHtml, /Browser Extension Harvesters|Zyn-Harvester/);
+  assert.match(harvestHtml, /updates\.zynbot\.app\/download\/extension/);
+  assert.match(harvestHtml, /Mobile Harvesters/);
+  assert.match(harvestHtml, /ATC\+/);
+  assert.match(harvestHtml, /uses less data/i);
+  assert.match(harvestHtml, /Proxy bandwidth/);
+  assert.match(harvestHtml, /bytes per cookie/);
+});
+
 test("renders the Stripe purchase form", async () => {
   const response = await render("/buy");
   assert.equal(response.status, 200);
@@ -83,6 +141,8 @@ test("renders the Stripe purchase form", async () => {
   assert.match(html, /\$100 for two months/);
   assert.match(html, /\$40 every month/);
   assert.match(html, /Pokémon Center US/);
+  assert.match(html, /Costco/);
+  assert.match(html, /Queue farm in the app/);
   assert.doesNotMatch(html, /same license/i);
   assert.match(html, /action="\/api\/checkout"/);
   assert.match(html, /name="email"/);
@@ -260,7 +320,7 @@ test("ships the Zyn identity and both Cloudflare custom domains", async () => {
   assert.match(download, /zyn-icon\.png/);
   assert.match(download, /serviceOriginForHostname/);
   assert.doesNotMatch(download, /build awaiting signature/);
-  assert.match(layout, /ZynAIO — Target, Pokémon Center, and Walmart/);
+  assert.match(layout, /ZynAIO — Target, Pokémon Center, Walmart, and Costco/);
   assert.match(layout, /manifest\.webmanifest/);
   assert.match(css, /--zyn-orange:/);
   assert.match(css, /--zyn-rose:/);
@@ -290,7 +350,7 @@ test("ships only the reviewed Zyn raster brand assets", async () => {
   const reviewed = {
     "apple-touch-icon.png": "784039266ddfcdcf1e0ac5e06499038ad05aa6e0257e827e43e27633574abc00",
     "favicon.png": "268f21db55c7951a55895d4baa6f7318077983510bc56553b59d78b379b75438",
-    "og-aio.png": "0e072ad1952320bf95dd77b536f2817ff7746e1f11242428600028c66d5945c8",
+    "og-aio.png": "9f2d031049821134f3d84266015097aef10a53a1fcf5f5148f28a26b297dde72",
     "og-retailers-beta.png": "cbc518f8b028fe99aa3a1be2870289c1cda3897ad0e497057cfbb45db27ce171",
     "og-target-beta.png": "d5bfe6f405ab2f495996f9b6ef0aa4587c6a97d5ac07ee09bec8962aac3c4ddd",
     "og.png": "1e06a3c6b28fd1bb1346a59bf418ae4e6a6b4f51c8940593f6cfb95702765cc0",

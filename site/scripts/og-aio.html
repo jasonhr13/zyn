@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; }
+    html, body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      background: #0c0d0f;
+    }
+    .og {
+      width: 1200px;
+      height: 630px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 78% 12%, rgba(225, 29, 72, .28), transparent 34%),
+        radial-gradient(circle at 18% 88%, rgba(249, 115, 22, .18), transparent 38%),
+        #0c0d0f;
+    }
+    .icon {
+      width: 280px;
+      height: 280px;
+      filter: drop-shadow(0 28px 64px rgba(190, 18, 60, .42));
+    }
+  </style>
+</head>
+<body>
+  <div class="og">
+    <img class="icon" src="../public/zyn-icon.png" alt="" />
+  </div>
+</body>
+</html>

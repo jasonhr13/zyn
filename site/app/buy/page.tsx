@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Buy Zyn",
-  description: "Buy ZynAIO. Retail automation for Target, Pokémon Center US, and Walmart. $100 for two months, then $40.",
+  description: "Buy ZynAIO. Retail automation for Target, Pokémon Center US, Walmart, and Costco. $100 for two months, then $40.",
 };
 
 type SearchParams = Promise<{ error?: string | string[] }>;
@@ -35,7 +35,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             <p className="kicker">ZynAIO</p>
             <h1 id="buy-title">Buy Zyn.</h1>
             <p className="join-lede">
-              $100 for two months, then $40 every month. Target and Pokémon Center US are included.
+              $100 for two months, then $40 every month. Target and Pokémon Center US are included. Walmart and Costco are in the app.
             </p>
             <form className="join-form" action="/api/checkout" method="post">
               <label htmlFor="checkout-email">Email address</label>
@@ -72,6 +72,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
               <li><i aria-hidden="true">01</i><span><strong>Target</strong>Included.</span></li>
               <li><i aria-hidden="true">02</i><span><strong>Pokémon Center US</strong>Included.</span></li>
               <li><i aria-hidden="true">03</i><span><strong>Walmart</strong>In the app.</span></li>
+              <li><i aria-hidden="true">04</i><span><strong>Costco</strong>Queue farm in the app.</span></li>
             </ul>
           </aside>
         </div>
@@ -79,7 +80,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
 
       <footer className="download-footer">
         <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
-        <p>ZynAIO — Target, Pokémon Center US, and Walmart checkout.</p>
+        <p>ZynAIO — Target, Pokémon Center US, Walmart, and Costco.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

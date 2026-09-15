@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Join the Zyn waiting list",
-  description: "Join the Zyn waiting list for Target, Pokémon Center US, and Walmart.",
+  description: "Join the Zyn waiting list for Target, Pokémon Center US, Walmart, and Costco.",
 };
 
 type SearchParams = Promise<{ joined?: string | string[]; error?: string | string[] }>;
