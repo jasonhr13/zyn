@@ -13,7 +13,7 @@ export const BILLING_CATALOG = Object.freeze({
         ],
         "intro": {
           "kind": "one_time",
-          "amountCents": 10000,
+          "amountCents": 20000,
           "currency": "usd",
           "accessDays": 60,
           "label": "First 2 months"
@@ -40,9 +40,9 @@ export const BILLING_CATALOG = Object.freeze({
       },
       "live": {
         "zyn-standard": {
-          "productId": "prod_V66XXWSv50FmrJ",
-          "introPriceId": "price_1U5uKcAgG2EpmCLAPrmeiHMk",
-          "renewalPriceId": "price_1U5uKcAgG2EpmCLAJ4hJ8Rrm"
+          "productId": "prod_VGXxufU4ArWyI8",
+          "introPriceId": "price_1UG0s1IYzN8Q7pjq2170ET1g",
+          "renewalPriceId": "price_1UG0s2IYzN8Q7pjqssgcoU5X"
         }
       }
     }

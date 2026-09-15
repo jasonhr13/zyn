@@ -6,7 +6,7 @@ export function generateMetadata(): Metadata {
 
   return {
     title: "ZynAIO — Target, Pokémon Center, Walmart, and Costco",
-    description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $100 for two months, then $40.",
+    description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $200 for two months, then $40.",
     metadataBase: new URL(origin),
     manifest: "/manifest.webmanifest",
     icons: {
@@ -19,7 +19,7 @@ export function generateMetadata(): Metadata {
     },
     openGraph: {
       title: "ZynAIO — Target, Pokémon Center, Walmart, and Costco",
-      description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $100 for two months, then $40.",
+      description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $200 for two months, then $40.",
       type: "website",
       url: origin,
       images: [{
@@ -32,7 +32,7 @@ export function generateMetadata(): Metadata {
     twitter: {
       card: "summary_large_image",
       title: "ZynAIO — Target, Pokémon Center, Walmart, and Costco",
-      description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $100 for two months, then $40.",
+      description: "Retail automation for Target, Pokémon Center US, Walmart, and Costco. $200 for two months, then $40.",
       images: [`${origin}/og-aio.png`],
     },
   };

@@ -66,7 +66,7 @@ test("server-renders the Zyn product site", async () => {
   assert.match(html, /Costco/);
   assert.match(html, /href="\/join"/);
   assert.match(html, /href="\/guide"/);
-  assert.match(html, /\$100 for two months/);
+  assert.match(html, /\$200 for two months/);
   assert.match(html, /\$40 every month/);
   assert.doesNotMatch(html, /screenshots\/zyn-/);
   assert.doesNotMatch(html, /\bWine\b/i);
@@ -138,11 +138,14 @@ test("renders the Stripe purchase form", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /<title>Buy Zyn<\/title>/i);
-  assert.match(html, /\$100 for two months/);
+  assert.match(html, /\$200 for two months/);
   assert.match(html, /\$40 every month/);
   assert.match(html, /Pokémon Center US/);
+  assert.match(html, /Walmart/);
   assert.match(html, /Costco/);
-  assert.match(html, /Queue farm in the app/);
+  assert.doesNotMatch(html, /Included\./);
+  assert.doesNotMatch(html, /In the app/);
+  assert.doesNotMatch(html, /Queue farm in the app/);
   assert.doesNotMatch(html, /same license/i);
   assert.match(html, /action="\/api\/checkout"/);
   assert.match(html, /name="email"/);
@@ -174,17 +177,24 @@ test("renders the branded waiting-list form and confirmation", async () => {
   const form = await render("/join");
   assert.equal(form.status, 200);
   const formHtml = await form.text();
-  assert.match(formHtml, /<title>Join the Zyn waiting list<\/title>/i);
-  assert.match(formHtml, /Join the waiting list\./);
+  assert.match(formHtml, /<title>Join the Zyn private beta<\/title>/i);
+  assert.match(formHtml, /Join the private beta\./);
+  assert.match(formHtml, /The beta is free/);
+  assert.match(formHtml, /skip the \$200 start/);
+  assert.match(formHtml, /\$40 a month/);
+  assert.match(formHtml, /Request a seat/);
   assert.match(formHtml, /ZynAIO/);
-  assert.match(formHtml, /Leave your email for an invite/);
-  assert.match(formHtml, /href="\/buy"/);
+  assert.doesNotMatch(formHtml, /Join the waiting list/);
+  assert.doesNotMatch(formHtml, /\bPolar\b/i);
   assert.match(formHtml, /action="\/api\/waitlist"/);
   assert.match(formHtml, /name="email"/);
 
   const confirmation = await render("/join?joined=1");
   assert.equal(confirmation.status, 200);
-  assert.match(await confirmation.text(), /You’re on the list\./);
+  const confirmationHtml = await confirmation.text();
+  assert.match(confirmationHtml, /You’re on the list\./);
+  assert.match(confirmationHtml, /skip the \$200 start/);
+  assert.match(confirmationHtml, /\$40 a month/);
 });
 
 test("submits waiting-list email server-side without exposing the license API", async () => {

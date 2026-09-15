@@ -149,14 +149,14 @@ export default function Home() {
         </p>
         <div className="hero-actions">
           <Link className="button button-primary" href="/buy">
-            Buy Zyn — $100 <span aria-hidden="true">→</span>
+            Buy Zyn — $200 <span aria-hidden="true">→</span>
           </Link>
           <Link className="button button-secondary" href="/guide">
             How to run a drop
           </Link>
         </div>
         <p className="beta-promise">
-          <strong>$100 for two months.</strong> Then $40 every month. Target and Pokémon Center US are included.
+          <strong>$200 for two months.</strong> Then $40 every month. Target and Pokémon Center US are included.
         </p>
         <div className="target-capabilities" aria-label="Supported retailers">
           <span>Target</span>
@@ -217,7 +217,7 @@ export default function Home() {
 
       <section className="pitch-close">
         <Link className="button button-primary" href="/buy">
-          Buy Zyn — $100 <span aria-hidden="true">→</span>
+          Buy Zyn — $200 <span aria-hidden="true">→</span>
         </Link>
       </section>
 
@@ -226,7 +226,7 @@ export default function Home() {
         <p>ZynAIO — Target, Pokémon Center US, Walmart, and Costco.</p>
         <div>
           <Link href="/guide">Guide</Link>
-          <Link href="/join">Waiting list</Link>
+          <Link href="/join">Private beta</Link>
           <a href="mailto:hello@zynbot.app">Contact</a>
           <span>© {new Date().getFullYear()} Zyn</span>
         </div>

@@ -86,13 +86,26 @@ function writeWorkerSnapshot(catalog) {
   );
 }
 
+function priceMatches(current, spec) {
+  if (!current || !current.id) return false;
+  if (Number(current.unit_amount) !== Number(spec.amountCents)) return false;
+  if (String(current.currency) !== String(spec.currency)) return false;
+  const recurring = spec.kind === 'recurring';
+  if (Boolean(current.recurring) !== recurring) return false;
+  if (recurring) {
+    if (String(current.recurring.interval) !== String(spec.interval)) return false;
+    if (Number(current.recurring.interval_count) !== Number(spec.intervalCount || 1)) return false;
+  }
+  return true;
+}
+
 async function ensurePrice(secret, productId, spec, existingId, force) {
   if (existingId && !force) {
     try {
       const current = await stripe(secret, 'GET', `/prices/${existingId}`);
-      if (current && current.id) return current.id;
+      if (priceMatches(current, spec)) return current.id;
     } catch {
-      // Recreate when the stored id is gone in this Stripe account.
+      // Recreate when the stored id is gone or no longer matches the catalog.
     }
   }
   const payload = {
@@ -109,6 +122,13 @@ async function ensurePrice(secret, productId, spec, existingId, force) {
     };
   }
   const created = await stripe(secret, 'POST', '/prices', payload);
+  if (existingId && existingId !== created.id) {
+    try {
+      await stripe(secret, 'POST', `/prices/${existingId}`, { active: 'false' });
+    } catch {
+      // Old prices stay listed if Stripe refuses to archive them.
+    }
+  }
   return created.id;
 }
 

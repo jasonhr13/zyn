@@ -3,8 +3,8 @@ import Image from "next/image";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Join the Zyn waiting list",
-  description: "Join the Zyn waiting list for Target, Pokémon Center US, Walmart, and Costco.",
+  title: "Join the Zyn private beta",
+  description: "Request a free private beta seat for Target, Pokémon Center US, Walmart, and Costco. When Zyn goes live, testers skip the $200 start and pay $40 a month.",
 };
 
 type SearchParams = Promise<{ joined?: string | string[]; error?: string | string[] }>;
@@ -25,31 +25,34 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
           <Image src="/zyn-icon.png" alt="" width="44" height="44" unoptimized />
           <span>Zyn</span>
         </Link>
-        <nav aria-label="Waiting-list navigation"><Link href="/">Back to Zyn</Link></nav>
+        <nav aria-label="Private beta navigation"><Link href="/">Back to Zyn</Link></nav>
       </header>
 
       <section className="join-shell" aria-labelledby="join-title">
         <div className="join-orbit join-orbit-one" aria-hidden="true" />
         <div className="join-orbit join-orbit-two" aria-hidden="true" />
         <div className="join-card">
-          <div className="status-pill"><span /> Waiting list</div>
+          <div className="status-pill"><span /> Private beta</div>
           {joined ? (
             <>
               <p className="kicker">Request received</p>
               <h1 id="join-title">You’re on the list.</h1>
-              <p className="join-lede">We’ll email if a seat opens. You can also buy Zyn now.</p>
-              <Link className="button button-primary" href="/buy">Buy Zyn</Link>
+              <p className="join-lede">
+                We’ll email when a free seat opens. When Zyn goes live, testers skip the $200 start and pay $40 a month.
+              </p>
             </>
           ) : (
             <>
               <p className="kicker">ZynAIO</p>
-              <h1 id="join-title">Join the waiting list.</h1>
-              <p className="join-lede">Leave your email for an invite.</p>
+              <h1 id="join-title">Join the private beta.</h1>
+              <p className="join-lede">
+                The beta is free. Leave your email for a seat. When Zyn goes live, you skip the $200 start and go straight to $40 a month.
+              </p>
               <form className="join-form" action="/api/waitlist" method="post">
                 <label htmlFor="waitlist-email">Email address</label>
                 <div className="join-form-row">
                   <input id="waitlist-email" name="email" type="email" maxLength={254} autoComplete="email" placeholder="you@example.com" required />
-                  <button className="button button-primary" type="submit">Join waiting list <span aria-hidden="true">→</span></button>
+                  <button className="button button-primary" type="submit">Request a seat <span aria-hidden="true">→</span></button>
                 </div>
                 <div className="form-trap" aria-hidden="true">
                   <label htmlFor="waitlist-company">Company</label>
@@ -57,8 +60,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
                 </div>
               </form>
               {error === "email" && <p className="join-error" role="alert">Enter a valid email address.</p>}
-              {error === "service" && <p className="join-error" role="alert">The waiting list is temporarily unavailable. Please try again.</p>}
-              <p className="join-note">Or <Link href="/buy">buy Zyn</Link> now for $100.</p>
+              {error === "service" && <p className="join-error" role="alert">The private beta list is temporarily unavailable. Please try again.</p>}
             </>
           )}
         </div>
@@ -66,7 +68,7 @@ export default async function JoinPage({ searchParams }: { searchParams: SearchP
 
       <footer className="download-footer">
         <Link className="brand" href="/"><Image src="/zyn-icon.png" alt="" width="38" height="38" unoptimized /><span>Zyn</span></Link>
-        <p>ZynAIO — Target, Pokémon Center US, and Walmart checkout.</p>
+        <p>ZynAIO — Target, Pokémon Center US, Walmart, and Costco.</p>
         <div><a href="mailto:hello@zynbot.app">Contact</a><span>© {new Date().getFullYear()} Zyn</span></div>
       </footer>
     </main>

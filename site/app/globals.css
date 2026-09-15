@@ -275,7 +275,7 @@ footer > p { text-align: center; } footer > div { display: flex; justify-content
 .download-support a { color: var(--zyn-rose); }
 .download-footer { margin-top: auto; }
 
-/* Waiting-list signup */
+/* Private beta waitlist */
 .join-page { display: flex; min-height: 100vh; flex-direction: column; }
 .join-shell { width: min(1180px, calc(100% - 48px)); min-height: 650px; margin: 0 auto; padding: 86px 0 110px; display: grid; place-items: center; position: relative; isolation: isolate; overflow: hidden; }
 .join-card { width: min(780px, 100%); padding: clamp(30px, 5.5vw, 58px); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; background: linear-gradient(145deg, rgba(31,33,37,.98), rgba(20,21,24,.97)); box-shadow: 0 38px 100px rgba(0,0,0,.42), 0 0 0 1px rgba(255,255,255,.018) inset; position: relative; z-index: 2; }
@@ -305,10 +305,9 @@ footer > p { text-align: center; } footer > div { display: flex; justify-content
 .buy-summary { padding: clamp(26px, 3vw, 36px); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; background: linear-gradient(145deg, rgba(255,255,255,.03), rgba(255,255,255,.01)); }
 .buy-summary .offer-price { margin: 18px 0 22px; }
 .buy-summary ul { list-style: none; margin: 0; padding: 0; }
-.buy-summary li { padding: 16px 0; border-top: 1px solid rgba(255,255,255,.075); display: grid; grid-template-columns: 31px 1fr; gap: 13px; align-items: start; }
-.buy-summary li > i { margin-top: 3px; color: var(--zyn-rose); font: 700 8px/1 ui-monospace, monospace; font-style: normal; }
-.buy-summary li > span { color: #8f8987; font-size: 12px; line-height: 1.6; }
-.buy-summary li strong { display: block; margin-bottom: 3px; color: #e8e2df; font-size: 13px; }
+.buy-summary li { padding: 16px 0; border-top: 1px solid rgba(255,255,255,.075); display: grid; grid-template-columns: 31px 1fr; gap: 13px; align-items: center; }
+.buy-summary li > i { color: var(--zyn-rose); font: 700 8px/1 ui-monospace, monospace; font-style: normal; }
+.buy-summary li strong { color: #e8e2df; font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
 .buy-secret { margin: 0 0 24px; padding: 16px 18px; border: 1px solid rgba(249,115,22,.28); border-radius: 12px; background: rgba(249,115,22,.07); display: grid; gap: 6px; }
 .buy-secret span { color: var(--zyn-orange); font: 650 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; }
 .buy-secret strong { font-size: 20px; letter-spacing: .02em; word-break: break-all; }

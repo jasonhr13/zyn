@@ -103,7 +103,7 @@ export function GuideShell({
         <p>ZynAIO — Target, Pokémon Center US, Walmart, and Costco.</p>
         <div>
           <Link href="/guide">Guide</Link>
-          <Link href="/join">Waiting list</Link>
+          <Link href="/join">Private beta</Link>
           <a href="mailto:hello@zynbot.app">Contact</a>
           <span>© {new Date().getFullYear()} Zyn</span>
         </div>

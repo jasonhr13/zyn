@@ -74,7 +74,7 @@ in `config/billing-catalog.json`. The Worker snapshot in
 
 Current plan:
 
-- $100 once for the first 60 days
+- $200 once for the first 60 days
 - then $40 every month
 - Target is always available; Pokémon Center US is granted on purchase
 

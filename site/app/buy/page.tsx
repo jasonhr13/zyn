@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Buy Zyn",
-  description: "Buy ZynAIO. Retail automation for Target, Pokémon Center US, Walmart, and Costco. $100 for two months, then $40.",
+  description: "Buy ZynAIO. Retail automation for Target, Pokémon Center US, Walmart, and Costco. $200 for two months, then $40.",
 };
 
 type SearchParams = Promise<{ error?: string | string[] }>;
@@ -35,7 +35,7 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
             <p className="kicker">ZynAIO</p>
             <h1 id="buy-title">Buy Zyn.</h1>
             <p className="join-lede">
-              $100 for two months, then $40 every month. Target and Pokémon Center US are included. Walmart and Costco are in the app.
+              $200 for two months, then $40 every month.
             </p>
             <form className="join-form" action="/api/checkout" method="post">
               <label htmlFor="checkout-email">Email address</label>
@@ -67,12 +67,12 @@ export default async function BuyPage({ searchParams }: { searchParams: SearchPa
 
           <aside className="buy-summary" aria-label="What you get">
             <div className="offer-topline"><span>Zyn license</span><em>$40 / month after</em></div>
-            <div className="offer-price"><strong>$100</strong><span>first two months</span></div>
+            <div className="offer-price"><strong>$200</strong><span>first two months</span></div>
             <ul>
-              <li><i aria-hidden="true">01</i><span><strong>Target</strong>Included.</span></li>
-              <li><i aria-hidden="true">02</i><span><strong>Pokémon Center US</strong>Included.</span></li>
-              <li><i aria-hidden="true">03</i><span><strong>Walmart</strong>In the app.</span></li>
-              <li><i aria-hidden="true">04</i><span><strong>Costco</strong>Queue farm in the app.</span></li>
+              <li><i aria-hidden="true">01</i><strong>Target</strong></li>
+              <li><i aria-hidden="true">02</i><strong>Pokémon Center US</strong></li>
+              <li><i aria-hidden="true">03</i><strong>Walmart</strong></li>
+              <li><i aria-hidden="true">04</i><strong>Costco</strong></li>
             </ul>
           </aside>
         </div>

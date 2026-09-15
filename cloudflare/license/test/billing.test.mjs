@@ -13,16 +13,16 @@ import {
 import { BILLING_CATALOG, defaultPlan, planStripeIds } from '../src/billing-catalog.js';
 import worker, { __test } from '../src/index.js';
 
-test('catalog prices match the $100 / two-month then $40 monthly plan', () => {
+test('catalog prices match the $200 / two-month then $40 monthly plan', () => {
   const plan = defaultPlan();
   assert.equal(plan.id, 'zyn-standard');
-  assert.equal(plan.intro.amountCents, 10000);
+  assert.equal(plan.intro.amountCents, 20000);
   assert.equal(plan.intro.accessDays, 60);
   assert.equal(plan.renewal.amountCents, 4000);
   assert.equal(plan.renewal.trialDays, 60);
   assert.deepEqual(plan.taskTypes, ['pokemoncenter']);
   const published = publicCatalog();
-  assert.equal(published.plan.intro.amountCents, 10000);
+  assert.equal(published.plan.intro.amountCents, 20000);
   assert.equal(stripeModeFromSecret('sk_test_abc'), 'sandbox');
   assert.equal(stripeModeFromSecret('sk_live_abc'), 'live');
   assert.equal(planStripeIds('zyn-standard', 'sk_test_abc'), null);
@@ -78,6 +78,6 @@ test('publishes the billing catalog without Stripe secrets', async () => {
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(body.plan.id, 'zyn-standard');
-  assert.equal(body.plan.intro.amountCents, 10000);
+  assert.equal(body.plan.intro.amountCents, 20000);
   assert.equal(body.plan.renewal.amountCents, 4000);
 });
