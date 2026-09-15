@@ -791,18 +791,10 @@ function bundledEnginePath() {
 function enginePath() {
   // The runtime manager installs engines side by side and changes this pointer only for future
   // spawns. A child that already owns tasks keeps its original executable and process image.
-  // Same advertised version as this app's fallback uses the copy we just packaged, so a local QA
-  // build is not replaced by a cached published engine with the same version string.
-  const bundled = bundledEnginePath();
+  // Full app releases always use the live runtime-channel engine when it is installed.
   const downloaded = String(process.env.ZYN_ENGINE_PATH || '');
-  const downloadedVer = String(process.env.ZYN_ENGINE_VERSION || '');
-  const bundledVer = bundledEngineVersion();
-  if (downloaded && fs.existsSync(downloaded) && downloadedVer && bundledVer && downloadedVer !== bundledVer) {
-    return downloaded;
-  }
-  if (bundled && fs.existsSync(bundled)) return bundled;
   if (downloaded && fs.existsSync(downloaded)) return downloaded;
-  return bundled;
+  return bundledEnginePath();
 }
 
 function bundledEngineVersion() {

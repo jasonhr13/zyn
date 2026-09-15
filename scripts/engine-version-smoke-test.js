@@ -57,5 +57,15 @@ assert.match(bootstrap, /withEngineInfo/);
 const engine = fs.readFileSync(path.join(root, 'runtime-app/public/helpers/target-engine.js'), 'utf8');
 assert.match(engine, /function getEngineInfo/);
 assert.match(engine, /runningEngineVersion = engineVersion/);
+assert.match(
+  engine,
+  /if \(downloaded && fs\.existsSync\(downloaded\)\) return downloaded;/,
+  'full app releases must use the downloaded runtime-channel engine',
+);
+assert.doesNotMatch(
+  engine,
+  /downloadedVer !== bundledVer/,
+  'do not ship a QA engine pin that prefers the bundled fallback',
+);
 
 console.log('engine version smoke test passed');
