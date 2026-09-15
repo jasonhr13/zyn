@@ -29,6 +29,27 @@ assert.match(taskGroups, /TaskGroupDropBoard/);
 assert.match(taskGroups, /openGroupBucket/);
 assert.match(taskGroups, /showGroupOverview/);
 assert.match(taskGroups, /groupView: running \? 'overview' : 'list'/);
+assert.match(taskGroups, /host\.startTasks\(group, \[task\]\)/);
+assert.doesNotMatch(
+  taskGroups,
+  /host\.startTasks\(group, \[task\], \{ openOverview: true \}\)/,
+  'a single task Start must stay on the current list or task-detail view',
+);
+assert.equal(
+  (taskGroups.match(/startTasks\(group, group\.tasks, \{ openOverview: true \}\)/g) || []).length,
+  2,
+  'Start All and the groups-list Start should open drop overview',
+);
+{
+  const launchTasksFn = (taskGroups.match(/launchTasks = \(group, tasks, options = \{\}\) => \{[\s\S]*?\n  \};/) || [''])[0];
+  assert.match(launchTasksFn, /if \(options\.openOverview\) \{/);
+  assert.match(launchTasksFn, /next\.groupView = 'overview'/);
+  assert.doesNotMatch(
+    launchTasksFn,
+    /this\.setState\(\{[\s\S]*groupView: 'overview'/,
+    'launchTasks must not force drop overview on every Start',
+  );
+}
 assert.match(taskGroups, /drop-board/);
 assert.equal(
   (taskGroups.match(/Manage tasks/g) || []).length,

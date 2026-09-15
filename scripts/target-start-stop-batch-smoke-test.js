@@ -34,8 +34,10 @@ assert.match(taskGroups, /includeBank: intent !== 'start'/,
   'Check Readiness may load the cookie bank; Start must not');
 assert.match(taskGroups, /type: 'targetLaunch'/,
   'Start All must paint Starting in the renderer before main-process work');
-assert.match(taskGroups, /this\.launchTasks\(group, tasks\)/,
+assert.match(taskGroups, /this\.launchTasks\(group, tasks, options\)/,
   'Start All must not wait on a readiness IPC round-trip');
+assert.match(taskGroups, /startTasks\(group, group\.tasks, \{ openOverview: true \}\)/,
+  'Start All must open drop overview; a single-task Start must not');
 assert.doesNotMatch(taskGroups, /this\.runReadiness\(group, tasks, 'start'\)/,
   'Start All must not block on targetReadiness');
 assert.doesNotMatch(taskGroups, /level === 'ready'/,

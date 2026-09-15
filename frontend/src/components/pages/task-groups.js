@@ -584,7 +584,7 @@ class TaskGroupRunControlsView extends Component {
     return running ? (
       <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop Tasks</button>
     ) : (
-      <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start All</button>
+      <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks, { openOverview: true })}><Icon name="play" size={12} /> Start All</button>
     );
   }
 }
@@ -624,7 +624,7 @@ class TaskGroupOverviewRowView extends Component {
           {isRunning ? (
             <button className="btn btn-danger btn-sm" onClick={() => host.stopTasks(group.tasks)}><Icon name="stop" size={12} /> Stop Tasks</button>
           ) : (
-            <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks)}><Icon name="play" size={12} /> Start</button>
+            <button className="btn btn-primary btn-sm" onClick={() => host.startTasks(group, group.tasks, { openOverview: true })}><Icon name="play" size={12} /> Start</button>
           )}
           {monitorWanted ? (
             <button className="btn btn-danger btn-sm" onClick={() => host.stopMonitor()}><Icon name="stop" size={12} /> Stop Monitor</button>
@@ -1617,18 +1617,21 @@ class TaskGroups extends Component {
     && ((item.tasks || []).some(task => targetTaskIsRunning(this.statusFor(task)))
       || this.monitorOwnedBy(item)));
 
-  launchTasks = (group, tasks) => {
+  launchTasks = (group, tasks, options = {}) => {
     const config = this.runnableTasks(group, tasks);
     if (config) {
       this.props.dispatch({ type: 'targetLaunch', taskIds: config.tasks.map(task => task.id) });
-      this.setState({
+      const next = {
         brokerStartRequestedAt: Date.now(),
         bankCheckedAt: Date.now(),
         selectedGroupId: group.id,
-        groupView: 'overview',
-        groupBucket: '',
-        selectedTaskId: '',
-      });
+      };
+      if (options.openOverview) {
+        next.groupView = 'overview';
+        next.groupBucket = '';
+        next.selectedTaskId = '';
+      }
+      this.setState(next);
       ipcRenderer.send('startTarget', config);
     }
   };
@@ -1774,13 +1777,13 @@ class TaskGroups extends Component {
     if (group && tasks.length) this.launchTasks(group, tasks);
   };
 
-  startTasks = (group, tasks) => {
+  startTasks = (group, tasks, options) => {
     const other = this.activeOtherGroup(group);
     if (other) {
       window.alert(`“${other.name}” is already running. The current Target engine has one shared monitor, so stop that group first.`);
       return;
     }
-    this.launchTasks(group, tasks);
+    this.launchTasks(group, tasks, options);
   };
 
   stopTasks = (tasks) => {

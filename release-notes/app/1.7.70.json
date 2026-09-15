@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.70",
+  "notes": [
+    "Starting one Target task from the account list no longer switches you to Drop Overview.",
+    "Start All still opens Drop Overview so you can watch the live group from the status cards.",
+    "The Drop Overview button is unchanged, and Manage tasks stays on the full account list."
+  ]
+}
