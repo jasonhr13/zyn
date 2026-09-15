@@ -53,6 +53,13 @@ export const config = {
     intervalMs: num(process.env.HEALTH_INTERVAL_S, 21600) * 1000,
   },
   proxies: list(process.env.PROXY_URLS),
+  // Bot that hands every new server member a role on join (see discord-autorole.js).
+  // Token is a Fly secret; the guild and role ids are plain env in fly.toml.
+  discordAutorole: {
+    token: process.env.DISCORD_BOT_TOKEN || '',
+    guildId: process.env.DISCORD_AUTOROLE_GUILD_ID || '',
+    roleId: process.env.DISCORD_AUTOROLE_ROLE_ID || '',
+  },
   // Explicit TCINs to watch regardless of discovery — for pre-launch SKUs that
   // aren't in Target's search catalog yet. Polled hot; alerts fire the moment
   // they go live. See launch-watch logic in fulfillment.js.

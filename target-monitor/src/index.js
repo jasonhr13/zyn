@@ -6,6 +6,7 @@ import { createScheduler } from './fulfillment.js';
 import { startDiscovery, bindScheduler } from './discovery.js';
 import { startHeartbeat } from './heartbeat.js';
 import { startServer } from './server.js';
+import { startDiscordAutorole } from './discord-autorole.js';
 
 const startedAt = Date.now();
 
@@ -41,12 +42,14 @@ bindScheduler(scheduler);
 const discoveryTimer = startDiscovery(emit);
 const heartbeatTimer = startHeartbeat({ scheduler, startedAt });
 const server = startServer({ scheduler, startedAt });
+const autorole = startDiscordAutorole();
 
 function shutdown(signal) {
   log.info({ signal }, 'shutting down');
   clearInterval(discoveryTimer);
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   scheduler.stop();
+  autorole.stop();
   server.close();
   setTimeout(() => process.exit(0), 500);
 }

@@ -21,6 +21,10 @@ primary_region = "iad"
   HEALTH_INTERVAL_S = "21600"
   # Minute restock pings stop after 5 hours in stock; they resume on the next OOS -> in.
   RESTOCK_REPING_MAX_AGE_S = "18000"
+  # Discord autorole: every human who joins the ZynAIO server gets the Member role.
+  # DISCORD_BOT_TOKEN is a Fly secret (bot needs the Server Members intent).
+  DISCORD_AUTOROLE_GUILD_ID = "1535364725972672662"
+  DISCORD_AUTOROLE_ROLE_ID = "1549473949535178823"
 
 [[mounts]]
   source = "monitor_data"
