@@ -2604,7 +2604,8 @@ async function adminUsers(env) {
       u.max_active_devices, u.created_at, u.updated_at, u.last_login_at,
       u.stripe_customer_id, u.stripe_subscription_id, u.billing_plan, u.billing_status, u.access_until,
       COUNT(DISTINCT CASE
-        WHEN l.revoked_at IS NULL AND l.expires_at > ? THEN l.device_id
+        WHEN l.revoked_at IS NULL AND l.expires_at > ?
+          AND COALESCE(l.session_kind, 'engine') = 'engine' THEN l.device_id
       END) AS active_licenses,
       MAX(l.last_validated_at) AS last_validated_at
     FROM users u LEFT JOIN licenses l ON l.user_id = u.id

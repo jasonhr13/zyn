@@ -242,6 +242,7 @@ function userRow(user) {
   const deviceSummary = document.createElement('div');
   deviceSummary.className = 'user-device-summary';
   deviceSummary.textContent = `${activeDevices} of ${maxActiveDevices} active`;
+  deviceSummary.title = 'Full Engine sessions only. Harvester-only apps do not use a device seat.';
   const deviceLimit = document.createElement('label');
   deviceLimit.className = 'user-device-limit';
   const deviceLimitLabel = document.createElement('span');

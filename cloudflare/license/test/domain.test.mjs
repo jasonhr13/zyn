@@ -267,11 +267,19 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
         AND session_kind = 'engine'
       ORDER BY id
     );
+    SELECT 'admin-engine-count:' || COUNT(DISTINCT CASE
+      WHEN revoked_at IS NULL AND expires_at > 0
+        AND COALESCE(session_kind, 'engine') = 'engine' THEN device_id
+    END) FROM licenses WHERE user_id = 'user-1';
 
     ${setLimit(1, 800)}
     ${activeIds('reduced')}
     SELECT 'reduced-count:' || COUNT(*) FROM licenses
       WHERE revoked_at = 800 AND revoked_reason = 'device_limit_reduced';
+    SELECT 'admin-engine-reduced:' || COUNT(DISTINCT CASE
+      WHEN revoked_at IS NULL AND expires_at > 0
+        AND COALESCE(session_kind, 'engine') = 'engine' THEN device_id
+    END) FROM licenses WHERE user_id = 'user-1';
 
     UPDATE users SET active = 0 WHERE id = 'user-1';
     ${mint({ id: 'disabled', deviceId: 'H', now: 900 })}
@@ -294,8 +302,10 @@ test('executes the active-device lifecycle against SQLite', async (context) => {
     'expired-reason:expired',
     'harvest-extra:d2,e,g,harvest-a,harvest-b',
     'harvest-engine:d2,e,g',
+    'admin-engine-count:3',
     'reduced:g,harvest-a,harvest-b',
     'reduced-count:2',
+    'admin-engine-reduced:1',
     'disabled-insert:0',
     'stale-password-insert:0',
     'current-session-preserved:1',
@@ -383,6 +393,13 @@ test('ships the Zyn-branded admin assets and both custom domains', async () => {
   assert.match(source, /async function adminAnalyticsDashboard/);
   assert.match(source, /COUNT\(DISTINCT CASE/);
   assert.match(source, /COUNT\(DISTINCT e\.user_id\) AS active_users/);
+  const adminUsersFn = source.slice(
+    source.indexOf('async function adminUsers'),
+    source.indexOf('async function adminAnalyticsDashboard'),
+  );
+  assert.match(adminUsersFn, /AS active_licenses/);
+  assert.match(adminUsersFn, /COALESCE\(l\.session_kind, 'engine'\) = 'engine'/);
+  assert.match(javascript, /Full Engine sessions only/);
   await access(new URL('../public/zyn-icon.png', import.meta.url));
   await access(new URL('../public/favicon.png', import.meta.url));
   await access(new URL('../public/apple-touch-icon.png', import.meta.url));

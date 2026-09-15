@@ -20,6 +20,7 @@ const migration = read('cloudflare/license/migrations/0016_session_kind.sql');
 
 assert.match(migration, /session_kind TEXT NOT NULL DEFAULT 'engine'/);
 assert.match(worker, /COALESCE\(session_kind, 'engine'\) = 'engine'/);
+assert.match(worker, /COALESCE\(l\.session_kind, 'engine'\) = 'engine'/);
 assert.match(worker, /if \(kind === 'engine'\)/);
 assert.match(worker, /\/api\/license\/session-kind/);
 assert.match(client, /sessionKind/);
