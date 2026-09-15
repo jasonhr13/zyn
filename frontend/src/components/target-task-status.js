@@ -24,15 +24,19 @@ const PHASE_TONE = Object.freeze({
 
 // Instantaneous event from the latest engine label. Retryable limiter/shape lines are not
 // Attention: sticky phase keeps the task in ATC or submitting across those loops.
-export function targetPhaseEvent(status) {
+export function targetPhaseEvent(status, previous = '') {
   if (!status) return '';
   const text = textOf(status);
+  const prev = previous || 'idle';
+  const inCheckout = prev === 'atc' || prev === 'submitting';
   const taskState = Number(status.taskState);
   if (taskState === 3) return 'success';
   if (/^could not (?:switch|clear)/.test(text)) return 'attention';
   if (/^product found:/.test(text)) return 'atc';
+  // Profile/proxy switch lines reuse "Switched To …" at restock AND after cart. Hold the current
+  // card; do not start Submitting from a cold start.
   if (/^rotated profile to:/.test(text)
-    || /^(?:switch(?:ed)? to|throttled - switched to)\b/.test(text)) return 'submit';
+    || /^(?:switch(?:ed)? to|throttled - switched to)\b/.test(text)) return 'hold';
   if (/\b(?:success(?:ful)?|checked out|waiting for order|getting order status|order not finished processing|removing filler item)\b/.test(text)) {
     return 'success';
   }
@@ -40,7 +44,13 @@ export function targetPhaseEvent(status) {
     || /^out of stock$/.test(text)) {
     return 'watch';
   }
-  if (/\b(?:adding to cart|carting filler item|getting cart(?! info)|using alternate cart flow)\b/.test(text)
+  // Same engine string warms an empty cart at task start and later reads the cart after ATC.
+  if (/\bgetting cart info\b/.test(text)) return inCheckout ? 'submit' : 'setup';
+  // Filler ATC before restock is still setup. After stock it is the ATC loop.
+  if (/\bcarting filler item\b/.test(text)) {
+    return (inCheckout || prev === 'watching') ? 'atc' : 'setup';
+  }
+  if (/\b(?:adding to cart|getting cart(?! info)|using alternate cart flow)\b/.test(text)
     || /^product in stock\b/.test(text)
     || /^limit reached$/.test(text)) {
     return 'atc';
@@ -53,7 +63,7 @@ export function targetPhaseEvent(status) {
     return 'attention';
   }
   if (/\b(?:error|fail(?:ed|ure)?|declin(?:e|ed))\b/.test(text)) return 'attention';
-  if (/\b(?:carted|get(?:ting)? cart info|preparing checkout|setting address|setting payment|submitting payment|submitting cvv|submitting order|out of stock, checking cart|rotating profile|throttled|finishing on home ip)\b/.test(text)) {
+  if (/\b(?:carted|preparing checkout|setting address|setting payment|submitting payment|submitting cvv|submitting order|out of stock, checking cart|rotating profile|throttled|finishing on home ip)\b/.test(text)) {
     return 'submit';
   }
   if (/\b(?:preparing runtime|starting(?: task)?|completed task init|getting session|logging in|login|requesting login code|waiting for code|submitting code|validating login|getting details|setting details|rotating proxy|setting proxy|proxy updated)\b/.test(text)) {
@@ -67,7 +77,7 @@ export function targetStickyPhase(status, previous = '', extras = {}) {
   if (extras.otpRequest) return 'attention';
   const prev = previous || 'idle';
   const running = targetTaskIsRunning(status);
-  const event = targetPhaseEvent(status);
+  const event = targetPhaseEvent(status, prev);
   if (!running) {
     if (event === 'success') return 'success';
     if (event === 'attention') return 'attention';
@@ -80,7 +90,7 @@ export function targetStickyPhase(status, previous = '', extras = {}) {
   if (event === 'watch') return 'watching';
   if (prev === 'atc' || prev === 'submitting') return prev;
   if (event === 'setup') return 'running';
-  if (event === 'retry') return prev === 'idle' ? 'running' : prev;
+  if (event === 'retry' || event === 'hold') return prev === 'idle' ? 'running' : prev;
   if (running && prev !== 'idle') return prev;
   return 'running';
 }

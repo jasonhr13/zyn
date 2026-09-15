@@ -151,7 +151,7 @@ test.each([
   ['Waiting For Shape', 'retry'],
   ['Rate Limited (429)', 'retry'],
   ['Submitting Order', 'submit'],
-  ['Getting Cart Info', 'submit'],
+  ['Getting Cart Info', 'setup'],
   ['Carted', 'submit'],
   ['Waiting For Restock', 'watch'],
   ['Shape Soft Block', 'attention'],
@@ -201,6 +201,24 @@ test('Shape Soft Block and payment decline leave the checkout loops', () => {
 test('Waiting for Shape before ATC is setup, not a fake ATC card', () => {
   expect(targetStickyPhase(status('Waiting For Shape'), 'running')).toBe('running');
   expect(targetStickyPhase(status('Waiting For Shape'), 'idle')).toBe('running');
+});
+
+test('logged-in Start All cart preload is not Submitting order', () => {
+  let phase = 'idle';
+  for (const label of ['Starting', 'Getting Session', 'Getting Details', 'Getting Cart Info', 'Waiting For Restock']) {
+    phase = targetStickyPhase(status(label), phase);
+    expect(phase).not.toBe('submitting');
+    expect(phase).not.toBe('atc');
+  }
+  expect(phase).toBe('watching');
+  expect(targetPhaseEvent(status('Getting Cart Info'), 'running')).toBe('setup');
+  expect(targetPhaseEvent(status('Getting Cart Info'), 'atc')).toBe('submit');
+  expect(targetStickyPhase(status('Getting Cart Info'), 'atc')).toBe('submitting');
+});
+
+test('filler preload before restock is not Adding to cart', () => {
+  expect(targetStickyPhase(status('Carting Filler Item'), 'running')).toBe('running');
+  expect(targetStickyPhase(status('Carting Filler Item'), 'watching')).toBe('atc');
 });
 
 test('OTP forces attention without changing the stored engine label', () => {

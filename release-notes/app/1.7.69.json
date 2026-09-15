@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "1.7.69",
+  "notes": [
+    "Start All no longer flashes every logged-in Target task as Submitting order while the cart is warming.",
+    "Getting Cart Info only counts as submitting after a task has actually added to cart.",
+    "Filler-item preload before restock no longer appears as Adding to cart.",
+    "Drop overview cards still hold ATC and submitting through Shape and rate-limit loops."
+  ]
+}
